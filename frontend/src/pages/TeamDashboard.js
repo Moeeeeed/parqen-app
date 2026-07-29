@@ -15,6 +15,8 @@ import {
   Globe, ShieldOff, UserX, Layers,
 } from 'lucide-react';
 
+import { BadgeChip } from '../lib/badge';
+
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 // Team access is validated by the backend (is_moderator || is_admin flag)
@@ -4270,7 +4272,7 @@ function TopTradersSection() {
                           <div className="w-12 h-12 rounded-xl flex items-center justify-center text-xl font-black text-white mx-auto mb-2"
                             style={{ backgroundColor: C.forest }}>{(u.username || '?')[0].toUpperCase()}</div>
                           <p className="font-black text-sm truncate" style={{ color: C.g800 }}>{u.username}</p>
-                          <span className="inline-block px-2 py-0.5 rounded-full text-xs font-black mt-1" style={{ backgroundColor: bd.bg, color: bd.c }}>{u.badge || 'BEGINNER'}</span>
+                          <BadgeChip user={u} badgeName={u.badge} size="xs" />
                           <p className="text-lg font-black mt-2" style={{ color: C.forest }}>
                             {sort === 'trades' ? fmt(u.total_trades) : `$${fmt(u.total_volume_usd, 0)}`}
                           </p>
@@ -4316,7 +4318,7 @@ function TopTradersSection() {
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: bd.bg, color: bd.c }}>{u.badge || 'BEGINNER'}</span>
+                          <BadgeChip user={u} badgeName={u.badge} size="xs" />
                         </td>
                         <td className="px-4 py-3 text-sm font-black" style={{ color: C.g800 }}>{fmt(u.total_trades)}</td>
                         <td className="px-4 py-3 text-sm font-bold" style={{ color: C.g700 }}>
@@ -4358,7 +4360,7 @@ function TopTradersSection() {
               <p className="font-black" style={{ color: C.g800 }}>{selected.username}</p>
               <p className="text-xs mb-2" style={{ color: C.g400 }}>{selected.country || '—'}</p>
               <div className="flex items-center justify-center gap-1 mb-1"><Stars rating={selected.average_rating} /></div>
-              <span className="text-xs font-black px-3 py-1 rounded-full" style={{ backgroundColor: badgeColor(selected.badge).bg, color: badgeColor(selected.badge).c }}>{selected.badge || 'BEGINNER'}</span>
+              <BadgeChip user={selected} badgeName={selected.badge} size="sm" />
             </div>
             <div className="space-y-1.5 mb-4">
               {[
@@ -4471,7 +4473,7 @@ function UsersSection() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1"><Stars rating={u.average_rating} /><span className="text-xs font-bold" style={{ color: C.g700 }}>{parseFloat(u.average_rating || 0).toFixed(1)}</span></div>
                       </td>
-                      <td className="px-4 py-3"><span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: badgeColor(u.badge).bg, color: badgeColor(u.badge).c }}>{u.badge || 'BEGINNER'}</span></td>
+                      <td className="px-4 py-3"><BadgeChip user={u} badgeName={u.badge} size="xs" /></td>
                       <td className="px-4 py-3 text-xs">{u.is_email_verified ? '📧 ' : ''}{u.is_phone_verified ? '📱 ' : ''}{u.is_id_verified ? '🪪' : ''}</td>
                       <td className="px-4 py-3 text-xs" style={{ color: C.g400 }}>{fmtDate(u.created_at)}</td>
                       <td className="px-4 py-3">

@@ -296,24 +296,21 @@ function OfferCard({listing, usdtPriceUSD, onViewBuyer, onSell, liked, onToggleL
               <button onClick={onViewBuyer} className="font-black text-sm hover:underline leading-tight truncate"
                 style={{color:C.g800, maxWidth:'130px'}}>{getDisplayName(u) || 'Buyer'}</button>
               {isVerified(u) && <BadgeCheck size={14} style={{color:'#3B82F6', flexShrink:0}}/>}
-              {u.country && <span className="text-xs font-semibold flex-shrink-0" style={{color:C.g500}}>· {resolveCode(u.country)?.toUpperCase() || u.country}</span>}
-              <BadgeChip user={u} size="xs" />
             </div>
             <div className="flex items-center justify-between mt-1.5 gap-1">
               <div className="flex items-center gap-1.5">
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md font-bold"
-                  style={{backgroundColor:'rgba(22,163,74,0.10)', color:'#16A34A', fontSize:'11px'}}>
+                <span className="inline-flex items-center gap-1 font-bold"
+                  style={{color:'#16A34A', fontSize:'11px'}}>
                   <ThumbsUp size={10} strokeWidth={2.5}/>{fmt(pos)}
                 </span>
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md font-bold"
-                  style={{backgroundColor:'rgba(239,68,68,0.08)', color:'#EF4444', fontSize:'11px'}}>
+                <span className="inline-flex items-center gap-1 font-bold"
+                  style={{color:'#EF4444', fontSize:'11px'}}>
                   <ThumbsDown size={10} strokeWidth={2.5}/>{fmt(neg)}
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-bold"
-                  style={{backgroundColor:C.g100, color:C.g600}}>
-                  <Repeat2 size={9} strokeWidth={2.5}/>{fmt(trades)} trades
+                <span className="text-xs font-semibold" style={{color:C.g500}}>
+                  {fmt(trades)} trades
                 </span>
                 {seen.online ? (
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-bold"
@@ -336,12 +333,7 @@ function OfferCard({listing, usdtPriceUSD, onViewBuyer, onSell, liked, onToggleL
           </div>
         </div>
 
-        <div className="mt-2.5">
-          <span className="inline-flex flex-col px-2.5 py-1.5 rounded-lg" style={{backgroundColor:C.g100}}>
-            <span className="text-xs font-normal leading-tight" style={{color:C.g400}}>Payment method:</span>
-            <span className="text-xs font-black leading-tight tracking-wide" style={{color:C.g700}}>{pmLabel.toUpperCase()}</span>
-          </span>
-        </div>
+
       </div>
 
       <div style={{height:1, backgroundColor:C.g100}}/>
@@ -349,37 +341,46 @@ function OfferCard({listing, usdtPriceUSD, onViewBuyer, onSell, liked, onToggleL
       <div className="px-4 py-3 grid grid-cols-2 gap-2">
         <div>
           <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{color:C.g500}}>YOU SELL</p>
-          <p className="text-lg font-bold leading-tight truncate" style={{color:C.gold}}>
-            USDT {fUsdt(usdtAmount)}
+          <p className="text-lg font-bold leading-tight truncate" style={{color:C.g800}}>
+            ≈ {fmt(examplePay, 2)} {cur}
           </p>
-          <p className="text-xs font-semibold mt-0.5" style={{color:C.g500}}>≈ {sym}{fmt(examplePay, 2)} {cur}</p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="flex items-center justify-center rounded-full flex-shrink-0"
+              style={{width:16, height:16, backgroundColor:`${C.gold}22`, border:`1px solid ${C.gold}55`, color:'#B4790A', fontSize:9, fontWeight:900}}>
+              ₮
+            </span>
+            <p className="text-xs font-semibold" style={{color:'#B4790A'}}>
+              {fUsdt(usdtAmount)}
+            </p>
+          </div>
         </div>
         <div className="border-l pl-3" style={{borderColor:C.g100}}>
           <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{color:C.g500}}>YOU RECEIVE</p>
           <p className="text-lg font-bold leading-tight truncate" style={{color:C.g800}}>
-            {sym}{fmt(examplePay, 2)}
+            {fmt(examplePay, 2)} {cur}
           </p>
-          <p className="text-xs font-semibold mt-0.5" style={{color:C.g400}}>{cur}</p>
-          <span className="inline-block mt-1.5 font-semibold px-2 py-0.5 rounded"
-            style={{backgroundColor:marginBg, color:'#fff', fontSize:'10px', letterSpacing:'0.01em'}}>
-            {marginLabel}
+        </div>
+      </div>
+
+      <div className="px-4 pb-3" style={{borderTop:`1px solid ${C.g100}`}}>
+        <div className="flex items-center gap-1.5 mt-2.5 mb-2">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-black"
+            style={{backgroundColor:'rgba(22,163,74,0.08)', color:'#16A34A', border:'1px solid rgba(22,163,74,0.15)'}}>
+            {pmLabel.toUpperCase()}
           </span>
         </div>
-      </div>
-
-      <div className="px-4 pb-2">
         <p className="text-xs font-semibold" style={{color:C.g600}}>
-          Rate: {sym}{fmt(rateLocal)}/USDT
+          Rate: {fmt(rateLocal)} {cur}
         </p>
-      </div>
-
-      {(minLocal > 0 || maxLocal > 0) && (
-        <div className="px-4 pb-2">
-          <p className="text-xs font-bold" style={{color:C.g600}}>
-            LIMIT {fmt(minLocal)} – {fmt(maxLocal)} {cur}
+        <p className="text-xs font-black mt-1" style={{color: margin < 0 ? '#16A34A' : margin > 0 ? '#EF4444' : C.g500}}>
+          {margin === 0 ? 'Market' : `${Math.abs(margin)}%`}
+        </p>
+        {(minLocal > 0 || maxLocal > 0) && (
+          <p className="text-xs font-semibold mt-1" style={{color:C.g600}}>
+            Range: {fmt(minLocal)} - {fmt(maxLocal)} {cur}
           </p>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="px-4 pb-4 flex items-center gap-2">
         <button onClick={onViewBuyer}
@@ -838,8 +839,8 @@ export default function SellUSDT({user}) {
   const [paymentSearch, setPaymentSearch] = useState('');
   const [showCountry,   setShowCountry]   = useState(false);
   const [showPayment,   setShowPayment]   = useState(false);
-  const [showAssetMenu, setShowAssetMenu] = useState(false);
-  const [showSellAssetMenu, setShowSellAssetMenu] = useState(false);
+  const [showAllCryptoMenu, setShowAllCryptoMenu] = useState(false);
+  const [showSortMenu, setShowSortMenu] = useState(false);
   const [sortBy,       setSortBy]       = useState('rate_high');
   const [modal,        setModal]        = useState(null);
   const [sellAmt,      setSellAmt]      = useState('');
@@ -853,6 +854,7 @@ export default function SellUSDT({user}) {
   const currencyRef = useRef(null);
   const countryRef  = useRef(null);
   const paymentRef  = useRef(null);
+  const sortRef     = useRef(null);
 
   const usdtPrice = 1;
 
@@ -926,6 +928,7 @@ export default function SellUSDT({user}) {
       if (currencyRef.current && !currencyRef.current.contains(e.target)){setShowCurrency(false);setCurrencySearch('');}
       if (countryRef.current && !countryRef.current.contains(e.target)){setShowCountry(false);setCountrySearch('');}
       if (paymentRef.current && !paymentRef.current.contains(e.target)){setShowPayment(false);setPaymentSearch('');}
+      if (sortRef.current && !sortRef.current.contains(e.target)){setShowSortMenu(false);}
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
@@ -1096,90 +1099,53 @@ export default function SellUSDT({user}) {
       <div className="bg-white border-b sticky z-30 flex-shrink-0" style={{top:'var(--navbar-h)',borderColor:C.g200}}>
         <div className="flex w-full">
           <div className="flex-1 relative">
-            <button onClick={()=>setShowAssetMenu(v=>!v)}
+            <button onClick={()=>navigate('/buy-bitcoin')}
               className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1"
               style={{color:C.g400}}>
-              Buy <ChevronDown size={12} className={`transition-transform ${showAssetMenu?'rotate-180':''}`}/>
+              Buy
             </button>
-            {showAssetMenu && (
+          </div>
+          <div className="flex-1 relative">
+            <button onClick={()=>navigate('/sell-bitcoin')}
+              className="w-full text-center py-3 text-xs font-black border-b-2 transition-all flex items-center justify-center gap-1"
+              style={{borderColor:C.sell, color:C.sell, backgroundColor:`${C.sell}18`}}>
+              Sell
+            </button>
+          </div>
+          <div className="flex-1 relative">
+            <button onClick={()=>setShowAllCryptoMenu(v=>!v)}
+              className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1"
+              style={{color:C.g400}}>
+              All Crypto <ChevronDown size={12} className={`transition-transform ${showAllCryptoMenu?'rotate-180':''}`}/>
+            </button>
+            {showAllCryptoMenu && (
               <>
-                <div className="fixed inset-0 z-40" onClick={()=>setShowAssetMenu(false)}/>
+                <div className="fixed inset-0 z-40" onClick={()=>setShowAllCryptoMenu(false)}/>
                 <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-52 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white"
                   style={{borderColor:C.g200}}>
-                  <button onClick={()=>{setShowAssetMenu(false); navigate('/buy-bitcoin');}}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition">
+                  <button onClick={()=>{setShowAllCryptoMenu(false); navigate('/sell-bitcoin');}}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition hover:bg-gray-50">
                     <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
                       style={{background:'linear-gradient(135deg,#F7931A,#e8830a)'}}>₿</span>
                     <span className="flex-1 min-w-0">
                       <span className="block text-xs font-black" style={{color:C.g800}}>Bitcoin</span>
                       <span className="block text-[10px] font-semibold" style={{color:C.g400}}>BTC</span>
                     </span>
-                    <ArrowRight size={13} style={{color:C.g300}}/>
                   </button>
-                  <button onClick={()=>{setShowAssetMenu(false); navigate('/buy-usdt');}}
+                  <button onClick={()=>{setShowAllCryptoMenu(false); navigate('/sell-usdt');}}
                     className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition border-t"
                     style={{borderColor:C.g100}}>
                     <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
                       style={{background:'#26A17B'}}>₮</span>
                     <span className="flex-1 min-w-0">
                       <span className="block text-xs font-black" style={{color:C.g800}}>Tether</span>
-                      <span className="block text-[10px] font-semibold" style={{color:C.g400}}>USDT · TRC-20</span>
+                      <span className="block text-[10px] font-semibold" style={{color:C.g400}}>USDT</span>
                     </span>
-                    <ArrowRight size={13} style={{color:C.g300}}/>
                   </button>
                 </div>
               </>
             )}
           </div>
-          <div className="flex-1 relative">
-            <button onClick={()=>setShowSellAssetMenu(v=>!v)}
-              className="w-full text-center py-3 text-xs font-black border-b-2 transition-all flex items-center justify-center gap-1"
-              style={{borderColor:C.sell, color:C.sell, backgroundColor:`${C.sell}18`}}>
-              Sell USDT <ChevronDown size={12} className={`transition-transform ${showSellAssetMenu?'rotate-180':''}`}/>
-            </button>
-            {showSellAssetMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={()=>setShowSellAssetMenu(false)}/>
-                <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-52 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white"
-                  style={{borderColor:C.g200}}>
-                  <button onClick={()=>{setShowSellAssetMenu(false); navigate('/sell-bitcoin');}}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition">
-                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
-                      style={{background:'linear-gradient(135deg,#F7931A,#e8830a)'}}>₿</span>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-xs font-black" style={{color:C.g800}}>Bitcoin</span>
-                      <span className="block text-[10px] font-semibold" style={{color:C.g400}}>BTC</span>
-                    </span>
-                    <ArrowRight size={13} style={{color:C.g300}}/>
-                  </button>
-                  <button onClick={()=>setShowSellAssetMenu(false)}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t"
-                    style={{borderColor:C.g100, backgroundColor:`${C.sell}0d`}}>
-                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
-                      style={{background:'#26A17B'}}>₮</span>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-xs font-black" style={{color:C.g800}}>Tether</span>
-                      <span className="block text-[10px] font-semibold" style={{color:C.g400}}>USDT · you're here</span>
-                    </span>
-                    <CheckCircle size={14} style={{color:C.sell}}/>
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-          {[
-            {label:'Gift Cards', path:'/gift-cards',  active:false, color:'#0D9488'},
-          ].map(tab=>(
-            <Link key={tab.path} to={tab.path}
-              className="flex-1 text-center py-3 text-xs font-black border-b-2 transition-all"
-              style={{
-                borderColor:     tab.active ? tab.color : 'transparent',
-                color:           tab.active ? tab.color : C.g400,
-                backgroundColor: tab.active ? tab.color+'18' : 'transparent',
-              }}>
-              {tab.label}
-            </Link>
-          ))}
         </div>
       </div>
 
@@ -1364,13 +1330,30 @@ export default function SellUSDT({user}) {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs font-black flex-shrink-0" style={{color:C.g500}}>Sort:</span>
-            <select value={sortBy} onChange={e=>setSortBy(e.target.value)}
-              className="flex-shrink-0 px-2 py-2 font-bold border-2 rounded-xl focus:outline-none"
-              style={{borderColor:sortBy!=='rate_high'?C.sell:C.g200, color:C.g800, fontSize:'13px', width:'105px'}}>
-              <option value="rate_low">Rate: Low</option>
-              <option value="rate_high">Rate: High</option>
-            </select>
+            <div className="relative" ref={sortRef}>
+              <button onClick={()=>setShowSortMenu(!showSortMenu)}
+                className="flex-shrink-0 px-2.5 py-2 font-bold border-2 rounded-xl focus:outline-none flex items-center gap-1 bg-white"
+                style={{borderColor:sortBy!=='rate_high'?C.sell:C.g200, color:C.g800, fontSize:'13px'}}>
+                <span>{sortBy === 'rate_high' ? 'Best Rate' : sortBy === 'rating' ? 'Top Rated' : 'Most Trades'}</span>
+                <ChevronDown size={11} className={`transition-transform ${showSortMenu?'rotate-180':''}`}/>
+              </button>
+              {showSortMenu && (
+                <div className="absolute bottom-full left-0 mb-1.5 bg-white rounded-xl shadow-xl z-50 border overflow-hidden"
+                  style={{borderColor:C.g200, minWidth:'120px'}}>
+                  {[
+                    {value:'rate_high', label:'Best Rate'},
+                    {value:'rating', label:'Top Rated'},
+                    {value:'trades', label:'Most Trades'}
+                  ].map(opt=>(
+                    <button key={opt.value} onClick={()=>{setSortBy(opt.value); setShowSortMenu(false);}}
+                      className="w-full text-left px-3 py-2 text-xs font-bold hover:bg-gray-50 transition"
+                      style={{backgroundColor: sortBy===opt.value ? `${C.sell}08` : 'transparent', color: sortBy===opt.value ? C.sell : C.g800}}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <div className="flex-1 min-w-0 flex items-center border-2 rounded-xl overflow-hidden"
               style={{borderColor:traderSearch.trim()?C.sell:C.g200}}>
               <input

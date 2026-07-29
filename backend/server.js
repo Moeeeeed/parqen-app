@@ -208,9 +208,14 @@ app.use(cors({
     if (!origin) return callback(null, true);
     // Allow listed production origins
     if (_allowedOrigins.some(a => origin === a)) return callback(null, true);
-    // Allow localhost in development only
-    if (process.env.NODE_ENV !== 'production' && origin.startsWith('http://localhost')) {
-      return callback(null, true);
+    // Allow localhost and local network IPs in development only
+    if (process.env.NODE_ENV !== 'production') {
+      if (origin.startsWith('http://localhost') ||
+          origin.startsWith('http://127.') ||
+          origin.startsWith('http://192.168.') ||
+          origin.startsWith('http://10.')) {
+        return callback(null, true);
+      }
     }
     callback(new Error('CORS: origin not allowed — ' + origin));
   },
@@ -2128,6 +2133,8 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     const validPassword = await bcrypt.compare(password, data.password_hash);
     if (!validPassword) return res.status(401).json({ error: 'Invalid credentials' });
 
+    // ── COMMENTED OUT: Email Login OTP step ────────────────────────────────────
+    /*
     // Generate 6-digit OTP and store it for 10 minutes
     const loginOtp = String(Math.floor(100000 + Math.random() * 900000));
     emailLoginOtpStore.set(email.toLowerCase(), {
@@ -2143,6 +2150,32 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     ).catch(err => console.error('[login-otp] email send failed:', err.message));
 
     return res.json({ success: true, requiresOtp: true, email: data.email });
+    */
+
+    // ── Direct Login (Bypassing OTP for local development) ─────────────────────
+    const token = jwt.sign({ userId: data.id, email: data.email }, JWT_SECRET, { expiresIn: '7d' });
+    const now = new Date().toISOString();
+    await supabaseAdmin.from('users').update({ last_login: now, last_seen_at: now }).eq('id', data.id);
+    detectAndSaveCountry(data.id, req).catch(() => {});
+
+    let btcAddress = data.bitcoin_wallet_address;
+    if (!isRealBtcAddress(btcAddress)) {
+      btcAddress = await upgradeToHDAddress(data.id, data.username) || btcAddress;
+    }
+
+    return res.json({
+      success: true,
+      user: {
+        id: data.id, email: data.email, username: data.username, full_name: data.full_name,
+        average_rating: data.average_rating || 0, total_trades: data.total_trades || 0,
+        avatar_url: data.avatar_url || null, is_admin: data.is_admin || false,
+        is_moderator: data.is_moderator || false, referral_code: data.referral_code || null,
+        bitcoin_wallet_address: btcAddress,
+        total_referrals: data.total_referrals || 0,
+        referral_earnings_btc: data.referral_earnings_btc || 0,
+      },
+      token,
+    });
 
   } catch (error) {
     console.error('Login error:', error);

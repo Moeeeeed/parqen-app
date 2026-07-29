@@ -9,6 +9,7 @@ import {
   ChevronDown, BookOpen, History, Users,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { BadgeChip } from '../lib/badge';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -777,7 +778,7 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                     <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                       <h3 className="font-black text-lg" style={{ color }}>{role}: {d?.username||'Unknown'}</h3>
                       {stats?.badge && (
-                        <span className="text-xs font-black uppercase px-2.5 py-1 rounded-full" style={{ backgroundColor:badgeColor(stats.badge).bg, color:badgeColor(stats.badge).c }}>{stats.badge}</span>
+                        <BadgeChip user={stats} badgeName={stats.badge} size="xs" />
                       )}
                       {stats?.account_status && stats.account_status !== 'active' && (
                         <span className="text-xs font-black uppercase px-2.5 py-1 rounded-full bg-red-100 text-red-700">{stats.account_status}</span>

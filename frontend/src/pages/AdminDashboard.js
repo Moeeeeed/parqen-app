@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { copyToClipboard } from '../utils/clipboard';
+import { BadgeChip } from '../lib/badge';
 import {
   LayoutDashboard, Users, ArrowLeftRight, ArrowUpRight, AlertTriangle,
   ShieldCheck, DollarSign, List, Megaphone, LogOut,
@@ -580,7 +581,7 @@ function UsersSection() {
                 { label:'Trades',     value: selected.total_trades || 0 },
                 { label:'Rating',     value: `⭐ ${parseFloat(selected.average_rating || 0).toFixed(1)}` },
                 { label:'Completion', value: `${parseFloat(selected.completion_rate || 0).toFixed(1)}%` },
-                { label:'Badge',      value: selected.badge || 'BEGINNER' },
+                { label:'Badge',      value: <BadgeChip user={selected} badgeName={selected.badge} size="xs" /> },
                 { label:'Last login', value: fmtAge(selected.last_login) },
               ].map(r => (
                 <div key={r.label} className="flex items-center justify-between py-1.5 border-b" style={{ borderColor: C.g100 }}>

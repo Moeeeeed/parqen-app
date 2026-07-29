@@ -91,13 +91,9 @@ export function BadgeChip({ user, badgeName, className = '', size = 'sm' }) {
 
   return (
     <span
-      className={`inline-flex items-center gap-1 font-black rounded-full border flex-shrink-0 ${badge.animate ? 'shadow-sm' : ''} ${className}`}
+      className={`inline-flex items-center gap-0.5 font-black flex-shrink-0 ${className}`}
       style={{
-        background: badge.bg,
-        borderColor: badge.borderColor,
-        color: badge.textColor,
-        boxShadow: badge.glow ? `0 0 8px ${badge.glow}` : undefined,
-        padding: size === 'xs' ? '1px 5px' : size === 'lg' ? '4px 10px' : '2px 7px',
+        color: badge.color,
         fontSize: size === 'xs' ? '10px' : size === 'lg' ? '13px' : '11px',
         letterSpacing: '0.02em',
       }}
