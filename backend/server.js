@@ -3702,10 +3702,11 @@ async function sendSmsOtp(phone, message) {
   // ── Channel 1: Africa's Talking (best delivery for GH/NG/KE/UG/TZ) ─────────
   // Skipped for countries where AT silently swallows messages despite "success"
   if (atSms && !forceTwilio) {
-    const senderId = process.env.AFRICASTALKING_SENDER_ID;
-    // Try with custom sender ID first; if rejected, retry with AT default shortcode.
-    // Custom sender IDs need carrier approval — unapproved IDs are silently dropped.
-    const atAttempts = senderId ? [{ from: senderId }, {}] : [{}];
+    // AFRICASTALKING_SENDER_ID ("PRAQEN") is pending carrier approval — until it's
+    // approved, sending with it gets silently dropped by the carrier even though AT's
+    // API reports success. Default shortcode needs no approval and delivers immediately.
+    // Re-add `{ from: process.env.AFRICASTALKING_SENDER_ID }` as the first attempt once approved.
+    const atAttempts = [{}];
     let atDelivered = false;
     for (const extra of atAttempts) {
       try {
@@ -3898,8 +3899,9 @@ app.post('/api/auth/send-phone-otp', otpLimiter, async (req, res) => {
         let smsSent = false;
 
         if (atSms && !forceTwilio) {
-          const senderId = process.env.AFRICASTALKING_SENDER_ID;
-          const atAttempts = senderId ? [{ from: senderId }, {}] : [{}];
+          // Custom sender ID "PRAQEN" is pending carrier approval — see the matching
+          // comment in sendSmsOtp() above. Default shortcode only until it's approved.
+          const atAttempts = [{}];
           for (const extra of atAttempts) {
             try {
               const result = await atSms.send({ to: [contact], message: msgText, ...extra });

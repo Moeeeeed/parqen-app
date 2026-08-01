@@ -17,6 +17,7 @@ import CountryFlag, { resolveCode } from '../components/CountryFlag';
 import { BadgeChip, BADGE_COLORS } from '../lib/badge';
 import ActiveTradeCard from '../components/ActiveTradeCard';
 import PRQFooter from '../components/PRQFooter';
+import GettingStartedSteps from '../components/GettingStartedSteps';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -1328,6 +1329,9 @@ export default function SellBitcoin({user}) {
           </div>
         </div>
       </div>
+
+      {/* Getting-started guide — shown to logged-in users so they know how to activate as a vendor */}
+      {user && <GettingStartedSteps userId={user.id} />}
 
       {/* ══ 3. FILTER BAR ══════════════════════════════════════ */}
       <div className="bg-white border-b flex-shrink-0" style={{borderColor:C.g200}}>

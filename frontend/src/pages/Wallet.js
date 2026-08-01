@@ -183,6 +183,14 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
             </button>
           </div>
 
+          {/* ── Temporary notice: external sends delayed while blockchain is under maintenance ── */}
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl mb-4" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
+            <AlertTriangle size={13} style={{ color: '#D97706', flexShrink: 0 }} />
+            <p className="text-xs font-semibold" style={{ color: '#92400E' }}>
+              External wallet sending is temporarily delayed — blockchain is under maintenance. Send to a PRAQEN user instead or trade in our P2P market for now. Sorry for the inconvenience, we're fixing it soon.
+            </p>
+          </div>
+
           {/* ── KYC gate ── */}
           {kycStatus && !(kycStatus.email && kycStatus.phone && kycStatus.kyc) ? (
             <div className="space-y-4">
@@ -1129,6 +1137,14 @@ function InternalTransferModal({ balance, btcPrice, displayCurrency, fxRate, cur
                 </div>
               </div>
 
+              {/* ── Temporary notice: external sends delayed while blockchain is under maintenance ── */}
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
+                <AlertTriangle size={13} style={{ color: '#D97706', flexShrink: 0 }} />
+                <p className="text-xs font-semibold" style={{ color: '#92400E' }}>
+                  External wallet sending is temporarily delayed — blockchain is under maintenance. Send to a PRAQEN user instead or trade in our P2P market for now. Sorry for the inconvenience, we're fixing it soon.
+                </p>
+              </div>
+
               {/* Balance */}
               <div className="flex items-center justify-between px-4 py-3 rounded-2xl"
                 style={{ background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', border: '1px solid #bbf7d0' }}>
@@ -1384,6 +1400,14 @@ function UsdtWithdrawModal({ balance, onClose, onSend, kycStatus, twoFactorEnabl
               style={{ color: C.g500 }}>
               PRAQEN User
             </button>
+          </div>
+
+          {/* ── Temporary notice: external sends delayed while blockchain is under maintenance ── */}
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
+            <AlertTriangle size={13} style={{ color: '#D97706', flexShrink: 0 }} />
+            <p className="text-xs font-semibold" style={{ color: '#92400E' }}>
+              External wallet sending is temporarily delayed — blockchain is under maintenance. Send to a PRAQEN user instead or trade in our P2P market for now. Sorry for the inconvenience, we're fixing it soon.
+            </p>
           </div>
 
           {/* ── KYC gate ── */}
@@ -1862,6 +1886,14 @@ function UsdtInternalTransferModal({ balance, onClose, onTransfer, onSwitchToExt
                   style={{ background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: '#fff' }}>
                   PRAQEN User
                 </div>
+              </div>
+
+              {/* ── Temporary notice: external sends delayed while blockchain is under maintenance ── */}
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
+                <AlertTriangle size={13} style={{ color: '#D97706', flexShrink: 0 }} />
+                <p className="text-xs font-semibold" style={{ color: '#92400E' }}>
+                  External wallet sending is temporarily delayed — blockchain is under maintenance. Send to a PRAQEN user instead or trade in our P2P market for now. Sorry for the inconvenience, we're fixing it soon.
+                </p>
               </div>
 
               {/* Input */}
@@ -2910,6 +2942,37 @@ export default function WalletPage({ user }) {
             </button>
           </div>
         </div>
+
+        {/* ── FUND-WALLET ALERT — always up top, above the fold, for anyone under the $10 threshold ── */}
+        {portfolioUsd < 10 && (
+          <div className="rounded-2xl overflow-hidden shadow-lg" style={{ border: '2px solid #B91C1C' }}>
+            <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: 'linear-gradient(135deg,#991B1B,#DC2626)' }}>
+              <span className="text-base">🚨</span>
+              <span className="text-xs sm:text-sm font-black text-white tracking-wide uppercase">
+                Action Required — Fund Your Wallet
+              </span>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-4" style={{ backgroundColor: '#FEF2F2' }}>
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#FEE2E2' }}>
+                <Wallet size={20} style={{ color: '#B91C1C' }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-base font-black" style={{ color: '#7F1D1D' }}>Keep your wallet funded to stay active</p>
+                <p className="text-sm mt-1 leading-relaxed font-semibold" style={{ color: '#B91C1C' }}>
+                  Your Bitcoin wallet must have at least <strong>$10 and above</strong> for your buy and sell offers to appear in the marketplace — and to unlock your first bonus on your way to becoming a vendor.
+                  Current balance: <strong>{fmtLocal(portfolioUsd)}</strong>.
+                  Top up now to activate your offer.
+                </p>
+              </div>
+              <button
+                onClick={() => setAssetPicker({ type: 'receive' })}
+                className="flex-shrink-0 w-full sm:w-auto px-6 py-3 rounded-xl text-sm font-black text-white shadow-md hover:opacity-90 transition"
+                style={{ background: 'linear-gradient(135deg,#B91C1C,#DC2626)' }}>
+                Top Up Now →
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ── HERO: TOTAL PORTFOLIO VALUE ──
              White elevated card instead of a full-bleed green block — the color now accents
