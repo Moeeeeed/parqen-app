@@ -212,15 +212,21 @@
         }
     </script>
 
-    <!-- ── ✅ FIXED: OneSignal Web Push - Local Testing ─────────── -->
+    <!-- ── ✅ FIXED: OneSignal Web Push - Environment Auto-Detect ─────────── -->
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
     <script>
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         OneSignalDeferred.push(async function(OneSignal) {
-            // ✅ Local Testing App ID (localhost par kaam karega)
-            const appId = "6bfba397-b0b1-4718-abde-6ecb375c4f40";
+            // ✅ Auto-detect environment
+            const isLocal = window.location.hostname === 'localhost' ||
+                window.location.hostname === '127.0.0.1' ||
+                window.location.hostname === '0.0.0.0';
 
-            console.log(`[OneSignal] Initializing with App ID: ${appId} (LOCAL)`);
+            const appId = isLocal
+                ? "6bfba397-b0b1-4718-abde-6ecb375c4f40"   // Local testing
+                : "5fc11b99-516c-4178-8443-b06c08865b99";  // Production
+
+            console.log(`[OneSignal] Initializing with App ID: ${appId} (${isLocal ? 'LOCAL' : 'PRODUCTION'})`);
 
             await OneSignal.init({
                 appId: appId,
