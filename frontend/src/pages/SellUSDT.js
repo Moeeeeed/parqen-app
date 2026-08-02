@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRates } from '../contexts/RatesContext';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import SEO from '../components/SEO';
 import axios from 'axios';
 import {
@@ -274,7 +274,7 @@ function OfferCard({listing, usdtPriceUSD, onViewBuyer, onSell, liked, onToggleL
   const pmLabel = listing.payment_method || 'Payment';
 
   return (
-    <div className="rounded-2xl overflow-hidden transition-all w-full" style={{border:`1px solid ${C.g200}`, background:'#fff'}}>
+    <div className="rounded-2xl overflow-hidden transition-all w-full h-full flex flex-col justify-between" style={{border:`1px solid ${C.g200}`, background:'#fff'}}>
       <div className="px-4 pt-4 pb-2">
         <div className="flex items-start gap-3">
           <div className="relative flex-shrink-0">
@@ -363,10 +363,18 @@ function OfferCard({listing, usdtPriceUSD, onViewBuyer, onSell, liked, onToggleL
       </div>
 
       <div className="px-4 pb-3" style={{borderTop:`1px solid ${C.g100}`}}>
-        <div className="flex items-center gap-1.5 mt-2.5 mb-2">
+        <div className="flex items-center justify-between gap-1.5 mt-2.5 mb-2">
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-black"
             style={{backgroundColor:'rgba(22,163,74,0.08)', color:'#16A34A', border:'1px solid rgba(22,163,74,0.15)'}}>
             {pmLabel.toUpperCase()}
+          </span>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black"
+            style={{
+              backgroundColor: listing.asset === 'USDT' ? '#CCFBF1' : '#FEF3C7',
+              color: listing.asset === 'USDT' ? '#0F766E' : '#B45309',
+              border: listing.asset === 'USDT' ? '1px solid #99F6E4' : '1px solid #FDE68A'
+            }}>
+            {listing.asset === 'USDT' ? '₮ USDT' : '₿ BTC'}
           </span>
         </div>
         <p className="text-xs font-semibold" style={{color:C.g600}}>
@@ -821,6 +829,7 @@ function BuyerModal({buyer, listing, onClose, onTrade, usdtPriceUSD}) {
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function SellUSDT({user}) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { rates: USD_RATES } = useRates();
   const _cacheAll = () => {
     try {
@@ -829,7 +838,7 @@ export default function SellUSDT({user}) {
     } catch {}
     return null;
   };
-  const _buyNow   = () => { const a=_cacheAll(); return a?a.filter(l=>l.asset==='USDT'&&(l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN')):[]; };
+  const _buyNow   = () => { const a=_cacheAll(); return a?a.filter(l=>['BUY','BUY_BITCOIN','BUY_USDT'].includes(l.listing_type)):[]; };
   const [offers,       setOffers]       = useState(()=>_buyNow());
   const [loading,      setLoading]      = useState(()=>_buyNow().length===0);
   const [loadError,    setLoadError]    = useState(false);
@@ -840,6 +849,7 @@ export default function SellUSDT({user}) {
   const [showCountry,   setShowCountry]   = useState(false);
   const [showPayment,   setShowPayment]   = useState(false);
   const [showAllCryptoMenu, setShowAllCryptoMenu] = useState(false);
+  const [selectedCrypto, setSelectedCrypto] = useState(() => location.state?.selectedCrypto || null);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [sortBy,       setSortBy]       = useState('rate_high');
   const [modal,        setModal]        = useState(null);
@@ -887,7 +897,7 @@ export default function SellUSDT({user}) {
       const all = (r.data.listings || []).map(l => ({
         ...l, users: Array.isArray(l.users) ? l.users[0] : l.users,
       }));
-      const data = all.filter(l => l.asset==='USDT'&&(l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN'));
+      const data = all.filter(l => ['BUY','BUY_BITCOIN','BUY_USDT'].includes(l.listing_type));
       if (all.length > 0) {
         try { localStorage.setItem('praqen_market_all', JSON.stringify({ data: all, ts: Date.now() })); } catch {}
       }
@@ -1013,6 +1023,11 @@ export default function SellUSDT({user}) {
   ));
 
   const filtered = offers.filter(l => {
+    if (selectedCrypto === 'BTC') {
+      if ((l.asset || 'BTC') !== 'BTC') return false;
+    } else if (selectedCrypto === 'USDT') {
+      if (l.asset !== 'USDT') return false;
+    }
     const cur = (l.currency || 'USD').toUpperCase();
     const pm  = (l.payment_method || '').toLowerCase();
     if (selCountry.code !== 'ALL' && (l.country || '').toUpperCase() !== selCountry.code) return false;
@@ -1099,14 +1114,14 @@ export default function SellUSDT({user}) {
       <div className="bg-white border-b sticky z-30 flex-shrink-0" style={{top:'var(--navbar-h)',borderColor:C.g200}}>
         <div className="flex w-full">
           <div className="flex-1 relative">
-            <button onClick={()=>navigate('/buy-bitcoin')}
+            <button onClick={()=>navigate('/buy-usdt')}
               className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1"
               style={{color:C.g400}}>
               Buy
             </button>
           </div>
           <div className="flex-1 relative">
-            <button onClick={()=>navigate('/sell-bitcoin')}
+            <button onClick={()=>navigate('/sell-usdt')}
               className="w-full text-center py-3 text-xs font-black border-b-2 transition-all flex items-center justify-center gap-1"
               style={{borderColor:C.sell, color:C.sell, backgroundColor:`${C.sell}18`}}>
               Sell
@@ -1116,24 +1131,36 @@ export default function SellUSDT({user}) {
             <button onClick={()=>setShowAllCryptoMenu(v=>!v)}
               className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1"
               style={{color:C.g400}}>
-              All Crypto <ChevronDown size={12} className={`transition-transform ${showAllCryptoMenu?'rotate-180':''}`}/>
+              {selectedCrypto || 'All Crypto'} <ChevronDown size={12} className={`transition-transform ${showAllCryptoMenu?'rotate-180':''}`}/>
             </button>
             {showAllCryptoMenu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={()=>setShowAllCryptoMenu(false)}/>
-                <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-52 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white"
+                <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-56 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white"
                   style={{borderColor:C.g200}}>
-                  <button onClick={()=>{setShowAllCryptoMenu(false); navigate('/sell-bitcoin');}}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition hover:bg-gray-50">
+                  <button onClick={()=>{setSelectedCrypto(null); setShowAllCryptoMenu(false); navigate('/sell-usdt', { state: { selectedCrypto: null } });}}
+                    className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition ${!selectedCrypto ? 'bg-emerald-50/80' : 'hover:bg-gray-50'}`}>
+                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
+                      style={{background:'linear-gradient(135deg,#0D9488,#14B8A6)'}}>🌐</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-xs font-black" style={{color:C.g800}}>All Crypto</span>
+                      <span className="block text-[10px] font-semibold" style={{color:C.g400}}>BTC & USDT</span>
+                    </span>
+                    {!selectedCrypto && <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">Active</span>}
+                  </button>
+                  <button onClick={()=>{setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); navigate('/sell-bitcoin', { state: { selectedCrypto: 'BTC' } });}}
+                    className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${selectedCrypto === 'BTC' ? 'bg-amber-50/80' : 'hover:bg-gray-50'}`}
+                    style={{borderColor:C.g100}}>
                     <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
                       style={{background:'linear-gradient(135deg,#F7931A,#e8830a)'}}>₿</span>
                     <span className="flex-1 min-w-0">
                       <span className="block text-xs font-black" style={{color:C.g800}}>Bitcoin</span>
                       <span className="block text-[10px] font-semibold" style={{color:C.g400}}>BTC</span>
                     </span>
+                    {selectedCrypto === 'BTC' && <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">Active</span>}
                   </button>
-                  <button onClick={()=>{setShowAllCryptoMenu(false); navigate('/sell-usdt');}}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition border-t"
+                  <button onClick={()=>{setSelectedCrypto('USDT'); setShowAllCryptoMenu(false); navigate('/sell-usdt', { state: { selectedCrypto: 'USDT' } });}}
+                    className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${selectedCrypto === 'USDT' ? 'bg-teal-50/80' : 'hover:bg-gray-50'}`}
                     style={{borderColor:C.g100}}>
                     <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
                       style={{background:'#26A17B'}}>₮</span>
@@ -1141,6 +1168,7 @@ export default function SellUSDT({user}) {
                       <span className="block text-xs font-black" style={{color:C.g800}}>Tether</span>
                       <span className="block text-[10px] font-semibold" style={{color:C.g400}}>USDT</span>
                     </span>
+                    {selectedCrypto === 'USDT' && <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-teal-100 text-teal-800">Active</span>}
                   </button>
                 </div>
               </>
@@ -1462,7 +1490,7 @@ export default function SellUSDT({user}) {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 w-full">
             {sorted.map(l=>(
-              <div key={l.id} className="w-full">
+              <div key={l.id} className="w-full h-full flex flex-col">
                 <OfferCard
                   listing={l}
                   usdtPriceUSD={usdtPrice}

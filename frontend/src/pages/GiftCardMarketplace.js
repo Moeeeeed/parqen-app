@@ -371,7 +371,7 @@ function GCCard({listing, btcPriceUSD, onViewSeller, onTrade, featuredType}) {
   const ft = featuredType ? FEATURED[featuredType] : null;
 
   return (
-    <div className={`rounded-2xl overflow-hidden border transition-all w-full min-w-0 hover:-translate-y-0.5 ${ft ? '' : 'shadow-[0_1px_2px_rgba(27,67,50,0.04),0_10px_28px_-14px_rgba(27,67,50,0.18)] hover:shadow-[0_2px_4px_rgba(27,67,50,0.06),0_20px_44px_-16px_rgba(27,67,50,0.28)]'}`}
+    <div className={`rounded-2xl overflow-hidden border transition-all w-full min-w-0 h-full flex flex-col justify-between hover:-translate-y-0.5 ${ft ? '' : 'shadow-[0_1px_2px_rgba(27,67,50,0.04),0_10px_28px_-14px_rgba(27,67,50,0.18)] hover:shadow-[0_2px_4px_rgba(27,67,50,0.06),0_20px_44px_-16px_rgba(27,67,50,0.28)]'}`}
       style={{
         background:   ft?.bgGradient || '#fff',
         borderColor:  ft ? ft.border : C.g200,
@@ -1240,6 +1240,8 @@ export default function GiftCards({user}) {
   const [showBrand,    setShowBrand]    = useState(false);
   const [showCountry,  setShowCountry]  = useState(false);
   const [showAllCryptoMenu, setShowAllCryptoMenu] = useState(false);
+  const [showAssetMenu,     setShowAssetMenu]     = useState(false);
+  const [showSellAssetMenu, setShowSellAssetMenu] = useState(false);
   const [modal,        setModal]        = useState(null);
   const [activeTrades, setActiveTrades] = useState([]);
   const [showAllTrades, setShowAllTrades] = useState(false);
@@ -1552,8 +1554,8 @@ export default function GiftCards({user}) {
                 backgroundColor: '#0D948818',
               }}>
               Gift Cards
-            </button>
-          </div>
+            </Link>
+          ))}
         </div>
       </div>
 
@@ -1907,14 +1909,15 @@ export default function GiftCards({user}) {
         ):(
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-3">
             {filtered.map(l=>(
-              <GCCard
-                key={l.id}
-                listing={l}
-                btcPriceUSD={btcPrice}
-                featuredType={l.id === fastResponderListingId ? 'fast_responder' : undefined}
-                onViewSeller={()=>setModal({seller:l.users||{},listing:l})}
-                onTrade={()=>handleTrade(l.id)}
-              />
+              <div key={l.id} className="w-full h-full flex flex-col">
+                <GCCard
+                  listing={l}
+                  btcPriceUSD={btcPrice}
+                  featuredType={l.id === fastResponderListingId ? 'fast_responder' : undefined}
+                  onViewSeller={()=>setModal({seller:l.users||{},listing:l})}
+                  onTrade={()=>handleTrade(l.id)}
+                />
+              </div>
             ))}
           </div>
         )}
