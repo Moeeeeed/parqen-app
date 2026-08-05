@@ -77,9 +77,15 @@ const CC_NAMES = {
   BR:'Brazil', MX:'Mexico', CO:'Colombia', AR:'Argentina', AU:'Australia', NZ:'New Zealand',
 };
 const ccToName = (cc) => CC_NAMES[cc?.toUpperCase()?.slice(0,2)] || cc || '—';
-// Priority country: KYC → phone → IP geo
-const resolveUserCountry = (u) =>
-  u?.kyc_country || u?.phone_country || u?.country || null;
+// Priority country: stored country (IP geo / manual) → phone dial-code fallback.
+// A VPN can only ever mask IP-based geolocation — there is no way to see a
+// user's true physical location once they're behind one — so when `country`
+// is empty we fall back to the country implied by their phone number's dial
+// code instead of leaving the cell blank.
+const resolveUserCountry = (u) => u?.country || u?.phone_country || null;
+// True when the shown country came from the phone-number fallback rather
+// than a direct geo/manual source — used to add a small "via phone" hint.
+const isCountryFromPhoneFallback = (u) => !u?.country && !!u?.phone_country;
 // Common countries for filter dropdown
 const FILTER_COUNTRIES = [
   {cc:'GH',name:'Ghana'}, {cc:'NG',name:'Nigeria'}, {cc:'KE',name:'Kenya'},
@@ -206,6 +212,36 @@ function StatCard({ icon, label, value, sub, color = C.forest, bg = '#F0FDF4' })
 // ─── Badge pill ───────────────────────────────────────────────
 function Pill({ label, color = '#10B981', bg = '#F0FDF4' }) {
   return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-black" style={{ color, backgroundColor: bg }}>{label}</span>;
+}
+
+// ─── Country cell — shared across every users table so the fallback logic
+// (IP geo → phone dial-code → "no location data") never drifts between them ──
+function CountryCell({ user }) {
+  const cc = resolveUserCountry(user);
+  const viaPhone = isCountryFromPhoneFallback(user);
+  const city = user?.city;
+  if (!cc) {
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: C.g100, color: C.g500 }}
+        title="No IP geolocation, phone dial code, or manual location on file for this user">
+        No location data
+      </span>
+    );
+  }
+  return (
+    <div>
+      <span className="text-sm leading-none">{ccToFlag(cc)}</span>
+      <p className="text-xs font-bold mt-0.5" style={{ color: C.g700 }}>
+        {ccToName(cc)}
+        {viaPhone && (
+          <span className="ml-1 font-semibold" style={{ color: C.g400 }} title="No IP/geo location on file — country inferred from phone dial code">
+            (via phone)
+          </span>
+        )}
+      </p>
+      {city && <p className="text-xs" style={{ color: C.g400 }}>{city}</p>}
+    </div>
+  );
 }
 
 // ─── Section header ───────────────────────────────────────────
@@ -391,6 +427,7 @@ function UsersSection() {
   const [selected, setSelected]   = useState(null);
   const [acting, setActing]       = useState(false);
   const [zoomImg, setZoomImg]     = useState(null);
+  const [geoStats, setGeoStats]   = useState(null);
   const LIMIT = 20;
 
   const load = useCallback(async () => {
@@ -408,6 +445,9 @@ function UsersSection() {
 
   useEffect(() => { setPage(1); }, [search, filter, countryFilter]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    axios.get(`${API_URL}/admin/stats`, { headers: authH() }).then(r => setGeoStats(r.data)).catch(() => {});
+  }, []);
 
   const act = async (id, updates, label) => {
     setActing(true);
@@ -434,6 +474,32 @@ function UsersSection() {
     <div className="space-y-4">
       {zoomImg && <ImageModal src={zoomImg.src} label={zoomImg.label} onClose={() => setZoomImg(null)} />}
       <SectionHead title={`Users (${fmt(total)})`} sub="Manage user accounts, roles, and verification" />
+
+      {/* Location coverage — a VPN can only ever hide IP-based geolocation
+          (there's no way around that), so this tracks how many accounts have
+          *some* location signal (IP geo, or phone dial-code fallback) vs none,
+          rather than promising a location for every user. */}
+      {geoStats && (
+        <div className="bg-white rounded-2xl border p-4 flex items-center gap-4 flex-wrap" style={{ borderColor: C.g200 }}>
+          <div className="flex items-center gap-3 flex-1 min-w-[220px]">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#EFF6FF' }}>
+              <Activity size={20} style={{ color: '#3B82F6' }} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.g400 }}>Location coverage</p>
+              <p className="text-sm font-black" style={{ color: C.g800 }}>
+                {fmt(geoStats.usersWithLocation)} of {fmt(geoStats.totalUsers)} users ({geoStats.locationCoveragePct}%)
+              </p>
+            </div>
+          </div>
+          <div className="flex-1 min-w-[160px]">
+            <div className="w-full h-2 rounded-full overflow-hidden" style={{ backgroundColor: C.g100 }}>
+              <div className="h-full rounded-full" style={{ width: `${geoStats.locationCoveragePct}%`, backgroundColor: geoStats.locationCoveragePct >= 70 ? '#22C55E' : geoStats.locationCoveragePct >= 40 ? '#F59E0B' : '#EF4444' }} />
+            </div>
+            <p className="text-xs mt-1" style={{ color: C.g400 }}>{fmt(geoStats.usersWithoutLocation)} users with no IP geo, phone dial-code, or manual location on file</p>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex gap-2 flex-wrap">
@@ -493,21 +559,7 @@ function UsersSection() {
                           {u.is_admin && <span className="text-xs px-1.5 py-0.5 rounded font-black" style={{ backgroundColor:'#FFFBEB', color:'#92400E' }}>ADMIN</span>}
                         </div>
                       </td>
-                      <td className="px-4 py-3">
-                        {(() => {
-                          const cc = resolveUserCountry(u);
-                          const flag = ccToFlag(cc);
-                          const name = ccToName(cc);
-                          const city = u.city;
-                          return cc ? (
-                            <div>
-                              <span className="text-sm leading-none">{flag}</span>
-                              <p className="text-xs font-bold mt-0.5" style={{ color: C.g700 }}>{name}</p>
-                              {city && <p className="text-xs" style={{ color: C.g400 }}>{city}</p>}
-                            </div>
-                          ) : <span className="text-xs" style={{ color: C.g400 }}>—</span>;
-                        })()}
-                      </td>
+                      <td className="px-4 py-3"><CountryCell user={u} /></td>
                       <td className="px-4 py-3">
                         <Pill label={u.account_status || 'active'}
                           color={u.account_status === 'banned' ? '#991B1B' : u.account_status === 'suspended' ? '#92400E' : '#166534'}
@@ -1250,13 +1302,11 @@ function PhoneVerifSection() {
                     <td className="px-4 py-3">
                       <span className="font-black text-sm px-2 py-1 rounded-lg"
                         style={{ backgroundColor: '#FFFBEB', color: '#92400E' }}>
-                        {u.phone_number}
+                        {u.phone || u.phone_number}
                       </span>
                     </td>
                     {/* Country */}
-                    <td className="px-4 py-3 text-xs font-semibold" style={{ color: C.g600 }}>
-                      {u.country || '—'}
-                    </td>
+                    <td className="px-4 py-3"><CountryCell user={u} /></td>
                     {/* Submitted date */}
                     <td className="px-4 py-3 text-xs" style={{ color: C.g500 }}>
                       {u.submitted_at ? (
@@ -2050,6 +2100,27 @@ function FinanceSection() {
 // ================================================================
 // LISTINGS SECTION
 // ================================================================
+// Clear, unambiguous listing-status pill — ACTIVE gets a pulsing green dot
+// and the explicit words "Live in Market" so it can't be mistaken for the
+// generic ACTIVE/PAUSED/CLOSED text the plain Pill component would show.
+function ListingStatusPill({ status }) {
+  if (status === 'ACTIVE') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-black" style={{ color: '#166534', backgroundColor: '#F0FDF4', border: '1px solid #86EFAC' }}>
+        <span className="relative flex w-1.5 h-1.5 flex-shrink-0">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: '#22C55E' }} />
+          <span className="relative inline-flex rounded-full w-1.5 h-1.5" style={{ backgroundColor: '#22C55E' }} />
+        </span>
+        Live in Market
+      </span>
+    );
+  }
+  if (status === 'PAUSED') {
+    return <Pill label="Paused — hidden from market" color="#92400E" bg="#FFFBEB" />;
+  }
+  return <Pill label="Closed" color="#6B7280" bg="#F3F4F6" />;
+}
+
 function ListingsSection() {
   const [listings, setListings] = useState([]);
   const [total, setTotal]       = useState(0);
@@ -2057,6 +2128,7 @@ function ListingsSection() {
   const [filter, setFilter]     = useState('');
   const [page, setPage]         = useState(1);
   const [acting, setActing]     = useState(false);
+  const [counts, setCounts]     = useState(null);
   const LIMIT = 20;
 
   const load = useCallback(async () => {
@@ -2069,8 +2141,16 @@ function ListingsSection() {
     finally { setLoading(false); }
   }, [filter, page]);
 
+  const loadCounts = useCallback(async () => {
+    try {
+      const r = await axios.get(`${API_URL}/admin/stats`, { headers: authH() });
+      setCounts(r.data);
+    } catch { /* counts are a bonus widget — a failed fetch shouldn't block the table */ }
+  }, []);
+
   useEffect(() => { setPage(1); }, [filter]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadCounts(); }, [loadCounts]);
 
   const toggle = async (id, currentStatus) => {
     setActing(true);
@@ -2078,7 +2158,7 @@ function ListingsSection() {
       const newStatus = currentStatus === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
       await axios.put(`${API_URL}/admin/listings/${id}`, { status: newStatus }, { headers: authH() });
       toast.success(`Listing ${newStatus.toLowerCase()}`);
-      load();
+      load(); loadCounts();
     } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
     finally { setActing(false); }
   };
@@ -2088,13 +2168,29 @@ function ListingsSection() {
     try {
       await axios.delete(`${API_URL}/admin/listings/${id}`, { headers: authH() });
       toast.success('Listing deleted');
-      load();
+      load(); loadCounts();
     } catch (e) { toast.error(e.response?.data?.error || 'Delete failed'); }
   };
 
   return (
     <div className="space-y-4">
       <SectionHead title={`Listings (${fmt(total)})`} sub="Manage marketplace listings" />
+
+      {/* Live-in-market breakdown — answers "how many offers are actually
+          visible to buyers right now" at a glance, before scrolling the table */}
+      {counts && (
+        <div className="grid grid-cols-3 gap-3">
+          <button onClick={() => setFilter('ACTIVE')} className="text-left">
+            <StatCard icon={<Activity size={22} />} label="Live in Market" value={fmt(counts.activeListings)} sub="visible to buyers now" color="#166534" bg="#F0FDF4" />
+          </button>
+          <button onClick={() => setFilter('PAUSED')} className="text-left">
+            <StatCard icon={<Clock size={22} />} label="Paused" value={fmt(counts.pausedListings)} sub="hidden from market" color="#92400E" bg="#FFFBEB" />
+          </button>
+          <button onClick={() => setFilter('CLOSED')} className="text-left">
+            <StatCard icon={<XCircle size={22} />} label="Closed" value={fmt(counts.closedListings)} sub="no longer tradable" color="#6B7280" bg="#F3F4F6" />
+          </button>
+        </div>
+      )}
 
       <div className="flex gap-2">
         <select value={filter} onChange={e => setFilter(e.target.value)}
@@ -2128,7 +2224,7 @@ function ListingsSection() {
                     <td className="px-4 py-3 text-xs font-bold" style={{ color: C.g800 }}>{l.gift_card_brand || l.payment_method || '—'}</td>
                     <td className="px-4 py-3 text-xs font-bold" style={{ color: C.g800 }}>${fmt(l.amount_usd, 0)}</td>
                     <td className="px-4 py-3">
-                      <Pill label={l.status} color={l.status === 'ACTIVE' ? '#166534' : '#92400E'} bg={l.status === 'ACTIVE' ? '#F0FDF4' : '#FFFBEB'} />
+                      <ListingStatusPill status={l.status} />
                     </td>
                     <td className="px-4 py-3 text-xs" style={{ color: C.g400 }}>{fmtDate(l.created_at)}</td>
                     <td className="px-4 py-3">
@@ -3249,7 +3345,7 @@ function NewUsersSection() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-xs font-semibold" style={{ color: C.g600 }}>{u.country || '—'}</td>
+                    <td className="px-4 py-3"><CountryCell user={u} /></td>
                     <td className="px-4 py-3">
                       <span className="text-xs font-black" style={{ color: u.total_trades ? C.success : C.g400 }}>
                         {u.total_trades || 0}
@@ -3469,7 +3565,7 @@ function ActivitySection() {
                       </td>
                       <td className="px-4 py-3 text-xs" style={{ color: C.g400 }}>{fmtAge(u.last_login)}</td>
                       <td className="px-4 py-3 text-xs font-bold" style={{ color: C.g700 }}>{u.total_trades || 0}</td>
-                      <td className="px-4 py-3 text-xs font-semibold" style={{ color: C.g600 }}>{u.country || '—'}</td>
+                      <td className="px-4 py-3"><CountryCell user={u} /></td>
                     </tr>
                   );
                 })}

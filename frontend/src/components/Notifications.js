@@ -34,15 +34,23 @@ const TYPE_PALETTE = {
   system:        { accent: '#1B4332', bg: '#F0FDF4', border: '#D1FAE5', dot: '#2D6A4F' },
 };
 
+// A cancelled trade's `status` column is always CANCELLED — the backend never
+// writes a separate EXPIRED status. The only signal that it auto-expired
+// (vs. someone actually clicking Cancel) is the `cancel_reason` text, so any
+// caller that has it should pass it as the second argument.
+const EXPIRY_REASON_RE = /expir|time limit|payment window/i;
+
 // ── Shared status style helper (reusable in MyTrades & notifications) ──────
-export function getStatusStyle(status) {
+export function getStatusStyle(status, cancelReason) {
   const s = (status || '').toUpperCase();
   if (['ACTIVE','IN_PROGRESS','OPEN','CREATED','PENDING','FUNDS_LOCKED','ESCROW','IN_REVIEW'].includes(s))
     return { bg: '#DBEAFE', color: '#2563EB', label: 'Active' };
   if (['COMPLETED','COMPLETE'].includes(s))
     return { bg: '#DCFCE7', color: '#16A34A', label: 'Completed' };
-  if (['CANCELLED','CANCELED','CANCELLED_BY_BUYER','CANCELLED_BY_SELLER'].includes(s))
+  if (['CANCELLED','CANCELED','CANCELLED_BY_BUYER','CANCELLED_BY_SELLER'].includes(s)) {
+    if (EXPIRY_REASON_RE.test(cancelReason || '')) return { bg: '#F1F5F9', color: '#64748B', label: 'Expired' };
     return { bg: '#FEE2E2', color: '#DC2626', label: 'Cancelled' };
+  }
   if (['DISPUTED','IN_DISPUTE'].includes(s))
     return { bg: '#EDE9FE', color: '#7C3AED', label: 'Dispute' };
   if (s === 'RESOLVED')
@@ -334,7 +342,7 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
   const btcStr   = btcRaw.toFixed(8);
   const pm       = trade.payment_method || '—';
   const st         = (trade.status || '').toUpperCase();
-  const status     = getStatusStyle(st);
+  const status     = getStatusStyle(st, trade.cancel_reason);
   const dateStr    = tradeTimeStr(trade.created_at || n.created_at);
   const isDone     = st === 'COMPLETED' || st === 'COMPLETE';
 

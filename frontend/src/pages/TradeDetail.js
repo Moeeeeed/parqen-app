@@ -9,7 +9,7 @@ import {
   Paperclip, Flag, BadgeCheck, FileText, Copy, Globe,
   ChevronDown, ChevronUp, DollarSign, CreditCard,
 Smartphone, Building2, ThumbsUp, ThumbsDown, Gift, Repeat2, Heart,
-  Bell, Camera, Mail, PartyPopper, Rocket, Unlock, Zap, Stamp,
+  Bell, Camera, Mail, PartyPopper, Rocket, Unlock, Stamp,
   Plus, Image as ImageIcon, File as FileIcon,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -1092,7 +1092,8 @@ export default function TradeDetail({user}) {
   };
 
   const postSys=async(text)=>{
-    try{await axios.post(`${API_URL}/messages`,{tradeId:id,message:text,isSystem:true},{headers:authH()});await loadMessages();}catch{}
+    try{await axios.post(`${API_URL}/messages`,{tradeId:id,message:text,isSystem:true},{headers:authH()});await loadMessages();}
+    catch(e){console.error('[postSys] failed to post system message:',e?.response?.status,e?.response?.data||e?.message);}
   };
 
   const sendMessage=async(e)=>{
@@ -1172,6 +1173,13 @@ export default function TradeDetail({user}) {
       await axios.post(`${API_URL}/trades/${id}/mark-paid`,{},{headers:authH()});
       setPaidAt(Date.now()); // Start the 30-minute dispute cooldown immediately
       toast.success(isGiftCardTrade ? 'Code sent! Waiting for buyer to verify.' : 'Payment confirmed!');
+      // Post this as a real system message in the chat (matches the "Trade
+      // Complete"/"Trade Cancelled" system messages below) instead of only a
+      // floating banner outside the message flow — the isPmt card renderer
+      // in the message list picks this up from the "confirmed payment" text.
+      await postSys(isGiftCardTrade
+        ? 'Seller confirmed sending the gift card code. Buyer: please verify the code, then release Bitcoin.'
+        : `Buyer confirmed payment via ${payMethod}. Seller: please check your account now.`);
       await loadTrade();
     }catch(e){
       // Only unblock auto-cancel if the trade hasn't actually been paid yet
@@ -1762,16 +1770,16 @@ export default function TradeDetail({user}) {
                       style={{
                         color:'#fff',
                         background: isPaid
-                          ? `linear-gradient(135deg,${C.g400},${C.g300})`
+                          ? 'linear-gradient(135deg,#15803D,#22C55E)'
                           : (timeLeft !== null && timeLeft <= 0)
                             ? 'linear-gradient(135deg,#B91C1C,#EF4444)'
                             : urgent
                               ? 'linear-gradient(135deg,#B45309,#F59E0B)'
                               : `linear-gradient(135deg,${C.forest},${C.mint})`,
-                        boxShadow: isPaid ? 'none' : '0 2px 8px rgba(0,0,0,0.18)',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
                       }}>
-                      <Timer size={14}/>
-                      {isPaid ? 'Timer stopped' : (timeLeft !== null && timeLeft <= 0) ? '⏰ Expired' : fmtTimer(timeLeft)}
+                      {isPaid ? <Check size={14}/> : <Timer size={14}/>}
+                      {isPaid ? 'Paid' : (timeLeft !== null && timeLeft <= 0) ? '⏰ Expired' : fmtTimer(timeLeft)}
                     </span>
                   )}
                  <button
@@ -1839,11 +1847,21 @@ export default function TradeDetail({user}) {
                     ? `You are buying ${fmtBtc(btcReceived)} BTC (${sym}${fmt(btcValueInLocal,2)} ${cur}) for ${sym}${fmt(userPays,2)} ${cur} via ${payMethod}. It is now safe for you to pay. You will have ${timeLimit} minutes to make your payment and click on the "PAID" button before the trade expires.`
                     : `You are selling ${fmtBtc(btcReceived)} BTC (${sym}${fmt(btcValueInLocal,2)} ${cur}) for ${sym}${fmt(userPays,2)} ${cur} via ${payMethod}. Wait for the buyer to send payment via ${payMethod}, then confirm it before releasing the Bitcoin. The buyer has ${timeLimit} minutes to pay before the trade expires.`;
                   return(
-                    <div className="flex justify-center px-1">
-                      <div className="w-full max-w-[95%] rounded-2xl p-4" style={{backgroundColor:'#E9EDEF', border:`1px solid ${C.g200}`}}>
-                        <p className="text-sm font-black mb-1.5" style={{color:'#1E293B'}}>System message</p>
-                        <p className="text-sm leading-relaxed" style={{color:'#334155'}}>{sysText}</p>
-                        <p className="text-xs font-semibold mt-2.5" style={{color:'#64748B'}}>{openedLabel}</p>
+                    <div className="flex justify-center my-3 px-1">
+                      {/* Same header-bar treatment as the other system event cards below
+                          (TRADE OPEN colors) — a distinct card shape + dark-green header,
+                          not just a font color, so it never reads as a regular chat bubble. */}
+                      <div className="w-full max-w-[95%] rounded-2xl overflow-hidden shadow-lg">
+                        <div className="flex items-center gap-2.5 px-3.5 py-2" style={{background:'linear-gradient(135deg,#0c1a10,#1B4332)'}}>
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{backgroundColor:'#D1FAE5'}}>
+                            <Lock size={16} style={{color:'#1B4332'}}/>
+                          </div>
+                          <span className="text-xs font-black tracking-widest flex-1" style={{color:'rgba(255,255,255,0.85)',letterSpacing:'0.08em'}}>TRADE OPEN</span>
+                          <span className="text-xs font-semibold" style={{color:'rgba(255,255,255,0.5)'}}>{openedLabel}</span>
+                        </div>
+                        <div className="px-4 py-3" style={{background:'rgba(27,67,50,0.04)'}}>
+                          <p className="text-sm leading-relaxed" style={{color:'#166534'}}>{sysText}</p>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1872,47 +1890,20 @@ export default function TradeDetail({user}) {
                     const isOpen   =/trade.*open|escrow.*lock|btc.*locked|opened/i.test(text);
                     const isDisp   =/disput|moderator|support.*review/i.test(text);
 
-                    /* ── PAYMENT CONFIRMED — hero card ─────────────────── */
+                    /* ── PAYMENT CONFIRMED — simple green system message ── */
                     if(isPmt) return(
-                      <div key={i} className="flex justify-center my-4 px-1">
-                        <div className="w-full max-w-[95%] rounded-2xl overflow-hidden"
-                          style={{
-                            background:'linear-gradient(145deg,#1E3A5F,#1D4ED8,#2563EB)',
-                            boxShadow:'0 0 0 2px #93C5FD, 0 8px 32px rgba(37,99,235,0.55)',
-                            animation:'pmtPulse 2.4s ease-in-out infinite',
-                          }}>
-                          {/* top bar */}
-                          <div className="flex items-center justify-between px-4 py-2.5"
-                            style={{borderBottom:'1px solid rgba(255,255,255,0.15)'}}>
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-                                style={{background:'rgba(255,255,255,0.18)',border:'1.5px solid rgba(255,255,255,0.35)'}}>
-                                <Clock size={18} style={{color:'#fff'}}/>
-                              </div>
-                              <span className="font-black text-white text-xs tracking-[0.15em] uppercase">Payment Confirmed</span>
-                            </div>
-                            <span className="text-xs font-semibold" style={{color:'rgba(255,255,255,0.6)'}}>{ts}</span>
-                          </div>
-                          {/* body */}
-                          <div className="px-4 py-3" style={{background:'rgba(255,255,255,0.97)'}}>
-                            <p className="text-sm font-black leading-snug" style={{color:'#1D4ED8'}}>{text}</p>
-                            <div className="mt-2.5 px-3 py-2 rounded-xl text-xs font-black"
-                              style={{
-                                background: isSeller
-                                  ? 'rgba(37,99,235,0.10)'
-                                  : 'rgba(37,99,235,0.06)',
-                                color:'#1E40AF',
-                                border:'1px solid rgba(37,99,235,0.25)',
-                              }}>
-                              {isBuyer
-                                ? 'You marked payment sent. Awaiting seller confirmation.'
-                                : isSeller
-                                  ? <><Zap size={14} style={{display:'inline'}}/> ACTION REQUIRED — Check your account now, then release Bitcoin.</>
-                                  : 'Payment step confirmed.'}
-                            </div>
-                          </div>
+                      <div key={i} className="flex justify-center my-3 px-1">
+                        <div className="w-full max-w-[95%] rounded-2xl p-4" style={{backgroundColor:'#F0FDF4', border:'1px solid #86EFAC'}}>
+                          <p className="text-sm font-black mb-1.5" style={{color:'#15803D'}}>System message</p>
+                          <p className="text-sm leading-relaxed font-semibold" style={{color:'#166534'}}>
+                            {isBuyer
+                              ? 'Partner is now verifying your payment. Once partner confirms the payment, funds will be sent to you.'
+                              : isSeller
+                                ? <>Buyer confirmed payment via {payMethod}. Check your account — if received, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Payment not received? Open a dispute so a moderator can help.</>
+                                : text}
+                          </p>
+                          <p className="text-xs font-semibold mt-2.5" style={{color:'#4D7C0F'}}>{ts}</p>
                         </div>
-                        <style>{`@keyframes pmtPulse{0%,100%{box-shadow:0 0 0 2px #93C5FD,0 8px 32px rgba(37,99,235,0.55);}50%{box-shadow:0 0 0 3px #60A5FA,0 12px 40px rgba(37,99,235,0.75);}}`}</style>
                       </div>
                     );
 
@@ -2190,7 +2181,9 @@ export default function TradeDetail({user}) {
                 <div ref={msgEnd}/>
               </div>
 
-              {/* ── Payment confirmed banner — pinned above input (desktop only; moves to Actions tab on mobile) ── */}
+              {/* ── Payment confirmed banner — pinned above input (desktop only; moves to Actions tab on mobile) ──
+                   Restored: driven directly by trade.status (isPaid), not by whether a chat
+                   message successfully posted, so it always shows regardless of the message bug. ── */}
               {isActive&&isPaid&&(
                 <div className="hidden md:block flex-shrink-0 mx-3 mb-2 rounded-xl overflow-hidden"
                   style={{border:'2px solid #2563EB',boxShadow:'0 2px 12px rgba(37,99,235,0.20)'}}>

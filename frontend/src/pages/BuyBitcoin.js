@@ -390,7 +390,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
                   countryCode={u?.country_code || u?.country || u?.location || null}
                   className="w-4 h-3 rounded-sm flex-shrink-0"/>
                 <button onClick={onViewSeller}
-                  className="font-black text-sm hover:underline leading-tight truncate"
+                  className="font-black text-sm hover:underline leading-tight truncate min-w-0"
                   style={{color:C.g800}}>
                   {getDisplayName(u) || 'Seller'}
                 </button>

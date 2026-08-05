@@ -48,9 +48,19 @@ const STATUS_MAP = {
   PAID:         {label:'Payment Sent',    short:'Paid',      color:C.paid,    bg:`${C.paid}15`,    dot:C.paid,     urgent:true},
   COMPLETED:    {label:'Completed',       short:'Done',      color:C.success, bg:`${C.success}15`, dot:C.success,  urgent:false},
   CANCELLED:    {label:'Cancelled',       short:'Cancelled', color:C.g500,    bg:`${C.g100}`,      dot:C.g400,     urgent:false},
+  EXPIRED:      {label:'Expired',        short:'Expired',   color:C.g500,    bg:`${C.g100}`,      dot:C.g400,     urgent:false},
   DISPUTED:     {label:'Disputed',        short:'Dispute',   color:C.danger,  bg:`${C.danger}15`,  dot:C.danger,   urgent:true},
 };
-const getStatus = s => STATUS_MAP[s?.toUpperCase()]||STATUS_MAP.CREATED;
+// The trades table only ever stores status=CANCELLED — auto-expiry never gets
+// its own status value, it's only distinguishable via the cancel_reason text.
+// Pass the trade's cancel_reason as the 2nd arg so an expired trade shows
+// "Expired" instead of being indistinguishable from a real user cancellation.
+const EXPIRY_REASON_RE = /expir|time limit|payment window/i;
+const getStatus = (s, cancelReason) => {
+  const key = s?.toUpperCase();
+  if (key === 'CANCELLED' && EXPIRY_REASON_RE.test(cancelReason || '')) return STATUS_MAP.EXPIRED;
+  return STATUS_MAP[key] || STATUS_MAP.CREATED;
+};
 
 // Only real DB statuses — excludes COMPLETED and CANCELLED
 const isActive = s => ['CREATED','FUNDS_LOCKED','PAYMENT_SENT','PAID','DISPUTED'].includes((s||'').toUpperCase());
@@ -72,7 +82,7 @@ function StatCard({icon:Icon, label, value, color, sub}) {
 // ─── Active trade alert banner ──────────────────────────────────────────────
 function ActiveAlert({trade, userId, onDismiss, onExpire}) {
   const isBuyer    = String(userId)===String(trade.buyer_id);
-  const st         = getStatus(trade.status);
+  const st         = getStatus(trade.status, trade.cancel_reason);
   const cp         = isBuyer ? trade.seller : trade.buyer;
   const payMethod  = trade.payment_method||'Mobile Money';
   const cur        = trade.local_currency||trade.currency||trade.listing?.currency||'GHS';
@@ -164,7 +174,7 @@ function ActiveAlert({trade, userId, onDismiss, onExpire}) {
                   {isGift?'🎁 GIFT CARD':isBuyer?'🛒 YOU ARE BUYING':'💰 YOU ARE SELLING'}
                 </span>
                 <span className="text-xs font-black px-2 py-0.5 rounded-full"
-                  style={{backgroundColor:getStatusStyle(trade.status).bg,color:getStatusStyle(trade.status).color}}>{st.label}</span>
+                  style={{backgroundColor:getStatusStyle(trade.status, trade.cancel_reason).bg,color:getStatusStyle(trade.status, trade.cancel_reason).color}}>{st.label}</span>
                 <span className="text-xs font-mono" style={{color:C.g400}}>
                   #{String(trade.id||'').slice(0,8).toUpperCase()}
                 </span>
@@ -230,7 +240,7 @@ function ActiveAlert({trade, userId, onDismiss, onExpire}) {
 // ─── Trade row card ─────────────────────────────────────────────────────────
 function TradeCard({trade, userId}) {
   const isBuyer  = String(userId)===String(trade.buyer_id);
-  const st       = getStatus(trade.status);
+  const st       = getStatus(trade.status, trade.cancel_reason);
   const cp       = isBuyer ? trade.seller : trade.buyer;
   const active   = isActive(trade.status);
   const isGift   = tradeTypeOf(trade)==='gift';
@@ -262,7 +272,7 @@ function TradeCard({trade, userId}) {
         </span>
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold px-2 py-0.5 rounded-full"
-            style={{backgroundColor:getStatusStyle(trade.status).bg,color:getStatusStyle(trade.status).color}}>{st.short}</span>
+            style={{backgroundColor:getStatusStyle(trade.status, trade.cancel_reason).bg,color:getStatusStyle(trade.status, trade.cancel_reason).color}}>{st.short}</span>
           <span className="text-xs font-mono" style={{color:C.g400}}>
             #{String(trade.id||'').slice(0,8).toUpperCase()}
           </span>
@@ -337,7 +347,7 @@ function ActiveTradeModal({ trades, userId, onClose }) {
         <div className="overflow-y-auto flex-1 p-4 space-y-3">
           {trades.map(trade=>{
             const isBuyer  = String(userId)===String(trade.buyer_id);
-            const st       = getStatus(trade.status);
+            const st       = getStatus(trade.status, trade.cancel_reason);
             const cp       = isBuyer ? trade.seller : trade.buyer;
             const cpName   = cp?.username||(isBuyer?trade.seller_name:trade.buyer_name)||'—';
             const cpFlag   = flag(cp?.country_code||trade.listing?.country_code||'');
@@ -389,7 +399,7 @@ function ActiveTradeModal({ trades, userId, onClose }) {
                   <div className="flex justify-between text-xs">
                     <span style={{color:C.g500}}>📊 Status</span>
                     <span className="font-bold px-2 py-0.5 rounded-full"
-                      style={{backgroundColor:getStatusStyle(trade.status).bg,color:getStatusStyle(trade.status).color}}>{st.label}</span>
+                      style={{backgroundColor:getStatusStyle(trade.status, trade.cancel_reason).bg,color:getStatusStyle(trade.status, trade.cancel_reason).color}}>{st.label}</span>
                   </div>
                 </div>
 

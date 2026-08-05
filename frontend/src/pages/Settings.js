@@ -441,7 +441,7 @@ export default function Settings({ user, setUser }) {
   // Preferences — lazy-init from localStorage
   const [prefs, setPrefs] = useState(() => ({
     nameDisplay: localStorage.getItem("praqen_name_display") || "full",
-    currency: localStorage.getItem("praqen_currency") || "GHS",
+    currency: localStorage.getItem("praqen_currency") || "USD",
     language: localStorage.getItem("praqen_language") || "en",
     timezone: localStorage.getItem("praqen_timezone") || "Africa/Accra",
   }));

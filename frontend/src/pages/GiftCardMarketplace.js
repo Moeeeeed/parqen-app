@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import { useRates } from '../contexts/RatesContext';
 import { useNavigate, Link } from 'react-router-dom';
 import SEO from '../components/SEO';
@@ -10,8 +10,8 @@ import {
   Home, Wallet, User, Gift, Bitcoin,
   ChevronDown, CreditCard, ThumbsUp, ThumbsDown, Repeat2,
   Phone, Mail, Ban, ArrowUp, ArrowDown,
-  Zap, Lock, Users, TrendingUp, Award, Sparkles, Check, ShieldCheck,
-  Crown, Star, MessageSquare, Wifi, Coins
+  Zap, Users, TrendingUp, Award, Sparkles, ShieldCheck,
+  Crown, Star, MessageSquare, Wifi, Coins, Trophy
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
@@ -348,7 +348,6 @@ function Avatar({ user, size = 48, radius = 'rounded-xl' }) {
 function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   const { rates: USD_RATES } = useRates();
   const u = getUser(listing.users);
-  const badge = deriveBadge(u);
   const [seen, setSeen] = useState(() => getLastSeen(u));
   useEffect(() => {
     const id = setInterval(() => setSeen(getLastSeen(u)), 30000);
@@ -376,21 +375,21 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   const btcOut = refUSD / rateUSD;
   const receiveUSD = btcOut * btcPriceUSD;
 
-  const marginLabel = margin === 0 ? 'Market rate' : margin > 0 ? `+${margin}% above market` : `${Math.abs(margin)}% below market`;
-  const marginBg = margin > 10 ? C.danger : margin > 0 ? C.warn : C.success;
+  const rangeLabel = !cardRange ? 'Any value'
+    : cardRange[0]?.isRange ? `$${cardRange[0].min} – $${cardRange[0].max}`
+    : cardRange.map(v => `$${v}`).join(' | ');
 
   const pos = parseInt(u.positive_feedback || 0);
   const neg = parseInt(u.negative_feedback || 0);
 
-  const pmLabel = listing.payment_method || 'Payment';
+  const brandLabel = /card/i.test(brand) ? brand.toUpperCase() : `${brand.toUpperCase()} CARD`;
   const ft = featuredType ? FEATURED[featuredType] : null;
 
   return (
-    <div className={`rounded-2xl overflow-hidden border transition-all w-full min-w-0 hover:-translate-y-0.5 ${ft ? '' : 'shadow-[0_1px_2px_rgba(27,67,50,0.04),0_10px_28px_-14px_rgba(27,67,50,0.18)] hover:shadow-[0_2px_4px_rgba(27,67,50,0.06),0_20px_44px_-16px_rgba(27,67,50,0.28)]'}`}
+    <div className={`rounded-2xl overflow-hidden transition-all w-full hover:-translate-y-0.5 ${ft ? '' : 'shadow-[0_1px_2px_rgba(27,67,50,0.04),0_10px_28px_-14px_rgba(27,67,50,0.18)] hover:shadow-[0_2px_4px_rgba(27,67,50,0.06),0_20px_44px_-16px_rgba(27,67,50,0.28)]'}`}
       style={{
-        background: ft?.bgGradient || '#fff',
-        borderColor: ft ? ft.border : C.g200,
-        borderWidth: ft ? '2.5px' : '1px',
+        background: ft?.bgGradient || (ft ? ft.bg : '#fff'),
+        border: ft ? `2.5px solid ${ft.border}` : `1px solid ${C.g200}`,
         boxShadow: ft ? `0 0 0 3px ${ft.glow}, 0 10px 36px ${ft.glow}` : undefined,
         animation: ft?.pulse ? (featuredType === 'fast_responder' ? 'fastResponderPulse 2.5s ease-in-out infinite' : 'featuredPulse 2.5s ease-in-out infinite') : undefined,
       }}>
@@ -416,108 +415,78 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
       )}
 
       {/* ─ Seller row ────────────────────────────────────────────── */}
-      <div className="px-4 pt-3 pb-2">
-        <div className="flex items-start gap-2">
+      <div className="px-3.5 pt-3 pb-2">
+        <div className="flex items-start justify-between gap-2">
+          {/* Left section: Avatar + Username & Like/Dislike/Trades */}
+          <div className="flex items-start gap-2.5 min-w-0 flex-1">
+            <div className="relative flex-shrink-0">
+              <button onClick={onViewSeller}>
+                <Avatar user={u} size={40} radius="rounded-xl" />
+              </button>
+              {seen.online && (
+                <span className="absolute -bottom-0.5 -right-0.5">
+                  <span className="absolute inline-flex w-3 h-3 rounded-full animate-ping"
+                    style={{ backgroundColor: C.online, opacity: 0.6 }} />
+                  <span className="relative inline-flex rounded-full w-3 h-3 border-2 border-white"
+                    style={{ backgroundColor: C.online }} />
+                </span>
+              )}
+            </div>
 
-          {/* Avatar + online */}
-          <div className="relative flex-shrink-0">
-            <button onClick={onViewSeller}>
-              <Avatar user={u} size={48} radius="rounded-xl" />
-            </button>
-            {seen.online && (
-              <span className="absolute -bottom-0.5 -right-0.5">
-                <span className="absolute inline-flex w-3.5 h-3.5 rounded-full animate-ping"
-                  style={{ backgroundColor: C.online, opacity: 0.6 }} />
-                <span className="relative inline-flex w-3.5 h-3.5 rounded-full border-2 border-white"
-                  style={{ backgroundColor: C.online }} />
-              </span>
-            )}
+            <div className="flex flex-col gap-0.5 items-start min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <CountryFlag
+                  countryCode={u?.country_code || u?.country || u?.location || null}
+                  className="w-4 h-3 rounded-sm flex-shrink-0" />
+                <button onClick={onViewSeller}
+                  className="font-black text-sm hover:underline leading-tight truncate min-w-0"
+                  style={{ color: C.g800 }}>
+                  {getDisplayName(u) || 'Seller'}
+                </button>
+                {isVerified(u) && <BadgeCheck size={14} style={{ color: '#3B82F6', flexShrink: 0 }} />}
+              </div>
+
+              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                <span className="inline-flex items-center gap-0.5 font-bold flex-shrink-0"
+                  style={{ color: '#16A34A', fontSize: '11px' }}>
+                  <ThumbsUp size={10} strokeWidth={2.5} />{fmt(pos)}
+                </span>
+                <span className="inline-flex items-center gap-0.5 font-bold flex-shrink-0"
+                  style={{ color: '#EF4444', fontSize: '11px' }}>
+                  <ThumbsDown size={10} strokeWidth={2.5} />{fmt(neg)}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold flex-shrink-0" style={{ color: C.g500 }}>
+                  <Repeat2 size={10} strokeWidth={2.5} style={{ color: C.g400 }} />
+                  {fmt(trades)} trades
+                </span>
+              </div>
+            </div>
           </div>
 
-        {/* Name + badge + stats */}
-<div className="flex-1 min-w-0 overflow-hidden">
-  <div className="flex items-start justify-between gap-2">
-
-    {/* Left column: name row + stats row stacked together, tight, independent of right column height */}
-    <div className="flex flex-col min-w-0 flex-1">
-      <div className="flex items-center gap-1.5 min-w-0">
-        <CountryFlag
-          countryCode={u?.country_code || u?.country || u?.location || null}
-          className="w-4 h-3 rounded-sm flex-shrink-0" />
-        <button onClick={onViewSeller}
-          className="font-bold text-sm hover:underline leading-tight truncate"
-          style={{ color: C.g800 }}>
-          {getDisplayName(u) || 'Seller'}
-        </button>
-        {isVerified(u) && <BadgeCheck size={14} style={{ color: '#3B82F6', flexShrink: 0 }} />}
-      </div>
-
-      {/* Stats row — placed directly after the name, no gap, stays on one line */}
-      <div className="flex items-center flex-nowrap gap-2 mt-0 leading-none">
-        <span className="inline-flex items-center gap-1 text-xs font-bold flex-shrink-0" style={{ color: '#16A34A' }}>
-          <ThumbsUp size={12} strokeWidth={2.5} />{fmt(pos)}
-        </span>
-        <span className="inline-flex items-center gap-1 text-xs font-bold flex-shrink-0" style={{ color: '#DC2626' }}>
-          <ThumbsDown size={12} strokeWidth={2.5} />{fmt(neg)}
-        </span>
-        <span className="inline-flex items-center gap-1 text-xs font-bold flex-shrink-0 whitespace-nowrap" style={{ color: C.g600 }}>
-          <Repeat2 size={12} strokeWidth={2.5} />{fmt(trades)} trades
-        </span>
-      </div>
-    </div>
-
-    {/* Right: badge (with icon) + last-seen, stacked */}
-    <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
-      <span className={`inline-flex items-center gap-1 font-medium px-2 py-0.5 rounded-full border whitespace-nowrap ${badge.animate ? 'shadow-md' : ''}`}
-        style={{ background: badge.bg, borderColor: badge.borderColor, fontSize: 11, boxShadow: badge.glow ? `0 0 8px ${badge.glow}` : undefined }}>
-        <Shield size={10} style={{ color: badge.iconColor || badge.textColor }} />
-        <span style={{ color: badge.textColor }}>{badge.label}</span>
-      </span>
-      {seen.online ? (
-        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-bold"
-          style={{ backgroundColor: '#F0FDF4', color: C.online }}>
-          <span className="relative flex w-1.5 h-1.5 flex-shrink-0">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: C.online }} />
-            <span className="relative inline-flex rounded-full w-1.5 h-1.5" style={{ backgroundColor: C.online }} />
-          </span>
-          Active
-        </span>
-      ) : (
-        <span className="text-xs font-medium whitespace-nowrap" style={{ color: C.g400 }}>
-          {seen.label}
-        </span>
-      )}
-    </div>
-  </div>
-
-  {/* Card brand + type */}
-  <div className="mt-2 flex items-center gap-2 flex-wrap">
-    <span className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl min-w-0 max-w-full"
-      style={{
-        backgroundColor: ft ? `${ft.border}18` : `${C.accent}14`,
-        border: `1px solid ${ft ? `${ft.border}30` : `${C.accent}30`}`,
-      }}>
-      <span className="text-[11px] font-semibold leading-snug flex-shrink-0" style={{ color: ft ? ft.labelColor : C.g500 }}>Seller accepts</span>
-      <span className="text-xs font-bold leading-snug tracking-wide truncate" style={{ color: ft ? ft.labelColor : C.accent, maxWidth: '130px' }}>
-        {/card/i.test(brand) ? brand.toUpperCase() : `${brand.toUpperCase()} CARD`}
-      </span>
-    </span>
-    <div className="flex items-center gap-1 flex-wrap">
-      {(cardType === 'physical' || cardType === 'both') && (
-        <span className="inline-flex items-center font-bold rounded-full"
-          style={{ backgroundColor: '#DCFCE7', color: '#166534', fontSize: 11, padding: '2px 8px' }}>
-          Physical
-        </span>
-      )}
-      {(cardType === 'ecode' || cardType === 'both') && (
-        <span className="inline-flex items-center font-bold rounded-full"
-          style={{ backgroundColor: '#EDE9FE', color: '#5B21B6', fontSize: 11, padding: '2px 8px' }}>
-          E-Code
-        </span>
-      )}
-    </div>
-  </div>
-</div>
+          {/* Right section: Stacked BadgeChip & Active status pill */}
+          <div className="flex flex-col gap-1 items-end flex-shrink-0 pt-0.5">
+            <div>
+              <BadgeChip user={u} size="xs" />
+            </div>
+            <div>
+              {seen.online ? (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold flex-shrink-0"
+                  style={{ backgroundColor: '#F0FDF4', color: C.online }}>
+                  <span className="relative flex w-1.5 h-1.5 flex-shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: C.online }} />
+                    <span className="relative inline-flex rounded-full w-1.5 h-1.5" style={{ backgroundColor: C.online }} />
+                  </span>
+                  Active
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium flex-shrink-0"
+                  style={{ backgroundColor: C.g100, color: C.g400 }}>
+                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: C.g300 }} />
+                  {seen.label}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -525,63 +494,115 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
       <div style={{ height: 1, backgroundColor: ft ? ft.divider : C.g100 }} />
 
       {/* ─ You Give / You Receive ────────────────────────────────── */}
-      <div className="px-3 py-3.5 grid grid-cols-2 gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-bold uppercase tracking-wide mb-0.5" style={{ color: C.g500 }}>You give</p>
-          <p className="text-xl font-black leading-tight truncate" style={{ color: C.g800 }}>{youGive.val}</p>
-          <p className="text-xs font-semibold mt-0.5" style={{ color: C.g400 }}>Card</p>
+      <div className="px-3.5 py-2.5 grid grid-cols-2 gap-2.5">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-wide mb-0.5" style={{ color: ft ? ft.labelColor : C.g500 }}>You give</p>
+          <p className="text-base font-bold leading-tight" style={{ color: C.g800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '4px' }}>
+            {youGive.val}
+          </p>
+          <p className="text-[10px] font-semibold mt-0.5" style={{ color: C.g500 }}>{youGive.sub}</p>
         </div>
-        <div className="border-l pl-3 min-w-0" style={{ borderColor: C.g100 }}>
-          <p className="text-xs font-bold uppercase tracking-wide mb-0.5" style={{ color: C.g500 }}>You receive</p>
-          <p className="text-xl font-black leading-tight truncate" style={{ color: C.g800 }}>
+        <div className="border-l pl-3" style={{ borderColor: ft ? ft.divider : C.g100 }}>
+          <p className="text-[11px] font-bold uppercase tracking-wide mb-0.5" style={{ color: ft ? ft.labelColor : C.g500 }}>You receive</p>
+          <p className="text-base font-bold leading-tight" style={{ color: C.g800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '4px' }}>
             ${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}
           </p>
           <div className="flex items-center gap-1.5 mt-0.5">
-            <span className="flex items-center justify-center rounded-full flex-shrink-0"
-              style={{ width: 16, height: 16, backgroundColor: `${C.gold}22`, border: `1px solid ${C.gold}55`, color: '#B4790A', fontSize: 11, fontWeight: 700 }}>
-              ₿
-            </span>
-            <p className="text-xs font-semibold truncate" style={{ color: '#B4790A' }}>{fBtc(btcOut)}</p>
+            <p className="text-[10px] font-semibold" style={{ color: C.g500 }}>
+              ≈ {fBtc(btcOut)} BTC
+            </p>
           </div>
-          <span className="inline-flex items-center gap-1 mt-1.5 font-bold px-1.5 py-0.5 rounded-md"
-            style={{ backgroundColor: `${marginBg}18`, color: marginBg, fontSize: 11 }}>
-            {margin > 0 ? <ArrowUp size={8} strokeWidth={3.5} /> : margin < 0 ? <ArrowDown size={8} strokeWidth={3.5} /> : null}
-            {marginLabel}
-          </span>
         </div>
       </div>
 
-      {/* ─ Denominations ────────────────────────────────────────── */}
-      <div className="px-4 pb-2">
-        <p className="font-semibold mb-0.5" style={{ color: C.g400, fontSize: 11 }}>Available range</p>
-        {!cardRange ? (
-          <span className="text-xs font-bold" style={{ color: C.g400 }}>Any Value</span>
-        ) : cardRange[0]?.isRange ? (
-          <span className="text-xs font-bold" style={{ color: C.forest }}>
-            ${cardRange[0].min} – ${cardRange[0].max}
+      {/* Brand + card type pills above the divider line */}
+      <div className="px-3.5 pt-1 pb-2 flex items-center gap-1.5 flex-wrap">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold"
+          style={{ backgroundColor: 'rgba(13,148,136,0.08)', color: C.accent, border: '1px solid rgba(13,148,136,0.15)' }}>
+          {brandLabel}
+        </span>
+        {(cardType === 'physical' || cardType === 'both') && (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold" style={{ backgroundColor: '#DCFCE7', color: '#166534' }}>
+            Physical
           </span>
-        ) : (
-          <p className="text-xs font-bold" style={{ color: C.forest }}>
-            {cardRange.map((v, i) => (
-              <span key={v}>
-                {i > 0 && <span style={{ color: C.g300 }}> | </span>}
-                ${v}
-              </span>
-            ))}
-          </p>
+        )}
+        {(cardType === 'ecode' || cardType === 'both') && (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold" style={{ backgroundColor: '#EDE9FE', color: '#5B21B6' }}>
+            E-Code
+          </span>
         )}
       </div>
 
+      <div className="px-3.5 pb-2.5" style={{ borderTop: `1px solid ${ft ? ft.divider : C.g100}` }}>
+        {/* ── Rate / % / Range — grey info board ───── */}
+        <div className="group relative mt-1">
+          <div className="rounded-xl px-2.5 py-2 flex items-center justify-between transition-colors"
+            style={{ backgroundColor: C.g100, border: `1px solid ${C.g200}` }}>
+
+            <div className="min-w-0">
+              <p className="text-xs font-semibold" style={{ color: C.g600 }}>
+                Rate:&nbsp;<span style={{ color: C.g800, fontWeight: 700 }}>{fmt(rateLocal)}</span>&nbsp;<span style={{ color: C.g500, fontSize: '0.85em' }}>{cur}</span>
+              </p>
+              <p className="text-xs font-semibold mt-1 truncate" style={{ color: C.g600, maxWidth: 190 }}>
+                Range:&nbsp;<span style={{ color: C.g700, fontWeight: 700 }}>{rangeLabel}</span>
+              </p>
+            </div>
+
+            <div className="flex items-center flex-shrink-0 ml-4 mr-6">
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[11px] font-black"
+                style={{
+                  backgroundColor: margin < 0 ? 'rgba(16,185,129,0.14)' : margin > 0 ? 'rgba(239,68,68,0.12)' : '#E2E8F0',
+                  color: margin < 0 ? '#16A34A' : margin > 0 ? '#EF4444' : C.g500,
+                  border: margin < 0 ? '1px solid rgba(16,185,129,0.25)' : margin > 0 ? '1px solid rgba(239,68,68,0.25)' : `1px solid ${C.g300}`,
+                }}>
+                {margin === 0 ? 'Market' : `${margin > 0 ? '+' : ''}${margin}%`}
+              </span>
+            </div>
+          </div>
+
+          {/* Tooltip — visible on hover */}
+          <div className="absolute bottom-full left-0 right-0 mb-3 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity"
+            style={{ zIndex: 20 }}>
+            <div className="rounded-xl shadow-2xl border p-3 text-xs"
+              style={{ backgroundColor: '#1E293B', borderColor: '#334155', color: '#E2E8F0', position: 'relative' }}>
+              <p className="font-black text-[10px] uppercase tracking-wider mb-2" style={{ color: '#64748B' }}>Offer Details</p>
+              <div className="flex items-center justify-between mb-1.5">
+                <span style={{ color: '#94A3B8' }}>Rate</span>
+                <span className="font-bold" style={{ color: '#F0FAF5' }}>{fmt(rateLocal)} {cur}</span>
+              </div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span style={{ color: '#94A3B8' }}>Margin</span>
+                <span className="font-bold"
+                  style={{ color: margin < 0 ? '#4ADE80' : margin > 0 ? '#F87171' : '#94A3B8' }}>
+                  {margin === 0 ? 'Market rate' : `${margin > 0 ? '+' : ''}${margin}%`}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span style={{ color: '#94A3B8' }}>Range</span>
+                <span className="font-bold" style={{ color: '#F0FAF5' }}>{rangeLabel}</span>
+              </div>
+              <div style={{ position: 'absolute', bottom: '-5px', left: '20px', width: 10, height: 10, backgroundColor: '#1E293B', border: '1px solid #334155', borderTop: 'none', borderLeft: 'none', transform: 'rotate(45deg)' }} />
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* ─ Actions ───────────────────────────────────────────────── */}
-      <div className="px-4 pb-3 flex items-center gap-2">
+      <div className="px-3.5 pb-3 flex items-center gap-2">
         <button onClick={onViewSeller}
-          className="w-10 h-11 rounded-xl border flex items-center justify-center flex-shrink-0 hover:bg-gray-50 transition"
-          style={{ borderColor: ft ? ft.border : C.g200, backgroundColor: ft ? `${ft.border}12` : 'transparent' }}>
+          className="w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 transition"
+          style={{
+            borderColor: ft ? ft.border : C.g200,
+            backgroundColor: ft ? `${ft.border}12` : 'transparent',
+          }}>
           <Info size={14} style={{ color: ft ? ft.border : C.g400 }} />
         </button>
         <button onClick={onTrade}
-          className="flex-1 h-11 rounded-xl text-white font-black text-base flex items-center justify-center gap-1.5 hover:opacity-90 transition active:scale-[0.98]"
-          style={{ background: C.forest }}>
+          className="flex-1 h-9 rounded-xl text-white font-black text-sm flex items-center justify-center gap-1.5 hover:opacity-90 active:scale-[0.98] transition"
+          style={{
+            background: ft ? ft.btnGradient : C.forest,
+            boxShadow: ft ? ft.btnShadow : undefined,
+          }}>
           TRADE <ArrowRight size={14} />
         </button>
       </div>
@@ -1045,238 +1066,6 @@ function SkeletonCard() {
   );
 }
 
-// ── Affiliate promo card ──────────────────────────────────────────────────────
-// Single accent color throughout (C.accent / C.forest), a real stepper for the
-// welcome bonus, and a one-hue commission ramp instead of a five-color mix.
-const AFF_TIERS = [
-  { refs: '0–9', rate: '0.20%' },
-  { refs: '10–24', rate: '0.25%' },
-  { refs: '25–49', rate: '0.35%' },
-  { refs: '50–99', rate: '0.40%' },
-  { refs: '100+', rate: '0.50%' },
-];
-const AFF_BADGE_COLORS = { BEGINNER: C.g500, PRO: C.accent, EXPERT: C.forest, AMBASSADOR: C.accent, LEGEND: C.gold };
-
-function AffiliatePromoCard({ navigate, btcPrice, affLeaderboard }) {
-  const step = 1; // 0 = registered, 1 = verify (current), 2 = trade complete
-  const STEPS = [
-    { label: 'Register', sub: '$1 unlocked' },
-    { label: 'Verify identity', sub: 'keeps your funds safe' },
-    { label: 'Complete 1 trade', sub: '$2 unlocked' },
-  ];
-
-  return (
-    <div style={{ background: '#fff', borderRadius: C.cardRadius, border: `1px solid ${C.g200}`, overflow: 'hidden' }}>
-
-      {/* ── Welcome bonus ─────────────────────────────────────────── */}
-      <div style={{ padding: '18px 16px', borderBottom: `1px solid ${C.g100}` }}>
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-start gap-3">
-            <div style={{
-              width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-              background: C.mist, border: `1px solid ${C.accent}30`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Gift size={17} style={{ color: C.accent }} />
-            </div>
-            <div>
-              <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: C.g800, lineHeight: 1.3 }}>
-                Earn $2 in Bitcoin as a new user
-              </p>
-              <p style={{ margin: '2px 0 0', fontSize: 12, color: C.g500, lineHeight: 1.4 }}>
-                Valid for 30 days after signup. Share your link so friends can claim theirs too.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => navigate('/register')}
-            className="hover:opacity-90 transition"
-            style={{
-              flexShrink: 0, padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
-              background: C.forest, color: '#fff', fontWeight: 700, fontSize: 12.5,
-            }}>
-            Claim bonus
-          </button>
-        </div>
-
-        {/* Stepper */}
-        <div className="flex items-center" style={{ marginTop: 16 }}>
-          {STEPS.map((s, i) => {
-            const state = i < step ? 'done' : i === step ? 'active' : 'upcoming';
-            return (
-              <div key={s.label} style={{ display: 'flex', alignItems: 'center', flex: i < STEPS.length - 1 ? 1 : 'initial', minWidth: 0 }}>
-                <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
-                  <div style={{
-                    width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: state === 'done' ? C.forest : '#fff',
-                    border: state === 'active' ? `2px solid ${C.forest}` : state === 'done' ? 'none' : `1.5px solid ${C.g300}`,
-                  }}>
-                    {state === 'done'
-                      ? <Check size={12} style={{ color: '#fff' }} />
-                      : state === 'upcoming'
-                        ? <Lock size={10} style={{ color: C.g400 }} />
-                        : <span style={{ width: 7, height: 7, borderRadius: '50%', background: C.forest }} />
-                    }
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <p style={{
-                      margin: 0, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
-                      color: state === 'upcoming' ? C.g400 : C.g800,
-                    }}>{s.label}</p>
-                    <p style={{
-                      margin: 0, fontSize: 10.5, whiteSpace: 'nowrap',
-                      color: state === 'upcoming' ? C.g400 : C.g500,
-                    }}>{s.sub}</p>
-                  </div>
-                </div>
-                {i < STEPS.length - 1 && (
-                  <div style={{
-                    flex: 1, height: 2, margin: '0 8px', minWidth: 16,
-                    background: i < step ? C.forest : C.g200,
-                  }} />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── Affiliate program ─────────────────────────────────────── */}
-      <div style={{ padding: '16px' }}>
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <span style={{
-              fontSize: 10.5, fontWeight: 800, color: C.accent, background: C.mist,
-              border: `1px solid ${C.accent}30`, borderRadius: 5, padding: '2px 7px',
-              letterSpacing: 0.3, textTransform: 'uppercase',
-            }}>Affiliate program</span>
-            <p style={{ margin: '6px 0 0', fontSize: 14, fontWeight: 800, color: C.g800 }}>
-              Invite friends, earn BTC on every trade they make
-            </p>
-          </div>
-          <button
-            onClick={() => navigate('/dashboard?tab=affiliate')}
-            className="hover:opacity-90 transition"
-            style={{
-              flexShrink: 0, padding: '8px 14px', borderRadius: 10, border: `1px solid ${C.g200}`,
-              cursor: 'pointer', background: '#fff', color: C.forest, fontWeight: 700, fontSize: 12.5,
-              display: 'flex', alignItems: 'center', gap: 6,
-            }}>
-            Get my link <ArrowRight size={13} />
-          </button>
-        </div>
-
-        {/* Commission tiers — single hue ramp, increasing intensity */}
-        <p style={{ margin: '16px 0 8px', fontSize: 11, fontWeight: 700, color: C.g500, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-          Commission by active referrals
-        </p>
-        <div className="grid grid-cols-5 gap-1.5">
-          {AFF_TIERS.map((t, i) => {
-            const intensity = 0.55 + i * 0.11;
-            return (
-              <div key={t.refs} style={{
-                padding: '8px 4px', borderRadius: 9, textAlign: 'center',
-                background: `rgba(13,148,136,${intensity * 0.14})`,
-                border: `1px solid rgba(13,148,136,${intensity * 0.35})`,
-              }}>
-                <div style={{ fontSize: 12.5, fontWeight: 800, color: C.forest }}>{t.rate}</div>
-                <div style={{ fontSize: 10, fontWeight: 600, color: C.g500, marginTop: 2 }}>{t.refs} refs</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── Leaderboard ────────────────────────────────────────────── */}
-      {affLeaderboard.length > 0 && (
-        <div style={{ borderTop: `1px solid ${C.g100}` }}>
-          <div className="flex items-center justify-between" style={{ padding: '9px 16px', background: C.g50 }}>
-            <span className="flex items-center gap-1.5" style={{ fontSize: 11, fontWeight: 800, color: C.g600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              <TrendingUp size={12} /> Top earners
-            </span>
-            <span style={{ fontSize: 11, color: C.g400, fontWeight: 600 }}>All time</span>
-          </div>
-          {affLeaderboard.map((u, i) => {
-            const bc = AFF_BADGE_COLORS[u.badge] || C.g500;
-            const earnedUsd = (u.earned_btc || 0) * (btcPrice || 76000);
-            return (
-              <div key={u.username} style={{
-                display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
-                borderBottom: i < affLeaderboard.length - 1 ? `1px solid ${C.g100}` : 'none',
-              }}>
-                <span style={{ width: 18, textAlign: 'center', fontSize: 12, fontWeight: 800, color: i === 0 ? C.gold : C.g400 }}>
-                  {i + 1}
-                </span>
-                <div style={{
-                  width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-                  background: C.mist, border: `1px solid ${C.accent}30`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 12, fontWeight: 800, color: C.accent,
-                }}>
-                  {(u.username || '?')[0].toUpperCase()}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="flex items-center gap-2">
-                    <span
-                      style={{
-                        fontSize: 12.5,
-                        fontWeight: 700,
-                        color: C.g800,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {u.username}
-                    </span>
-
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 4,
-                        fontSize: 10,
-                        fontWeight: 800,
-                        color: bc,
-                        background: `${bc}14`,
-                        border: `1px solid ${bc}`,
-                        borderRadius: 9999,
-                        padding: "4px 10px",
-                        letterSpacing: 0.3,
-                        textTransform: "uppercase",
-                        flexShrink: 0,
-                        lineHeight: 1,
-                      }}
-                    >
-                      <ShieldCheck size={12} strokeWidth={2.2} />
-                      {u.badge || "BEGINNER"}
-                    </span>
-                  </div>
-                  <span style={{ fontSize: 11, color: C.g400, fontWeight: 500 }}>
-                    {u.referrals} referrals · {u.affiliate_trades || u.total_trades} trades
-                  </span>
-                </div>
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 800, color: C.g800 }}>
-                    ${earnedUsd >= 1000 ? (earnedUsd / 1000).toFixed(1) + 'k' : earnedUsd < 0.01 ? '<0.01' : earnedUsd.toFixed(2)}
-                  </div>
-                  <div style={{ fontSize: 10.5, color: C.g400, fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-                    <Bitcoin size={10} />{(() => { const v = parseFloat(u.earned_btc || 0); return v > 0 && v < 0.0001 ? v.toFixed(8) : v.toFixed(5); })()}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <p style={{ margin: 0, padding: '10px 16px', textAlign: 'center', fontSize: 11, color: C.g400, fontWeight: 500, borderTop: `1px solid ${C.g100}` }}>
-        Free to join · No minimum payout · Commission paid for the lifetime of each referral
-      </p>
-    </div>
-  );
-}
 
 // ── Main GiftCards Page ───────────────────────────────────────────────────────
 export default function GiftCards({ user }) {
@@ -1984,14 +1773,158 @@ export default function GiftCards({ user }) {
           </div>
         )}
 
-        {/* Safety notice */}
-        <div className="flex items-start sm:items-center gap-2.5 rounded-xl px-3.5 py-2.5 sm:px-4 sm:py-3" style={{ backgroundColor: C.mist, border: `1px solid ${C.green}30` }}>
-          <Shield size={14} style={{ color: C.green, flexShrink: 0, marginTop: '1px' }} />
-          <span style={{ fontSize: 13, color: C.g800, lineHeight: 1.4 }}><strong style={{ color: C.green }}>Trade Safely:</strong> Only share gift card codes inside the active escrow trade. Every trade is platform-protected.</span>
+        {/* ── Trade Safety Banner ── */}
+        <div style={{display:'flex',alignItems:'center',gap:11,padding:'13px 15px',borderRadius:12,background:'linear-gradient(135deg,#FFFBEB,#FEF3C7)',border:'1.5px solid #FCD34D',boxShadow:'0 2px 8px rgba(217,119,6,0.12)'}}>
+          <div style={{width:34,height:34,borderRadius:9,background:'#FDE68A',border:'1px solid #FCD34D',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+            <AlertTriangle size={17} style={{color:'#B45309'}}/>
+          </div>
+          <div>
+            <p style={{margin:0,fontSize:13,fontWeight:900,color:'#92400E',lineHeight:1.3}}>Trade Safely</p>
+            <p style={{margin:0,fontSize:11,color:'#92400E',fontWeight:600,lineHeight:1.4,marginTop:1}}>Only share gift card codes inside the active escrow trade. Every trade is platform-protected.</p>
+          </div>
         </div>
 
-        {/* ── AFFILIATE PROMO card — redesigned, single accent color, real stepper ── */}
-        <AffiliatePromoCard navigate={navigate} btcPrice={btcPrice} affLeaderboard={affLeaderboard} />
+        {/* ── NEW USER BONUS CARD ── */}
+        {!user && (
+        <div style={{borderRadius:14,overflow:'hidden',boxShadow:'0 4px 20px rgba(27,67,50,0.18)'}}>
+          <div style={{background:'linear-gradient(135deg,#1B4332 0%,#2D6A4F 60%,#40916C 100%)',padding:'14px 14px 12px',position:'relative'}}>
+            {/* Dot pattern */}
+            <div style={{position:'absolute',inset:0,opacity:0.06,backgroundImage:'radial-gradient(circle at 2px 2px,white 1px,transparent 0)',backgroundSize:'16px 16px',pointerEvents:'none'}}/>
+            {/* Gold accent top border */}
+            <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:'linear-gradient(90deg,#F4A422,#FBBF24,#F4A422)',borderRadius:'14px 14px 0 0'}}/>
+            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8,marginBottom:10,position:'relative'}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <div style={{width:32,height:32,borderRadius:10,background:'#F4A422',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:16,boxShadow:'0 2px 8px rgba(244,164,34,0.45)'}}>🎁</div>
+                <div>
+                  <p style={{margin:0,fontSize:12,fontWeight:900,color:'#FFFFFF',lineHeight:1.2}}>New users earn <span style={{color:'#F4A422'}}>$2 FREE Bitcoin!</span></p>
+                  <p style={{margin:0,fontSize:9,color:'rgba(255,255,255,0.55)',marginTop:2}}>Offer valid 30 days · Limited time</p>
+                </div>
+              </div>
+              <button onClick={()=>navigate('/register')}
+                style={{flexShrink:0,padding:'6px 12px',borderRadius:8,border:'none',cursor:'pointer',background:'#F4A422',color:'#1B4332',fontWeight:900,fontSize:10,whiteSpace:'nowrap',boxShadow:'0 2px 8px rgba(244,164,34,0.4)'}}>
+                Claim →
+              </button>
+            </div>
+            {/* 3-step flow */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr auto 1fr auto 1fr',alignItems:'center',gap:3,position:'relative'}}>
+              {[
+                {icon:'✅',label:'Register',sub:'$1 locked'},
+                {icon:'⚡',label:'Verify',  sub:'stays safe'},
+                {icon:'₿', label:'1 Trade', sub:'$2 unlocks'},
+              ].map(({icon,label,sub},i,arr)=>(
+                <>
+                  <div key={label} style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.14)',borderRadius:8,padding:'6px 4px',textAlign:'center'}}>
+                    <div style={{fontSize:13,lineHeight:1,marginBottom:2}}>{icon}</div>
+                    <div style={{fontSize:9,fontWeight:800,color:'#fff',lineHeight:1}}>{label}</div>
+                    <div style={{fontSize:7,color:'rgba(255,255,255,0.45)',marginTop:2,lineHeight:1}}>{sub}</div>
+                  </div>
+                  {i < arr.length-1 && <div key={`sep-${i}`} style={{fontSize:10,color:'rgba(255,255,255,0.25)',textAlign:'center',flexShrink:0}}>›</div>}
+                </>
+              ))}
+            </div>
+          </div>
+        </div>
+        )}
+
+        {/* ── AFFILIATE PROMO CARD ── */}
+        <div style={{borderRadius:16,overflow:'hidden',boxShadow:'0 6px 28px rgba(27,67,50,0.22)'}}>
+
+          {/* Header — brand gradient with subtle pattern + glow for a premium, eye-catching feel */}
+          <div style={{padding:'20px 18px 18px',background:`linear-gradient(135deg,${C.forest},${C.green})`,position:'relative',overflow:'hidden'}}>
+            <div style={{position:'absolute',inset:0,opacity:0.08,backgroundImage:'radial-gradient(circle at 2px 2px,white 1px,transparent 0)',backgroundSize:'18px 18px'}}/>
+            <div style={{position:'absolute',top:-30,right:-20,width:140,height:140,borderRadius:'50%',background:C.gold,opacity:0.15,filter:'blur(40px)'}}/>
+            <div style={{position:'relative',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
+              <div>
+                <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:8}}>
+                  <span style={{display:'flex',alignItems:'center',gap:4,fontSize:11,fontWeight:900,color:C.forest,background:C.gold,borderRadius:6,padding:'3px 9px',letterSpacing:0.5,textTransform:'uppercase'}}>
+                    <Bitcoin size={11}/>Affiliate
+                  </span>
+                  <span style={{display:'flex',alignItems:'center',gap:4,fontSize:9,fontWeight:700,color:'#fff',background:'rgba(255,255,255,0.15)',borderRadius:5,padding:'2px 8px'}}>
+                    <span style={{width:6,height:6,borderRadius:'50%',background:'#6EE7B7',display:'inline-block'}}/>LIVE
+                  </span>
+                </div>
+                <p style={{margin:0,fontSize:20,fontWeight:900,color:'#fff',lineHeight:1.2}}>Invite friends. Earn BTC forever.</p>
+                <p style={{margin:0,fontSize:12,color:'rgba(255,255,255,0.7)',marginTop:5,fontWeight:500}}>Earn on every trade your referrals make — for life.</p>
+              </div>
+              <button onClick={()=>navigate(user ? '/dashboard?tab=affiliate' : '/register')}
+                style={{flexShrink:0,padding:'12px 20px',borderRadius:11,border:'none',cursor:'pointer',background:C.gold,color:C.forest,fontWeight:900,fontSize:13,whiteSpace:'nowrap',boxShadow:'0 4px 16px rgba(244,164,34,0.45)'}}>
+                Get Link <ArrowRight size={14} style={{display:'inline',marginLeft:4,verticalAlign:'-2px'}}/>
+              </button>
+            </div>
+          </div>
+
+          {/* Commission tiers — single brand-color progression (mint → gold), not a rainbow */}
+          <div style={{padding:'12px 16px',background:'#fff',borderBottom:`1px solid ${C.g100}`}}>
+            <p style={{margin:'0 0 8px',fontSize:10,fontWeight:800,color:C.g500,textTransform:'uppercase',letterSpacing:0.8}}>Commission Tiers</p>
+            <div style={{position:'relative'}}>
+              <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:2}}>
+                {[
+                  {refs:'0–9',   rate:'0.20%', c:C.mint},
+                  {refs:'10–24', rate:'0.25%', c:C.green},
+                  {refs:'25–49', rate:'0.35%', c:C.forest},
+                  {refs:'50–99', rate:'0.40%', c:'#B8811A'},
+                  {refs:'100+',  rate:'0.50%', c:C.gold},
+                ].map(t=>(
+                  <div key={t.refs} style={{flex:'0 0 auto',background:`${t.c}0D`,border:`1.5px solid ${t.c}30`,borderRadius:10,padding:'9px 12px',textAlign:'center',minWidth:58}}>
+                    <div style={{fontSize:14,fontWeight:900,color:t.c,lineHeight:1}}>{t.rate}</div>
+                    <div style={{fontSize:9,color:C.g400,fontWeight:600,marginTop:3,lineHeight:1}}>{t.refs} refs</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{
+                position:'absolute',top:0,right:0,bottom:2,width:24,
+                background:'linear-gradient(to right, transparent, #ffffff)',
+                pointerEvents:'none',
+              }}/>
+            </div>
+          </div>
+
+          {/* Leaderboard */}
+          {affLeaderboard.length > 0 && (
+            <div style={{background:'#fff'}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 14px 6px',background:C.mist}}>
+                <div style={{display:'flex',alignItems:'center',gap:5}}>
+                  <Trophy size={11} style={{color:C.gold}}/>
+                  <span style={{fontSize:9,fontWeight:900,color:C.forest,textTransform:'uppercase',letterSpacing:0.8}}>Top Earners</span>
+                </div>
+                <span style={{fontSize:9,color:C.green,fontWeight:600,background:'#fff',borderRadius:4,padding:'1px 6px'}}>All Time</span>
+              </div>
+              {affLeaderboard.map((u,i)=>{
+                const bc = BADGE_COLORS[u.badge] || '#64748B';
+                const rankBg = i===0?C.gold:i===1?C.g300:'#C08A4E';
+                const earnedUsd = ((u.earned_btc||0)*(btcPrice||76000));
+                return (
+                  <div key={u.username} style={{display:'flex',alignItems:'center',gap:9,padding:'7px 14px',borderTop:`1px solid ${C.g50}`}}>
+                    <div style={{width:18,height:18,borderRadius:'50%',flexShrink:0,background:rankBg,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                      <span style={{fontSize:9,fontWeight:900,color:'#fff'}}>{i+1}</span>
+                    </div>
+                    <div style={{width:26,height:26,borderRadius:8,flexShrink:0,background:`${bc}15`,border:`1.5px solid ${bc}35`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:900,color:bc}}>
+                      {(u.username||'?')[0].toUpperCase()}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:'flex',alignItems:'center',gap:4}}>
+                        <span style={{fontSize:10,fontWeight:800,color:'#1E293B',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:80}}>{u.username}</span>
+                        <BadgeChip user={u} badgeName={u.badge} size="xs" />
+                      </div>
+                      <span style={{fontSize:8,color:C.g400,fontWeight:500}}>{u.referrals} referral{u.referrals !== 1 ? 's' : ''} · {u.affiliate_trades} ref trade{u.affiliate_trades !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div style={{textAlign:'right',flexShrink:0}}>
+                      <div style={{fontSize:11,fontWeight:900,color:C.gold,lineHeight:1}}>₿{(()=>{const v=parseFloat(u.earned_btc||0);return v>0&&v<0.0001?v.toFixed(8):v.toFixed(5);})()}</div>
+                      <div style={{fontSize:8,color:C.g400,fontWeight:500,marginTop:1}}>${earnedUsd>=1000?(earnedUsd/1000).toFixed(1)+'k':earnedUsd>=1?earnedUsd.toFixed(2):earnedUsd<0.01?'<$0.01':earnedUsd.toFixed(2)}</div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{padding:'6px 14px',background:C.mist,borderTop:`1px solid ${C.g100}`,textAlign:'center'}}>
+                <span style={{fontSize:9,color:C.green,fontWeight:700}}>Could you be next? <span style={{textDecoration:'underline',cursor:'pointer'}} onClick={()=>navigate('/dashboard?tab=affiliate')}>View full leaderboard →</span></span>
+              </div>
+            </div>
+          )}
+
+          <p style={{margin:0,padding:'6px 14px 9px',textAlign:'center',fontSize:9,color:C.g400,fontWeight:600,letterSpacing:0.3,background:'#fff'}}>
+            Free to join · No minimum payout · Lifetime commission
+          </p>
+        </div>
 
       </div>
 
