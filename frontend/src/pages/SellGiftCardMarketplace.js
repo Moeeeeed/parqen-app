@@ -2,14 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { 
-  Search, Filter, Star, Clock, Bitcoin, DollarSign, 
-  TrendingUp, Shield, User, ChevronDown, ChevronUp,
-  ArrowRight, Wallet, Gift, Smartphone, Building2,
-  Tag, Percent, Zap, Award, Users, Eye, Info,
-  AlertCircle, CheckCircle, HelpCircle, MapPin,
-  Globe, Activity, RefreshCw, Flag, Phone,
-  Banknote, CreditCard, MessageCircle, ThumbsUp, ThumbsDown, Repeat2,
-  Sparkles, Package, Radio, Lock, Unlock, X
+  Search, Filter, ChevronDown, ChevronUp,
+  ArrowRight, Users, Info,
+  ThumbsUp, ThumbsDown, Repeat2,
+  X, BadgeCheck
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import CountryFlag from '../components/CountryFlag';
@@ -47,132 +43,159 @@ const CARD_TYPES = [
 function BuyerOfferCard({ offer, onSelect, user }) {
   const navigate = useNavigate();
   const buyer = offer.users || {};
-  const rating = buyer.average_rating || 0;
-  const totalTrades = buyer.total_trades || 0;
-  const completionRate = buyer.completion_rate || 98;
-  const margin = offer.margin || 0;
-  const btcRate = offer.bitcoin_price || 0.00444;
+  const margin = parseFloat(offer.margin || 0);
   const minAmount = offer.min_amount || offer.minAmount || 10;
   const maxAmount = offer.max_amount || offer.maxAmount || 500;
   const paymentMethods = offer.payment_methods || ['bank_transfer'];
+  const pmLabel = Array.isArray(paymentMethods) ? paymentMethods.join(', ') : (paymentMethods || 'Payment');
 
-  const formatBtc = (btc) => {
-    return parseFloat(btc || 0).toFixed(8);
-  };
-
-  const formatNumber = (num) => {
-    return new Intl.NumberFormat().format(num);
-  };
-
-  const getTimeAgo = (dateString) => {
-    if (!dateString) return 'Recently';
-    const date = new Date(dateString);
-    const now = new Date();
-    const diff = Math.floor((now - date) / 1000);
-    
-    if (diff < 60) return 'Online now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return `${Math.floor(diff / 86400)}d ago`;
-  };
-
-  const getPaymentIcon = (method) => {
-    const icons = {
-      'mtn': '📱', 'vodafone': '📱', 'airteltigo': '📱',
-      'bank_transfer': '🏦', 'paypal': '💰', 'opay': '💰'
-    };
-    return icons[method.toLowerCase()] || '💳';
-  };
+  const pos = parseInt(buyer.positive_feedback || 0);
+  const neg = parseInt(buyer.negative_feedback || 0);
+  const trades = parseInt(buyer.total_trades || buyer.trade_count || 0);
+  const isOnline = buyer.last_login ? ((new Date() - new Date(buyer.last_login)) / 1000 < 120) : false;
 
   return (
-    <div className="bg-white rounded-xl shadow-sm hover:shadow-md transition border border-gray-100 overflow-hidden">
-      <div className="p-4">
-        {/* Buyer Info */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={() => navigate(`/profile/${buyer.id}`)}
-              className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm hover:opacity-80 transition"
-              style={{ backgroundColor: PRAQEN.primary }}
-            >
-              {buyer.username?.charAt(0).toUpperCase() || 'B'}
-            </button>
-            <div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <button
-                  onClick={() => navigate(`/profile/${buyer.id}`)}
-                  className="font-bold text-gray-900 hover:underline text-sm"
-                >
-                  {buyer.username || 'Anonymous Buyer'}
+    <div className="rounded-2xl overflow-hidden transition-all w-full h-full flex flex-col justify-between hover:-translate-y-0.5 bg-white border border-gray-200 shadow-[0_1px_2px_rgba(27,67,50,0.04),0_10px_28px_-14px_rgba(27,67,50,0.18)] hover:shadow-[0_2px_4px_rgba(27,67,50,0.06),0_20px_44px_-16px_rgba(27,67,50,0.28)]">
+      <div className="px-3.5 pt-3 pb-2">
+        <div className="flex items-start justify-between gap-2">
+          {/* Left section: Avatar + Username & Like/Dislike/Trades */}
+          <div className="flex items-start gap-2.5 min-w-0 flex-1">
+            <div className="relative flex-shrink-0">
+              <button onClick={() => navigate(`/profile/${buyer.id}`)}>
+                <div className="w-10 h-10 rounded-xl bg-[#1B4332] text-white flex items-center justify-center font-black text-sm">
+                  {buyer.username?.charAt(0).toUpperCase() || 'B'}
+                </div>
+              </button>
+              {isOnline && (
+                <span className="absolute -bottom-0.5 -right-0.5">
+                  <span className="absolute inline-flex w-3 h-3 rounded-full animate-ping bg-[#22C55E] opacity-60"/>
+                  <span className="relative inline-flex rounded-full w-3 h-3 border-2 border-white bg-[#22C55E]"/>
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-0.5 items-start min-w-0 flex-1">
+              {/* Row 1: CountryFlag + Name + Verified Badge */}
+              <div className="flex items-center gap-1.5 min-w-0">
+                <CountryFlag
+                  countryCode={buyer?.country_code || buyer?.country || buyer?.location || null}
+                  className="w-4 h-3 rounded-sm flex-shrink-0"/>
+                <button onClick={() => navigate(`/profile/${buyer.id}`)}
+                  className="font-black text-sm text-[#1E293B] hover:underline leading-tight truncate">
+                  {buyer.username || 'Buyer'}
                 </button>
-                <BadgeChip user={buyer} />
+                {buyer.is_verified && <BadgeCheck size={14} style={{color:'#3B82F6', flexShrink:0}}/>}
               </div>
-              <div className="flex items-center gap-2 text-xs mt-1 flex-wrap">
-                <span className="flex items-center gap-0.5 font-bold" style={{color:'#10B981'}}>
-                  <ThumbsUp size={11}/>{buyer.positive_feedback || 0}
+
+              {/* Row 2: Like / Dislike buttons & trades count */}
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                <span className="inline-flex items-center gap-0.5 font-bold text-[#16A34A] text-[11px]">
+                  <ThumbsUp size={10} strokeWidth={2.5}/>{pos}
                 </span>
-                <span className="flex items-center gap-0.5 font-bold" style={{color:'#EF4444'}}>
-                  <ThumbsDown size={11}/>{buyer.negative_feedback || 0}
+                <span className="inline-flex items-center gap-0.5 font-bold text-[#EF4444] text-[11px]">
+                  <ThumbsDown size={10} strokeWidth={2.5}/>{neg}
                 </span>
-                <span className="flex items-center gap-0.5" style={{color:'#64748B'}}>
-                  <Repeat2 size={11}/>{totalTrades} trades
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#64748B]">
+                  <Repeat2 size={10} strokeWidth={2.5} className="text-[#94A3B8]"/>
+                  {trades} trades
                 </span>
-              </div>
-              <div className="flex items-center gap-1 text-xs text-gray-400 mt-0.5">
-                <Clock size={11} />
-                <span>{getTimeAgo(buyer.last_login || buyer.created_at)}</span>
               </div>
             </div>
           </div>
-          {margin !== 0 && (
-            <div className={`text-xs font-bold px-2 py-1 rounded-full ${margin > 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-              {margin > 0 ? `+${margin}%` : `${margin}%`}
+
+          {/* Right section: Stacked BEGINNER badge & Active status pill */}
+          <div className="flex flex-col gap-1 items-end flex-shrink-0 pt-0.5">
+            <div>
+              <BadgeChip user={buyer} size="xs" />
             </div>
-          )}
-        </div>
-        
-        {/* Offer Details */}
-        <div className="grid grid-cols-3 gap-3 py-3 border-t border-b border-gray-100">
-          <div className="text-center">
-            <p className="text-xs text-gray-500">Rate</p>
-            <p className="text-sm font-bold" style={{ color: PRAQEN.primary }}>
-              1 BTC ≈ ${formatNumber(btcRate * 45000)}
-            </p>
-          </div>
-          <div className="text-center">
-            <p className="text-xs text-gray-500">Limits</p>
-            <p className="text-sm font-semibold">
-              ${minAmount} - ${maxAmount}
-            </p>
-          </div>
-          <div className="text-center">
-            <p className="text-xs text-gray-500">Payment</p>
-            <div className="flex items-center justify-center gap-1">
-              {paymentMethods.slice(0, 2).map((method, idx) => (
-                <span key={idx} className="text-sm">{getPaymentIcon(method)}</span>
-              ))}
+            <div>
+              {isOnline ? (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold flex-shrink-0 bg-[#F0FDF4] text-[#22C55E]">
+                  <span className="relative flex w-1.5 h-1.5 flex-shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-[#22C55E]"/>
+                    <span className="relative inline-flex rounded-full w-1.5 h-1.5 bg-[#22C55E]"/>
+                  </span>
+                  Active
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium flex-shrink-0 bg-[#F1F5F9] text-[#94A3B8]">
+                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#CBD5E1]"/>
+                  Offline
+                </span>
+              )}
             </div>
           </div>
         </div>
-        
-        {/* Terms Preview */}
-        {offer.description && (
-          <div className="mt-2 text-xs text-gray-500">
-            📝 {offer.description.length > 80 ? offer.description.substring(0, 80) + '...' : offer.description}
-          </div>
-        )}
-        
-        {/* Action Button */}
-        <div className="mt-3 flex justify-end">
-          <button
-            onClick={() => onSelect(offer)}
-            className="px-5 py-2 rounded-lg text-white font-bold text-sm transition hover:opacity-90 flex items-center gap-2 shadow-md"
-            style={{ backgroundColor: PRAQEN.primary }}
-          >
-            Sell to {buyer.username}
-            <ArrowRight size={14} />
-          </button>
+      </div>
+
+      <div style={{height:1, backgroundColor:'#F1F5F9'}}/>
+
+      <div className="px-3.5 py-2.5 grid grid-cols-2 gap-2.5">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-wide mb-0.5 text-[#64748B]">Range / Limits</p>
+          <p className="text-base font-bold leading-tight text-[#1E293B] truncate">
+            ${minAmount} – ${maxAmount}
+          </p>
         </div>
+        <div className="border-l pl-3 border-[#F1F5F9]">
+          <p className="text-[11px] font-bold uppercase tracking-wide mb-0.5 text-[#64748B]">Payment Method</p>
+          <p className="text-base font-bold leading-tight text-[#16A34A] capitalize truncate">
+            {pmLabel}
+          </p>
+        </div>
+      </div>
+
+      <div className="px-3.5 pb-2.5 border-t border-[#F1F5F9]">
+        {/* Grey info board */}
+        <div className="group relative mt-1">
+          <div className="rounded-xl px-2.5 py-2 flex items-center justify-between transition-colors bg-[#F1F5F9] border border-[#E2E8F0]">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-[#475569]">
+                Rate:&nbsp;<span className="text-[#1E293B] font-bold">1 BTC ≈ ${minAmount}–${maxAmount}</span>
+              </p>
+              <p className="text-xs font-semibold mt-1 text-[#475569]">
+                Limits:&nbsp;<span className="text-[#334155] font-bold">${minAmount} – ${maxAmount}</span>
+              </p>
+            </div>
+            <div className="flex items-center flex-shrink-0 ml-4 mr-2">
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[11px] font-black ${
+                margin < 0 ? 'bg-[rgba(16,185,129,0.14)] text-[#16A34A] border border-[rgba(16,185,129,0.25)]' :
+                margin > 0 ? 'bg-[rgba(239,68,68,0.12)] text-[#EF4444] border border-[rgba(239,68,68,0.25)]' :
+                'bg-[#E2E8F0] text-[#64748B] border border-[#CBD5E1]'
+              }`}>
+                {margin === 0 ? 'Market' : `${margin > 0 ? '+' : ''}${margin}%`}
+              </span>
+            </div>
+          </div>
+
+          {/* Tooltip */}
+          <div className="absolute bottom-full left-0 right-0 mb-3 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity z-20">
+            <div className="rounded-xl shadow-2xl border p-3 text-xs bg-[#1E293B] border-[#334155] text-[#E2E8F0] relative">
+              <p className="font-black text-[10px] uppercase tracking-wider mb-2 text-[#64748B]">Buyer Details</p>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[#94A3B8]">Limits</span>
+                <span className="font-bold text-[#F0FAF5]">${minAmount} – ${maxAmount}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[#94A3B8]">Margin</span>
+                <span className={`font-bold ${margin < 0 ? 'text-[#4ADE80]' : margin > 0 ? 'text-[#F87171]' : 'text-[#94A3B8]'}`}>
+                  {margin === 0 ? 'Market rate' : `${margin > 0 ? '+' : ''}${margin}%`}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-3.5 pb-3 flex items-center gap-2">
+        <button onClick={() => navigate(`/profile/${buyer.id}`)}
+          className="w-9 h-9 rounded-xl border border-[#E2E8F0] flex items-center justify-center flex-shrink-0 transition hover:bg-gray-50">
+          <Info size={14} className="text-[#94A3B8]"/>
+        </button>
+        <button onClick={() => onSelect(offer)}
+          className="flex-1 h-9 rounded-xl text-white font-black text-sm flex items-center justify-center gap-1.5 bg-[#1B4332] hover:opacity-90 active:scale-[0.98] transition">
+          Sell to {buyer.username || 'Buyer'} <ArrowRight size={14}/>
+        </button>
       </div>
     </div>
   );
@@ -207,16 +230,27 @@ export default function SellGiftCardMarketplace({ user }) {
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) return;
+    const toUTC = s => new Date(/[Z+]/.test(s) ? s : s + 'Z');
     const fetchTrades = async () => {
       try {
         const res = await axios.get(`${API_URL}/trades/active`, { headers: { Authorization: `Bearer ${token}` } });
-        if (res.data.success) setActiveTrades(res.data.trades || []);
+        if (res.data.success) {
+          const now = Date.now();
+          setActiveTrades((res.data.trades || []).filter(t =>
+            ['PAYMENT_SENT','DISPUTED'].includes(t.status) ||
+            !t.expires_at || toUTC(t.expires_at).getTime() > now
+          ));
+        }
       } catch {}
     };
     fetchTrades();
-    const interval = setInterval(fetchTrades, 30000);
+    const interval = setInterval(fetchTrades, 10000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleTradeExpire = (tradeId) => {
+    setActiveTrades(prev => prev.filter(t => String(t.id) !== String(tradeId)));
+  };
 
   const loadBuyOffers = async () => {
     try {
@@ -438,7 +472,7 @@ export default function SellGiftCardMarketplace({ user }) {
         {activeTrades.length > 0 && (
           <div className="mb-3">
             {activeTrades.slice(0, showAllTrades ? activeTrades.length : 3).map(trade => (
-              <ActiveTradeCard key={trade.id} trade={trade} />
+              <ActiveTradeCard key={trade.id} trade={trade} pageColor="#0D9488" onExpire={handleTradeExpire} />
             ))}
             {activeTrades.length > 3 && (
               <button onClick={() => setShowAllTrades(p => !p)}

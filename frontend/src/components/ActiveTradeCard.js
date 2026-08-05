@@ -271,8 +271,6 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
 
   const youPayAmt   = isBuyer ? localAmt : btcAmt;
   const youRecvAmt  = isBuyer ? btcAmt   : localAmt;
-  const youPayNote  = isBuyer ? `via ${trade.payment_method || trade.listing?.payment_method || '—'}` : 'Bitcoin escrow';
-  const youRecvNote = isBuyer ? 'Bitcoin' : `via ${trade.payment_method || trade.listing?.payment_method || '—'}`;
   const roleLabel   = isBuyer ? 'You are the Buyer' : 'You are the Seller';
 
   const pos    = parseInt(cp.positive_feedback || 0);
@@ -282,150 +280,132 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
 
   return (
     <>
-      <style>{`@keyframes pmtBorderPulse{0%,100%{box-shadow:0 0 0 2px rgba(37,99,235,0.25),0 2px 12px rgba(0,0,0,0.08);}50%{box-shadow:0 0 0 3px rgba(37,99,235,0.5),0 4px 20px rgba(37,99,235,0.18);}}`}</style>
-      <div className="rounded-2xl mb-3 overflow-hidden w-full"
+      <style>{`@keyframes pmtBorderPulse{0%,100%{box-shadow:0 0 0 2px rgba(37,99,235,0.25),0 1px 6px rgba(0,0,0,0.06);}50%{box-shadow:0 0 0 3px rgba(37,99,235,0.5),0 2px 10px rgba(37,99,235,0.18);}}`}</style>
+      <div className="rounded-xl mb-2.5 overflow-hidden w-full transition-all"
         style={{
           background: '#FFFFFF',
-          border: trade.status === 'PAYMENT_SENT' ? '1.5px solid #2563EB50' : `1.5px solid ${cfg.statusColor}30`,
-          borderLeft: trade.status === 'PAYMENT_SENT' ? '4px solid #2563EB' : `4px solid ${btnColor}`,
-          boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+          border: trade.status === 'PAYMENT_SENT' ? '1px solid #2563EB50' : `1px solid ${cfg.statusColor}30`,
+          borderLeft: trade.status === 'PAYMENT_SENT' ? '3.5px solid #2563EB' : `3.5px solid ${btnColor}`,
+          boxShadow: '0 1.5px 6px rgba(0,0,0,0.05)',
           animation: trade.status === 'PAYMENT_SENT' ? 'pmtBorderPulse 2.5s ease-in-out infinite' : undefined,
         }}>
 
-        {/* ── Row 0: Market label + your role ── */}
-        <div className="flex items-center justify-between px-4 pt-3 pb-1 gap-2">
-          <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full flex-shrink-0"
-            style={{ backgroundColor: market.bg, color: market.color }}>
-            {market.label}
-          </span>
-          <span className="text-[10px] font-bold flex-shrink-0" style={{ color: '#94A3B8' }}>
-            {roleLabel}
-          </span>
+        {/* ── Header Row: Market Label + Role + Feedback/Trades + Status + Timer ── */}
+        <div className="flex items-center justify-between px-3 pt-2 pb-1 gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="inline-flex items-center text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full flex-shrink-0"
+              style={{ backgroundColor: market.bg, color: market.color }}>
+              {market.label}
+            </span>
+            <span className="text-[10px] font-bold text-gray-400">
+              {roleLabel}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full"
+              style={{ backgroundColor: cfg.statusBg, color: cfg.statusColor }}>
+              {cfg.label}
+            </span>
+            {['CREATED', 'FUNDS_LOCKED'].includes(trade.status) && effectiveExpiresAt && (
+              <TradeTimer
+                expiresAt={effectiveExpiresAt}
+                timeLimitMins={timeLimitMins}
+                onExpire={() => onExpire?.(trade.id)}
+              />
+            )}
+            {['CREATED', 'FUNDS_LOCKED'].includes(trade.status) && !effectiveExpiresAt && (
+              <span className="inline-flex items-center gap-0.5 text-[9px] font-black px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: '#DCFCE7', color: '#16A34A' }}>
+                🔒 Locked
+              </span>
+            )}
+            {trade.status === 'PAYMENT_SENT' && (
+              <span className="inline-flex items-center gap-0.5 text-[9px] font-black px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>
+                🔒 Awaiting Release
+              </span>
+            )}
+            {trade.status === 'DISPUTED' && (
+              <span className="inline-flex items-center gap-0.5 text-[9px] font-black px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>
+                ⚖️ In Review
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* ── Row 1: Status badge + countdown (timer stops once buyer marks paid) ── */}
-        <div className="flex items-center justify-between flex-wrap px-4 pt-1.5 pb-2 gap-2">
-          <span className="text-[11px] font-black px-3 py-1 rounded-full flex-shrink-0"
-            style={{ backgroundColor: cfg.statusBg, color: cfg.statusColor }}>
-            {cfg.label}
-          </span>
-          {/* Timer only when we have a real server deadline — never when expires_at is null */}
-          {['CREATED', 'FUNDS_LOCKED'].includes(trade.status) && effectiveExpiresAt && (
-            <TradeTimer
-              expiresAt={effectiveExpiresAt}
-              timeLimitMins={timeLimitMins}
-              onExpire={() => onExpire?.(trade.id)}
-            />
-          )}
-          {/* If escrow is active but server cleared the deadline (e.g. edge-case null) show locked */}
-          {['CREATED', 'FUNDS_LOCKED'].includes(trade.status) && !effectiveExpiresAt && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full"
-              style={{ backgroundColor: '#DCFCE7', color: '#16A34A' }}>
-              🔒 Locked
-            </span>
-          )}
-          {trade.status === 'PAYMENT_SENT' && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full"
-              style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>
-              🔒 Awaiting Release
-            </span>
-          )}
-          {trade.status === 'DISPUTED' && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full"
-              style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>
-              ⚖️ In Review
-            </span>
-          )}
-        </div>
-
-        {/* ── Row 2: Counterparty info ── */}
-        <div className="flex items-center justify-between px-4 pb-3 gap-2 flex-wrap">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <CountryFlag countryCode={cc} className="w-4 h-3 rounded-sm flex-shrink-0" />
+        {/* ── Main Row: Counterparty info + Stats + Amounts + Action button ── */}
+        <div className="px-3 py-1.5 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+          {/* Counterparty info + Trade stats & Feedback always visible */}
+          <div className="flex items-center gap-1.5 min-w-0 flex-shrink-0 flex-wrap">
+            <CountryFlag countryCode={cc} className="w-3.5 h-2.5 rounded-sm flex-shrink-0" />
             <button
               onClick={() => setShowPopup(true)}
-              className="font-black text-sm truncate hover:underline decoration-dotted"
-              style={{ color: btnColor, maxWidth: '110px' }}>
+              className="font-black text-xs truncate hover:underline decoration-dotted"
+              style={{ color: btnColor, maxWidth: '95px' }}>
               {cp.username || '—'}
             </button>
             <span
-              className={`inline-flex items-center gap-px font-bold px-1.5 py-0.5 rounded-full border flex-shrink-0 ${badge.animate ? 'shadow-sm' : ''}`}
+              className={`inline-flex items-center font-bold px-1.5 py-0.2 rounded-full border flex-shrink-0 ${badge.animate ? 'shadow-sm' : ''}`}
               style={{
                 background: badge.bg,
                 borderColor: badge.borderColor,
-                fontSize: '9px',
-                boxShadow: badge.glow ? `0 0 6px ${badge.glow}` : undefined,
+                fontSize: '8.5px',
+                boxShadow: badge.glow ? `0 0 5px ${badge.glow}` : undefined,
               }}>
               <span style={{ color: badge.iconColor || badge.textColor }}>{badge.icon}</span>
               <span style={{ color: badge.textColor }} className="ml-0.5">{badge.label}</span>
             </span>
+
+            {/* Trade count & Positive/Negative feedback — ALWAYS VISIBLE ON ALL SCREENS */}
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">
+              <span className="flex items-center gap-0.5 text-gray-600"><Repeat2 size={9} />{cpTrades}</span>
+              <span className="flex items-center gap-0.5 text-emerald-600"><ThumbsUp size={9} />{pos}</span>
+              <span className="flex items-center gap-0.5 text-rose-600"><ThumbsDown size={9} />{neg}</span>
+            </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <span className="flex items-center gap-0.5 text-xs font-bold" style={{ color: '#64748B' }}>
-              <Repeat2 size={10} />{cpTrades}
-            </span>
-            <span className="flex items-center gap-0.5 text-xs font-bold" style={{ color: '#16A34A' }}>
-              <ThumbsUp size={10} />{pos}
-            </span>
-            <span className="flex items-center gap-0.5 text-xs font-bold" style={{ color: '#DC2626' }}>
-              <ThumbsDown size={10} />{neg}
-            </span>
+
+          {/* Amount summary pill */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg flex-1 min-w-[170px] justify-between"
+            style={{ backgroundColor: '#F8FAFC', border: '1px solid #F1F5F9' }}>
+            <div className="min-w-0">
+              <span className="text-[8px] font-black uppercase text-gray-400 block leading-none mb-0.5">You Pay</span>
+              <span className="font-extrabold text-xs text-gray-900 leading-tight block truncate">
+                {youPayAmt || '—'}
+              </span>
+            </div>
+
+            <ArrowRight size={11} className="text-gray-400 flex-shrink-0" />
+
+            <div className="min-w-0 text-right">
+              <span className="text-[8px] font-black uppercase block leading-none mb-0.5" style={{ color: btnColor }}>You Get</span>
+              <span className="font-extrabold text-xs leading-tight block truncate" style={{ color: btnColor }}>
+                {youRecvAmt || '—'}
+              </span>
+            </div>
           </div>
+
+          {/* Action Button */}
+          <button
+            onClick={() => navigate(`/trade/${trade.id}`)}
+            className="px-3 py-1.5 text-white text-[11px] font-black tracking-wider uppercase rounded-lg flex items-center justify-center gap-1 hover:opacity-90 active:scale-[0.98] transition-all flex-shrink-0 w-full sm:w-auto"
+            style={{ backgroundColor: trade.status === 'PAYMENT_SENT' ? '#2563EB' : btnColor }}>
+            <span>{trade.status === 'PAYMENT_SENT' ? 'Open' : 'Attend'}</span>
+            <ArrowRight size={11} />
+          </button>
         </div>
 
-        {/* ── Divider ── */}
-        <div className="mx-4 mb-3" style={{ height: '1px', backgroundColor: '#F1F5F9' }} />
-
-        {/* ── Payment-sent banner ── only for PAYMENT_SENT status ── */}
+        {/* ── Payment-sent notice bar ── */}
         {trade.status === 'PAYMENT_SENT' && (
-          <div className="mx-4 mb-3 px-3 py-2 rounded-xl flex items-center gap-2"
+          <div className="mx-3 mb-2 px-2.5 py-1 rounded-md flex items-center gap-1.5"
             style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
-            <span className="text-base flex-shrink-0">✅</span>
-            <p className="text-[11px] font-black leading-tight" style={{ color: '#1E40AF' }}>
+            <span className="text-xs">✅</span>
+            <p className="text-[10px] font-bold leading-tight" style={{ color: '#1E40AF' }}>
               Payment sent — awaiting Bitcoin release from {cp.username || 'seller'}
             </p>
           </div>
         )}
-
-        {/* ── Row 3: You Pay → You Receive ── */}
-        <div className="px-3 pb-3 flex items-stretch gap-1.5">
-          <div className="flex-1 min-w-0 rounded-xl px-2.5 py-2.5" style={{ backgroundColor: '#F8FAFC' }}>
-            <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1">You Pay</p>
-            <p className="font-black text-sm text-gray-900 leading-tight break-all">
-              {youPayAmt || <span className="text-gray-300">—</span>}
-            </p>
-            <p className="text-[10px] text-gray-400 mt-0.5 truncate">{youPayNote}</p>
-          </div>
-
-          <div className="flex items-center justify-center flex-shrink-0">
-            <div className="w-6 h-6 rounded-full flex items-center justify-center"
-              style={{ backgroundColor: `${btnColor}15` }}>
-              <ArrowRight size={12} style={{ color: btnColor }} />
-            </div>
-          </div>
-
-          <div className="flex-1 min-w-0 rounded-xl px-2.5 py-2.5"
-            style={{ backgroundColor: `${btnColor}10`, border: `1px solid ${btnColor}25` }}>
-            <p className="text-[9px] font-black uppercase tracking-widest mb-1" style={{ color: btnColor, opacity: 0.7 }}>
-              You Receive
-            </p>
-            <p className="font-black text-sm leading-tight break-all" style={{ color: btnColor }}>
-              {youRecvAmt || <span style={{ opacity: 0.3 }}>—</span>}
-            </p>
-            <p className="text-[10px] mt-0.5 truncate" style={{ color: btnColor, opacity: 0.6 }}>
-              {youRecvNote}
-            </p>
-          </div>
-        </div>
-
-        {/* ── Action button ── */}
-        <button
-          onClick={() => navigate(`/trade/${trade.id}`)}
-          className="w-full py-3 text-white text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 hover:opacity-90 active:opacity-80 transition-opacity"
-          style={{ backgroundColor: trade.status === 'PAYMENT_SENT' ? '#2563EB' : btnColor }}>
-          {trade.status === 'PAYMENT_SENT' ? 'Open Trade' : 'Attend to Trade'}
-          <ArrowRight size={13} />
-        </button>
       </div>
 
       {showPopup && (

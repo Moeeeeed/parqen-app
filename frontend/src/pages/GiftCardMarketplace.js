@@ -6,15 +6,13 @@ import axios from 'axios';
 import {
   CheckCircle, RefreshCw, AlertTriangle,
   BadgeCheck, Timer, X, Info, Shield,
-  ArrowRight, PlusCircle, Filter, MapPin, Heart,
-  Home, Wallet, User, Gift, Bitcoin,
+  ArrowRight, PlusCircle, Heart,
+  Wallet, Gift,
   ChevronDown, CreditCard, ThumbsUp, ThumbsDown, Repeat2,
-  Phone, Mail, Ban, ArrowUp, ArrowDown,
-  Zap, Lock, Users, TrendingUp, Award, Sparkles, Check,
+  Lock, TrendingUp, Check,
 } from 'lucide-react';
-import { toast } from 'react-toastify';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
-import { TRUST_MAP, deriveBadge, BadgeChip, BADGE_COLORS } from '../lib/badge';
+import { BadgeChip } from '../lib/badge';
 import ActiveTradeCard from '../components/ActiveTradeCard';
 import PRQFooter from '../components/PRQFooter';
 
@@ -330,15 +328,19 @@ function Avatar({user, size=48, radius='rounded-xl'}) {
 }
 
 // ── Gift Card Offer Card ──────────────────────────────────────────────────────
-function GCCard({listing, btcPriceUSD, onViewSeller, onTrade, featuredType}) {
-  const {rates:USD_RATES} = useRates();
+function GCCard({listing, btcPriceUSD, onViewSeller, onTrade, featuredType, liveSeenAt}) {
+  const { rates: USD_RATES } = useRates();
   const u        = getUser(listing.users);
-  const badge    = deriveBadge(u);
-  const [seen, setSeen] = useState(() => getLastSeen(u));
+  const uLastSeen = u?.last_seen_at;
+  const [seen, setSeen] = useState(() => getLastSeen({ ...u, last_seen_at: liveSeenAt || uLastSeen }));
   useEffect(() => {
-    const id = setInterval(() => setSeen(getLastSeen(u)), 30000);
+    setSeen(getLastSeen({ ...u, last_seen_at: liveSeenAt || uLastSeen }));
+  }, [liveSeenAt, uLastSeen]);
+  useEffect(() => {
+    const id = setInterval(() => setSeen(getLastSeen({ ...u, last_seen_at: liveSeenAt || uLastSeen })), 30000);
     return () => clearInterval(id);
-  }, []);
+  }, [liveSeenAt, uLastSeen]);
+
   const trades   = getTrades(u);
   const brand    = getBrand(listing);
   const fv       = getFaceVal(listing);
@@ -347,7 +349,7 @@ function GCCard({listing, btcPriceUSD, onViewSeller, onTrade, featuredType}) {
   const sym      = listing.currency_symbol||CUR_SYM[cur]||'$';
   const usdRate  = USD_RATES[cur]||1;
   const rateUSD  = getRateUSD(listing, btcPriceUSD);
-  const rateLocal= rateUSD*usdRate;
+  const rateLocal= rateUSD * usdRate;
 
   const cardType  = listing.card_type || 'both';
   const cardRange = getCardRange(listing);
@@ -361,99 +363,106 @@ function GCCard({listing, btcPriceUSD, onViewSeller, onTrade, featuredType}) {
   const btcOut     = refUSD / rateUSD;
   const receiveUSD = btcOut * btcPriceUSD;
 
-  const marginLabel = margin===0 ? 'Market rate' : margin>0 ? `+${margin}% above market` : `${Math.abs(margin)}% below market`;
-  const marginBg    = margin>10?C.danger:margin>0?C.warn:C.success;
+  const pos   = parseInt(u?.positive_feedback||0);
+  const neg   = parseInt(u?.negative_feedback||0);
 
-  const pos   = parseInt(u.positive_feedback||0);
-  const neg   = parseInt(u.negative_feedback||0);
-
-  const pmLabel  = listing.payment_method||'Payment';
   const ft = featuredType ? FEATURED[featuredType] : null;
 
   return (
-    <div className={`rounded-2xl overflow-hidden border transition-all w-full min-w-0 h-full flex flex-col justify-between hover:-translate-y-0.5 ${ft ? '' : 'shadow-[0_1px_2px_rgba(27,67,50,0.04),0_10px_28px_-14px_rgba(27,67,50,0.18)] hover:shadow-[0_2px_4px_rgba(27,67,50,0.06),0_20px_44px_-16px_rgba(27,67,50,0.28)]'}`}
+    <div className={`rounded-2xl overflow-hidden transition-all w-full h-full flex flex-col justify-between hover:-translate-y-0.5 ${ft ? '' : 'shadow-[0_1px_2px_rgba(27,67,50,0.04),0_10px_28px_-14px_rgba(27,67,50,0.18)] hover:shadow-[0_2px_4px_rgba(27,67,50,0.06),0_20px_44px_-16px_rgba(27,67,50,0.28)]'}`}
       style={{
-        background:   ft?.bgGradient || '#fff',
-        borderColor:  ft ? ft.border : C.g200,
-        borderWidth:  ft ? '2.5px' : '1px',
-        boxShadow:    ft ? `0 0 0 3px ${ft.glow}, 0 10px 36px ${ft.glow}` : undefined,
-        animation:    ft?.pulse ? (featuredType === 'fast_responder' ? 'fastResponderPulse 2.5s ease-in-out infinite' : 'featuredPulse 2.5s ease-in-out infinite') : undefined,
+        background: ft?.bgGradient || (ft ? ft.bg : '#fff'),
+        border: ft ? `2.5px solid ${ft.border}` : `1px solid ${C.g200}`,
+        boxShadow: ft ? `0 0 0 3px ${ft.glow}, 0 10px 36px ${ft.glow}` : undefined,
+        animation: ft?.pulse ? 'featuredPulse 2.5s ease-in-out infinite' : undefined,
       }}>
-
-      {/* ─ Featured ribbon ───────────────────────────────────────── */}
       {ft && (
         <div style={{position:'relative', overflow:'hidden'}}>
           <div className="flex items-center justify-center gap-2"
-            style={{background: ft.ribbon, padding:'10px 16px'}}>
-            <span style={{fontSize:13, fontWeight:800, letterSpacing:'0.08em', color:'#fff', textShadow:'0 1px 4px rgba(0,0,0,0.4)', whiteSpace:'nowrap'}}>
+            style={{
+              background: ft.ribbon,
+              padding: ft.pulse ? '10px 16px' : '8px 16px',
+            }}>
+            {ft.TagIcon && <ft.TagIcon size={14} strokeWidth={2.5} color="#fff" style={{ flexShrink: 0 }} />}
+            <span style={{
+              fontSize: ft.pulse ? 12 : 11,
+              fontWeight: 900,
+              letterSpacing: '0.12em',
+              color: '#fff',
+              textShadow: '0 1px 6px rgba(0,0,0,0.45)',
+              whiteSpace: 'nowrap',
+            }}>
               {ft.tag}
             </span>
           </div>
           {ft.pulse && (
             <div style={{
-              position:'absolute', top:0, left:0, right:0, bottom:0,
-              background:'linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.30) 50%,transparent 100%)',
-              animation:'shimmer 2.4s linear infinite',
-              pointerEvents:'none',
+              position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+              background: 'linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.30) 50%,transparent 100%)',
+              animation: 'shimmer 2.4s linear infinite',
+              pointerEvents: 'none',
             }}/>
           )}
         </div>
       )}
-
-      {/* ─ Seller row ────────────────────────────────────────────── */}
-      <div className="px-4 pt-3 pb-2">
-        <div className="flex items-start gap-2">
-
-          {/* Avatar + online */}
-          <div className="relative flex-shrink-0">
-            <button onClick={onViewSeller}>
-              <Avatar user={u} size={48} radius="rounded-xl"/>
-            </button>
-            {seen.online && (
-              <span className="absolute -bottom-0.5 -right-0.5">
-                <span className="absolute inline-flex w-3.5 h-3.5 rounded-full animate-ping"
-                  style={{backgroundColor:C.online, opacity:0.6}}/>
-                <span className="relative inline-flex w-3.5 h-3.5 rounded-full border-2 border-white"
-                  style={{backgroundColor:C.online}}/>
-              </span>
-            )}
-          </div>
-
-          {/* Name + badge + stats */}
-          <div className="flex-1 min-w-0 overflow-hidden">
-            <div className="flex items-center gap-1 flex-wrap">
-              <CountryFlag
-                countryCode={u?.country_code || u?.country || u?.location || null}
-                className="w-4 h-3 rounded-sm flex-shrink-0"/>
-              <button onClick={onViewSeller}
-                className="font-bold text-sm hover:underline leading-tight truncate flex-shrink min-w-0"
-                style={{color:C.g800, maxWidth:'110px'}}>
-                {getDisplayName(u) || 'Seller'}
+      <div className="px-3.5 pt-3 pb-2">
+        <div className="flex items-start justify-between gap-2">
+          {/* Left section: Avatar + Username & Like/Dislike/Trades */}
+          <div className="flex items-start gap-2.5 min-w-0 flex-1">
+            <div className="relative flex-shrink-0">
+              <button onClick={onViewSeller}>
+                <Avatar user={u} size={40} radius="rounded-xl"/>
               </button>
-              {isVerified(u) && <BadgeCheck size={13} style={{color:'#3B82F6',flexShrink:0}}/>}
-              <span className={`inline-flex items-center gap-px font-medium px-1 py-0 rounded-full border flex-shrink-0 ${badge.animate ? 'shadow-md' : ''}`}
-                style={{background:badge.bg, borderColor:badge.borderColor, fontSize:11, boxShadow: badge.glow ? `0 0 8px ${badge.glow}` : undefined}}>
-                <span style={{color:badge.iconColor||badge.textColor}}>{badge.icon}</span>
-                <span style={{color:badge.textColor}}>{badge.label}</span>
-              </span>
+              {seen.online && (
+                <span className="absolute -bottom-0.5 -right-0.5">
+                  <span className="absolute inline-flex w-3 h-3 rounded-full animate-ping"
+                    style={{backgroundColor:C.online, opacity:0.6}}/>
+                  <span className="relative inline-flex rounded-full w-3 h-3 border-2 border-white"
+                    style={{backgroundColor:C.online}}/>
+                </span>
+              )}
             </div>
 
-            {/* Stats row — all chips wrap naturally, nothing pushed off-screen */}
-            <div className="flex items-center flex-wrap gap-1 mt-1.5">
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-bold"
-                style={{backgroundColor:'#DCFCE7', color:'#16A34A'}}>
-                <ThumbsUp size={9} strokeWidth={2.5}/>{fmt(pos)}
-              </span>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-bold"
-                style={{backgroundColor:'#FEE2E2', color:'#DC2626'}}>
-                <ThumbsDown size={9} strokeWidth={2.5}/>{fmt(neg)}
-              </span>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-bold"
-                style={{backgroundColor:C.g100, color:C.g600}}>
-                <Repeat2 size={9} strokeWidth={2.5}/>{fmt(trades)} trades
-              </span>
+            <div className="flex flex-col gap-0.5 items-start min-w-0 flex-1">
+              {/* Row 1: CountryFlag + Name + Verified Badge */}
+              <div className="flex items-center gap-1.5 min-w-0">
+                <CountryFlag
+                  countryCode={u?.country_code || u?.country || u?.location || null}
+                  className="w-4 h-3 rounded-sm flex-shrink-0"/>
+                <button onClick={onViewSeller}
+                  className="font-black text-sm hover:underline leading-tight truncate"
+                  style={{color:C.g800}}>
+                  {getDisplayName(u) || 'Seller'}
+                </button>
+                {isVerified(u) && <BadgeCheck size={14} style={{color:'#3B82F6', flexShrink:0}}/>}
+              </div>
+
+              {/* Row 2: Like / Dislike buttons & trades count */}
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                <span className="inline-flex items-center gap-0.5 font-bold"
+                  style={{color:'#16A34A', fontSize:'11px'}}>
+                  <ThumbsUp size={10} strokeWidth={2.5}/>{fmt(pos)}
+                </span>
+                <span className="inline-flex items-center gap-0.5 font-bold"
+                  style={{color:'#EF4444', fontSize:'11px'}}>
+                  <ThumbsDown size={10} strokeWidth={2.5}/>{fmt(neg)}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold" style={{color:C.g500}}>
+                  <Repeat2 size={10} strokeWidth={2.5} style={{color:C.g400}}/>
+                  {fmt(trades)} trades
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Right section: Stacked BEGINNER badge & Active status pill */}
+          <div className="flex flex-col gap-1 items-end flex-shrink-0 pt-0.5">
+            <div>
+              <BadgeChip user={u} size="xs" />
+            </div>
+            <div>
               {seen.online ? (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-bold"
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold flex-shrink-0"
                   style={{backgroundColor:'#F0FDF4', color:C.online}}>
                   <span className="relative flex w-1.5 h-1.5 flex-shrink-0">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{backgroundColor:C.online}}/>
@@ -462,106 +471,145 @@ function GCCard({listing, btcPriceUSD, onViewSeller, onTrade, featuredType}) {
                   Active
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-medium"
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium flex-shrink-0"
                   style={{backgroundColor:C.g100, color:C.g400}}>
                   <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{backgroundColor:C.g300}}/>
                   {seen.label}
                 </span>
               )}
             </div>
+          </div>
+        </div>
+      </div>
 
-            {/* Card brand + type */}
-            <div className="mt-2 flex items-center gap-2 flex-wrap">
-              <span className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl min-w-0 max-w-full"
+      <div style={{height:1, backgroundColor: ft ? ft.divider : C.g100}}/>
+
+      <div className="px-3.5 py-2.5 grid grid-cols-2 gap-2.5">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-wide mb-0.5" style={{color: ft ? ft.labelColor : C.g500}}>You give</p>
+          <p className="text-base font-bold leading-tight" style={{color:C.g800, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', paddingRight:'4px'}}>
+            {youGive.val}&nbsp;<span style={{fontSize:'0.7em', color:C.g500}}>Card</span>
+          </p>
+        </div>
+        <div className="border-l pl-3" style={{borderColor: ft ? ft.divider : C.g100}}>
+          <p className="text-[11px] font-bold uppercase tracking-wide mb-0.5" style={{color: ft ? ft.labelColor : C.g500}}>You receive</p>
+          <p className="text-base font-bold leading-tight" style={{color:C.g800, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', paddingRight:'4px'}}>
+            ${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}
+          </p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <p className="text-[10px] font-semibold" style={{color:C.g500}}>
+              ≈ {fBtc(btcOut)} BTC
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Payment method & Gift card format pills */}
+      <div className="px-3.5 pt-1 pb-2 flex items-center justify-between gap-1.5 flex-wrap">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold uppercase truncate"
+          style={{backgroundColor:'rgba(22,163,74,0.08)', color:'#16A34A', border:'1px solid rgba(22,163,74,0.15)', maxWidth:'160px'}}>
+          {/card/i.test(brand) ? brand : `${brand} CARD`}
+        </span>
+        <div className="flex items-center gap-1 flex-wrap">
+          {(cardType==='physical'||cardType==='both') && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold"
+              style={{backgroundColor:'#DCFCE7', color:'#166534', border:'1px solid #BBF7D0'}}>
+              Physical
+            </span>
+          )}
+          {(cardType==='ecode'||cardType==='both') && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold"
+              style={{backgroundColor:'#EDE9FE', color:'#5B21B6', border:'1px solid #DDD6FE'}}>
+              E-Code
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="px-3.5 pb-2.5" style={{borderTop:`1px solid ${ft ? ft.divider : C.g100}`}}>
+        {/* ── Rate / % / Range — grey info board ───── */}
+        <div className="group relative mt-1">
+          <div className="rounded-xl px-2.5 py-2 flex items-center justify-between transition-colors"
+            style={{backgroundColor:C.g100, border:`1px solid ${C.g200}`}}>
+
+            <div className="min-w-0">
+              {/* Row 1: Rate */}
+              <p className="text-xs font-semibold" style={{color:C.g600}}>
+                Rate:&nbsp;<span style={{color:C.g800, fontWeight:700}}>{fmt(rateLocal)}</span>&nbsp;<span style={{color:C.g500, fontSize:'0.85em'}}>{cur}</span>
+              </p>
+
+              {/* Row 2: Range */}
+              <p className="text-xs font-semibold mt-1 truncate" style={{color:C.g600}}>
+                Range:&nbsp;
+                {!cardRange ? (
+                  <span style={{color:C.g700, fontWeight:700}}>Any Value</span>
+                ) : cardRange[0]?.isRange ? (
+                  <span style={{color:C.g700, fontWeight:700}}>${cardRange[0].min} – ${cardRange[0].max}</span>
+                ) : (
+                  <span style={{color:C.g700, fontWeight:700}}>
+                    {cardRange.map((v,i) => `${i > 0 ? ', ' : ''}$${v}`)}
+                  </span>
+                )}
+              </p>
+            </div>
+
+            {/* +5% badge vertically centered in rate box */}
+            <div className="flex items-center flex-shrink-0 ml-4 mr-2">
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[11px] font-black"
                 style={{
-                  backgroundColor: ft ? `${ft.border}18` : `${C.accent}14`,
-                  border: `1px solid ${ft ? `${ft.border}30` : `${C.accent}30`}`,
+                  backgroundColor: margin < 0 ? 'rgba(16,185,129,0.14)' : margin > 0 ? 'rgba(239,68,68,0.12)' : '#E2E8F0',
+                  color: margin < 0 ? '#16A34A' : margin > 0 ? '#EF4444' : C.g500,
+                  border: margin < 0 ? '1px solid rgba(16,185,129,0.25)' : margin > 0 ? '1px solid rgba(239,68,68,0.25)' : `1px solid ${C.g300}`,
                 }}>
-                <span className="text-[11px] font-semibold leading-snug flex-shrink-0" style={{color: ft ? ft.labelColor : C.g500}}>Seller accepts</span>
-                <span className="text-xs font-bold leading-snug tracking-wide truncate" style={{color: ft ? ft.labelColor : C.accent, maxWidth:'130px'}}>
-                  {/card/i.test(brand) ? brand.toUpperCase() : `${brand.toUpperCase()} CARD`}
-                </span>
+                {margin === 0 ? 'Market' : `${margin > 0 ? '+' : ''}${margin}%`}
               </span>
-              <div className="flex items-center gap-1 flex-wrap">
-                {(cardType==='physical'||cardType==='both') && (
-                  <span className="inline-flex items-center font-bold rounded-full"
-                    style={{backgroundColor:'#DCFCE7', color:'#166534', fontSize:11, padding:'2px 8px'}}>
-                    Physical
-                  </span>
-                )}
-                {(cardType==='ecode'||cardType==='both') && (
-                  <span className="inline-flex items-center font-bold rounded-full"
-                    style={{backgroundColor:'#EDE9FE', color:'#5B21B6', fontSize:11, padding:'2px 8px'}}>
-                    E-Code
-                  </span>
-                )}
+            </div>
+          </div>
+
+          {/* Tooltip — visible on hover */}
+          <div className="absolute bottom-full left-0 right-0 mb-3 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity"
+            style={{zIndex:20}}>
+            <div className="rounded-xl shadow-2xl border p-3 text-xs"
+              style={{backgroundColor:'#1E293B', borderColor:'#334155', color:'#E2E8F0', position:'relative'}}>
+              <p className="font-black text-[10px] uppercase tracking-wider mb-2" style={{color:'#64748B'}}>Offer Details</p>
+              <div className="flex items-center justify-between mb-1.5">
+                <span style={{color:'#94A3B8'}}>Rate</span>
+                <span className="font-bold" style={{color:'#F0FAF5'}}>{fmt(rateLocal)} {cur}</span>
               </div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span style={{color:'#94A3B8'}}>Margin</span>
+                <span className="font-bold"
+                  style={{color: margin < 0 ? '#4ADE80' : margin > 0 ? '#F87171' : '#94A3B8'}}>
+                  {margin === 0 ? 'Market rate' : `${margin > 0 ? '+' : ''}${margin}%`}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span style={{color:'#94A3B8'}}>Range</span>
+                <span className="font-bold truncate" style={{color:'#F0FAF5'}}>
+                  {!cardRange ? 'Any Value' : cardRange[0]?.isRange ? `$${cardRange[0].min} – $${cardRange[0].max}` : cardRange.map(v=>`$${v}`).join(', ')}
+                </span>
+              </div>
+              <div style={{position:'absolute', bottom:'-5px', left:'20px', width:10, height:10, backgroundColor:'#1E293B', border:'1px solid #334155', borderTop:'none', borderLeft:'none', transform:'rotate(45deg)'}}/>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ─ Divider ───────────────────────────────────────────────── */}
-      <div style={{height:1, backgroundColor: ft ? ft.divider : C.g100}}/>
-
-      {/* ─ You Give / You Receive ────────────────────────────────── */}
-      <div className="px-3 py-3.5 grid grid-cols-2 gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-bold uppercase tracking-wide mb-0.5" style={{color:C.g500}}>You give</p>
-          <p className="text-xl font-black leading-tight truncate" style={{color:C.g800}}>{youGive.val}</p>
-          <p className="text-xs font-semibold mt-0.5" style={{color:C.g400}}>Card</p>
-        </div>
-        <div className="border-l pl-3 min-w-0" style={{borderColor:C.g100}}>
-          <p className="text-xs font-bold uppercase tracking-wide mb-0.5" style={{color:C.g500}}>You receive</p>
-          <p className="text-xl font-black leading-tight truncate" style={{color:C.g800}}>
-            ${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}
-          </p>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <span className="flex items-center justify-center rounded-full flex-shrink-0"
-              style={{width:16, height:16, backgroundColor:`${C.gold}22`, border:`1px solid ${C.gold}55`, color:'#B4790A', fontSize:11, fontWeight:700}}>
-              ₿
-            </span>
-            <p className="text-xs font-semibold truncate" style={{color:'#B4790A'}}>{fBtc(btcOut)}</p>
-          </div>
-          <span className="inline-flex items-center gap-1 mt-1.5 font-bold px-1.5 py-0.5 rounded-md"
-            style={{backgroundColor:`${marginBg}18`, color:marginBg, fontSize:11}}>
-            {margin > 0 ? <ArrowUp size={8} strokeWidth={3.5}/> : margin < 0 ? <ArrowDown size={8} strokeWidth={3.5}/> : null}
-            {marginLabel}
-          </span>
-        </div>
-      </div>
-
-      {/* ─ Denominations ────────────────────────────────────────── */}
-      <div className="px-4 pb-2">
-        <p className="font-semibold mb-0.5" style={{color:C.g400, fontSize:11}}>Available range</p>
-        {!cardRange ? (
-          <span className="text-xs font-bold" style={{color:C.g400}}>Any Value</span>
-        ) : cardRange[0]?.isRange ? (
-          <span className="text-xs font-bold" style={{color:C.forest}}>
-            ${cardRange[0].min} – ${cardRange[0].max}
-          </span>
-        ) : (
-          <p className="text-xs font-bold" style={{color:C.forest}}>
-            {cardRange.map((v,i) => (
-              <span key={v}>
-                {i > 0 && <span style={{color:C.g300}}> | </span>}
-                ${v}
-              </span>
-            ))}
-          </p>
-        )}
-      </div>
-
-      {/* ─ Actions ───────────────────────────────────────────────── */}
-      <div className="px-4 pb-3 flex items-center gap-2">
+      <div className="px-3.5 pb-3 flex items-center gap-2">
         <button onClick={onViewSeller}
-          className="w-10 h-11 rounded-xl border flex items-center justify-center flex-shrink-0 hover:bg-gray-50 transition"
-          style={{borderColor: ft ? ft.border : C.g200, backgroundColor: ft ? `${ft.border}12` : 'transparent'}}>
+          className="w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 transition"
+          style={{
+            borderColor: ft ? ft.border : C.g200,
+            backgroundColor: ft ? `${ft.border}12` : 'transparent',
+          }}>
           <Info size={14} style={{color: ft ? ft.border : C.g400}}/>
         </button>
         <button onClick={onTrade}
-          className="flex-1 h-11 rounded-xl text-white font-black text-base flex items-center justify-center gap-1.5 hover:opacity-90 transition active:scale-[0.98]"
-          style={{background: ft?.btnGradient || FEATURED.fast_responder.btnGradient, boxShadow: ft?.btnShadow || FEATURED.fast_responder.btnShadow}}>
+          className="flex-1 h-9 rounded-xl text-white font-black text-sm flex items-center justify-center gap-1.5 hover:opacity-90 active:scale-[0.98] transition"
+          style={{
+            background: ft ? ft.btnGradient : C.forest,
+            boxShadow: ft ? ft.btnShadow : undefined,
+          }}>
           TRADE <ArrowRight size={14}/>
         </button>
       </div>
