@@ -1778,9 +1778,6 @@ export default function GiftCards({ user }) {
             ))}
           </div>
         )}
-            ))}
-          </div>
-        )}
 
         {/* ── Trade Safety Banner ── */}
         <div style={{display:'flex',alignItems:'center',gap:11,padding:'13px 15px',borderRadius:12,background:'linear-gradient(135deg,#FFFBEB,#FEF3C7)',border:'1.5px solid #FCD34D',boxShadow:'0 2px 8px rgba(217,119,6,0.12)'}}>
