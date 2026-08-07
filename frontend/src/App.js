@@ -20,6 +20,8 @@ import WelcomeModal from './components/WelcomeModal';
 import WelcomeBonusModal from './components/WelcomeBonusModal';
 import SuggestionsPanel from './components/SuggestionsPanel';
 import { NotificationPrompt, AndroidInstallBanner, IOSInstallGuide } from './components/PushSetup';
+import { TourProvider } from './contexts/TourContext';
+import GuidedTour from './components/GuidedTour';
 
 // ── Monkeypatch react-toastify ──────────────────────────────────────────────
 const customToast = (message, options) => {
@@ -436,6 +438,7 @@ function App() {
   return (
     <HelmetProvider>
       <RatesProvider>
+      <TourProvider>
         <Router>
           <CustomToastContainer />
           <Suspense fallback={<PageLoader />}>
@@ -510,11 +513,13 @@ function App() {
 
                   <BottomNav user={user} />
                   <SuggestionsPanel user={user} />
+                  <GuidedTour />
                 </AppShell>
               } />
             </Routes>
           </Suspense>
         </Router>
+      </TourProvider>
       </RatesProvider>
     </HelmetProvider>
   );

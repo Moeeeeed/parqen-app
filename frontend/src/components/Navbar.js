@@ -3,10 +3,11 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { useRates } from '../contexts/RatesContext';
 import Notifications from './Notifications';
+import { useTour } from '../contexts/TourContext';
 import {
   Wallet, User, Settings, LogOut, ChevronDown,
   BarChart3, Gift, List, Eye, EyeOff, ShoppingCart, Tag, TrendingUp,
-  Plus, LayoutDashboard,
+  Plus, LayoutDashboard, PlayCircle,
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -157,7 +158,11 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
     cursor: 'pointer', transition: 'all 0.2s',
   });
 
+
+
+
   const DesktopNavLinks = () => (
+
     <div className="hidden md:flex items-center flex-1 justify-center" style={{ gap: 12 }}>
 
       {/* Segmented control — one cohesive track instead of separate floating pills */}
@@ -298,7 +303,7 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
           </Link>
           <DesktopNavLinks />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            <Link to="/login" className="hidden sm:inline-block" style={{
+            <Link to="/login" id="nav-login-btn" className="hidden sm:inline-block" style={{
               padding: '8px 18px', borderRadius: 10, fontSize: 13, fontWeight: 800,
               border: `2px solid ${C.g200}`, color: C.forest,
               textDecoration: 'none', transition: 'all 0.2s', background: 'transparent',

@@ -171,10 +171,11 @@ export default function Login({ onLogin }) {
   // Initialize Google Identity Services once on mount
   useEffect(() => {
     /* global google */
-    if (window.google?.accounts && !googleInitialized.current) {
+    const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+    if (googleClientId && window.google?.accounts && !googleInitialized.current) {
       try {
         window.google.accounts.id.initialize({
-          client_id: process.env.REACT_APP_GOOGLE_CLIENT_ID || '',
+          client_id: googleClientId,
           callback: handleGoogleResponse,
         });
         googleInitialized.current = true;
@@ -1197,7 +1198,7 @@ export default function Login({ onLogin }) {
                       <div style={{ flex: 1, height: 1, background: '#E2E8F0' }} />
                     </div>
 
-                    <button onClick={() => navigate('/register')}
+                    <button id="btn-go-register" onClick={() => navigate('/register')}
                       className="submit-btn"
                       style={{
                         background: 'none',
