@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
+import { BadgeChip } from '../lib/badge';
 
-function ProfileFlag() {
+function ProfileFlag({ user }) {
   const [countryData, setCountryData] = useState({ code: null, name: null });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -20,16 +21,20 @@ function ProfileFlag() {
       });
   }, []);
 
-  if (isLoading) return <span className="text-gray-400">...</span>;
-  if (!countryData.code) return null;
-
-  // Use emoji flag
+  // Use emoji flag for country
   const flagEmoji = countryData.code ? String.fromCodePoint(...[...countryData.code.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)) : '🌍';
 
   return (
     <div className="flex items-center gap-2">
-      <span className="text-sm">{flagEmoji}</span>
-      <span className="text-sm text-gray-600">{countryData.name}</span>
+      {isLoading ? (
+        <span className="text-gray-400">...</span>
+      ) : countryData.code ? (
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm">{flagEmoji}</span>
+          <span className="text-sm text-gray-600 font-medium">{countryData.name}</span>
+        </div>
+      ) : null}
+      {user && <BadgeChip user={user} size="sm" />}
     </div>
   );
 }
