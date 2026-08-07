@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate, useLocation } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import { RatesProvider } from './contexts/RatesContext';
 import axios from 'axios';
@@ -20,6 +20,14 @@ import WelcomeModal from './components/WelcomeModal';
 import WelcomeBonusModal from './components/WelcomeBonusModal';
 import SuggestionsPanel from './components/SuggestionsPanel';
 import { NotificationPrompt, AndroidInstallBanner, IOSInstallGuide } from './components/PushSetup';
+import ErrorBoundary from './components/ErrorBoundary';
+
+// Resets the ErrorBoundary on every route change, so a crash on one page
+// doesn't leave every subsequent page stuck on the fallback screen.
+function RouteErrorBoundary({ children }) {
+  const location = useLocation();
+  return <ErrorBoundary key={location.pathname}>{children}</ErrorBoundary>;
+}
 
 // ── Monkeypatch react-toastify ──────────────────────────────────────────────
 const customToast = (message, options) => {
@@ -467,6 +475,7 @@ function App() {
                   <AndroidInstallBanner />
                   <IOSInstallGuide />
 
+                  <RouteErrorBoundary>
                   <Routes>
                     <Route path="/" element={<LandingPage user={user} />} />
                     <Route path="/listing/:id" element={<ListingDetail user={user} />} />
@@ -507,6 +516,7 @@ function App() {
                     <Route path="/ref/:username" element={<RefRedirect />} />
                     <Route path="*" element={<Navigate to="/" />} />
                   </Routes>
+                  </RouteErrorBoundary>
 
                   <BottomNav user={user} />
                   <SuggestionsPanel user={user} />

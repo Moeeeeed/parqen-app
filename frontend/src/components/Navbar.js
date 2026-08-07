@@ -375,20 +375,20 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
 
             {/* Wallet balance pill — desktop only */}
             <div className="hidden md:flex items-center"
-              style={{ gap: 6, borderRadius: 8, padding: '6px 10px' }}>
+              style={{ gap: 6, borderRadius: 8, padding: '6px 10px', flexShrink: 0 }}>
               <button onClick={() => setShowBal(!showBal)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 0 }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0 }}
                 title={showBal ? 'Hide balance' : 'Show balance'}>
                 {showBal
                   ? <Eye size={14} color={C.g400} />
                   : <EyeOff size={14} color={C.g400} />}
               </button>
-              <Link to="/wallet" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 5 }}>
-                <Wallet size={13} color={C.g500} />
-                <span style={{ fontSize: 13, fontWeight: 800, color: C.g700 }}>
+              <Link to="/wallet" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                <Wallet size={13} color={C.g500} style={{ flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 800, color: C.g700, whiteSpace: 'nowrap' }}>
                   {showBal ? `${localCode} ${sym}${fmt(totalLocal, 2)}` : '••••••'}
                 </span>
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: C.mint, display: 'inline-block', animation: 'prqPulseDot 2s ease-in-out infinite' }} />
+                <span style={{ width: 5, height: 5, borderRadius: '50%', background: C.mint, display: 'inline-block', animation: 'prqPulseDot 2s ease-in-out infinite', flexShrink: 0 }} />
               </Link>
             </div>
 

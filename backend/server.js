@@ -8153,7 +8153,7 @@ app.get('/api/notifications', verifyToken, async (req, res) => {
     // 1. UUID from action URL  2. data.trade_id  3. any path segment after /trade/
     const tradeSelect = `id, status, trade_type, amount_btc, amount_usd, amount_local,
                  local_currency, currency_symbol, payment_method, trade_ref,
-                 buyer_id, seller_id, created_at, completed_at, cancelled_at,
+                 buyer_id, seller_id, created_at, completed_at, cancelled_at, cancel_reason,
                  buyer:buyer_id(id, username, avatar_url, country),
                  seller:seller_id(id, username, avatar_url, country)`;
 

@@ -1575,39 +1575,6 @@ export default function TradeDetail({user}) {
               )}
             </div>
 
-              {/* ── Payment confirmed banner (mobile only — moves here from chat on small screens) ── */}
-              {isActive&&isPaid&&(
-                <div className="md:hidden flex-shrink-0 rounded-xl overflow-hidden"
-                  style={{border:'2px solid #2563EB',boxShadow:'0 2px 12px rgba(37,99,235,0.20)'}}>
-                  <div className="flex items-center gap-2 px-3 py-2"
-                    style={{background:'linear-gradient(135deg,#1E3A8A,#2563EB)'}}>
-                    <span className="text-sm">{isBuyer ? <Clock size={16} style={{color:'#fff'}}/> : <Bell size={16} style={{color:'#fff'}}/>}</span>
-                    <span className="text-xs font-black text-white tracking-wide flex-1">
-                      {isBuyer
-                        ? 'Payment Sent — Awaiting Seller Confirmation'
-                        : 'Action Required — Release Bitcoin'}
-                    </span>
-                  </div>
-                  <div className="px-3 py-2.5" style={{backgroundColor:'#EFF6FF'}}>
-                    {isBuyer ? (
-                      <p className="text-xs font-semibold leading-relaxed" style={{color:'#1E40AF'}}>
-                        Your payment has been sent successfully. The seller has been notified and will check their account now. Once they confirm receipt, your Bitcoin will be released to you automatically.
-                      </p>
-                    ) : (
-                      <>
-                        <p className="text-xs font-bold leading-relaxed" style={{color:'#1E40AF'}}>
-                          The buyer has confirmed payment. Please check your {payMethod} account right now.
-                        </p>
-                        <p className="text-xs font-semibold mt-1" style={{color:'#1D4ED8'}}>
-                          Check your account — if payment received, tap <strong>RELEASE BITCOIN</strong> to complete the trade.<br/>
-                          Payment not received? Open a dispute so a moderator can help.
-                        </p>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-
             {/* Trade instructions accordion */}
             <OfferTerms trade={trade}/>
 
@@ -1758,9 +1725,11 @@ export default function TradeDetail({user}) {
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-sm font-semibold" style={{color: (cp?.is_online ?? true) ? '#22C55E' : C.g400}}>
-                    <span className="w-2.5 h-2.5 rounded-full" style={{background: (cp?.is_online ?? true) ? '#22C55E' : C.g400}}/>
-                    {(cp?.is_online ?? true) ? 'Active' : fmtAge(cp?.last_seen_at)}
+                  <span className="flex items-center gap-1.5 text-sm font-semibold"
+                    style={{color: isCompleted ? '#16A34A' : isPaid ? '#16A34A' : (cp?.is_online ?? true) ? '#22C55E' : C.g400}}>
+                    <span className="w-2.5 h-2.5 rounded-full"
+                      style={{background: isCompleted ? '#16A34A' : isPaid ? '#16A34A' : (cp?.is_online ?? true) ? '#22C55E' : C.g400}}/>
+                    {isCompleted ? 'Trade completed' : isPaid ? 'Paid' : (cp?.is_online ?? true) ? 'Active' : fmtAge(cp?.last_seen_at)}
                   </span>
                   {isEscrow && isActive && !isDisputed && (
                     <span
@@ -1791,32 +1760,32 @@ export default function TradeDetail({user}) {
                 </div>
               </div>
 
-              {/* ── Trade Summary Banner ── */}
-              <div className="flex-shrink-0 flex items-center gap-2.5 px-3 py-2.5"
-                style={{ backgroundColor: isSeller ? C.danger : C.green }}>
-                <div className="flex-shrink-0 flex items-center justify-center"
-                  style={{
-                    width:26, height:26, borderRadius:'50%',
-                    border:'1.5px solid rgba(255,255,255,0.85)',
-                    backgroundColor:'rgba(255,255,255,0.14)',
-                    transform:'rotate(-8deg)',
-                    boxShadow:'0 0 0 2px rgba(255,255,255,0.18)',
-                  }}
-                  title="Verified escrow trade">
-                  <Stamp size={14} style={{color:'#fff'}}/>
-                </div>
-                <p className="text-xs leading-snug font-black uppercase tracking-wide" style={{color:'#fff'}}>
-                  {isBuyer
-                    ? `YOU ARE BUYING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
-                    : isSeller
-                      ? `YOU ARE SELLING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
-                      : `PAY ${userPays.toFixed(2)} (${cur}) VIA ${payMethod} FOR ${fmtBtc(btcReceived)} BTC`
-                  }
-                </p>
-              </div>
-
               {/* Messages */}
-              <div ref={chatRef} className="flex-1 overflow-y-auto p-4 space-y-3" style={{backgroundColor:'#F9FAFB',minHeight:0}}>
+              <div ref={chatRef} className="flex-1 overflow-y-auto px-4 pb-4 pt-2 space-y-3" style={{backgroundColor:'#F9FAFB',minHeight:0,WebkitOverflowScrolling:'touch',touchAction:'pan-y'}}>
+
+                {/* ── Trade Summary Banner — scrolls away with the rest of the chat, not pinned ── */}
+                <div className="-mx-4 -mt-2 mb-3 flex items-center gap-2.5 px-4 py-2.5"
+                  style={{ backgroundColor: isSeller ? C.danger : C.green }}>
+                  <div className="flex-shrink-0 flex items-center justify-center"
+                    style={{
+                      width:26, height:26, borderRadius:'50%',
+                      border:'1.5px solid rgba(255,255,255,0.85)',
+                      backgroundColor:'rgba(255,255,255,0.14)',
+                      transform:'rotate(-8deg)',
+                      boxShadow:'0 0 0 2px rgba(255,255,255,0.18)',
+                    }}
+                    title="Verified escrow trade">
+                    <Stamp size={14} style={{color:'#fff'}}/>
+                  </div>
+                  <p className="text-xs leading-snug font-black uppercase tracking-wide" style={{color:'#fff'}}>
+                    {isBuyer
+                      ? `YOU ARE BUYING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
+                      : isSeller
+                        ? `YOU ARE SELLING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
+                        : `PAY ${userPays.toFixed(2)} (${cur}) VIA ${payMethod} FOR ${fmtBtc(btcReceived)} BTC`
+                    }
+                  </p>
+                </div>
 
                 {/* Proof images */}
                 {images.length>0&&(
@@ -1847,22 +1816,10 @@ export default function TradeDetail({user}) {
                     ? `You are buying ${fmtBtc(btcReceived)} BTC (${sym}${fmt(btcValueInLocal,2)} ${cur}) for ${sym}${fmt(userPays,2)} ${cur} via ${payMethod}. It is now safe for you to pay. You will have ${timeLimit} minutes to make your payment and click on the "PAID" button before the trade expires.`
                     : `You are selling ${fmtBtc(btcReceived)} BTC (${sym}${fmt(btcValueInLocal,2)} ${cur}) for ${sym}${fmt(userPays,2)} ${cur} via ${payMethod}. Wait for the buyer to send payment via ${payMethod}, then confirm it before releasing the Bitcoin. The buyer has ${timeLimit} minutes to pay before the trade expires.`;
                   return(
-                    <div className="flex justify-center my-3 px-1">
-                      {/* Same header-bar treatment as the other system event cards below
-                          (TRADE OPEN colors) — a distinct card shape + dark-green header,
-                          not just a font color, so it never reads as a regular chat bubble. */}
-                      <div className="w-full max-w-[95%] rounded-2xl overflow-hidden shadow-lg">
-                        <div className="flex items-center gap-2.5 px-3.5 py-2" style={{background:'linear-gradient(135deg,#0c1a10,#1B4332)'}}>
-                          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{backgroundColor:'#D1FAE5'}}>
-                            <Lock size={16} style={{color:'#1B4332'}}/>
-                          </div>
-                          <span className="text-xs font-black tracking-widest flex-1" style={{color:'rgba(255,255,255,0.85)',letterSpacing:'0.08em'}}>TRADE OPEN</span>
-                          <span className="text-xs font-semibold" style={{color:'rgba(255,255,255,0.5)'}}>{openedLabel}</span>
-                        </div>
-                        <div className="px-4 py-3" style={{background:'rgba(27,67,50,0.04)'}}>
-                          <p className="text-sm leading-relaxed" style={{color:'#166534'}}>{sysText}</p>
-                        </div>
-                      </div>
+                    <div className="-mx-4 -mt-2 mb-3 px-4 py-3.5" style={{backgroundColor:'#F3F4F6'}}>
+                      <p className="text-sm font-black mb-1.5" style={{color:'#111827'}}>System message</p>
+                      <p className="text-sm leading-relaxed" style={{color:'#1F2937'}}>{sysText}</p>
+                      <p className="text-xs mt-2" style={{color:'#9CA3AF'}}>{openedLabel}</p>
                     </div>
                   );
                 })()}
@@ -2008,12 +1965,12 @@ export default function TradeDetail({user}) {
                       <div className="max-w-[72%] flex flex-col">
                         {isImage?(
                           <div className="rounded-2xl overflow-hidden shadow-sm"
-                            style={{border:`2px solid ${isOwn?'#0B8FD9':'#E5E7EB'}`}}>
+                            style={{border:`2px solid ${isOwn?'#0B8FD9':'#14532D'}`}}>
                             {/* Sender name inside bubble — top */}
                             {!isOwn && (
                               <div className="flex items-center justify-between px-3 pt-2.5 pb-1"
-                                style={{background:'#E5E7EB'}}>
-                                <p className="text-xs font-bold" style={{color:'#64748B'}}>
+                                style={{background:'#14532D'}}>
+                                <p className="text-xs font-bold" style={{color:'rgba(255,255,255,0.7)'}}>
                                   {cp?.username || 'User'}
                                 </p>
                               </div>
@@ -2022,57 +1979,57 @@ export default function TradeDetail({user}) {
                               className="block w-full text-left cursor-pointer"
                               style={{width:260}}>
                               <div className="flex flex-col items-center justify-center gap-1.5 px-4"
-                                style={{height:130,background:isOwn?'rgba(11,143,217,0.08)':'rgba(229,231,235,0.45)'}}>
+                                style={{height:130,background:isOwn?'rgba(11,143,217,0.08)':'rgba(20,83,45,0.10)'}}>
                                 <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-                                  style={{background:isOwn?'rgba(11,143,217,0.15)':'rgba(148,163,184,0.18)'}}>
-                                  <Camera size={18} style={{color:'#334155'}} />
+                                  style={{background:isOwn?'rgba(11,143,217,0.15)':'rgba(20,83,45,0.18)'}}>
+                                  <Camera size={18} style={{color:isOwn?'#334155':'#14532D'}} />
                                 </div>
-                                <span className="text-xs font-bold" style={{color:'#334155'}}>
+                                <span className="text-xs font-bold" style={{color:isOwn?'#334155':'#14532D'}}>
                                   Image attached — tap to view
                                 </span>
                               </div>
                             </button>
                             {/* Timestamp inside bubble — bottom */}
                             <div className="px-3 pb-2.5 pt-1"
-                              style={{background:isOwn?'#0B8FD9':'#E5E7EB'}}>
-                              <p className="text-xs" style={{color:isOwn?'rgba(255,255,255,0.6)':'#94A3B8'}}>
+                              style={{background:isOwn?'#0B8FD9':'#14532D'}}>
+                              <p className="text-xs" style={{color:'rgba(255,255,255,0.6)'}}>
                                 {new Date(m.created_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})} {new Date(m.created_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})}
                               </p>
                             </div>
                           </div>
                         ):(
                           <div className={`rounded-2xl px-4 shadow-sm ${isOwn ? 'py-3' : 'pt-3 pb-1.5'}`}
-                            style={{ background: isOwn ? '#0B8FD9' : '#E5E7EB' }}>
+                            style={{ background: isOwn ? '#DCFCE7' : '#14532D', border: isOwn ? '1px solid #BBF7D0' : 'none' }}>
                             {/* ── TOP: sender name + copy icon (received only — own messages don't show name) ── */}
                             {!isOwn && (
                               <div className="flex items-center justify-between mb-2">
-                                <p className="text-xs font-bold" style={{color:'#64748B'}}>
+                                <p className="text-xs font-bold" style={{color:'rgba(255,255,255,0.7)'}}>
                                   {cp?.username || 'User'}
                                 </p>
                                 <button type="button"
                                   onClick={()=>copyToClipboard(text, 'Message copied!')}
                                   className="flex-shrink-0 flex items-center justify-center w-5 h-5"
                                   title="Copy message">
-                                  <Copy size={13} style={{color:'rgba(0,0,0,0.35)'}}/>
+                                  <Copy size={13} style={{color:'rgba(255,255,255,0.5)'}}/>
                                 </button>
                               </div>
                             )}
                             {/* ── MIDDLE: message text ── */}
                             <p className="text-sm font-bold break-words leading-relaxed mb-2"
-                              style={{color: isOwn ? '#fff' : '#1E293B'}}>
+                              style={{color: isOwn ? '#166534' : '#fff'}}>
                               {text}
                             </p>
                             {/* ── BOTTOM: timestamp + copy icon (right for sent) ── */}
                             {isOwn && (
                               <div className="flex items-center justify-between">
-                                <p className="text-xs" style={{color:'rgba(255,255,255,0.6)'}}>
+                                <p className="text-xs" style={{color:'#4D7C0F'}}>
                                   {new Date(m.created_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})} {new Date(m.created_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})}
                                 </p>
                                 <button type="button"
                                   onClick={()=>copyToClipboard(text, 'Message copied!')}
                                   className="flex-shrink-0 flex items-center justify-center w-5 h-5"
                                   title="Copy message">
-                                  <Copy size={13} style={{color:'rgba(255,255,255,0.7)'}}/>
+                                  <Copy size={13} style={{color:'rgba(22,101,52,0.55)'}}/>
                                 </button>
                               </div>
                             )}
@@ -2115,6 +2072,24 @@ export default function TradeDetail({user}) {
                   </div>
                 )}
                 <style>{`@keyframes typingDot{0%,60%,100%{transform:translateY(0);opacity:0.4;}30%{transform:translateY(-4px);opacity:1;}}`}</style>
+
+                {/* ── System message — trade completed, mirrors the payment-verification card ── */}
+                {isCompleted && (()=>{
+                  const doneRaw = trade.updated_at || trade.created_at;
+                  const doneDate = doneRaw ? new Date(/[Z+]/.test(doneRaw)?doneRaw:doneRaw+'Z') : new Date();
+                  const doneLabel = `${String(doneDate.getDate()).padStart(2,'0')}/${String(doneDate.getMonth()+1).padStart(2,'0')}/${doneDate.getFullYear()} ${String(doneDate.getHours()).padStart(2,'0')}:${String(doneDate.getMinutes()).padStart(2,'0')}`;
+                  return(
+                    <div className="flex justify-center my-3 px-1">
+                      <div className="w-full max-w-[95%] rounded-2xl p-4" style={{backgroundColor:'#F0FDF4', border:'1px solid #86EFAC'}}>
+                        <p className="text-sm font-black mb-1.5" style={{color:'#15803D'}}>System message</p>
+                        <p className="text-sm leading-relaxed font-semibold" style={{color:'#166534'}}>
+                          Trade completed. The Bitcoin has been released and the trade is now closed.
+                        </p>
+                        <p className="text-xs font-semibold mt-2.5" style={{color:'#4D7C0F'}}>{doneLabel}</p>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* ── Congratulations banner ── */}
                 {isCompleted&&(
@@ -2178,45 +2153,29 @@ export default function TradeDetail({user}) {
                   </div>
                 )}
 
+                {/* ── Payment confirmed banner — scrolls with the rest of the chat, not pinned ──
+                     Driven directly by trade.status (isPaid), not by whether a chat
+                     message successfully posted, so it always shows regardless of the message bug. ── */}
+                {isActive&&isPaid&&(()=>{
+                  const paidLabel = (()=>{
+                    const d = paidAt ? new Date(paidAt) : new Date();
+                    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+                  })();
+                  return(
+                    <div className="rounded-2xl p-4" style={{backgroundColor:'#EFF6FF', border:'1px solid #93C5FD'}}>
+                      <p className="text-sm font-black mb-1.5" style={{color:'#1D4ED8'}}>System message</p>
+                      <p className="text-sm leading-relaxed font-semibold" style={{color:'#1E40AF'}}>
+                        {isBuyer
+                          ? 'Your payment has been sent successfully. The seller has been notified and will check their account now. Once they confirm receipt, your Bitcoin will be released to you automatically.'
+                          : <>The buyer has confirmed payment. Please check your {payMethod} account right now. Check your account — if payment received, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Payment not received? Open a dispute so a moderator can help.</>}
+                      </p>
+                      <p className="text-xs font-semibold mt-2.5" style={{color:'#3B82F6'}}>{paidLabel}</p>
+                    </div>
+                  );
+                })()}
+
                 <div ref={msgEnd}/>
               </div>
-
-              {/* ── Payment confirmed banner — pinned above input (desktop only; moves to Actions tab on mobile) ──
-                   Restored: driven directly by trade.status (isPaid), not by whether a chat
-                   message successfully posted, so it always shows regardless of the message bug. ── */}
-              {isActive&&isPaid&&(
-                <div className="hidden md:block flex-shrink-0 mx-3 mb-2 rounded-xl overflow-hidden"
-                  style={{border:'2px solid #2563EB',boxShadow:'0 2px 12px rgba(37,99,235,0.20)'}}>
-                  {/* header */}
-                  <div className="flex items-center gap-2 px-3 py-2"
-                    style={{background:'linear-gradient(135deg,#1E3A8A,#2563EB)'}}>
-                    <span className="text-sm">{isBuyer ? <Clock size={16} style={{color:'#fff'}}/> : <Bell size={16} style={{color:'#fff'}}/>}</span>
-                    <span className="text-xs font-black text-white tracking-wide flex-1">
-                      {isBuyer
-                        ? 'Payment Sent — Awaiting Seller Confirmation'
-                        : 'Action Required — Release Bitcoin'}
-                    </span>
-                  </div>
-                  {/* body */}
-                  <div className="px-3 py-2.5" style={{backgroundColor:'#EFF6FF'}}>
-                    {isBuyer ? (
-                      <p className="text-xs font-semibold leading-relaxed" style={{color:'#1E40AF'}}>
-                        Your payment has been sent successfully. The seller has been notified and will check their account now. Once they confirm receipt, your Bitcoin will be released to you automatically.
-                      </p>
-                    ) : (
-                      <>
-                        <p className="text-xs font-bold leading-relaxed" style={{color:'#1E40AF'}}>
-                          The buyer has confirmed payment. Please check your {payMethod} account right now.
-                        </p>
-                        <p className="text-xs font-semibold mt-1" style={{color:'#1D4ED8'}}>
-                          Check your account — if payment received, tap <strong>RELEASE BITCOIN</strong> to complete the trade.<br/>
-                          Payment not received? Open a dispute so a moderator can help.
-                        </p>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
 
               {/* Input — floating pill composer */}
               {isActive?(
@@ -2317,7 +2276,7 @@ export default function TradeDetail({user}) {
         </div>
       </div>
 
-      {/* Constrain page height to exactly calc(100dvh - var(--navbar-h)) so the
+      {/* Constrain page height to exactly calc(100svh - var(--navbar-h)) so the
           body never overflows or scrolls. The flex column chain then constrains every child
           properly — partner header stays pinned (flex-shrink-0) and only the message list
           scrolls inside its own overflow-y:auto region. */}
@@ -2326,9 +2285,9 @@ export default function TradeDetail({user}) {
           overflow:hidden!important;
         }
         .trade-mobile-root {
-          min-height:calc(100dvh - var(--navbar-h))!important;
-          max-height:calc(100dvh - var(--navbar-h))!important;
-          height:calc(100dvh - var(--navbar-h))!important;
+          min-height:calc(100svh - var(--navbar-h))!important;
+          max-height:calc(100svh - var(--navbar-h))!important;
+          height:calc(100svh - var(--navbar-h))!important;
         }
         /* BottomNav is hidden on /trade/ routes (see BottomNav.js), so the global
            .pb-nav-mobile reserved space below AppShell is dead weight here — it pushed
