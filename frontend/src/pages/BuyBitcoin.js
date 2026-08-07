@@ -416,8 +416,8 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
           </div>
 
           {/* Right section: Stacked BEGINNER badge & Active status pill */}
-          <div className="flex flex-col gap-1 items-end flex-shrink-0 pt-0.5">
-            <div>
+          <div className="flex flex-col gap-1 items-end min-w-0 max-w-[42%] flex-shrink pt-0.5">
+            <div className="min-w-0 max-w-full overflow-hidden truncate">
               <BadgeChip user={u} size="xs" />
             </div>
             <div>

@@ -353,15 +353,16 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
               {cp.username || '—'}
             </button>
             <span
-              className={`inline-flex items-center font-bold px-1.5 py-0.2 rounded-full border flex-shrink-0 ${badge.animate ? 'shadow-sm' : ''}`}
+              className={`inline-flex items-center font-bold px-1.5 py-0.2 rounded-full border max-w-[90px] min-w-0 flex-shrink-0 ${badge.animate ? 'shadow-sm' : ''}`}
               style={{
                 background: badge.bg,
                 borderColor: badge.borderColor,
                 fontSize: '8.5px',
                 boxShadow: badge.glow ? `0 0 5px ${badge.glow}` : undefined,
-              }}>
-              <span style={{ color: badge.iconColor || badge.textColor }}>{badge.icon}</span>
-              <span style={{ color: badge.textColor }} className="ml-0.5">{badge.label}</span>
+              }}
+              title={badge.label}>
+              <span style={{ color: badge.iconColor || badge.textColor }} className="flex-shrink-0">{badge.icon}</span>
+              <span style={{ color: badge.textColor }} className="ml-0.5 truncate min-w-0">{badge.label}</span>
             </span>
 
             {/* Trade count & Positive/Negative feedback — ALWAYS VISIBLE ON ALL SCREENS */}

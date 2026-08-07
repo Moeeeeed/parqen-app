@@ -87,19 +87,21 @@ export function BadgeChip({ user, badgeName, className = '', size = 'sm' }) {
   const badge = badgeName
     ? (TRUST_MAP[String(badgeName).toUpperCase()] || TRUST_MAP.BEGINNER)
     : deriveBadge(user);
-  const iconSize = size === 'xs' ? 10 : size === 'lg' ? 15 : 12;
+  const iconSize = size === 'xs' ? 9.5 : size === 'lg' ? 14 : 11;
 
   return (
     <span
-      className={`inline-flex items-center gap-0.5 font-black flex-shrink-0 ${className}`}
+      className={`inline-flex items-center gap-0.5 font-black max-w-full min-w-0 ${className}`}
       style={{
         color: badge.color,
-        fontSize: size === 'xs' ? '10px' : size === 'lg' ? '13px' : '11px',
-        letterSpacing: '0.02em',
+        fontSize: size === 'xs' ? '9.5px' : size === 'lg' ? '12.5px' : '10.5px',
+        letterSpacing: '0.01em',
+        lineHeight: 1.1,
       }}
+      title={badge.label}
     >
       {renderBadgeIcon(badge, iconSize)}
-      <span>{badge.label}</span>
+      <span className="truncate min-w-0">{badge.label}</span>
     </span>
   );
 }
