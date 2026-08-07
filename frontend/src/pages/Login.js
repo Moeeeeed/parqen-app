@@ -6,7 +6,7 @@ import { API_URL } from '../App';
 import {
   Mail, Lock, Eye, EyeOff, Shield, ArrowRight, ArrowLeft,
   AlertCircle, RefreshCw, Smartphone, CheckCircle, ChevronDown,
-  Home, Gift, LogIn, Bitcoin, Star, Zap, Globe,
+  Home, Gift, Bitcoin, Star, Zap, Globe,
   Users, CircleDollarSign
 } from 'lucide-react';
 
@@ -407,19 +407,25 @@ export default function Login({ onLogin }) {
             padding: 60px 56px;
             position: relative;
             overflow: hidden;
-            background: linear-gradient(160deg, #1B4332 0%, #1F4D3D 25%, #2D6A4F 60%, #40916C 100%);
+            background:
+              radial-gradient(1100px 700px at 85% -10%, rgba(244, 164, 34, 0.16) 0%, transparent 55%),
+              radial-gradient(700px 500px at 12% 0%, rgba(244, 164, 34, 0.1) 0%, transparent 60%),
+              radial-gradient(900px 650px at -10% 110%, rgba(64, 145, 108, 0.42) 0%, transparent 60%),
+              linear-gradient(160deg, #1B4332 0%, #1F4D3D 30%, #2D6A4F 65%, #40916C 100%);
           }
         }
 
         .hero-bg-pattern {
           position: absolute;
           inset: 0;
-          opacity: 0.04;
-          background-image: 
-            radial-gradient(circle at 25% 25%, white 2px, transparent 2px),
-            radial-gradient(circle at 75% 75%, white 2px, transparent 2px);
-          background-size: 60px 60px;
-          background-position: 0 0, 30px 30px;
+          opacity: 0.06;
+          background-image:
+            radial-gradient(circle at 50% 50%, white 1px, transparent 1.5px),
+            radial-gradient(circle at 50% 50%, rgba(244, 164, 34, 0.55) 1px, transparent 1.5px);
+          background-size: 40px 40px;
+          background-position: 0 0, 20px 20px;
+          -webkit-mask-image: radial-gradient(ellipse at center, black 25%, transparent 78%);
+          mask-image: radial-gradient(ellipse at center, black 25%, transparent 78%);
         }
 
         .hero-glow-1 {
@@ -443,9 +449,34 @@ export default function Login({ onLogin }) {
           height: 400px;
           border-radius: 50%;
           background: #40916C;
-          opacity: 0.15;
+          opacity: 0.12;
           filter: blur(80px);
           pointer-events: none;
+        }
+
+        /* Hero Stat Cards */
+        .stat-card {
+          background: linear-gradient(150deg, rgba(255, 255, 255, 0.1), rgba(240, 249, 244, 0.05));
+          border: 1px solid rgba(240, 249, 244, 0.16);
+          box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+          transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+        }
+
+        .stat-card:hover {
+          transform: translateY(-3px);
+          border-color: rgba(244, 164, 34, 0.3);
+          box-shadow: 0 16px 36px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+        }
+
+        .stat-card-icon {
+          background: rgba(244, 164, 34, 0.14);
+          border: 1px solid rgba(244, 164, 34, 0.32);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+          transition: background 0.25s ease, transform 0.25s ease;
+        }
+
+        .stat-card:hover .stat-card-icon {
+          background: rgba(244, 164, 34, 0.2);
         }
 
         /* Form Panel */
@@ -633,11 +664,12 @@ export default function Login({ onLogin }) {
               display: 'inline-flex',
               alignItems: 'center',
               gap: 10,
-              padding: '10px 22px',
+              padding: '10px 24px',
               borderRadius: 50,
-              background: 'rgba(255, 255, 255, 0.1)',
-              border: '1.5px solid rgba(255, 255, 255, 0.2)',
-              backdropFilter: 'blur(10px)',
+              background: 'linear-gradient(135deg, rgba(27, 67, 50, 0.96), rgba(45, 106, 79, 0.78))',
+              border: '1px solid rgba(244, 164, 34, 0.55)',
+              boxShadow: '0 10px 28px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 0 0 4px rgba(244, 164, 34, 0.06)',
+              backdropFilter: 'blur(12px)',
               marginBottom: 36
             }}>
               <Bitcoin size={22} style={{ color: '#F4A422' }} />
@@ -646,17 +678,32 @@ export default function Login({ onLogin }) {
               </span>
             </div>
 
-            <h1 style={{
-              fontFamily: "'Outfit', sans-serif",
-              fontSize: 44,
-              fontWeight: 900,
-              color: 'white',
-              lineHeight: 1.1,
-              margin: '0 0 16px',
-              letterSpacing: '-1px'
-            }}>
-              Welcome<br />Back! 👋
-            </h1>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                <span style={{
+                  width: 26, height: 3, borderRadius: 2,
+                  background: 'linear-gradient(90deg, #F4A422, rgba(244, 164, 34, 0))',
+                  flexShrink: 0
+                }} />
+                <span style={{
+                  fontSize: 11, fontWeight: 700, letterSpacing: '3px', color: '#F4A422',
+                  textTransform: 'uppercase', lineHeight: 1
+                }}>
+                  Sign In
+                </span>
+              </div>
+              <h1 style={{
+                fontFamily: "'Outfit', sans-serif",
+                fontSize: 44,
+                fontWeight: 900,
+                color: 'white',
+                lineHeight: 1.08,
+                margin: 0,
+                letterSpacing: '-1px'
+              }}>
+                Welcome Back!
+              </h1>
+            </div>
 
             <p style={{
               fontSize: 16,
@@ -669,35 +716,36 @@ export default function Login({ onLogin }) {
             </p>
 
             {/* Stats */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 40 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 40 }}>
               {STATS.map(({ icon: Icon, value, label }) => (
-                <div key={label} style={{
+                <div key={label} className="stat-card" style={{
                   display: 'flex', alignItems: 'center', gap: 14,
-                  padding: '14px 16px', borderRadius: 16,
-                  background: 'rgba(255, 255, 255, 0.08)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  backdropFilter: 'blur(10px)'
+                  padding: '18px 18px', borderRadius: 18,
+                  backdropFilter: 'blur(12px)'
                 }}>
-                  <div style={{
-                    width: 44, height: 44, borderRadius: 12,
-                    background: 'rgba(244, 164, 34, 0.2)',
+                  <div className="stat-card-icon" style={{
+                    width: 46, height: 46, borderRadius: 13,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     color: '#F4A422', flexShrink: 0
                   }}>
-                    <Icon size={20} />
+                    <Icon size={21} />
                   </div>
                   <div>
                     <div style={{ fontSize: 18, fontWeight: 800, color: 'white', lineHeight: 1.2 }}>{value}</div>
-                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.6px', marginTop: 3 }}>{label}</div>
                   </div>
                 </div>
               ))}
             </div>
           </div>
 
-          <div style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255,255,255,0.35)', fontSize: 12, marginTop: 'auto' }}>
-            <Shield size={14} />
-            All data encrypted · SOC 2 Type II · ISO 27001
+          <div style={{
+            position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', gap: 10,
+            color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 'auto',
+            paddingTop: 24, borderTop: '1px solid rgba(255,255,255,0.12)'
+          }}>
+            <Shield size={15} style={{ color: '#F4A422', flexShrink: 0 }} />
+            <span style={{ lineHeight: 1.4 }}>All data encrypted · SOC 2 Type II · ISO 27001</span>
           </div>
         </div>
 
@@ -824,9 +872,14 @@ export default function Login({ onLogin }) {
                       background: '#F8FAFC', border: '1px solid #F1F5F9',
                       flexWrap: 'wrap'
                     }}>
-                      {[['🔒', '256-bit SSL'], ['✅', '2.4M+ traders'], ['🌍', '180+ countries']].map(([ic, lb]) => (
-                        <div key={lb} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 600, color: '#64748B' }}>
-                          <span>{ic}</span>{lb}
+                      {[
+                        { Icon: Lock, label: '256-bit SSL' },
+                        { Icon: CheckCircle, label: '2.4M+ traders' },
+                        { Icon: Globe, label: '180+ countries' }
+                      ].map(({ Icon, label: lb }) => (
+                        <div key={lb} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: '#64748B' }}>
+                          <Icon size={13} style={{ color: '#2D6A4F', flexShrink: 0 }} />
+                          {lb}
                         </div>
                       ))}
                     </div>

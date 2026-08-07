@@ -11,7 +11,7 @@ import {
   Medal, Crown, Zap, BarChart3, ChevronRight,
   PlusCircle, X, Link, TrendingDown, Award, Flame,
   UserCheck, UserX, Target, Percent, Lock, ThumbsUp, ThumbsDown,
-  Download, Trophy, Rocket
+  User, Download, Trophy, Rocket, Lightbulb, Megaphone, Twitter
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { BadgeChip, TRUST_MAP, deriveBadge, getNextBadge, renderBadgeIcon, BADGE_COLORS } from '../lib/badge';
@@ -169,7 +169,7 @@ function ProfileSummary({ user, profile, stats }) {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
           {[
             {label:'Trades',   value:fmt(stats.totalTrades||0),                          color:C.green,   icon:null},
-            {label:'Rating',   value:`${parseFloat(stats.averageRating||0).toFixed(1)}★`,color:C.amber,   icon:null},
+            {label:'Rating',   value:<span className="inline-flex items-center justify-center gap-1"><Star size={12} fill={C.amber} color={C.amber}/>{parseFloat(stats.averageRating||0).toFixed(1)}</span>,color:C.amber,   icon:null},
             {label:'Positive', value:fmt(stats.positiveFeedback||0),                     color:C.success, icon:ThumbsUp},
             {label:'Negative', value:fmt(stats.negativeFeedback||0),                     color:C.danger,  icon:ThumbsDown},
           ].map(({label,value,color,icon:Icon})=>(
@@ -220,8 +220,6 @@ function ProfileSummary({ user, profile, stats }) {
 }
 
 // ─── Affiliate Section — Premium Design ───────────────────────────────────────
-const RANK_MEDALS = ['🥇','🥈','🥉'];
-
 function AffiliateSection({ user, profile, earnings, referralData, btcPrice, onWithdraw, dbReferralCount, dbTotalEarnings, dbReferralTrades, leaderboard }) {
   const [copied, setCopied] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -249,18 +247,18 @@ function AffiliateSection({ user, profile, earnings, referralData, btcPrice, onW
   const lastEarning = earnings[0]?.commission_btc||0;
 
   const copy = () => {
-    copyToClipboard(referralLink, 'Referral link copied! Share it to earn BTC 🚀')
+    copyToClipboard(referralLink, 'Referral link copied! Share it to earn BTC')
       .then((ok) => { if (ok) setCopied(true); setTimeout(()=>setCopied(false),2500); });
   };
 
   const SHARE_LINKS = [
     {
-      label:'Twitter/X', icon:'𝕏',
+      label:'Twitter/X', icon:Twitter,
       color:'#000', bg:'#F8FAFC',
-      url:`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Trading Bitcoin the safe way on @praqenapp 🔒 Join me and trade with full escrow protection. Sign up here:`)} ${referralLink}`,
+      url:`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Trading Bitcoin the safe way on @praqenapp. Join me and trade with full escrow protection. Sign up here:`)} ${referralLink}`,
     },
     {
-      label:'Telegram', icon:'✈️',
+      label:'Telegram', icon:Send,
       color:'#0088CC', bg:'#EFF6FF',
       url:`https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent('Join PRAQEN — secure P2P Bitcoin trading worldwide!')}`,
     },
@@ -314,7 +312,7 @@ function AffiliateSection({ user, profile, earnings, referralData, btcPrice, onW
           {/* 3 stat chips */}
           <div className="grid grid-cols-3 gap-2 mb-5">
             <div className="text-center p-3 rounded-xl" style={{backgroundColor:'rgba(255,255,255,0.1)'}}>
-              <p className="text-lg mb-0.5">💰</p>
+              <Bitcoin size={22} className="mx-auto mb-1" style={{color:'#FDE68A'}}/>
               <p className="font-black text-sm text-white">₿ {fmtBtc(totalEarnings)}</p>
               {btcPrice > 0 && (
                 <p className="text-xs" style={{color:'#FDE68A'}}>
@@ -324,12 +322,12 @@ function AffiliateSection({ user, profile, earnings, referralData, btcPrice, onW
               <p className="text-xs" style={{color:'rgba(255,255,255,0.55)'}}>Total Earned</p>
             </div>
             <div className="text-center p-3 rounded-xl" style={{backgroundColor:'rgba(255,255,255,0.1)'}}>
-              <p className="text-lg mb-0.5">👥</p>
+              <Users size={22} className="mx-auto mb-1" style={{color:'#FDE68A'}}/>
               <p className="font-black text-sm text-white">{fmt(totalReferrals)}</p>
               <p className="text-xs" style={{color:'rgba(255,255,255,0.55)'}}>Referrals</p>
             </div>
             <div className="text-center p-3 rounded-xl" style={{backgroundColor:'rgba(255,255,255,0.1)'}}>
-              <p className="text-lg mb-0.5">⚡</p>
+              <Zap size={22} className="mx-auto mb-1" style={{color:'#FDE68A'}}/>
               <p className="font-black text-sm text-white">{fmt(totalTrades)}</p>
               <p className="text-xs" style={{color:'rgba(255,255,255,0.55)'}}>Ref. Trades</p>
             </div>
@@ -341,7 +339,7 @@ function AffiliateSection({ user, profile, earnings, referralData, btcPrice, onW
             <div className="flex gap-2">
               <div className="flex-1 flex items-center gap-2 px-3 py-2.5 rounded-xl"
                 style={{backgroundColor:'rgba(255,255,255,0.12)'}}>
-                <span className="text-white/50 text-sm">🔗</span>
+                <Link size={14} style={{color:'rgba(255,255,255,0.5)', flexShrink:0}}/>
                 <p className="flex-1 text-xs font-mono text-white/80 truncate">{referralLink}</p>
               </div>
               <button onClick={copy}
@@ -357,15 +355,17 @@ function AffiliateSection({ user, profile, earnings, referralData, btcPrice, onW
       {/* ── SHARE SECTION ───────────────────────────────────────────── */}
       <div className="bg-white rounded-2xl border shadow-sm p-4" style={{borderColor:C.g200}}>
         <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-black" style={{color:C.forest}}>📣 Share Your Link</p>
+          <p className="text-xs font-black flex items-center gap-1.5" style={{color:C.forest}}>
+            <Megaphone size={13} style={{color:C.amber, flexShrink:0}}/> Share Your Link
+          </p>
           <p className="text-xs" style={{color:C.g400}}>Tap to share on any platform</p>
         </div>
         <div className="grid grid-cols-3 gap-2 mb-3">
-          {SHARE_LINKS.map(({label,icon,color,bg,url})=>(
+          {SHARE_LINKS.map(({label,icon:Icon,color,bg,url})=>(
             <a key={label} href={url} target="_blank" rel="noopener noreferrer"
               className="flex flex-col items-center gap-1.5 p-3 rounded-xl border transition hover:-translate-y-0.5 hover:shadow-sm"
               style={{borderColor:C.g200, backgroundColor:bg}}>
-              <span className="text-xl leading-none">{icon}</span>
+              <Icon size={20} style={{color}}/>
               <span className="text-xs font-bold" style={{color}}>{label}</span>
             </a>
           ))}
@@ -382,7 +382,9 @@ function AffiliateSection({ user, profile, earnings, referralData, btcPrice, onW
       {/* ── COMMISSION TIERS ────────────────────────────────────────── */}
       <div className="bg-white rounded-2xl border shadow-sm p-4" style={{borderColor:C.g200}}>
         <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-black" style={{color:C.forest}}>🏆 Commission Tiers</p>
+          <p className="text-xs font-black flex items-center gap-1.5" style={{color:C.forest}}>
+            <Trophy size={13} style={{color:C.amber, flexShrink:0}}/> Commission Tiers
+          </p>
           {currentTier ? (
             <span className="text-xs font-black px-2.5 py-1 rounded-full text-white"
               style={{backgroundColor:currentTier.color}}>
@@ -465,7 +467,9 @@ function AffiliateSection({ user, profile, earnings, referralData, btcPrice, onW
       {/* ── WITHDRAWAL ──────────────────────────────────────────────── */}
       {btcPrice > 0 && (
         <div className="bg-white rounded-2xl border shadow-sm p-4" style={{borderColor:C.g200}}>
-          <p className="text-xs font-black mb-3" style={{color:C.forest}}>💸 Withdraw Earnings</p>
+          <p className="text-xs font-black mb-3 flex items-center gap-1.5" style={{color:C.forest}}>
+            <DollarSign size={13} style={{color:C.success, flexShrink:0}}/> Withdraw Earnings
+          </p>
           <div className="flex justify-between text-xs mb-1">
             <span style={{color:C.g500}}>Progress to $10.00 minimum</span>
             <span className="font-bold" style={{color:C.forest}}>
@@ -503,9 +507,11 @@ function AffiliateSection({ user, profile, earnings, referralData, btcPrice, onW
             disabled={totalUsd < 10}
             className="w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             style={{backgroundColor: totalUsd >= 10 ? C.forest : C.g400}}>
-            {totalUsd >= 10
-              ? `💰 Withdraw ₿ ${fmtBtc(totalEarnings)} to Wallet`
-              : `⏳ Need $${Math.max(0, 10 - totalUsd).toFixed(2)} more to withdraw`}
+            {totalUsd >= 10 ? (
+              <><Send size={14}/> Withdraw ₿ {fmtBtc(totalEarnings)} to Wallet</>
+            ) : (
+              <><Clock size={14}/> Need ${Math.max(0, 10 - totalUsd).toFixed(2)} more to withdraw</>
+            )}
           </button>
         </div>
       )}
@@ -554,7 +560,7 @@ function AffiliateSection({ user, profile, earnings, referralData, btcPrice, onW
         ) : totalReferrals > 0 ? (
           <div className="p-5">
             <div className="rounded-xl p-4 text-center" style={{backgroundColor:`${C.purple}08`,border:`1px dashed ${C.purple}40`}}>
-              <p className="text-2xl mb-2">👥</p>
+              <Users size={30} className="mx-auto mb-2" style={{color:C.purple}}/>
               <p className="text-sm font-black mb-1" style={{color:C.forest}}>{totalReferrals} people signed up with your link!</p>
               <p className="text-xs leading-relaxed" style={{color:C.g400}}>
                 Their profiles will appear here once they place their first trade.<br/>
@@ -564,7 +570,7 @@ function AffiliateSection({ user, profile, earnings, referralData, btcPrice, onW
           </div>
         ) : (
           <div className="p-6 text-center">
-            <p className="text-2xl mb-2">👥</p>
+            <Users size={30} className="mx-auto mb-2" style={{color:C.purple}}/>
             <p className="text-sm font-black mb-1" style={{color:C.forest}}>No referrals yet</p>
             <p className="text-xs" style={{color:C.g400}}>Share your link below to start earning BTC!</p>
           </div>
@@ -573,7 +579,9 @@ function AffiliateSection({ user, profile, earnings, referralData, btcPrice, onW
 
       {/* ── HOW IT WORKS ────────────────────────────────────────────── */}
       <div className="bg-white rounded-2xl border shadow-sm p-4" style={{borderColor:C.g200}}>
-        <p className="text-xs font-black mb-3" style={{color:C.forest}}>💡 How the Affiliate Program Works</p>
+        <p className="text-xs font-black mb-3 flex items-center gap-1.5" style={{color:C.forest}}>
+          <Lightbulb size={13} style={{color:C.amber, flexShrink:0}}/> How the Affiliate Program Works
+        </p>
         <div className="space-y-2.5">
           {[
             { step:'1', title:'Share Your Link', body:'Copy your unique referral link and share it on WhatsApp, Telegram, Twitter or anywhere.', color:'#3B82F6' },
@@ -611,9 +619,9 @@ function AffiliateSection({ user, profile, earnings, referralData, btcPrice, onW
               <div key={entry.rank} className={`flex items-center gap-3 px-4 py-3 transition ${entry.rank <= 3 ? 'hover:bg-yellow-50' : 'hover:bg-gray-50'}`}>
                 {/* Rank */}
                 <div className="w-8 flex-shrink-0 text-center">
-                  {entry.rank === 1 && <span className="text-xl">🥇</span>}
-                  {entry.rank === 2 && <span className="text-xl">🥈</span>}
-                  {entry.rank === 3 && <span className="text-xl">🥉</span>}
+                  {entry.rank === 1 && <Medal size={20} style={{color:'#F4A422'}} fill="#F4A422"/>}
+                  {entry.rank === 2 && <Medal size={20} style={{color:'#CBD5E1'}} fill="#CBD5E1"/>}
+                  {entry.rank === 3 && <Medal size={20} style={{color:'#CD7F32'}} fill="#CD7F32"/>}
                   {entry.rank > 3  && <span className="text-sm font-black" style={{color:C.g400}}>#{entry.rank}</span>}
                 </div>
                 {/* Avatar */}
@@ -652,7 +660,9 @@ function AffiliateSection({ user, profile, earnings, referralData, btcPrice, onW
             ))}
           </div>
           <div className="px-4 py-2.5 border-t text-center" style={{borderColor:C.g100, backgroundColor:C.g50}}>
-            <p className="text-xs" style={{color:C.g400}}>🏆 Top {leaderboard.length} affiliate earner{leaderboard.length !== 1 ? 's' : ''} on PRAQEN. Could you be next?</p>
+            <p className="text-xs flex items-center justify-center gap-1" style={{color:C.g400}}>
+              <Trophy size={11} style={{color:C.amber, flexShrink:0}}/> Top {leaderboard.length} affiliate earner{leaderboard.length !== 1 ? 's' : ''} on PRAQEN. Could you be next?
+            </p>
           </div>
         </div>
       )}
@@ -676,7 +686,7 @@ function AffiliateSection({ user, profile, earnings, referralData, btcPrice, onW
           <div className="p-6">
             {totalEarnings > 0 ? (
               <div className="rounded-xl p-4 text-center" style={{backgroundColor:`${C.success}08`,border:`1px dashed ${C.success}40`}}>
-                <div className="text-3xl mb-2">₿</div>
+                <Bitcoin size={28} className="mx-auto mb-2" style={{color:C.success}}/>
                 <p className="text-sm font-black mb-1" style={{color:C.forest}}>₿ {fmtBtc(totalEarnings)} earned</p>
                 <p className="text-xs leading-relaxed" style={{color:C.g400}}>
                   {btcPrice>0 ? `≈ $${(totalEarnings*btcPrice).toFixed(2)} USD · ` : ''}
@@ -685,7 +695,7 @@ function AffiliateSection({ user, profile, earnings, referralData, btcPrice, onW
               </div>
             ) : (
               <div className="text-center py-4">
-                <div className="text-4xl mb-3">💸</div>
+                <DollarSign size={36} className="mx-auto mb-3" style={{color:C.gold}}/>
                 <p className="text-sm font-black mb-1" style={{color:C.forest}}>No earnings yet</p>
                 <p className="text-xs mb-4" style={{color:C.g400}}>Share your referral link to start earning BTC commissions.</p>
                 <button onClick={copy}
@@ -1039,7 +1049,7 @@ export default function Dashboard({ user }) {
   if (loadError && !profile) return (
     <div className="min-h-screen flex items-center justify-center" style={{backgroundColor:C.mist}}>
       <div className="text-center px-6">
-        <p className="text-4xl mb-3">📡</p>
+        <AlertCircle size={40} className="mx-auto mb-3" style={{color:C.danger}}/>
         <p className="font-black text-sm mb-2" style={{color:C.g800}}>Could not load dashboard</p>
         <p className="text-xs mb-5" style={{color:C.g500}}>Check your connection and make sure the backend is running.</p>
         <button onClick={() => loadDashboardData(false)}
@@ -1229,12 +1239,12 @@ export default function Dashboard({ user }) {
                             </p>
                             {pos > 0 && (
                               <span className="inline-flex items-center gap-0.5 text-xs font-bold" style={{color:C.success}}>
-                                👍{pos}
+                                <ThumbsUp size={11}/>{pos}
                               </span>
                             )}
                             {neg > 0 && (
                               <span className="inline-flex items-center gap-0.5 text-xs font-bold" style={{color:C.danger}}>
-                                👎{neg}
+                                <ThumbsDown size={11}/>{neg}
                               </span>
                             )}
                           </div>
@@ -1344,7 +1354,7 @@ export default function Dashboard({ user }) {
                 <div className="flex gap-2">
                   <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl"
                     style={{backgroundColor:'rgba(255,255,255,0.1)'}}>
-                    <span className="text-white/50 text-xs">🔗</span>
+                    <Link size={12} style={{color:'rgba(255,255,255,0.5)', flexShrink:0}}/>
                     <p className="flex-1 text-xs font-mono text-white/75 truncate">
                       praqen.com/signup?ref={displayUser?.referral_code||profile?.referral_code||'...'}
                     </p>
@@ -1374,8 +1384,10 @@ export default function Dashboard({ user }) {
               style={{borderColor:'#C4B5FD', background:'linear-gradient(135deg,#F5F3FF,#EDE9FE)'}}
               onClick={()=>setActiveTab('affiliate')}>
               <div className="p-4 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0"
-                  style={{backgroundColor:'#8B5CF620'}}>💰</div>
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
+                  style={{backgroundColor:'#8B5CF620'}}>
+                  <Bitcoin size={22} style={{color:'#7C3AED'}}/>
+                </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-black" style={{color:'#4C1D95'}}>
                     Did you know? You can earn Bitcoin just by sharing your link!
@@ -1405,14 +1417,14 @@ export default function Dashboard({ user }) {
             </div>
             <div className="p-3 grid grid-cols-2 md:grid-cols-4 gap-2">
               {[
-                {label:'Buy Bitcoin',    icon:'₿',  route:'/buy-bitcoin',  color:C.gold,    sub:'Marketplace'},
-                {label:'Sell Bitcoin',   icon:'💰', route:'/sell-bitcoin', color:C.amber,   sub:'Marketplace'},
-                {label:'Create Offer',   icon:'➕', route:'/create-offer', color:C.green,   sub:'5-step wizard'},
-                {label:'Trade Chat',     icon:'💬', route:'/my-trades',    color:C.paid,    sub:'Active trades'},
-                {label:'Profile',        icon:'👤', route:'/profile',      color:C.purple,  sub:'Your settings'},
-                {label:'My Listings',    icon:'📋', route:'/my-listings',  color:C.success, sub:'Your offers'},
-                {label:'Affiliate',      icon:Rocket, tab:'affiliate',       color:'#8B5CF6', sub:'Earn BTC'},
-                {label:'Wallet',         icon:'👜', tab:'wallet',          color:C.mint,    sub:'BTC balance'},
+                {label:'Buy Bitcoin',    icon:Bitcoin,       route:'/buy-bitcoin',  color:C.gold,    sub:'Marketplace'},
+                {label:'Sell Bitcoin',   icon:DollarSign,    route:'/sell-bitcoin', color:C.amber,   sub:'Marketplace'},
+                {label:'Create Offer',   icon:PlusCircle,    route:'/create-offer', color:C.green,   sub:'5-step wizard'},
+                {label:'Trade Chat',     icon:MessageCircle, route:'/my-trades',    color:C.paid,    sub:'Active trades'},
+                {label:'Profile',        icon:User,          route:'/profile',      color:C.purple,  sub:'Your settings'},
+                {label:'My Listings',    icon:Gift,          route:'/my-listings',  color:C.success, sub:'Your offers'},
+                {label:'Affiliate',      icon:Rocket,        tab:'affiliate',       color:'#8B5CF6', sub:'Earn BTC'},
+                {label:'Wallet',         icon:Wallet,        tab:'wallet',          color:C.mint,    sub:'BTC balance'},
               ].map(({label,icon:IconOrChar,route,tab,color,sub})=>(
                 <button key={label}
                   onClick={()=>{ tab ? setActiveTab(tab) : navigate(route); }}
