@@ -441,7 +441,7 @@ export default function Settings({ user, setUser }) {
   // Preferences — lazy-init from localStorage
   const [prefs, setPrefs] = useState(() => ({
     nameDisplay: localStorage.getItem("praqen_name_display") || "full",
-    currency: localStorage.getItem("praqen_currency") || "GHS",
+    currency: localStorage.getItem("praqen_currency") || "USD",
     language: localStorage.getItem("praqen_language") || "en",
     timezone: localStorage.getItem("praqen_timezone") || "Africa/Accra",
   }));
@@ -573,8 +573,14 @@ export default function Settings({ user, setUser }) {
   const [verificationSyncing, setVerificationSyncing] = useState(true);
   const verLevel = kycVerified ? 3 : phoneVerified ? 2 : emailVerified ? 1 : 0;
 
-  const [twoFAEnabled, setTwoFAEnabled] = useState(false);
-  const [twoFAStep, setTwoFAStep] = useState('idle');
+  const [twoFAEnabled, setTwoFAEnabled] = useState(!!user?.two_factor_enabled);
+  const [twoFAStep, setTwoFAStep] = useState('idle'); // idle | otp
+  const [twoFACode, setTwoFACode] = useState('');
+  const [twoFASending, setTwoFASending] = useState(false);
+  const [twoFAActivating, setTwoFAActivating] = useState(false);
+  const [twoFADisabling, setTwoFADisabling] = useState(false);
+  const [twoFADisablePw, setTwoFADisablePw] = useState('');
+  const [showDisable2FA, setShowDisable2FA] = useState(false);
   const [logoutConfirm, setLogoutConfirm] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [nameDisplaySaving, setNameDisplaySaving] = useState(false);
@@ -602,6 +608,7 @@ export default function Settings({ user, setUser }) {
     setEmailVerified(!!(user.is_email_verified || user.email_verified));
     setPhoneVerified(!!(user.is_phone_verified || user.phone_verified));
     setKycVerified(!!(user.kyc_verified || user.is_id_verified));
+    setTwoFAEnabled(!!user.two_factor_enabled);
   }, [user, navigate]);
 
   // On mount, fetch fresh profile + KYC status
@@ -625,6 +632,7 @@ export default function Settings({ user, setUser }) {
             const phoneOk = !!(fresh.is_phone_verified || fresh.phone_verified);
             setEmailVerified(emailOk);
             setPhoneVerified(phoneOk);
+            setTwoFAEnabled(!!fresh.two_factor_enabled);
             if (emailOk) {
               localStorage.removeItem("prq_email_resend");
               setEmailResendCount(0);
@@ -910,6 +918,73 @@ export default function Settings({ user, setUser }) {
     } catch (e) {
       toast.error(e?.response?.data?.error || "Invalid or expired code");
       setEmailVerifyStep("otp");
+    }
+  };
+
+  const handleEnable2FA = async () => {
+    if (!emailVerified) {
+      toast.error("Verify your email address first — see the Verification tab.");
+      return;
+    }
+    setTwoFASending(true);
+    try {
+      await axios.post(`${API_URL}/auth/send-action-code`, { action: "enable_2fa" }, { headers: authH() });
+      toast.success(`Security code sent to ${user?.email}!`);
+      setTwoFAStep("otp");
+    } catch (e) {
+      toast.error(e?.response?.data?.error || "Failed to send security code");
+    } finally {
+      setTwoFASending(false);
+    }
+  };
+
+  const handleActivate2FA = async () => {
+    if (twoFACode.length < 6) {
+      toast.error("Enter the 6-digit code");
+      return;
+    }
+    setTwoFAActivating(true);
+    try {
+      await axios.patch(`${API_URL}/users/toggle-2fa`,
+        { two_factor_enabled: true, two_factor_method: "email", actionCode: twoFACode },
+        { headers: authH() });
+      toast.success("Two-factor authentication enabled! ✅");
+      setTwoFAEnabled(true);
+      setTwoFAStep("idle");
+      setTwoFACode("");
+      if (setUser) setUser((u) => ({ ...u, two_factor_enabled: true, two_factor_method: "email" }));
+      const stored = JSON.parse(localStorage.getItem("user") || "{}");
+      localStorage.setItem("user", JSON.stringify({ ...stored, two_factor_enabled: true, two_factor_method: "email" }));
+      window.dispatchEvent(new Event("userUpdated"));
+    } catch (e) {
+      toast.error(e?.response?.data?.error || "Invalid or expired code");
+    } finally {
+      setTwoFAActivating(false);
+    }
+  };
+
+  const handleDisable2FA = async () => {
+    if (!twoFADisablePw) {
+      toast.error("Enter your current password to disable 2FA");
+      return;
+    }
+    setTwoFADisabling(true);
+    try {
+      await axios.patch(`${API_URL}/users/toggle-2fa`,
+        { two_factor_enabled: false, password: twoFADisablePw },
+        { headers: authH() });
+      toast.success("Two-factor authentication disabled");
+      setTwoFAEnabled(false);
+      setShowDisable2FA(false);
+      setTwoFADisablePw("");
+      if (setUser) setUser((u) => ({ ...u, two_factor_enabled: false, two_factor_method: null }));
+      const stored = JSON.parse(localStorage.getItem("user") || "{}");
+      localStorage.setItem("user", JSON.stringify({ ...stored, two_factor_enabled: false, two_factor_method: null }));
+      window.dispatchEvent(new Event("userUpdated"));
+    } catch (e) {
+      toast.error(e?.response?.data?.error || "Failed to disable 2FA");
+    } finally {
+      setTwoFADisabling(false);
     }
   };
 
@@ -1998,33 +2073,98 @@ export default function Settings({ user, setUser }) {
                     <div className="bg-white rounded-2xl shadow-sm border p-6" style={{ borderColor: C.g200 }}>
                       <h2 className="text-lg font-black mb-4" style={{ color: C.forest }}>Account Actions</h2>
                       <div className="space-y-3">
-                        {!twoFAEnabled ? (
-                            <div className="rounded-xl border" style={{ borderColor: C.g100 }}>
-                              {twoFAStep === 'idle' && (
-                                  <div className="flex items-center justify-between p-3">
-                                    <div className="flex items-start gap-3">
-                                      <Shield size={18} style={{ color: C.g400, flexShrink: 0, marginTop: 2 }} />
-                                      <div>
-                                        <p className="text-sm font-bold" style={{ color: C.g800 }}>Two-Factor Authentication</p>
-                                        <p className="text-xs mt-0.5" style={{ color: C.g500 }}>Add extra security to your account</p>
+                        <div className="rounded-xl border p-3" style={{ borderColor: C.g100 }}>
+                          {twoFAEnabled ? (
+                              <>
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-start gap-3">
+                                    <Shield size={18} style={{ color: C.success, flexShrink: 0, marginTop: 2 }} />
+                                    <div>
+                                      <p className="text-sm font-bold" style={{ color: C.g800 }}>Two-Factor Authentication</p>
+                                      <p className="text-xs mt-0.5" style={{ color: C.success }}>Enabled via email — your account is protected</p>
+                                    </div>
+                                  </div>
+                                  {!showDisable2FA && (
+                                      <button onClick={() => setShowDisable2FA(true)}
+                                              className="text-xs font-bold px-3 py-1.5 rounded-lg transition hover:bg-red-50"
+                                              style={{ color: C.danger }}>
+                                        Disable
+                                      </button>
+                                  )}
+                                </div>
+                                {showDisable2FA && (
+                                    <div className="mt-3 pt-3 border-t" style={{ borderColor: C.g100 }}>
+                                      <label className={labelCls}>Current Password</label>
+                                      <input type="password" value={twoFADisablePw}
+                                             onChange={e => setTwoFADisablePw(e.target.value)}
+                                             placeholder="Enter your password to confirm"
+                                             className={inputCls} style={inputStyle(twoFADisablePw)} />
+                                      <div className="flex gap-2 mt-2">
+                                        <button onClick={() => { setShowDisable2FA(false); setTwoFADisablePw(''); }}
+                                                className="flex-1 py-2 rounded-lg border font-semibold text-xs transition hover:bg-gray-50"
+                                                style={{ borderColor: C.g200, color: C.g600 }}>
+                                          Cancel
+                                        </button>
+                                        <button onClick={handleDisable2FA} disabled={twoFADisabling || !twoFADisablePw}
+                                                className="flex-1 py-2 rounded-lg text-white font-bold text-xs transition hover:opacity-90 disabled:opacity-50"
+                                                style={{ backgroundColor: C.danger }}>
+                                          {twoFADisabling ? 'Disabling…' : 'Disable 2FA'}
+                                        </button>
                                       </div>
                                     </div>
-                                    <button onClick={() => setTwoFAStep('method')}
-                                            className="text-xs font-bold px-3 py-1.5 rounded-lg transition hover:opacity-80"
-                                            style={{ backgroundColor: C.green, color: '#fff' }}>
-                                      Enable
-                                    </button>
+                                )}
+                              </>
+                          ) : twoFAStep === 'idle' ? (
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-start gap-3">
+                                  <Shield size={18} style={{ color: C.g400, flexShrink: 0, marginTop: 2 }} />
+                                  <div>
+                                    <p className="text-sm font-bold" style={{ color: C.g800 }}>Two-Factor Authentication</p>
+                                    <p className="text-xs mt-0.5" style={{ color: C.g500 }}>
+                                      {emailVerified ? 'Add extra security to your account' : 'Verify your email first, then enable 2FA'}
+                                    </p>
                                   </div>
-                              )}
-                            </div>
-                        ) : null}
-
-                        <div className="flex items-center justify-between p-3 rounded-xl border" style={{ borderColor: C.g100 }}>
-                          <div>
-                            <p className="text-sm font-bold text-gray-800">Two-Factor Authentication</p>
-                            <p className="text-xs text-gray-400">Add extra security to your account</p>
-                          </div>
-                          <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-orange-100 text-orange-700">Coming Soon</span>
+                                </div>
+                                <button onClick={handleEnable2FA} disabled={twoFASending || !emailVerified}
+                                        className="text-xs font-bold px-3 py-1.5 rounded-lg transition hover:opacity-80 disabled:opacity-50"
+                                        style={{ backgroundColor: C.green, color: '#fff' }}>
+                                  {twoFASending ? 'Sending…' : 'Enable'}
+                                </button>
+                              </div>
+                          ) : (
+                              <div>
+                                <div className="flex items-start gap-3 mb-3">
+                                  <Shield size={18} style={{ color: C.g400, flexShrink: 0, marginTop: 2 }} />
+                                  <div>
+                                    <p className="text-sm font-bold" style={{ color: C.g800 }}>Enter the code we emailed you</p>
+                                    <p className="text-xs mt-0.5" style={{ color: C.g500 }}>Sent to {user?.email} — expires in 5 minutes</p>
+                                  </div>
+                                </div>
+                                <input type="text" inputMode="numeric" value={twoFACode}
+                                       onChange={e => setTwoFACode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                       placeholder="000000" maxLength={6}
+                                       className="w-full text-center text-2xl font-mono tracking-widest border-2 rounded-xl py-2.5 mb-2 outline-none transition"
+                                       style={{ borderColor: twoFACode.length === 6 ? C.green : C.g200, color: C.g800 }} />
+                                <p className="text-xs text-center mb-2" style={{ color: C.g400 }}>
+                                  Didn't get it?{' '}
+                                  <button onClick={handleEnable2FA} disabled={twoFASending} className="font-semibold underline" style={{ color: C.green }}>
+                                    {twoFASending ? 'Sending…' : 'Resend code'}
+                                  </button>
+                                </p>
+                                <div className="flex gap-2">
+                                  <button onClick={() => { setTwoFAStep('idle'); setTwoFACode(''); }}
+                                          className="flex-1 py-2 rounded-lg border font-semibold text-xs transition hover:bg-gray-50"
+                                          style={{ borderColor: C.g200, color: C.g600 }}>
+                                    Cancel
+                                  </button>
+                                  <button onClick={handleActivate2FA} disabled={twoFACode.length !== 6 || twoFAActivating}
+                                          className="flex-1 py-2 rounded-lg text-white font-bold text-xs transition hover:opacity-90 disabled:opacity-50"
+                                          style={{ backgroundColor: C.green }}>
+                                    {twoFAActivating ? 'Activating…' : 'Activate 2FA'}
+                                  </button>
+                                </div>
+                              </div>
+                          )}
                         </div>
 
                         <div className="flex items-center justify-between p-3 rounded-xl border border-red-100 bg-red-50">

@@ -77,7 +77,7 @@ export function resolveCode(raw) {
   return NAME_TO_CODE[lower] || null;
 }
 
-export default function CountryFlag({ countryCode, className = 'w-5 h-4' }) {
+export default function CountryFlag({ countryCode, className = 'w-5 h-4', style }) {
   const [code, setCode] = useState(() => resolveCode(countryCode));
 
   useEffect(() => {
@@ -92,6 +92,7 @@ export default function CountryFlag({ countryCode, className = 'w-5 h-4' }) {
       srcSet={`https://flagcdn.com/96x72/${code}.png 2x`}
       alt={code.toUpperCase()}
       className={`${className} object-cover rounded-sm inline-block flex-shrink-0`}
+      style={style}
       onError={(e) => {
         e.currentTarget.style.display = 'none';
         const span = document.createElement('span');

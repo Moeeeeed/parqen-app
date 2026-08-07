@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ThumbsUp, ThumbsDown, Clock, ArrowRight, X, Repeat2 } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, Clock, ArrowRight, X, Repeat2, CheckCircle2, CreditCard, AlertTriangle, Lock, Scale, Star } from 'lucide-react';
 import axios from 'axios';
 import CountryFlag from './CountryFlag';
 import { deriveBadge } from '../lib/badge';
@@ -8,10 +8,10 @@ import { deriveBadge } from '../lib/badge';
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 const STATUS_CFG = {
-  CREATED:      { label: '⏳ Waiting for Escrow', statusColor: '#D97706', statusBg: '#FEF3C7' },
-  FUNDS_LOCKED: { label: '✅ Active & Funded',     statusColor: '#16A34A', statusBg: '#DCFCE7' },
-  PAYMENT_SENT: { label: '💳 Payment Sent',        statusColor: '#2563EB', statusBg: '#DBEAFE' },
-  DISPUTED:     { label: '⚠️ In Dispute',          statusColor: '#DC2626', statusBg: '#FEE2E2' },
+  CREATED:      { label: 'Waiting for Escrow', icon: Clock,        statusColor: '#D97706', statusBg: '#FEF3C7' },
+  FUNDS_LOCKED: { label: 'Active & Funded',     icon: CheckCircle2, statusColor: '#16A34A', statusBg: '#DCFCE7' },
+  PAYMENT_SENT: { label: 'Payment Sent',        icon: CreditCard,   statusColor: '#2563EB', statusBg: '#DBEAFE' },
+  DISPUTED:     { label: 'In Dispute',          icon: AlertTriangle, statusColor: '#DC2626', statusBg: '#FEE2E2' },
 };
 
 // What market / page this trade belongs to
@@ -214,7 +214,13 @@ function TraderPopup({ cpId, cpFallback, onClose }) {
             { label: 'Completion', value: completion > 0 ? `${Math.round(completion)}%` : '—', color: '#2563EB' },
             { label: 'Positive',   value: pos,                                           color: '#16A34A' },
             { label: 'Negative',   value: neg,                                           color: '#DC2626' },
-            { label: 'Rating',     value: rating > 0 ? `${rating.toFixed(1)} ⭐` : '—', color: '#D97706' },
+            {
+              label: 'Rating',
+              value: rating > 0
+                ? <span className="inline-flex items-center justify-center gap-1">{rating.toFixed(1)}<Star size={11} fill="currentColor" /></span>
+                : '—',
+              color: '#D97706',
+            },
           ].map(({ label, value, color }) => (
             <div key={label} className="rounded-xl px-3 py-2.5 text-center"
               style={{ backgroundColor: '#F8FAFC', border: '1px solid #F1F5F9' }}>
@@ -400,8 +406,8 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
         {trade.status === 'PAYMENT_SENT' && (
           <div className="mx-3 mb-2 px-2.5 py-1 rounded-md flex items-center gap-1.5"
             style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
-            <span className="text-xs">✅</span>
-            <p className="text-[10px] font-bold leading-tight" style={{ color: '#1E40AF' }}>
+            <CheckCircle2 size={16} style={{ color: '#2563EB', flexShrink: 0 }} />
+            <p className="text-[11px] font-black leading-tight" style={{ color: '#1E40AF' }}>
               Payment sent — awaiting Bitcoin release from {cp.username || 'seller'}
             </p>
           </div>

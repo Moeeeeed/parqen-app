@@ -739,7 +739,12 @@ class TradeEscrowService {
   // CANCEL TRADE — refund BTC provider
   // Called by buyer cancel, auto-cancel, or dispute resolution
   // ============================================================
-  async cancelTrade(tradeId, reason) {
+  // actorId: the user who clicked "Cancel", if this was a manual cancellation
+  // (omitted for the auto-expiry cron and the timeout-triggered auto-cancel route)
+  // skipNotify: true when the caller (e.g. resolveDispute) will send its own,
+  // more accurate notification — avoids the user getting both a "Trade
+  // Cancelled" AND a "Dispute Resolved" notification for the same event
+  async cancelTrade(tradeId, reason, actorId = null, skipNotify = false) {
     console.log(`\n❌ cancelTrade — Trade: ${tradeId.slice(0,8)}, Reason: ${reason}`);
 
     // ── 1. Fetch trade ────────────────────────────────────────────────────────
@@ -930,20 +935,47 @@ class TradeEscrowService {
       .eq('id', tradeId);
 
     // ── 7. Notify both parties (with direction + counterparty for card display) ─
-    const cancelMsg = `Trade #${tradeId.slice(0,8).toUpperCase()} cancelled. ${reason || ''}`;
-    if (trade.buyer_id) {
-      await this.notify(trade.buyer_id, 'trade_cancel', '❌ Trade Cancelled',
-        cancelMsg, `/trade/${tradeId}`,
-        { actor_id: trade.seller_id, direction: 'buy', trade_id: tradeId });
+    // "Expired" (auto-cancel after the payment window closed) reads very
+    // differently to a user than "Cancelled" (someone actually clicked cancel) —
+    // the trades table only ever stores status=CANCELLED for both, so this is
+    // the one place that decides which the user actually sees.
+    // Skipped entirely when resolveDispute() is the caller — it sends its own
+    // "Dispute Resolved" notification right after this returns, and firing both
+    // meant the user saw a misleading "Trade Cancelled" alert for a trade that
+    // (for SELLER_WINS) actually ends up marked COMPLETED.
+    if (!skipNotify) {
+      const isExpiry = /expir|time limit|payment window/i.test(reason || '');
+      const notifTitle = isExpiry ? '⏰ Trade Expired' : '❌ Trade Cancelled';
+      const notifType  = isExpiry ? 'trade_expire' : 'trade_cancel';
+      const ref = `#${tradeId.slice(0,8).toUpperCase()}`;
+
+      let actorName = null;
+      if (actorId) {
+        const { data: actor } = await supabaseAdmin.from('users').select('username').eq('id', actorId).maybeSingle();
+        actorName = actor?.username || 'Trader';
+      }
+
+      const buildMsg = (forUserId) => {
+        if (isExpiry) return `Trade ${ref} expired — the payment window closed and any locked funds were refunded.`;
+        if (actorId && forUserId === actorId) return `You cancelled trade ${ref}.${reason ? ` ${reason}` : ''}`;
+        if (actorId) return `${actorName} cancelled trade ${ref}.${reason ? ` ${reason}` : ''}`;
+        return `Trade ${ref} cancelled.${reason ? ` ${reason}` : ''}`;
+      };
+
+      if (trade.buyer_id) {
+        await this.notify(trade.buyer_id, notifType, notifTitle,
+          buildMsg(trade.buyer_id), `/trade/${tradeId}`,
+          { actor_id: actorId || trade.seller_id, direction: 'buy', trade_id: tradeId });
+      }
+      if (trade.seller_id) {
+        await this.notify(trade.seller_id, notifType, notifTitle,
+          buildMsg(trade.seller_id), `/trade/${tradeId}`,
+          { actor_id: actorId || trade.buyer_id, direction: 'sell', trade_id: tradeId });
+      }
+      // Push to the party who did NOT get the refund alert above (btcProviderId already got sendSystemAlert)
+      const otherPartyId = btcProviderId === trade.buyer_id ? trade.seller_id : trade.buyer_id;
+      if (otherPartyId) sendTradeAlert(otherPartyId, trade, 'trade_cancelled').catch(() => {});
     }
-    if (trade.seller_id) {
-      await this.notify(trade.seller_id, 'trade_cancel', '❌ Trade Cancelled',
-        cancelMsg, `/trade/${tradeId}`,
-        { actor_id: trade.buyer_id, direction: 'sell', trade_id: tradeId });
-    }
-    // Push to the party who did NOT get the refund alert above (btcProviderId already got sendSystemAlert)
-    const otherPartyId = btcProviderId === trade.buyer_id ? trade.seller_id : trade.buyer_id;
-    if (otherPartyId) sendTradeAlert(otherPartyId, trade, 'trade_cancelled').catch(() => {});
 
     console.log(`✅ Trade ${tradeId.slice(0,8)} cancelled and closed`);
 
@@ -1026,8 +1058,11 @@ class TradeEscrowService {
       }).eq('id', tradeId);
 
     } else if (resolution === 'SELLER_WINS') {
-      // Refund to seller — same as cancel
-      const sellerWinsResult = await this.cancelTrade(tradeId, `Dispute resolved — SELLER WINS. ${notes || ''}`);
+      // Refund to seller — same as cancel. skipNotify=true: the trade ends up
+      // COMPLETED (see status update below), so cancelTrade's own "Trade
+      // Cancelled" notification would be wrong — the caller sends "Dispute
+      // Resolved" instead.
+      const sellerWinsResult = await this.cancelTrade(tradeId, `Dispute resolved — SELLER WINS. ${notes || ''}`, null, true);
       if (!sellerWinsResult?.success) {
         throw new Error(`Escrow refund failed for SELLER_WINS: ${sellerWinsResult?.message || 'unknown error'}`);
       }
@@ -1041,8 +1076,9 @@ class TradeEscrowService {
       }).eq('id', tradeId);
 
     } else if (resolution === 'CANCEL') {
-      // Refund BTC to seller (whoever locked it), mark as CANCELLED
-      const cancelResult = await this.cancelTrade(tradeId, `Dispute resolved — CANCELLED by moderator. ${notes || ''}`);
+      // Refund BTC to seller (whoever locked it), mark as CANCELLED.
+      // skipNotify=true — the caller sends "Dispute Resolved" instead.
+      const cancelResult = await this.cancelTrade(tradeId, `Dispute resolved — CANCELLED by moderator. ${notes || ''}`, null, true);
       if (!cancelResult?.success) {
         throw new Error(`Escrow refund failed for CANCEL resolution: ${cancelResult?.message || 'unknown error'}`);
       }

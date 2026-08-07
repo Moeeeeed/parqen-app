@@ -1,9 +1,9 @@
 // frontend/src/utils/notifications.js
 
 // ── Internal: wait for OneSignal to finish initialising ──────────────────────
-function waitForOS(timeout = 8000) {
+function waitForOS(timeout = 15000) {
   return new Promise((resolve) => {
-    if (window.OneSignal && typeof window.OneSignal === 'object') {
+    if (window.OneSignal && typeof window.OneSignal === 'object' && window.OneSignal.User) {
       return resolve(window.OneSignal);
     }
 
@@ -14,10 +14,18 @@ function waitForOS(timeout = 8000) {
     };
 
     window.addEventListener('onesignal:ready', onReady, { once: true });
+
+    setTimeout(() => {
+      if (window.OneSignal && window.OneSignal.User) {
+        window.removeEventListener('onesignal:ready', onReady);
+        resolve(window.OneSignal);
+      }
+    }, 500);
+
     timer = setTimeout(() => {
       window.removeEventListener('onesignal:ready', onReady);
       console.warn('[Push] OneSignal did not initialise within', timeout, 'ms');
-      resolve(null);
+      resolve(window.OneSignal || null);
     }, timeout);
   });
 }
@@ -51,7 +59,7 @@ export async function requestNotificationPermission() {
   try {
     const OS = await waitForOS();
     if (!OS) {
-      console.warn('[Push] OneSignal not available — cannot request permission');
+      console.warn('[Push] OneSignal not available');
       return false;
     }
 
@@ -71,239 +79,129 @@ export async function requestNotificationPermission() {
   }
 }
 
-// ── Get OneSignal external ID ─────────────────────────────────────────────────
-export function getOneSignalExternalId() {
-  try {
-    if (window.OneSignal?.User?.externalId) {
-      return window.OneSignal.User.externalId;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-// ── Get OneSignal User ID ─────────────────────────────────────────────────────
-export function getOneSignalUserId() {
-  try {
-    if (window.OneSignal?.User?.onesignalId) {
-      return window.OneSignal.User.onesignalId;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-// ── Identify user for push notifications ─────────────────────────────────────
-let currentUserId = null;
-
-export function identifyUser(userId) {
+// ── ✅ FIXED: identifyUser using OneSignal.login() ──
+export async function identifyUser(userId) {
   if (!userId) {
     console.warn('[Push] identifyUser: No userId provided');
-    return Promise.resolve();
+    return;
   }
 
-  console.log('[Push] Setting user ID:', userId);
-  currentUserId = userId;
-  localStorage.setItem('praqen_push_user_id', userId);
+  try {
+    console.log('[Push] identifyUser: Starting for user:', userId);
 
-  if (window.OneSignal && typeof window.OneSignal.login === 'function') {
+    const OS = await waitForOS(10000);
+
+    if (!OS) {
+      console.warn('[Push] identifyUser: OneSignal not available');
+      return;
+    }
+
+    console.log('[Push] ✅ OneSignal available');
+
+    // ── Step 1: Use login() method ──
+    let linked = false;
+
     try {
-      window.OneSignal.login(String(userId));
-      console.log('[Push] ✅ OneSignal login() called for user:', userId);
-    } catch (err) {
-      console.warn('[Push] OneSignal login() failed:', err.message);
+      // ✅ This is the correct method
+      await OS.login(String(userId));
+      linked = true;
+      console.log('[Push] ✅ login() success:', userId);
+    } catch (e) {
+      console.warn('[Push] login() failed:', e.message);
     }
-  }
 
-  return Promise.resolve();
-}
-
-// ── Get current user ID ──────────────────────────────────────────────────────
-export function getCurrentUserId() {
-  return currentUserId || localStorage.getItem('praqen_push_user_id');
-}
-
-// ── Unlink user ───────────────────────────────────────────────────────────────
-export function unidentifyUser() {
-  currentUserId = null;
-  localStorage.removeItem('praqen_push_user_id');
-  console.log('[Push] ✅ User unlinked');
-
-  try {
-    if (window.OneSignal && typeof window.OneSignal.logout === 'function') {
-      window.OneSignal.logout();
-      console.log('[Push] ✅ OneSignal logout() done');
+    if (!linked) {
+      console.warn('[Push] Could not link user');
+      return;
     }
-  } catch (e) {
-    console.warn('[Push] OneSignal logout failed:', e.message);
-  }
 
-  return Promise.resolve();
-}
+    // ── Step 2: Wait for player ID ──
+    console.log('[Push] ⏳ Waiting for player ID...');
+    await new Promise(r => setTimeout(r, 3000));
 
-// ── Send test notification ────────────────────────────────────────────────────
-export function sendTestNotification() {
-  try {
-    if (Notification.permission === 'granted') {
-      const notif = new Notification('🔔 PRAQEN Test Notification', {
-        body: 'Your push notifications are working! 🎉',
-        icon: '/logo192.png',
-        tag: 'test',
-        requireInteraction: true,
-      });
-      notif.onclick = () => {
-        window.focus();
-        notif.close();
-      };
-      console.log('[Push] ✅ Test notification sent');
-      return true;
-    } else {
-      console.warn('[Push] Notification permission not granted');
-      return false;
+    // ── Step 3: Get player ID ──
+    let onesignalId = null;
+
+    if (OS.User && OS.User.onesignalId) {
+      onesignalId = OS.User.onesignalId;
     }
-  } catch (e) {
-    console.error('[Push] Test notification failed:', e);
-    return false;
-  }
-}
 
-// ── Send custom notification ──────────────────────────────────────────────────
-export function sendCustomNotification(title, body) {
-  try {
-    if (Notification.permission === 'granted') {
-      const notif = new Notification(title, {
-        body: body,
-        icon: '/logo192.png',
-        tag: 'custom',
-        requireInteraction: true,
-      });
-      notif.onclick = () => {
-        window.focus();
-        notif.close();
-      };
-      console.log('[Push] ✅ Custom notification sent:', title);
-      return true;
-    } else {
-      console.warn('[Push] Notification permission not granted');
-      return false;
+    if (!onesignalId && typeof OS.getUserId === 'function') {
+      try {
+        onesignalId = await OS.getUserId();
+      } catch(e) {}
     }
-  } catch (e) {
-    console.error('[Push] Custom notification failed:', e);
-    return false;
-  }
-}
 
-// ── Send trade notification ──────────────────────────────────────────────────
-export function sendTradeNotification(title, body, tradeId, tradeRef) {
-  try {
-    if (Notification.permission === 'granted') {
-      const tradeDisplay = tradeRef || tradeId?.slice(0, 8) || 'trade';
-      const notif = new Notification(title, {
-        body: body,
-        icon: '/logo192.png',
-        tag: `trade-${tradeId || Date.now()}`,
-        requireInteraction: true,
-        data: { tradeId, tradeRef },
-      });
+    console.log('[Push] 📱 Player ID:', onesignalId || 'not found');
 
-      notif.onclick = () => {
-        window.focus();
-        if (tradeId) {
-          window.location.href = `/trade/${tradeId}`;
+    // ── Step 4: Retry if no ID ──
+    if (!onesignalId) {
+      for (let i = 0; i < 3; i++) {
+        console.log(`[Push] Retry ${i+1}/3...`);
+        await new Promise(r => setTimeout(r, 2000));
+        if (OS.User && OS.User.onesignalId) {
+          onesignalId = OS.User.onesignalId;
+          break;
         }
-        notif.close();
-      };
-
-      console.log('[Push] ✅ Trade notification sent:', title, 'Trade:', tradeDisplay);
-      return true;
-    } else {
-      console.warn('[Push] Notification permission not granted for trade notification');
-      return false;
-    }
-  } catch (e) {
-    console.error('[Push] Trade notification failed:', e);
-    return false;
-  }
-}
-
-// ── Send notification to user ─────────────────────────────────────────────────
-export function sendNotificationToUser(title, body, userId) {
-  try {
-    if (Notification.permission !== 'granted') {
-      console.warn('[Push] Notification permission not granted');
-      return false;
+      }
+      console.log('[Push] 📱 Player ID after retry:', onesignalId || 'not found');
     }
 
-    const currentId = getCurrentUserId();
-    if (userId && currentId && userId !== currentId) {
-      console.log('[Push] Notification for different user, skipping');
-      return false;
-    }
+    // ── Step 5: Save to backend ──
+    if (onesignalId) {
+      const token = localStorage.getItem('token');
+      if (token) {
+        try {
+          const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
-    const notif = new Notification(title, {
-      body: body,
-      icon: '/logo192.png',
-      tag: 'user-notification',
-      requireInteraction: true,
-    });
-    notif.onclick = () => {
-      window.focus();
-      notif.close();
-    };
-    console.log('[Push] ✅ Notification sent to user:', title);
-    return true;
-  } catch (e) {
-    console.error('[Push] sendNotificationToUser failed:', e);
-    return false;
-  }
-}
+          const response = await fetch(`${API_URL}/users/onesignal-id`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ onesignal_id: onesignalId })
+          });
 
-// ── Force notification ────────────────────────────────────────────────────────
-export function forceSendNotification(title, body, clickUrl) {
-  try {
-    if (Notification.permission === 'granted') {
-      const notif = new Notification(title, {
-        body: body,
-        icon: '/logo192.png',
-        tag: 'force-notification',
-        requireInteraction: true,
-      });
+          const data = await response.json();
 
-      notif.onclick = () => {
-        window.focus();
-        if (clickUrl) {
-          window.location.href = clickUrl;
+          if (response.ok) {
+            console.log('[Push] ✅ OneSignal ID saved:', data);
+            console.log('[Push] 🎉 SUCCESS! Player ID:', onesignalId);
+            return { success: true, playerId: onesignalId };
+          } else {
+            console.warn('[Push] ⚠️ Backend save failed:', data);
+          }
+        } catch (fetchError) {
+          console.error('[Push] ❌ Save error:', fetchError);
         }
-        notif.close();
-      };
-
-      console.log('[Push] ✅ Force notification sent:', title);
-      return true;
+      } else {
+        console.warn('[Push] ⚠️ No token found, skipping backend save');
+      }
     } else {
-      console.warn('[Push] Force notification: permission not granted');
-      return false;
+      console.warn('[Push] ⚠️ No player ID available');
+      console.log('[Push] 📌 State:', {
+        User: OS.User,
+        onesignalId: OS.User?.onesignalId
+      });
     }
+
+    return { success: false, playerId: null };
   } catch (e) {
-    console.error('[Push] Force notification failed:', e);
-    return false;
+    console.error('[Push] identifyUser error:', e);
+    return { success: false, error: e?.message };
   }
 }
 
-// ── Check external ID ─────────────────────────────────────────────────────────
+// ── Check external ID ──
 export async function checkExternalId() {
   try {
     const OS = await waitForOS(3000);
-    if (!OS) {
-      console.warn('[Push] checkExternalId: OneSignal not ready');
-      return null;
-    }
-
-    const externalId = OS.User?.externalId ?? null;
-    const playerId = OS.User?.onesignalId ?? null;
-    console.log('[Push] checkExternalId — externalId:', externalId, '| playerId:', playerId);
-    return { externalId, playerId };
+    if (!OS) return null;
+    return {
+      externalId: OS.User?.externalId ?? null,
+      playerId: OS.User?.onesignalId ?? null
+    };
   } catch (e) {
     console.error('[Push] checkExternalId failed:', e);
     return null;
@@ -332,24 +230,165 @@ export function initNotifications() {
 
 // ── Expose helpers on window for debugging ──────────────────────────────────
 if (typeof window !== 'undefined') {
-  window.__checkPushId = checkExternalId;
-  window.__identifyUser = identifyUser;
-  window.__getOneSignalExternalId = getOneSignalExternalId;
-  window.__sendTestNotification = sendTestNotification;
-  window.__sendCustomNotification = sendCustomNotification;
-  window.__sendTradeNotification = sendTradeNotification;
-  window.__sendNotificationToUser = sendNotificationToUser;
-  window.__forceSendNotification = forceSendNotification;
-  window.__unidentifyUser = unidentifyUser;
-  window.__getCurrentUserId = getCurrentUserId;
-  window.__initNotifications = initNotifications;
+window.__checkPushId = checkExternalId;
+window.__identifyUser = identifyUser;
+window.__sendTestNotification = sendTestNotification;
+window.__unidentifyUser = unidentifyUser;
+window.__initNotifications = initNotifications;
 
-  console.log('[Push] ✅ Debug helpers available:');
-  console.log('  window.__identifyUser(userId) - Link user');
-  console.log('  window.__sendTestNotification() - Send test notification');
-  console.log('  window.__sendTradeNotification(title, body, tradeId) - Send trade notification');
-  console.log('  window.__sendCustomNotification(title, body) - Send custom notification');
-  console.log('  window.__forceSendNotification(title, body, url) - Force notification');
-  console.log('  window.__getCurrentUserId() - Get current user ID');
-  console.log('  window.__unidentifyUser() - Unlink user');
+console.log('[Push] ✅ Debug helpers available:');
+console.log('  window.__identifyUser(userId) - Link user');
+console.log('  window.__sendTestNotification() - Send test notification');
+console.log('  window.__unidentifyUser() - Unlink user');
+}
+
+// ── Unidentify user ──
+export async function unidentifyUser() {
+  try {
+    const OS = await waitForOS(3000);
+    if (!OS) return;
+
+    if (typeof OS.logout === 'function') {
+      await OS.logout();
+      console.log('[Push] ✅ logout() done');
+      return;
+    }
+
+    if (OS.User && typeof OS.User.logout === 'function') {
+      await OS.User.logout();
+      console.log('[Push] ✅ User.logout() done');
+      return;
+    }
+  } catch (e) {
+    console.error('[Push] unidentifyUser failed:', e);
+  }
+}
+
+// ── Send test notification ──
+export async function sendTestNotification(userId, type = 'new_trade') {
+  try {
+    const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      console.warn('[Push] No token found');
+      return false;
+    }
+
+    const response = await fetch(`${API_URL}/test-push`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ userId, type })
+    });
+
+    const data = await response.json();
+    console.log('[Push] Test notification:', data);
+    return response.ok ? data : false;
+  } catch (error) {
+    console.error('[Push] Test error:', error);
+    return false;
+  }
+}
+
+// ── ✅ FIXED: Initialize OneSignal (only once) ──
+let _initialized = false;
+let _initPromise = null;
+
+export async function initOneSignal(userId) {
+  // If already initialized, return immediately
+  if (_initialized) {
+    console.log('[Push] ✅ OneSignal already initialized (cached)');
+    if (userId) {
+      await identifyUser(userId);
+    }
+    return true;
+  }
+
+  // If initialization is already in progress, wait for it
+  if (_initPromise) {
+    console.log('[Push] ⏳ Waiting for existing initialization...');
+    await _initPromise;
+    if (userId) {
+      await identifyUser(userId);
+    }
+    return true;
+  }
+
+  // Start initialization
+  _initPromise = (async () => {
+    try {
+      if (!window.OneSignal) {
+        console.warn('[Push] OneSignal SDK not loaded');
+        return false;
+      }
+
+      // Check if already initialized via window
+      if (window.OneSignal.initialized) {
+        console.log('[Push] ✅ OneSignal already initialized (window)');
+        _initialized = true;
+        if (userId) {
+          await identifyUser(userId);
+        }
+        return true;
+      }
+
+      console.log('[Push] ✅ OneSignal SDK loaded, initializing...');
+
+      // Initialize OneSignal
+      await window.OneSignal.init({
+        appId: '6bfba397-b0b1-4718-abde-6ecb375c4f40',
+        allowLocalhostAsSecureOrigin: true,
+        serviceWorkerPath: '/OneSignalSDKWorker.js'
+      });
+
+      _initialized = true;
+      console.log('[Push] ✅ OneSignal initialized successfully');
+
+      if (userId) {
+        await new Promise(r => setTimeout(r, 2000));
+        await identifyUser(userId);
+        console.log('[Push] ✅ User identified after init');
+      }
+
+      return true;
+    } catch (error) {
+      // Ignore "already initialized" error
+      if (error?.message?.includes('already initialized')) {
+        console.log('[Push] ✅ SDK already initialized (ignoring)');
+        _initialized = true;
+        if (userId) {
+          await identifyUser(userId);
+        }
+        return true;
+      }
+      console.error('[Push] initOneSignal error:', error);
+      return false;
+    } finally {
+      _initPromise = null;
+    }
+  })();
+
+  return _initPromise;
+}
+
+// ── Get status ──
+export function getOneSignalStatus() {
+  const OS = window.OneSignal;
+  if (!OS) return { loaded: false };
+
+  return {
+    loaded: true,
+    initialized: _initialized,
+    user: OS.User,
+    externalId: OS.User?.externalId,
+    playerId: OS.User?.onesignalId,
+    notificationPermission: Notification.permission,
+  };
+}
+
+if (typeof window !== 'undefined') {
+  window.__getOneSignalStatus = getOneSignalStatus;
 }

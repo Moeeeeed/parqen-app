@@ -8,6 +8,7 @@
     "autoprefixer": "^10.4.14",
     "axios": "^1.4.0",
     "date-fns": "^2.30.0",
+    "geoip-lite": "^2.0.3",
     "libphonenumber-js": "^1.13.9",
     "lucide-react": "^0.263.0",
     "postcss": "^8.4.24",

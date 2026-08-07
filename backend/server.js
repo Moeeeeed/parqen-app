@@ -112,7 +112,7 @@ function bustCache() {
   _marketCache.clear();
   // Debounce: wait 1s then warm up the default listings key in the background
   clearTimeout(_cacheRefreshTimer);
-  _cacheRefreshTimer = setTimeout(() => _warmListingsCache(), 1000);
+  _cacheRefreshTimer = setTimeout(_warmListingsCache, 1000);
 }
 
 async function _warmListingsCache() {
@@ -144,7 +144,7 @@ async function _warmListingsCache() {
 
     // Only include listings whose seller data was successfully fetched
     const listings = rawListings
-      .filter(l => userMap[l.seller_id]) // skip any listing with no user data
+      .filter(l => userMap[l.seller_id]) // skip any listing with no user dataxa
       .map(l => {
         const u = userMap[l.seller_id];
         return { ...l, users: { ...u, display_name: computeDisplayName(u), country: u.country || null } };
@@ -390,20 +390,25 @@ async function detectAndSaveCountry(userId, req, phoneNumber) {
       || req.headers['x-real-ip']
       || req.socket?.remoteAddress
       || '';
+    // TEMP DEBUG - print detected IP + whether it would be skipped as private.
+    const _skipPrivate = !ip || ip === '::1' || ip.startsWith('127.') || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('::ffff:');
+    console.log(`[GeoIP DEBUG] ip="${ip || '(none)'}" skippedAsPrivate=${_skipPrivate}`);
     // Skip loopback / private / empty (avoids looking up server's own IP)
-    if (!ip || ip === '::1' || ip.startsWith('127.') || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('::ffff:')) return;
+    if (_skipPrivate) return;
 
     const geoRes = await fetch(`https://ipapi.co/${ip}/json/`, { signal: AbortSignal.timeout(4000) });
     const geo = await geoRes.json();
+    // TEMP DEBUG - print raw API response + HTTP status so we can see why the lookup fails
+    console.log(`[GeoIP DEBUG] ipapi.co status=${geoRes.status} raw=${JSON.stringify(geo)}`);
     if (geo?.country_code && geo.country_code.length === 2 && !geo.error) {
       const cc = geo.country_code.toUpperCase();
       const city = geo.city || null;
-      const name = geo.country_name || null;
-      const loc = city ? `${name} (${city})` : name;
+      const countryName = geo.country_name || cc;
+      const loc = city ? `${countryName} (${city})` : countryName;
 
       // Always refresh city/name/location (UI always benefits from fresh geo data)
       await supabaseAdmin.from('users')
-        .update({ city, country_name: name, last_seen_location: loc })
+        .update({ city, country_name: countryName, last_seen_location: loc })
         .eq('id', userId);
 
       // Set country code only if not already set by phone
@@ -414,7 +419,10 @@ async function detectAndSaveCountry(userId, req, phoneNumber) {
 
       console.log(`[GeoIP] user ${String(userId).slice(0, 8)} → ${cc}${city ? ` / ${city}` : ''} (IP: ${ip})`);
     }
-  } catch (_) { /* geo lookup failure never breaks login */ }
+  } catch (err) { /* geo lookup failure never breaks login */
+    // TEMP DEBUG — print any error so we can see what's failing
+    console.error('[GeoIP DEBUG] detectAndSaveCountry error:', err?.message || err);
+  }
 }
 
 // ── Phone rate limiting (anti-abuse for OTP / phone verification) ────────────
@@ -572,19 +580,6 @@ function tradeEmailTemplate(subject, title, message, tradeRef, amount, actionUrl
   </table>
 </body>
 </html>`;
-}
-
-async function notifyUserSMS(userId, message) {
-  try {
-    const { data: user, error: dbErr } = await supabaseAdmin.from('users').select('phone').eq('id', userId).single();
-    if (dbErr) { console.error(`[SMS] DB lookup failed for ${userId}:`, dbErr.message); return; }
-    if (!user?.phone) { console.warn(`[SMS] No phone on file for user ${userId} — skipping`); return; }
-    const phone = user.phone.startsWith('+') ? user.phone : `+${user.phone}`;
-    await sendSmsOtp(phone, `[PRAQEN ⚡] ${message}`);
-    console.log(`📱 SMS sent to user ${userId} (${phone})`);
-  } catch (err) {
-    console.error(`[SMS] Failed for user ${userId}:`, err.message, err.code || '');
-  }
 }
 
 async function notifyUserEmail(userId, subject, htmlContent) {
@@ -1782,7 +1777,7 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
           .catch(err => console.error('[2FA-google] email failed:', err.message));
       } else if (method2FA === 'sms' || method2FA === 'whatsapp') {
         const phone2FA = userToAuth.phone?.startsWith('+') ? userToAuth.phone : `+${userToAuth.phone}`;
-        sendSmsOtp(phone2FA, `Your PRAQEN 2FA login code is: ${twoFactorOtp}. Valid 10 min.`)
+        sendSmsOtp(phone2FA, `${twoFactorOtp} is your PRAQEN login code. Valid for 10 minutes. Don't share this with anyone.`)
           .catch(err => console.error('[2FA-google] SMS failed:', err.message));
         storeOtp(phone2FA, twoFactorOtp).catch(e => console.warn('[2FA-google] DB store warn:', e.message));
       }
@@ -1985,7 +1980,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     }
 
     if (phone && phoneOtpCode && phoneE164) {
-      sendSmsOtp(phoneE164, `Your PRAQEN verification code is: ${phoneOtpCode}. Valid 10 min. Do not share.`)
+      sendSmsOtp(phoneE164, `${phoneOtpCode} is your PRAQEN verification code. Valid for 10 minutes. Don't share this with anyone.`)
         .then(() => console.log(`[Register] SMS OTP sent to ${phoneE164}`))
         .catch(e => console.error('[Register] SMS OTP send failed:', e.message));
       storeOtp(phoneE164, phoneOtpCode)
@@ -2088,7 +2083,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
             .catch(err => console.error('[2FA-phone] email failed:', err.message));
         } else if (method2FA === 'sms' || method2FA === 'whatsapp') {
           const phone2FA = data.phone?.startsWith('+') ? data.phone : `+${data.phone}`;
-          sendSmsOtp(phone2FA, `Your PRAQEN 2FA login code is: ${twoFactorOtp}. Valid 10 min.`)
+          sendSmsOtp(phone2FA, `${twoFactorOtp} is your PRAQEN login code. Valid for 10 minutes. Don't share this with anyone.`)
             .catch(err => console.error('[2FA-phone] SMS failed:', err.message));
           storeOtp(phone2FA, twoFactorOtp).catch(e => console.warn('[2FA-phone] DB store warn:', e.message));
         }
@@ -2230,7 +2225,7 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
           .catch(err => console.error('[2FA-login] email failed:', err.message));
       } else if (method === 'sms' || method === 'whatsapp') {
         const phone = data.phone?.startsWith('+') ? data.phone : `+${data.phone}`;
-        sendSmsOtp(phone, `Your PRAQEN 2FA login code is: ${twoFactorOtp}. Valid 10 min.`)
+        sendSmsOtp(phone, `${twoFactorOtp} is your PRAQEN login code. Valid for 10 minutes. Don't share this with anyone.`)
           .catch(err => console.error('[2FA-login] SMS failed:', err.message));
         storeOtp(phone, twoFactorOtp).catch(e => console.warn('[2FA-login] DB store warn:', e.message));
       }
@@ -3728,10 +3723,11 @@ async function sendSmsOtp(phone, message) {
   // ── Channel 1: Africa's Talking (best delivery for GH/NG/KE/UG/TZ) ─────────
   // Skipped for countries where AT silently swallows messages despite "success"
   if (atSms && !forceTwilio) {
-    const senderId = process.env.AFRICASTALKING_SENDER_ID;
-    // Try with custom sender ID first; if rejected, retry with AT default shortcode.
-    // Custom sender IDs need carrier approval — unapproved IDs are silently dropped.
-    const atAttempts = senderId ? [{ from: senderId }, {}] : [{}];
+    // AFRICASTALKING_SENDER_ID ("PRAQEN") is pending carrier approval — until it's
+    // approved, sending with it gets silently dropped by the carrier even though AT's
+    // API reports success. Default shortcode needs no approval and delivers immediately.
+    // Re-add `{ from: process.env.AFRICASTALKING_SENDER_ID }` as the first attempt once approved.
+    const atAttempts = [{}];
     let atDelivered = false;
     for (const extra of atAttempts) {
       try {
@@ -3853,7 +3849,7 @@ app.post('/api/auth/send-otp', otpLimiter, async (req, res) => {
     let smsSent = false;
     let smsError = null;
     try {
-      await sendSmsOtp(contact, `Your PRAQEN code is: ${otp}. Valid 10 min. Do not share.`);
+      await sendSmsOtp(contact, `${otp} is your PRAQEN verification code. Valid for 10 minutes. Don't share this with anyone.`);
       smsSent = true;
     } catch (smsErr) {
       smsError = smsErr.message;
@@ -3885,7 +3881,7 @@ app.post('/api/auth/send-phone-otp', otpLimiter, async (req, res) => {
   try {
     const { phone, country = 'GH', method } = req.body; // method: 'sms' | 'whatsapp'
     const deliveryMethod = (method === 'whatsapp') ? 'whatsapp' : 'sms';
-    
+
     const valResult = validatePhone(phone, country);
     if (!valResult.valid) {
       return res.status(400).json({ error: valResult.error });
@@ -3906,7 +3902,7 @@ app.post('/api/auth/send-phone-otp', otpLimiter, async (req, res) => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     storeOtp(contact, otp).catch(e => console.warn('[send-phone-otp] DB store warn:', e.message));
 
-    const msgText = `Your PRAQEN code is: ${otp}. Valid 10 min. Do not share.`;
+    const msgText = `${otp} is your PRAQEN verification code. Valid for 10 minutes. Don't share this with anyone.`;
 
     try {
       if (deliveryMethod === 'whatsapp') {
@@ -3924,8 +3920,9 @@ app.post('/api/auth/send-phone-otp', otpLimiter, async (req, res) => {
         let smsSent = false;
 
         if (atSms && !forceTwilio) {
-          const senderId = process.env.AFRICASTALKING_SENDER_ID;
-          const atAttempts = senderId ? [{ from: senderId }, {}] : [{}];
+          // Custom sender ID "PRAQEN" is pending carrier approval — see the matching
+          // comment in sendSmsOtp() above. Default shortcode only until it's approved.
+          const atAttempts = [{}];
           for (const extra of atAttempts) {
             try {
               const result = await atSms.send({ to: [contact], message: msgText, ...extra });
@@ -4003,8 +4000,8 @@ app.post('/api/auth/verify-otp', otpLimiter, async (req, res) => {
       const errMsg = result.reason === 'invalid_code'
         ? 'Incorrect OTP. Please check the 6-digit code sent to your phone and try again.'
         : result.reason === 'no_otp_requested'
-        ? 'No OTP requested for this phone number. Make sure your phone number matches the one used to request the code.'
-        : 'Code expired, already used, or phone number mismatch. Tap "Resend code" to get a new code for this number.';
+          ? 'No OTP requested for this phone number. Make sure your phone number matches the one used to request the code.'
+          : 'Code expired, already used, or phone number mismatch. Tap "Resend code" to get a new code for this number.';
       return res.status(400).json({ error: errMsg });
     }
 
@@ -4057,7 +4054,7 @@ app.post('/api/auth/send-action-code', otpLimiter, verifyToken, async (req, res)
 
     const code = actionCodeService.generate(req.userId, action);
 
-    const actionLabels = { release_btc: 'Release Bitcoin', send_btc: 'Send Bitcoin' };
+    const actionLabels = { release_btc: 'Release Bitcoin', send_btc: 'Send Bitcoin', enable_2fa: 'Enable Two-Factor Authentication' };
     const label = actionLabels[action] || action;
 
     await sendVerificationEmail(user.email, code,
@@ -4238,6 +4235,15 @@ app.patch('/api/users/toggle-2fa', verifyToken, async (req, res) => {
         if (!phoneOk) return res.status(400).json({ error: 'Verify your phone number first in Settings → Verification' });
       }
 
+      // For email/sms/whatsapp: require the one-time code sent via /api/auth/send-action-code
+      // (action=enable_2fa) so activation actually proves the user controls that inbox/phone.
+      if (method === 'email' || method === 'sms' || method === 'whatsapp') {
+        const { actionCode } = req.body;
+        if (!actionCode) return res.status(400).json({ error: 'Enter the security code sent to you to activate 2FA.' });
+        const check = actionCodeService.verify(req.userId, 'enable_2fa', actionCode);
+        if (!check.valid) return res.status(400).json({ error: check.error });
+      }
+
       // For TOTP: must have a confirmed secret (check via /totp/confirm which sets two_factor_method)
       // The TOTP flow sets both two_factor_enabled and two_factor_method via /totp/confirm, so this
       // toggle for TOTP should only reset the method if already enabled
@@ -4250,7 +4256,7 @@ app.patch('/api/users/toggle-2fa', verifyToken, async (req, res) => {
         console.error('[2FA-toggle] DB update failed:', enableError.message);
         return res.status(500).json({ error: 'Failed to enable 2FA. Database error: ' + enableError.message });
       }
-      console.log(`[2FA] Enabled via ${method} for user ${req.userId.slice(0,8)}`);
+      console.log(`[2FA] Enabled via ${method} for user ${req.userId.slice(0, 8)}`);
       return res.json({ success: true, message: `2FA enabled via ${method}!` });
 
     } else if (two_factor_enabled === false) {
@@ -4270,7 +4276,7 @@ app.patch('/api/users/toggle-2fa', verifyToken, async (req, res) => {
         console.error('[2FA-toggle] DB update failed:', disableError.message);
         return res.status(500).json({ error: 'Failed to disable 2FA. Database error: ' + disableError.message });
       }
-      console.log(`[2FA] Disabled for user ${req.userId.slice(0,8)}`);
+      console.log(`[2FA] Disabled for user ${req.userId.slice(0, 8)}`);
       return res.json({ success: true, message: '2FA disabled successfully!' });
 
     } else {
@@ -4542,7 +4548,7 @@ app.post('/api/users/send-phone-otp', otpLimiter, verifyToken, async (req, res) 
       }
       // ── Fallback: Africa's Talking / Twilio direct ────────────────────────
       try {
-        await sendSmsOtp(e164, `Your PRAQEN code is: ${otp}. Valid 10 min. Do not share.`);
+        await sendSmsOtp(e164, `${otp} is your PRAQEN verification code. Valid for 10 minutes. Don't share this with anyone.`);
         console.log(`[send-phone-otp] SMS OTP (fallback) → ${e164}`);
         return res.json({
           success: true,
@@ -5841,11 +5847,15 @@ app.get('/api/listings', async (req, res) => {
         balMap[w.user_id] = parseFloat(w.balance_btc || 0);
         usdtBalMap[w.user_id] = parseFloat(w.balance_usdt || 0);
       });
-      // 1 USDT ≈ $1 — no external price lookup needed
+      // 1 USDT ≈ $1 — no external price lookup needed.
+      // Uses the LIVE market price, not the listing's own bitcoin_price field — that field
+      // can be stale or bogus (e.g. a leftover value on a 'market' pricing_type listing that
+      // isn't used for rate display at all), which previously let near-empty wallets pass
+      // the $10 minimum check because the inflated price overstated their USD balance.
+      const livePriceUsd = _btcCache || 88000;
       const balanceUsdFor = (l) => (l.asset === 'USDT')
         ? (usdtBalMap[l.seller_id] || 0)
-        : (balMap[l.seller_id] || 0) * (parseFloat(l.bitcoin_price) || 88000);
-
+        : (balMap[l.seller_id] || 0) * livePriceUsd;
       // For SELL offers: cap displayed limits to seller's actual balance
       listings = listings.map(l => {
         if (l.listing_type !== 'SELL' && l.listing_type !== 'SELL_BITCOIN') return l;
@@ -5980,14 +5990,14 @@ app.get('/api/listings/:id', async (req, res) => {
       } catch { }
     }
 
-    const btcPriceVal      = parseFloat(listing.bitcoin_price) || 88000;
+    const btcPriceVal = parseFloat(listing.bitcoin_price) || 88000;
     // Only listing types where the seller pays out BTC need their live balance to cap the max —
     // matches btcRequiredTypes used by the /api/listings list endpoint.
     const btcRequiredTypes = ['SELL', 'SELL_BITCOIN', 'BUY_GIFT_CARD'];
-    const capsByBalance    = btcRequiredTypes.includes(listing.listing_type);
-    const minLimitUsd      = parseFloat(listing.min_limit_usd || 0);
-    const listingMaxUsd    = parseFloat(listing.max_limit_usd || 0);
-    const balanceUsd       = sellerBalanceBtc * btcPriceVal;
+    const capsByBalance = btcRequiredTypes.includes(listing.listing_type);
+    const minLimitUsd = parseFloat(listing.min_limit_usd || 0);
+    const listingMaxUsd = parseFloat(listing.max_limit_usd || 0);
+    const balanceUsd = sellerBalanceBtc * btcPriceVal;
 
     const effectiveMaxUsd = capsByBalance && sellerBalanceBtc > 0
       ? Math.min(balanceUsd, listingMaxUsd || balanceUsd)
@@ -6018,7 +6028,7 @@ app.put('/api/listings/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { margin, min_limit_usd, max_limit_usd, min_limit_local, max_limit_local,
-            payment_method, trade_instructions, listing_terms, time_limit, status } = req.body;
+      payment_method, trade_instructions, listing_terms, time_limit, status } = req.body;
     const { data: listing, error: findError } = await supabaseAdmin.from('listings').select('seller_id, listing_type, asset').eq('id', id).single();
     if (findError || !listing) return res.status(404).json({ error: 'Listing not found' });
     if (listing.seller_id !== req.userId) return res.status(403).json({ error: 'You can only edit your own listings' });
@@ -6127,8 +6137,10 @@ app.patch('/api/listings/:id/status', verifyToken, async (req, res) => {
       .from('listings')
       .select('seller_id, listing_type, asset, min_limit_usd, bitcoin_price')
       .eq('id', id).single();
+
     if (findError || !listing) return res.status(404).json({ error: 'Listing not found' });
     if (listing.seller_id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+
 
     // Reactivating a SELL / SELL_BITCOIN / BUY_GIFT_CARD offer still requires >= $10 of the
     // offer's asset — otherwise a user could bypass the wallet-balance requirement just by
@@ -6426,7 +6438,7 @@ app.post('/api/offers', verifyToken, async (req, res) => {
           error: `You need at least $10 worth of ${offerAsset} in your PRAQEN wallet to create this offer. Please top up your wallet first.`,
         });
       }
-      if (max_limit_usd && parseFloat(max_limit_usd) > sellerBalUsd) {
+      if (parseFloat(max_limit_usd) > sellerBalUsd && sellerBalUsd > 0) {
         return res.status(400).json({
           error: `Maximum trade limit ($${parseFloat(max_limit_usd).toFixed(0)}) exceeds your wallet balance ($${sellerBalUsd.toFixed(0)}). Please top up or lower the maximum.`,
         });
@@ -6859,8 +6871,6 @@ app.post('/api/trades', verifyToken, requireEmailVerified, async (req, res) => {
           { actor_id: sellerId, direction: 'buy', trade_id: tradeUUID, payment_method: pmDisp }),
         sendTradeAlert(sellerId, trade[0], 'new_trade').catch(() => { }),
         sendTradeAlert(buyerId, trade[0], 'new_trade').catch(() => { }),
-        notifyUserSMS(sellerId, `PRAQEN: New trade request — ${btcDisp} (${localDisp}) via ${pmDisp}. Open the app to respond.`).catch(() => { }),
-        notifyUserSMS(buyerId, `PRAQEN: Trade started — ${btcDisp} (${localDisp}) via ${pmDisp}. Funds locked in escrow.`).catch(() => { }),
       ]);
     } catch (notifyErr) {
       console.error('[Trade Open] Pre-escrow notification failed:', notifyErr.message);
@@ -7074,8 +7084,6 @@ app.post('/api/trades/:id/release', tradeLimiter, verifyToken, async (req, res) 
           if (sellerRelUser?.email)
             emailService.sendTradeConfirmationEmail(sellerRelUser, releasedTrade, 'seller')
               .catch(e => console.error('[release] seller email:', e.message));
-          notifyUserSMS(releasedTrade.buyer_id, `PRAQEN: Trade complete! ₿${parseFloat(releasedTrade.amount_btc || 0).toFixed(8)} has been released to your wallet.`).catch(() => { });
-          notifyUserSMS(releasedTrade.seller_id, `PRAQEN: Trade complete! Payment confirmed and Bitcoin released successfully.`).catch(() => { });
         } catch (e) { console.error('[release] Background notify failed:', e.message); }
       });
     }
@@ -7130,31 +7138,17 @@ app.post('/api/trades/:id/cancel', tradeLimiter, verifyToken, async (req, res) =
     // Delegate ALL escrow release + balance refund + trade status update to the
     // escrow service. It uses an atomic DB claim (WHERE status='LOCKED') so even
     // if the auto-cancel cron fires at the same instant, only one refund happens.
-    const result = await tradeEscrowService.cancelTrade(req.params.id, reason || 'Trade opener cancelled');
+    // cancelTrade() also sends the in-app notification to both parties — don't
+    // duplicate that here (this route used to send its own second copy).
+    const result = await tradeEscrowService.cancelTrade(req.params.id, reason || 'Trade opener cancelled', req.userId);
     if (!result.success) return res.status(409).json({ error: result.message });
 
     // Fetch the updated trade for the response
     const { data: updatedTrade } = await supabaseAdmin.from('trades').select('*').eq('id', req.params.id).single();
-
-    // Build notification text
-    const { data: cancellerUser } = await supabaseAdmin.from('users').select('username').eq('id', req.userId).single();
-    const cancellerName = cancellerUser?.username || 'Trader';
-    const fmtC = n => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(n || 0);
-    const cLocal = trade.amount_local || 0;
-    const cCur = trade.local_currency || 'USD';
-    const cPM = trade.payment_method || 'Mobile Money';
-    const cDisp = cLocal > 0 ? `${fmtC(cLocal)} ${cCur}` : `$${fmtC(trade.amount_usd)} USD`;
-    const cancelMsg = `${cancellerName} cancelled the trade · ${cDisp} via ${cPM}`;
-    const otherId = req.userId === trade.buyer_id ? trade.seller_id : trade.buyer_id;
     res.json({ success: true, trade: updatedTrade || trade });
 
     setImmediate(async () => {
       try {
-        await createNotification(otherId, 'cancelled', '❌ Trade Cancelled', cancelMsg, `/trade/${req.params.id}`,
-          { trade_id: req.params.id, direction: req.userId === trade.buyer_id ? 'sell' : 'buy', actor_id: req.userId });
-        await createNotification(req.userId, 'cancelled', '❌ Trade Cancelled',
-          `You cancelled the trade · ${cDisp} via ${cPM}`, `/trade/${req.params.id}`,
-          { trade_id: req.params.id, direction: req.userId === trade.buyer_id ? 'buy' : 'sell', actor_id: otherId });
         sendTradeAlert([trade.buyer_id, trade.seller_id].filter(Boolean), trade, 'trade_cancelled').catch(() => { });
         // Email both parties about the cancellation
         const [buyerCancel, sellerCancel] = await Promise.allSettled([
@@ -7169,8 +7163,6 @@ app.post('/api/trades/:id/cancel', tradeLimiter, verifyToken, async (req, res) =
         if (sellerCancelUser?.email)
           emailService.sendTradeCancelledEmail(sellerCancelUser, trade, reason)
             .catch(e => console.error('[cancel] seller email:', e.message));
-        notifyUserSMS(trade.buyer_id, `PRAQEN: Your trade was cancelled${reason ? ` — ${reason}` : ''}. Any locked BTC has been refunded.`).catch(() => { });
-        notifyUserSMS(trade.seller_id, `PRAQEN: Your trade was cancelled${reason ? ` — ${reason}` : ''}. Any locked BTC has been refunded.`).catch(() => { });
       } catch (e) { console.error('[cancel] Background notify failed:', e.message); }
     });
   } catch (error) {
@@ -8635,7 +8627,7 @@ app.get('/api/admin/stats', verifyToken, async (req, res) => {
   try {
     const admin = await requireAdmin(req, res); if (!admin) return;
     const [usersR, tradesR, listingsR, profitsR, disputesR, kycR] = await Promise.allSettled([
-      supabaseAdmin.from('users').select('id, created_at, account_status, is_email_verified, is_id_verified, badge', { count: 'exact' }),
+      supabaseAdmin.from('users').select('id, created_at, account_status, is_email_verified, is_id_verified, badge, country', { count: 'exact' }),
       supabaseAdmin.from('trades').select('id, status, amount_usd, amount_btc, created_at', { count: 'exact' }),
       supabaseAdmin.from('listings').select('id, status', { count: 'exact' }),
       supabaseAdmin.from('company_profits').select('profit_btc, profit_usd'),
@@ -8655,6 +8647,7 @@ app.get('/api/admin/stats', verifyToken, async (req, res) => {
     const day = 86400000;
     const newUsersToday = users.filter(u => now - new Date(u.created_at) < day).length;
     const newUsersWeek = users.filter(u => now - new Date(u.created_at) < 7 * day).length;
+    const usersWithLocation = users.filter(u => u.country).length;
     const activeTrades = trades.filter(t => ['CREATED', 'FUNDS_LOCKED', 'ESCROW', 'ACTIVE', 'OPEN', 'PAYMENT_SENT', 'PAID'].includes(t.status)).length;
     const completedTrades = trades.filter(t => t.status === 'COMPLETED').length;
     const cancelledTrades = trades.filter(t => t.status === 'CANCELLED').length;
@@ -8682,7 +8675,12 @@ app.get('/api/admin/stats', verifyToken, async (req, res) => {
       activeTrades, completedTrades, cancelledTrades,
       openDisputes: dD.count || 0,
       activeListings: (lD.data || []).filter(l => l.status === 'ACTIVE').length,
+      pausedListings: (lD.data || []).filter(l => l.status === 'PAUSED').length,
+      closedListings: (lD.data || []).filter(l => l.status === 'CLOSED').length,
       totalListings: lD.count || 0,
+      usersWithLocation,
+      usersWithoutLocation: (uD.count || users.length) - usersWithLocation,
+      locationCoveragePct: (uD.count || users.length) > 0 ? Math.round((usersWithLocation / (uD.count || users.length)) * 100) : 0,
       totalVolumeUsd: totalVolumeUsd.toFixed(2),
       totalVolumeBtc: totalVolumeBtc.toFixed(8),
       totalRevBtc: totalRevBtc.toFixed(8),
@@ -8708,7 +8706,11 @@ app.get('/api/admin/users', verifyToken, async (req, res) => {
     if (country) query = query.eq('country', country.toUpperCase());
     const { data, error, count } = await query;
     if (error) return res.status(400).json({ error: error.message });
-    res.json({ users: data || [], total: count || 0, page: parseInt(page), limit: parseInt(limit) });
+    // Surface a phone-derived country as a fallback signal — the country
+    // column can be null/stale (VPN, blocked geo lookup, etc.) but a phone
+    // number's dial code is a reliable secondary source for the admin UI.
+    const users = (data || []).map(u => ({ ...u, phone_country: phoneToCountryCode(u.phone) }));
+    res.json({ users, total: count || 0, page: parseInt(page), limit: parseInt(limit) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -9413,6 +9415,7 @@ app.get('/api/admin/phone/pending', verifyToken, async (req, res) => {
     const enriched = (usersRes.data || []).map(u => ({
       ...u,
       submitted_at: submittedAt.get(u.id) || null,
+      phone_country: phoneToCountryCode(u.phone),
     }));
 
     // Sort by earliest submission first so oldest waiting users appear at top
@@ -9550,11 +9553,12 @@ app.get('/api/admin/users/new', verifyToken, async (req, res) => {
     const admin = await requireAdmin(req, res); if (!admin) return;
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const { data, error, count } = await supabaseAdmin.from('users')
-      .select('id, email, username, full_name, avatar_url, account_status, is_email_verified, is_phone_verified, is_id_verified, total_trades, country, created_at, last_login', { count: 'exact' })
+      .select('id, email, username, full_name, avatar_url, account_status, is_email_verified, is_phone_verified, is_id_verified, total_trades, country, country_name, city, phone, created_at, last_login', { count: 'exact' })
       .gte('created_at', since)
       .order('created_at', { ascending: false });
     if (error) return res.status(400).json({ error: error.message });
-    res.json({ users: data || [], total: count || 0 });
+    const users = (data || []).map(u => ({ ...u, phone_country: phoneToCountryCode(u.phone) }));
+    res.json({ users, total: count || 0 });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -9640,12 +9644,13 @@ app.get('/api/admin/activity', verifyToken, async (req, res) => {
   try {
     const admin = await requireAdmin(req, res); if (!admin) return;
     const { data, error } = await supabaseAdmin.from('users')
-      .select('id, username, email, last_login, last_seen_at, created_at, total_trades, account_status, country, is_email_verified, is_phone_verified, is_id_verified')
+      .select('id, username, email, last_login, last_seen_at, created_at, total_trades, account_status, country, city, phone, is_email_verified, is_phone_verified, is_id_verified')
       .not('last_seen_at', 'is', null)
       .order('last_seen_at', { ascending: false })
       .limit(100);
     if (error) return res.status(400).json({ error: error.message });
-    res.json({ activity: data || [] });
+    const activity = (data || []).map(u => ({ ...u, phone_country: phoneToCountryCode(u.phone) }));
+    res.json({ activity });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -11224,6 +11229,95 @@ app.post('/api/admin/hot-wallet/collect-fees', verifyToken, async (req, res) => 
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ✅ FIX: ONESIGNAL ID ROUTE - OneSignal ID Store Karne Ke Liye
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/users/onesignal-id', verifyToken, async (req, res) => {
+  try {
+    const { onesignal_id } = req.body;
+
+    if (!onesignal_id) {
+      return res.status(400).json({ error: 'OneSignal ID is required' });
+    }
+
+    console.log(`[OneSignal] Saving ID for user ${req.userId.slice(0, 8)}: ${onesignal_id.slice(0, 15)}...`);
+
+    const { data, error } = await supabaseAdmin
+      .from('users')
+      .update({
+        onesignal_id: onesignal_id,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', req.userId)
+      .select('id, onesignal_id');
+
+    if (error) {
+      console.error('[OneSignal] DB error:', error.message);
+      return res.status(500).json({ error: 'Failed to save OneSignal ID: ' + error.message });
+    }
+
+    console.log(`✅ OneSignal ID saved for user ${req.userId.slice(0, 8)}`);
+    res.json({
+      success: true,
+      message: 'OneSignal ID saved successfully',
+      user: data?.[0]
+    });
+  } catch (error) {
+    console.error('[OneSignal] Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ✅ FIX: TEST PUSH NOTIFICATION ENDPOINT
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/test-push', verifyToken, async (req, res) => {
+  try {
+    const { userId, type = 'new_trade' } = req.body;
+    const targetUserId = userId || req.userId;
+
+    // Check if user has OneSignal ID
+    const { data: user } = await supabaseAdmin
+      .from('users')
+      .select('id, username, onesignal_id')
+      .eq('id', targetUserId)
+      .single();
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!user.onesignal_id) {
+      return res.status(400).json({
+        error: 'User has no OneSignal ID. Please login again to register for push notifications.',
+        user: { id: user.id, username: user.username }
+      });
+    }
+
+    // Create a test trade object
+    const testTrade = {
+      id: 'test-' + Date.now(),
+      trade_ref: 'TEST' + Date.now().toString().slice(-6),
+      amount_btc: 0.00123456,
+      amount_usd: 100,
+      payment_method: 'Mobile Money'
+    };
+
+    // Send test notification
+    await sendTradeAlert(targetUserId, testTrade, type);
+
+    res.json({
+      success: true,
+      message: `Test push notification sent to ${user.username}`,
+      onesignal_id: user.onesignal_id.slice(0, 15) + '...',
+      type: type
+    });
+  } catch (error) {
+    console.error('[Test Push] Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // START SERVER
 // ============================================================
 
@@ -11231,6 +11325,8 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ PRAQEN Backend running on http://localhost:${PORT}`);
   console.log('📋 Routes: /api/auth, /api/users, /api/listings, /api/trades, /api/my-trades, /api/wallet, /api/hd-wallet, /api/notifications');
+  console.log('📱 OneSignal: ✅ Configured');
+  console.log('🔔 Push notifications: ✅ Ready');
 
   // Log hot wallet address so admin knows where to fund TRX + USDT
   tronHotWallet.logStartup();

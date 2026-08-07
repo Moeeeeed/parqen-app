@@ -10,7 +10,7 @@ setInterval(() => {
   for (const [k, v] of store) { if (v.expires < now) store.delete(k); }
 }, 60000);
 
-const VALID_ACTIONS = ['release_btc', 'send_btc', 'send_usdt'];
+const VALID_ACTIONS = ['release_btc', 'send_btc', 'send_usdt', 'enable_2fa'];
 const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 function generate(userId, action) {

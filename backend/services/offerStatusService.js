@@ -22,6 +22,14 @@ const BTC_PRICE_APPROX = 88000; // used only when listing has no bitcoin_price s
 let _bustCache = () => {};
 function setCacheBuster(fn) { _bustCache = fn; }
 
+// Live BTC price also lives in server.js — wired up the same way. Balance-sufficiency
+// checks must use the real market price, never a listing's own bitcoin_price field: that
+// field can be stale or unrelated to real value (e.g. on 'market' pricing_type listings,
+// where it isn't used for rate display at all), and trusting it let near-empty wallets
+// pass the $10 minimum simply because their listing quoted an inflated price.
+let _getLiveBtcPrice = () => BTC_PRICE_APPROX;
+function setBtcPriceGetter(fn) { _getLiveBtcPrice = fn; }
+
 async function _notifyLowBalancePause(userId, count) {
   try {
     await supabaseAdmin.from('notifications').insert([{
@@ -43,7 +51,7 @@ async function updateOfferStatus(userId) {
   try {
     const { data: wallet } = await supabaseAdmin
       .from('wallets').select('balance_btc, balance_usdt').eq('user_id', userId).maybeSingle();
-    const btcBalUsd  = parseFloat(wallet?.balance_btc || 0) * BTC_PRICE_APPROX;
+    const btcBalUsd  = parseFloat(wallet?.balance_btc || 0) * _getLiveBtcPrice();
     const usdtBalUsd = parseFloat(wallet?.balance_usdt || 0); // 1 USDT ≈ $1
 
     const { data: offers } = await supabaseAdmin
@@ -114,10 +122,10 @@ async function syncAllOfferStatuses() {
     const toPause      = [];
     const toReactivate = [];
 
+    const livePrice = _getLiveBtcPrice();
     for (const listing of listings) {
       const isUsdt    = listing.asset === 'USDT';
-      const btcPrice  = parseFloat(listing.bitcoin_price) || BTC_PRICE_APPROX;
-      const balUsd    = (balMap[listing.seller_id] || 0) * btcPrice; // default to BTC balance
+      const balUsd    = (balMap[listing.seller_id] || 0) * livePrice; // default to BTC balance
       const minUsd    = parseFloat(listing.min_limit_usd || 0);
 
       // Pause if balance < $10 or can't meet the offer's own minimum

@@ -4,7 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
   Bell, X, CheckCheck, ArrowRight,
-  Megaphone, Eye, UserCircle, MessageCircle, Send, ChevronLeft,
+  Megaphone, Eye, UserCircle, MessageCircle, Send, ChevronLeft, Globe,
+  Gift, Crown, Link, Lock, CheckCircle, XCircle, DollarSign,
 } from 'lucide-react';
 import CountryFlag from './CountryFlag';
 
@@ -32,6 +33,58 @@ const TYPE_PALETTE = {
   dispute:       { accent: '#B45309', bg: '#FFFBEB', border: '#FDE68A', dot: '#D97706' },
   system:        { accent: '#1B4332', bg: '#F0FDF4', border: '#D1FAE5', dot: '#2D6A4F' },
 };
+
+// A cancelled trade's `status` column is always CANCELLED — the backend never
+// writes a separate EXPIRED status. The only signal that it auto-expired
+// (vs. someone actually clicking Cancel) is the `cancel_reason` text, so any
+// caller that has it should pass it as the second argument.
+const EXPIRY_REASON_RE = /expir|time limit|payment window/i;
+
+// ── Shared status style helper (reusable in MyTrades & notifications) ──────
+export function getStatusStyle(status, cancelReason) {
+  const s = (status || '').toUpperCase();
+  if (['ACTIVE','IN_PROGRESS','OPEN','CREATED','PENDING','FUNDS_LOCKED','ESCROW','IN_REVIEW'].includes(s))
+    return { bg: '#DBEAFE', color: '#2563EB', label: 'Active' };
+  if (['COMPLETED','COMPLETE'].includes(s))
+    return { bg: '#DCFCE7', color: '#16A34A', label: 'Completed' };
+  if (['CANCELLED','CANCELED','CANCELLED_BY_BUYER','CANCELLED_BY_SELLER'].includes(s)) {
+    if (EXPIRY_REASON_RE.test(cancelReason || '')) return { bg: '#F1F5F9', color: '#64748B', label: 'Expired' };
+    return { bg: '#FEE2E2', color: '#DC2626', label: 'Cancelled' };
+  }
+  if (['DISPUTED','IN_DISPUTE'].includes(s))
+    return { bg: '#EDE9FE', color: '#7C3AED', label: 'Dispute' };
+  if (s === 'RESOLVED')
+    return { bg: '#F3E8FF', color: '#9333EA', label: 'Resolved' };
+  if (['EXPIRED','EXPIRE'].includes(s))
+    return { bg: '#F1F5F9', color: '#64748B', label: 'Expired' };
+  if (['PAYMENT_SENT','PAID'].includes(s))
+    return { bg: '#DBEAFE', color: '#2563EB', label: 'Paid' };
+  return { bg: '#F1F5F9', color: '#64748B', label: s || 'Unknown' };
+}
+
+// ── Country resolution helper ───────────────────────────────────────────────
+// The flag always reflects the USER's own country (never inferred from the
+// trade's currency or payment method). If the user has no country on their
+// profile, we return null — never a guessed flag. (Inferring GH from every
+// GHS trade made every profile show the same flag, which is wrong.)
+export function resolveCountryCode(entity) {
+  if (!entity) return null;
+  return (
+    entity.country_code ||
+    entity.countryCode ||
+    entity.country_iso ||
+    entity.country_iso2 ||
+    entity.country ||
+    entity.nationality ||
+    entity.location ||
+    entity.geo_country ||
+    entity.user?.country_code ||
+    entity.user?.country ||
+    entity.profile?.country_code ||
+    entity.profile?.country ||
+    null
+  );
+}
 
 const CUR_SYM = { GHS:'₵', NGN:'₦', KES:'KSh', ZAR:'R', USD:'$', GBP:'£', EUR:'€', UGX:'USh', TZS:'TSh', XAF:'CFA', XOF:'CFA' };
 const fmt    = n => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(n || 0);
@@ -71,23 +124,48 @@ function Avatar({ user, name, size = 38, color = T.forest }) {
   );
 }
 
+// ── Country flag badge ──────────────────────────────────────────────────────
+// Renders the real flag when a code is resolvable. Renders nothing when it
+// isn't — no "No country" placeholder, no layout shift.
+//
+// TEMP DEBUG: while country flags aren't appearing anywhere in the app, this
+// logs the exact shape of every entity that fails to resolve a country code,
+// so we can see in the browser console which field (if any) actually carries
+// the country on your API responses. Remove the console.warn once we know
+// the real field name and have wired resolveCountryCode() to it directly.
+function FlagBadge({ entity, size = 16, marginLeft = 0 }) {
+  const code = resolveCountryCode(entity);
+  if (!code) {
+    if (entity && process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
+      console.warn('[FlagBadge] could not resolve a country for:', entity);
+    }
+    return null;
+  }
+  return (
+    <CountryFlag
+      countryCode={code}
+      style={{ width: size * 1.3, height: size, display: 'inline-block', marginLeft, verticalAlign: 'middle', borderRadius: 2 }}
+    />
+  );
+}
+
 // ── Icon circle ───────────────────────────────────────────────────────────────
 // ── Shared image-style card container ────────────────────────────────────────
 function NCard({ n, onNavigate, children }) {
-  const shadow  = n.is_read ? '0 1px 4px rgba(0,0,0,0.05)' : '0 2px 8px rgba(0,0,0,0.09)';
   const shadowH = '0 4px 18px rgba(0,0,0,0.13)';
   return (
     <div onClick={() => onNavigate(n)}
       className={n._isNew ? 'notif-card-new' : ''}
       style={{
         background: '#fff', borderRadius: 16, margin: '0 0 10px',
-        border: `1px solid ${n.is_read ? '#E8EEF4' : '#CBD5E1'}`,
-        boxShadow: shadow, cursor: 'pointer', overflow: 'hidden',
+        border: '1px solid #E5E7EB',
+        boxShadow: 'none', cursor: 'pointer', overflow: 'hidden',
         transition: 'box-shadow 0.15s, transform 0.12s',
         opacity: n.is_read ? 0.88 : 1,
       }}
       onMouseEnter={e => { e.currentTarget.style.boxShadow = shadowH; e.currentTarget.style.transform = 'translateY(-1px)'; }}
-      onMouseLeave={e => { e.currentTarget.style.boxShadow = shadow; e.currentTarget.style.transform = 'translateY(0)'; }}>
+      onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'translateY(0)'; }}>
       {children}
     </div>
   );
@@ -235,29 +313,6 @@ function OfferViewCard({ n, onNavigate }) {
 }
 
 // ─── 3 & 4. UNIFIED TRADE CARD (image-style) ─────────────────────────────────
-const TRADE_STATUS = {
-  COMPLETED:           { label: 'Completed',  color: '#059669', bg: '#ECFDF5' },
-  COMPLETE:            { label: 'Completed',  color: '#059669', bg: '#ECFDF5' },
-  CANCELLED:           { label: 'Cancelled',  color: '#DC2626', bg: '#FEF2F2' },
-  CANCELED:            { label: 'Cancelled',  color: '#DC2626', bg: '#FEF2F2' },
-  CANCELLED_BY_BUYER:  { label: 'Cancelled',  color: '#DC2626', bg: '#FEF2F2' },
-  CANCELLED_BY_SELLER: { label: 'Cancelled',  color: '#DC2626', bg: '#FEF2F2' },
-  EXPIRED:             { label: 'Expired',    color: '#6B7280', bg: '#F9FAFB' },
-  EXPIRE:              { label: 'Expired',    color: '#6B7280', bg: '#F9FAFB' },
-  DISPUTED:            { label: 'Dispute',    color: '#B45309', bg: '#FFFBEB' },
-  IN_DISPUTE:          { label: 'Dispute',    color: '#B45309', bg: '#FFFBEB' },
-  IN_REVIEW:           { label: 'In Review',  color: '#6D28D9', bg: '#F5F3FF' },
-  RESOLVED:            { label: 'Resolved',   color: '#6D28D9', bg: '#F5F3FF' },
-  PAYMENT_SENT:        { label: 'Paid',       color: '#2563EB', bg: '#EFF6FF' },
-  PAID:                { label: 'Paid',       color: '#2563EB', bg: '#EFF6FF' },
-  ESCROW:              { label: 'Active', color: '#1D4ED8', bg: '#EFF6FF', border: '#BFDBFE' },
-  FUNDS_LOCKED:        { label: 'Active', color: '#1D4ED8', bg: '#EFF6FF', border: '#BFDBFE' },
-  ACTIVE:              { label: 'Active', color: '#1D4ED8', bg: '#EFF6FF', border: '#BFDBFE' },
-  IN_PROGRESS:         { label: 'Active', color: '#1D4ED8', bg: '#EFF6FF', border: '#BFDBFE' },
-  OPEN:                { label: 'Active', color: '#1D4ED8', bg: '#EFF6FF', border: '#BFDBFE' },
-  CREATED:             { label: 'Active', color: '#1D4ED8', bg: '#EFF6FF', border: '#BFDBFE' },
-  PENDING:             { label: 'Active', color: '#1D4ED8', bg: '#EFF6FF', border: '#BFDBFE' },
-};
 
 const tradeTimeStr = (ts) => {
   if (!ts) return '';
@@ -287,7 +342,7 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
   const btcStr   = btcRaw.toFixed(8);
   const pm       = trade.payment_method || '—';
   const st         = (trade.status || '').toUpperCase();
-  const status     = TRADE_STATUS[st] || { label: st || 'Active', color: '#2563EB', bg: '#EFF6FF' };
+  const status     = getStatusStyle(st, trade.cancel_reason);
   const dateStr    = tradeTimeStr(trade.created_at || n.created_at);
   const isDone     = st === 'COMPLETED' || st === 'COMPLETE';
 
@@ -332,22 +387,21 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
     }
   } else {
     if (!isBuyer) {
-      // BTC seller  →  LEFT: what they RECEIVE (fiat)  |  RIGHT: what they PAY (BTC + fiat equiv)
+      // BTC seller  →  LEFT: what they RECEIVE (fiat)  |  RIGHT: what they PAY (fiat + BTC equiv on one line)
       leftLabel   = baseReceive;
       leftStr     = fiatStr || '—';
       leftSubStr  = null;
       rightLabel  = basePay;
-      rightStr    = `${btcStr} BTC`;
-      rightSubStr = fiatStr ? `≈ ${fiatStr}` : usdEqStr;
+      rightStr    = fiatStr || `${btcStr} BTC`;
+      rightSubStr = fiatStr ? `(${btcStr} BTC)` : null;
     } else {
-      // BTC buyer  →  LEFT: what they PAY (fiat)  |  RIGHT: what they RECEIVE (BTC + local equiv)
-      // Sub-text tells the buyer what the BTC they receive is worth in their currency.
+      // BTC buyer  →  LEFT: what they PAY (fiat)  |  RIGHT: what they RECEIVE (fiat + BTC equiv on one line)
       leftLabel   = basePay;
       leftStr     = fiatStr || '—';
       leftSubStr  = null;
       rightLabel  = baseReceive;
-      rightStr    = `${btcStr} BTC`;
-      rightSubStr = fiatStr ? `≈ ${fiatStr}` : usdEqStr;
+      rightStr    = fiatStr || `${btcStr} BTC`;
+      rightSubStr = fiatStr ? `(${btcStr} BTC)` : null;
     }
   }
 
@@ -360,7 +414,7 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>
           {isGiftCard ? (
             <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg,#059669,#047857)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 6px rgba(5,150,105,0.4)' }}>
-              <span style={{ fontSize: 16, lineHeight: 1 }}>🎁</span>
+              <Gift size={16} color="#fff" />
             </div>
           ) : (
             <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg,#F7931A,#E8790A)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 6px rgba(247,147,26,0.4)' }}>
@@ -381,7 +435,7 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           {(isChat || n._hasUnreadMsg) && (
             <span style={{ fontSize: 11, fontWeight: 800, color: '#2563EB', background: '#EFF6FF', padding: '4px 9px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
-              💬 {(n._msgCount > 1) ? `${n._msgCount} msgs` : 'New msg'}
+              <MessageCircle size={11} /> {(n._msgCount > 1) ? `${n._msgCount} msgs` : 'New msg'}
             </span>
           )}
           <span style={{ fontSize: 12, fontWeight: 700, color: status.color, background: status.bg, padding: '4px 12px', borderRadius: 8 }}>
@@ -394,11 +448,15 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
       <div style={{ padding: '0 16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <span style={{ fontSize: 13, color: '#DC2626', fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pm}</span>
         {cp ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, minWidth: 0 }}>
             <Avatar user={cp} name={cp.username} size={32} color={T.forest} />
-            <div>
-              <span style={{ fontSize: 13, color: '#EC4899', fontWeight: 700, display: 'block' }}>{cp.username}</span>
-              {cp.country && <CountryFlag countryCode={cp.country} className="w-4 h-3" />}
+            <div style={{ minWidth: 0 }}>
+              <span style={{ display: 'block', fontSize: 13, color: '#EC4899', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
+                {cp.username}
+              </span>
+              <span style={{ display: 'block', marginTop: 2 }}>
+                <FlagBadge entity={cp} size={15} marginLeft={0} />
+              </span>
             </div>
           </div>
         ) : (
@@ -408,18 +466,20 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
 
       <NDivider />
 
-      {/* Left | → | Right  (label + amount + optional sub) */}
+      {/* Left | → | Right  (label + amount + optional secondary below) */}
       <div style={{ padding: '11px 16px 14px', display: 'flex', alignItems: 'center' }}>
         <div style={{ flex: 1 }}>
-          <p style={{ margin: 0, fontSize: 11, color: T.g400, fontWeight: 500, marginBottom: 3 }}>{leftLabel}</p>
-          <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#0F172A', lineHeight: 1.2 }}>{leftStr}</p>
-          {leftSubStr && <p style={{ margin: '3px 0 0', fontSize: 12, color: T.g500, fontWeight: 700 }}>{leftSubStr}</p>}
+          <p style={{ margin: 0, fontSize: 12, color: T.g500, fontWeight: 400, marginBottom: 3 }}>{leftLabel}</p>
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>{leftStr}</p>
+          {leftSubStr && <p style={{ margin: '2px 0 0', fontSize: 12, fontWeight: 400, color: T.g400 }}>{leftSubStr}</p>}
         </div>
-        <div style={{ padding: '0 10px', color: T.g400, fontSize: 20, fontWeight: 300, flexShrink: 0 }}>→</div>
+        <div style={{ padding: '0 10px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+          <ArrowRight size={18} strokeWidth={2.5} color={T.g500} />
+        </div>
         <div style={{ flex: 1, textAlign: 'right' }}>
-          <p style={{ margin: 0, fontSize: 11, color: T.g400, fontWeight: 500, marginBottom: 3 }}>{rightLabel}</p>
-          <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#0F172A', lineHeight: 1.2 }}>{rightStr}</p>
-          {rightSubStr && <p style={{ margin: '3px 0 0', fontSize: 12, color: T.g500, fontWeight: 700 }}>{rightSubStr}</p>}
+          <p style={{ margin: 0, fontSize: 12, color: T.g500, fontWeight: 400, marginBottom: 3 }}>{rightLabel}</p>
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>{rightStr}</p>
+          {rightSubStr && <p style={{ margin: '2px 0 0', fontSize: 12, fontWeight: 400, color: T.g400 }}>{rightSubStr}</p>}
         </div>
       </div>
     </NCard>
@@ -504,23 +564,15 @@ function BasicCard({ n, userId, onNavigate }) {
 
   // ── TRADE-RELATED: image-style card ──────────────────────────────────────────
   if (isTradeRelated) {
-    const statusMap = {
-      cancel:      { label: 'Cancelled',          color: '#DC2626', bg: '#FEF2F2' },
-      expire:      { label: 'Expired',            color: '#6B7280', bg: '#F9FAFB' },
-      dispute:     { label: 'Dispute',            color: '#B45309', bg: '#FFFBEB' },
-      resolved:    { label: 'Resolved',           color: '#6D28D9', bg: '#F5F3FF' },
-      payment:     { label: 'Paid',               color: '#2563EB', bg: '#EFF6FF' },
-      activeTrade: { label: 'Active',             color: '#1D4ED8', bg: '#EFF6FF' },
-      completed:   { label: 'Completed',          color: '#059669', bg: '#ECFDF5' },
-      trade:       { label: 'Active',             color: '#1D4ED8', bg: '#EFF6FF' },
-    };
-    const status = isCancelled ? statusMap.cancel
-      : isExpired   ? statusMap.expire
-      : isResolved  ? statusMap.resolved
-      : isDispute   ? statusMap.dispute
-      : isPayment   ? statusMap.payment
-      : isCompleted ? statusMap.completed
-      : statusMap.activeTrade;
+    const status = getStatusStyle(
+      isCancelled ? 'CANCELLED'
+      : isExpired ? 'EXPIRED'
+      : isResolved ? 'RESOLVED'
+      : isDispute ? 'DISPUTED'
+      : isPayment ? 'PAID'
+      : isCompleted ? 'COMPLETED'
+      : 'ACTIVE'
+    );
 
     // Parse payment method: enriched field first, then parse from message
     const pmM = msg.match(/\bvia\s+([^·\n]+?)(?:\s*·\s*|\s*$)/i);
@@ -596,21 +648,21 @@ function BasicCard({ n, userId, onNavigate }) {
         bRightSubStr = null;
       }
     } else if (isSeller) {
-      // BTC seller: LEFT = what they RECEIVE (fiat)  |  RIGHT = what they PAY (BTC + local equiv)
+      // BTC seller: LEFT = what they RECEIVE (fiat)  |  RIGHT = what they PAY (fiat + BTC equiv on one line)
       bLeftLabel   = baseReceive2;
       bLeftStr     = parsedLocalStr || '—';
       bLeftSubStr  = null;
       bRightLabel  = basePay2;
-      bRightStr    = btcAmtStr || 'BTC';
-      bRightSubStr = parsedLocalStr || null;   // show local currency under BTC
+      bRightStr    = parsedLocalStr || btcAmtStr || 'BTC';
+      bRightSubStr = parsedLocalStr && btcAmtStr ? `(${btcAmtStr})` : null;
     } else {
-      // BTC buyer: LEFT = what they PAY (fiat)  |  RIGHT = what they RECEIVE (BTC + local equiv)
+      // BTC buyer: LEFT = what they PAY (fiat)  |  RIGHT = what they RECEIVE (fiat + BTC equiv on one line)
       bLeftLabel   = basePay2;
       bLeftStr     = parsedLocalStr || btcAmtStr || 'BTC';
       bLeftSubStr  = null;
       bRightLabel  = baseReceive2;
-      bRightStr    = btcAmtStr || 'BTC';
-      bRightSubStr = parsedLocalStr || null;   // show local currency under BTC
+      bRightStr    = parsedLocalStr || btcAmtStr || 'BTC';
+      bRightSubStr = parsedLocalStr && btcAmtStr ? `(${btcAmtStr})` : null;
     }
 
     // Actor: use enriched n.actor first, then parse username from message as fallback for letter avatar
@@ -639,7 +691,7 @@ function BasicCard({ n, userId, onNavigate }) {
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>
             {basicIsGiftCard ? (
               <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg,#059669,#047857)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 6px rgba(5,150,105,0.4)' }}>
-                <span style={{ fontSize: 16, lineHeight: 1 }}>🎁</span>
+                <Gift size={16} color="#fff" />
               </div>
             ) : (
               <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg,#F7931A,#E8790A)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 6px rgba(247,147,26,0.35)' }}>
@@ -668,11 +720,15 @@ function BasicCard({ n, userId, onNavigate }) {
             {parsedPm}
           </span>
           {displayActor ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, minWidth: 0 }}>
               <Avatar user={displayActor} name={displayActor.username} size={32} color={T.forest} />
-              <div>
-                <span style={{ fontSize: 13, color: '#EC4899', fontWeight: 700, display: 'block' }}>{displayActor.username}</span>
-                {displayActor.country && <CountryFlag countryCode={displayActor.country} className="w-4 h-3" />}
+              <div style={{ minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: 13, color: '#EC4899', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
+                  {displayActor.username}
+                </span>
+                <span style={{ display: 'block', marginTop: 2 }}>
+                  <FlagBadge entity={displayActor} size={15} marginLeft={0} />
+                </span>
               </div>
             </div>
           ) : parsedLocalStr ? (
@@ -684,23 +740,25 @@ function BasicCard({ n, userId, onNavigate }) {
 
         <NDivider />
 
-        {/* Left | → | Right  (label + amount + optional sub) */}
+        {/* Left | → | Right  (label + amount + optional secondary below) */}
         <div style={{ padding: '11px 16px 14px', display: 'flex', alignItems: 'center' }}>
           <div style={{ flex: 1 }}>
-            <p style={{ margin: 0, fontSize: 11, color: T.g400, fontWeight: 500, marginBottom: 3 }}>{bLeftLabel}</p>
-            <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#0F172A', lineHeight: 1.2 }}>{bLeftStr}</p>
-            {bLeftSubStr && <p style={{ margin: '3px 0 0', fontSize: 12, color: T.g500, fontWeight: 700 }}>{bLeftSubStr}</p>}
+            <p style={{ margin: 0, fontSize: 12, color: T.g500, fontWeight: 400, marginBottom: 3 }}>{bLeftLabel}</p>
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>{bLeftStr}</p>
+            {bLeftSubStr && <p style={{ margin: '2px 0 0', fontSize: 12, fontWeight: 400, color: T.g400 }}>{bLeftSubStr}</p>}
           </div>
-          <div style={{ padding: '0 10px', color: T.g400, fontSize: 20, fontWeight: 300, flexShrink: 0 }}>→</div>
+          <div style={{ padding: '0 10px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            <ArrowRight size={18} strokeWidth={2.5} color={T.g500} />
+          </div>
           <div style={{ flex: 1, textAlign: 'right' }}>
-            <p style={{ margin: 0, fontSize: 11, color: T.g400, fontWeight: 500, marginBottom: 3 }}>{bRightLabel}</p>
-            <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#0F172A', lineHeight: 1.2 }}>{bRightStr}</p>
-            {bRightSubStr && <p style={{ margin: '3px 0 0', fontSize: 12, color: T.g500, fontWeight: 700 }}>{bRightSubStr}</p>}
+            <p style={{ margin: 0, fontSize: 12, color: T.g500, fontWeight: 400, marginBottom: 3 }}>{bRightLabel}</p>
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>{bRightStr}</p>
+            {bRightSubStr && <p style={{ margin: '2px 0 0', fontSize: 12, fontWeight: 400, color: T.g400 }}>{bRightSubStr}</p>}
           </div>
         </div>
         {isRefund && (
           <div style={{ padding: '0 16px 12px' }}>
-            <p style={{ margin: 0, fontSize: 12, color: T.success, fontWeight: 700 }}>✅ Your BTC has been refunded to your wallet</p>
+            <p style={{ margin: 0, fontSize: 12, color: T.success, fontWeight: 700 }}><CheckCircle size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} /> Your BTC has been refunded to your wallet</p>
           </div>
         )}
       </NCard>
@@ -792,8 +850,8 @@ function ReferralCard({ referral, onChat }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <span style={{ fontWeight: 800, fontSize: 14, color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {referral.username}
+            <FlagBadge entity={referral} size={16} marginLeft={5} />
           </span>
-          {referral.country && <CountryFlag countryCode={referral.country} className="w-5 h-4 flex-shrink-0" />}
         </div>
         <p style={{ margin: '3px 0 0', fontSize: 11, fontWeight: 500 }}>
           {tc > 0
@@ -812,7 +870,7 @@ function ReferralCard({ referral, onChat }) {
           display: 'flex', alignItems: 'center', gap: 5,
           boxShadow: '0 2px 8px rgba(27,67,50,0.3)',
         }}>
-        💬 Chat
+        <MessageCircle size={12} /> Chat
       </button>
     </div>
   );
@@ -890,18 +948,18 @@ function NotifCard({ n, userId, onNavigate }) {
 }
 
 // ─── Filter tabs ──────────────────────────────────────────────────────────────
+// The "All" tab is intentionally removed — every notification lives under its
+// own section tab (Trades | Views | Refs | News), never mixed together.
 const FILTERS = [
-  { id: 'all',      label: 'All' },
   { id: 'trades',   label: 'Trades' },
-  { id: 'views',    label: 'Profile & Offers' },
-  { id: 'referral', label: 'Referrals' },
-  { id: 'system',   label: 'System' },
+  { id: 'views',    label: 'Views' },
+  { id: 'referral', label: 'Refs' },
+  { id: 'system',   label: 'News' },
 ];
 
 const TRADE_TYPES = new Set(['trade', 'trade_cancel', 'cancelled', 'payment', 'dispute', 'message', 'support']);
 
 function matchFilter(n, filter) {
-  if (filter === 'all') return true;
   const type = (n.type || '').toLowerCase();
   const title = (n.title || '').toLowerCase();
   const msg = (n.message || '').toLowerCase();
@@ -926,7 +984,7 @@ export default function Notifications({ user }) {
   const [notifs,   setNotifs]   = useState([]);
   const [showDrop, setShowDrop] = useState(false);
   const [loading,  setLoading]  = useState(false);
-  const [filter,   setFilter]   = useState('all');
+  const [filter,   setFilter]   = useState('trades');
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
 
   // ── Referral chat state ────────────────────────────────────────────────────
@@ -1130,11 +1188,10 @@ export default function Notifications({ user }) {
 
   // ── Shared panel content (header + list + footer) ──────────────────────────
   const MobileFilters = [
-    { id: 'all',      label: 'All' },
     { id: 'trades',   label: 'Trades' },
     { id: 'views',    label: 'Views' },
     { id: 'referral', label: 'Refs' },
-    { id: 'system',   label: 'System' },
+    { id: 'system',   label: 'News' },
   ];
   const tabDefs = isMobile ? MobileFilters : FILTERS;
 
@@ -1144,6 +1201,7 @@ export default function Notifications({ user }) {
   const PanelContent = (
     <>
       {/* ── Header — hidden on mobile when chat is open ── */}
+      {/* TODO(design-cleanup): team lead flagged some header elements for removal — confirm which: "9+" unread bubble, "Offer View" pill duplicate of bell badge, eye icon on Offer Viewed cards. Remove only after team lead confirmation. */}
       {!mobileChat && <div style={{
         padding: isMobile ? '16px 18px 12px' : '14px 16px 10px',
         flexShrink: 0,
@@ -1206,7 +1264,7 @@ export default function Notifications({ user }) {
         {/* Filter tabs */}
         <div style={{ display: 'flex', gap: isMobile ? 6 : 4 }}>
           {tabDefs.map(f => {
-            const count = f.id === 'all' ? unread : notifs.filter(n => !n.is_read && matchFilter(n, f.id)).length;
+            const count = notifs.filter(n => !n.is_read && matchFilter(n, f.id)).length;
             const active = filter === f.id;
             return (
               <button key={f.id} onClick={() => { if (f.id !== 'referral') setChatRef(null); setFilter(f.id); }}
@@ -1258,7 +1316,7 @@ export default function Notifications({ user }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ margin: 0, fontWeight: 900, fontSize: isMobile ? 15 : 13, color: '#fff', lineHeight: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {chatRef.username}
-                  {chatRef.country && <CountryFlag countryCode={chatRef.country} className="w-4 h-3 inline-block align-middle ml-1.5" />}
+                  <FlagBadge entity={chatRef} size={14} marginLeft={6} />
                 </p>
                 <p style={{ margin: '3px 0 0', fontSize: isMobile ? 12 : 10, color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: 5 }}>
                   <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', backgroundColor: '#4ADE80', flexShrink: 0 }} />
@@ -1277,7 +1335,7 @@ export default function Notifications({ user }) {
             style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: isMobile ? '14px 14px 6px' : '12px 12px 4px', backgroundColor: '#F8FAFC', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {chatMsgs.length === 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, textAlign: 'center', padding: '40px 20px' }}>
-                <div style={{ fontSize: 40, marginBottom: 12 }}>💬</div>
+                <MessageCircle size={40} color={T.g400} />
                 <p style={{ fontWeight: 800, fontSize: isMobile ? 15 : 14, color: T.g700, margin: '0 0 6px' }}>Start the conversation</p>
                 <p style={{ fontSize: isMobile ? 13 : 12, color: T.g400, lineHeight: 1.6 }}>
                   Say hi to <strong>{chatRef.username}</strong> and encourage them to trade!
@@ -1365,7 +1423,7 @@ export default function Notifications({ user }) {
               </div>
             ) : (referrals.length === 0 && !myReferrer) ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 24px', textAlign: 'center' }}>
-                <div style={{ fontSize: 44, marginBottom: 14 }}>🔗</div>
+                <Link size={44} color={T.g400} />
                 <p style={{ fontWeight: 900, fontSize: 15, color: T.g700, marginBottom: 6 }}>No referrals yet</p>
                 <p style={{ fontSize: 13, color: T.g400, lineHeight: 1.6, maxWidth: 260 }}>Share your referral link and earn rewards when friends join and start trading on PRAQEN.</p>
               </div>
@@ -1375,7 +1433,7 @@ export default function Notifications({ user }) {
                 {myReferrer && (
                   <div style={{ marginBottom: 14 }}>
                     <p style={{ fontSize: 11, color: T.mint, fontWeight: 800, margin: '2px 4px 8px', textTransform: 'uppercase', letterSpacing: 0.6 }}>
-                      👑 Your Referrer
+                      <Crown size={11} style={{ display: 'inline', marginRight: 2, verticalAlign: 'middle' }} /> Your Referrer
                     </p>
                     <ReferralCard referral={myReferrer} onChat={setChatRef} />
                     {referrals.length > 0 && (
@@ -1387,7 +1445,7 @@ export default function Notifications({ user }) {
                 {referrals.length > 0 && (
                   <>
                     <p style={{ fontSize: 11, color: T.g400, fontWeight: 700, margin: '2px 4px 10px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                      🔗 My Referrals · {referrals.length}
+                      <Link size={11} style={{ display: 'inline', marginRight: 2, verticalAlign: 'middle' }} /> My Referrals · {referrals.length}
                     </p>
                     {referrals.map(r => (
                       <ReferralCard key={r.id} referral={r} onChat={setChatRef} />
@@ -1410,16 +1468,15 @@ export default function Notifications({ user }) {
                 <Bell size={26} style={{ color: T.g400 }} />
               </div>
               <p style={{ fontWeight: 900, fontSize: 15, color: T.g700, marginBottom: 6 }}>
-                {filter === 'all' ? 'All caught up!' : `No ${tabDefs.find(f => f.id === filter)?.label.toLowerCase()} notifications`}
+                {`No ${tabDefs.find(f => f.id === filter)?.label.toLowerCase()} notifications`}
               </p>
               <p style={{ fontSize: 13, color: T.g400, lineHeight: 1.6, maxWidth: 260 }}>
-                {filter === 'all'
-                  ? "We'll notify you when a trade comes in, payment is confirmed, or someone views your profile."
-                  : 'Nothing here yet — check back soon.'}
+                {'Nothing here yet — check back soon.'}
               </p>
             </div>
           ) : (
             /* ── NOTIFICATION LIST ── */
+            /* TODO(design-cleanup): team lead circled some card elements in red on reference screenshot — once annotated image available, remove flagged items (candidates: unread count bubble, "Offer View" pill, eye icon on Offer Viewed). Don't guess. */
             dedupByTrade(filtered.map(n => ({ ...n, _isNew: justArrivedIds.has(n.id) }))).map(n => (
               <NotifCard key={n.id} n={n} userId={user?.id} onNavigate={handleClick} />
             ))
@@ -1443,9 +1500,7 @@ export default function Notifications({ user }) {
           ) : (
             <p style={{ fontSize: isMobile ? 13 : 12, color: T.g600, fontWeight: 700, margin: 0 }}>
               {filtered.length} notification{filtered.length !== 1 ? 's' : ''}
-              {filter !== 'all' && (
-                <span style={{ color: T.g400 }}> · {tabDefs.find(f => f.id === filter)?.label}</span>
-              )}
+              <span style={{ color: T.g400 }}> · {tabDefs.find(f => f.id === filter)?.label}</span>
             </p>
           )}
           <button
@@ -1555,10 +1610,13 @@ export default function Notifications({ user }) {
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px' }}>
                 <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0,
                   background: `linear-gradient(135deg,${T.forest},${T.mint})`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
-                  {(t.title || '').startsWith('💰') ? '💰' : (t.title || '').startsWith('🔒') ? '🔒'
-                    : (t.title || '').startsWith('💬') ? '💬' : (t.title || '').startsWith('❌') ? '❌'
-                    : (t.title || '').startsWith('✅') ? '✅' : '🔔'}
+                  display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {(t.title || '').startsWith('💰') ? <DollarSign size={18} color="#fff" />
+                    : (t.title || '').startsWith('🔒') ? <Lock size={18} color="#fff" />
+                    : (t.title || '').startsWith('💬') ? <MessageCircle size={18} color="#fff" />
+                    : (t.title || '').startsWith('❌') ? <XCircle size={18} color="#fff" />
+                    : (t.title || '').startsWith('✅') ? <CheckCircle size={18} color="#fff" />
+                    : <Bell size={18} color="#fff" />}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: '#0F172A',

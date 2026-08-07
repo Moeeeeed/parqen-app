@@ -16,6 +16,7 @@ import CountryFlag, { resolveCode } from '../components/CountryFlag';
 import { BadgeChip, BADGE_COLORS } from '../lib/badge';
 import ActiveTradeCard from '../components/ActiveTradeCard';
 import PRQFooter from '../components/PRQFooter';
+import GettingStartedSteps from '../components/GettingStartedSteps';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -389,7 +390,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
                   countryCode={u?.country_code || u?.country || u?.location || null}
                   className="w-4 h-3 rounded-sm flex-shrink-0"/>
                 <button onClick={onViewSeller}
-                  className="font-black text-sm hover:underline leading-tight truncate"
+                  className="font-black text-sm hover:underline leading-tight truncate min-w-0"
                   style={{color:C.g800}}>
                   {getDisplayName(u) || 'Seller'}
                 </button>
@@ -1496,29 +1497,41 @@ export default function BuyBitcoin({user}) {
         </div>
       </div>
 
+      {/* Getting-started guide — shown to logged-in users who haven't funded their wallet yet */}
+      {user && userBtcBalance * btcPrice < 10 && <GettingStartedSteps userId={user.id} />}
+
       {/* Low-balance reminder — shown to logged-in sellers whose BTC is below $10 */}
       {user && userBtcBalance * btcPrice < 10 && (
         <div className="flex-shrink-0 px-3 pt-3">
-          <div className="max-w-7xl mx-auto rounded-2xl p-4 flex items-start gap-3"
-            style={{backgroundColor:'#FFFBEB', border:'1.5px solid #FCD34D'}}>
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{backgroundColor:'#FEF3C7'}}>
-              <Wallet size={16} style={{color:'#D97706'}}/>
+          <div className="max-w-7xl mx-auto rounded-2xl overflow-hidden shadow-lg"
+            style={{border:'2px solid #B91C1C'}}>
+            <div className="flex items-center gap-2 px-4 py-2.5"
+              style={{background:'linear-gradient(135deg,#991B1B,#DC2626)'}}>
+              <span className="text-base">🚨</span>
+              <span className="text-xs sm:text-sm font-black text-white tracking-wide uppercase">
+                Action Required — Your Offer Is Not Visible To Buyers
+              </span>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-black" style={{color:'#92400E'}}>Keep your wallet funded to stay active</p>
-              <p className="text-xs mt-0.5 leading-relaxed" style={{color:'#B45309'}}>
-                Your Bitcoin wallet must have at least <strong>$10</strong> for your sell offer to appear in the Buy Bitcoin market.
-                Current balance: <strong>${(userBtcBalance * btcPrice).toFixed(2)}</strong>.
-                Top up now to activate your offer.
-              </p>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-4" style={{backgroundColor:'#FEF2F2'}}>
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{backgroundColor:'#FEE2E2'}}>
+                <Wallet size={20} style={{color:'#B91C1C'}}/>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-base font-black" style={{color:'#7F1D1D'}}>Keep your wallet funded to stay active</p>
+                <p className="text-sm mt-1 leading-relaxed font-semibold" style={{color:'#B91C1C'}}>
+                  Your Bitcoin wallet must have at least <strong>$10 and above</strong> for your buy and sell offers to appear in the marketplace — and to unlock your first bonus on your way to becoming a vendor.
+                  Current balance: <strong>${(userBtcBalance * btcPrice).toFixed(2)}</strong>.
+                  Top up now to activate your offer.
+                </p>
+              </div>
+              <button
+                onClick={()=>navigate('/wallet')}
+                className="flex-shrink-0 w-full sm:w-auto px-6 py-3 rounded-xl text-sm font-black text-white shadow-md hover:opacity-90 transition"
+                style={{background:'linear-gradient(135deg,#B91C1C,#DC2626)'}}>
+                Top Up Now →
+              </button>
             </div>
-            <button
-              onClick={()=>navigate('/wallet')}
-              className="flex-shrink-0 px-3 py-2 rounded-xl text-xs font-black text-white"
-              style={{backgroundColor:'#D97706'}}>
-              Top Up
-            </button>
           </div>
         </div>
       )}

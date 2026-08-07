@@ -12,17 +12,14 @@
         window.dataLayer = window.dataLayer || [];
         function gtag(){dataLayer.push(arguments);}
         gtag('js', new Date());
-
         gtag('config', 'G-L3THVLS7ZL');
     </script>
 
     <!-- ── Primary SEO ──────────────────────────────────────────────────── -->
     <title>PRAQEN | Buy & Sell Bitcoin & USDT P2P Worldwide</title>
     <meta name="description" content="Trade Bitcoin & USDT safely worldwide. Buy or sell instantly with MTN MoMo, OPay, & bank transfers. Escrow-protected P2P with a 0.5% flat fee." />
-
     <meta name="keywords" content="buy bitcoin worldwide, sell bitcoin p2p, buy usdt, sell usdt, p2p bitcoin trading, p2p usdt trading, bitcoin mobile money, usdt trc20, buy bitcoin nigeria, buy usdt ghana, gift card to bitcoin, bitcoin exchange global, p2p crypto, praqen, bitcoin mtn, escrow bitcoin, buy bitcoin with mobile money, bitcoin ghana cedis, crypto global" />
     <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
-    <!-- ── Crawler-specific directives (Google, AI, Search engines) ────────── -->
     <meta name="googlebot" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
     <meta name="bingbot" content="index, follow" />
     <meta name="slurp" content="index, follow" />
@@ -32,7 +29,6 @@
     <meta name="applebot" content="index, follow" />
     <meta name="facebook" content="index, follow" />
     <meta name="LinkedInBot" content="index, follow" />
-
     <meta name="author" content="PRAQEN" />
     <link rel="canonical" href="https://praqen.com/" />
 
@@ -216,25 +212,32 @@
         }
     </script>
 
-    <!-- ── OneSignal Web Push ────────────────────────────────────────────── -->
+    <!-- ── ✅ FIXED: OneSignal Web Push - Environment Auto-Detect ─────────── -->
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
     <script>
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         OneSignalDeferred.push(async function(OneSignal) {
-            try {
-                await OneSignal.init({
-                    appId: "5fc11b99-516c-4178-8443-b06c08865b99",
-                    notifyButton: { enable: false },
-                    allowLocalhostAsSecureOrigin: true,
-                });
-                // Expose globally so helpers can access it synchronously
-                window.OneSignal = OneSignal;
-                // Signal that init is complete — helpers waiting on this event will unblock
-                window.dispatchEvent(new CustomEvent('onesignal:ready'));
-                console.log('✅ OneSignal initialized! App:', OneSignal);
-            } catch (error) {
-                console.error('❌ OneSignal init error:', error);
-            }
+            // ✅ Auto-detect environment
+            const isLocal = window.location.hostname === 'localhost' ||
+                window.location.hostname === '127.0.0.1' ||
+                window.location.hostname === '0.0.0.0';
+
+            const appId = isLocal
+                ? "6bfba397-b0b1-4718-abde-6ecb375c4f40"   // Local testing
+                : "5fc11b99-516c-4178-8443-b06c08865b99";  // Production
+
+            console.log(`[OneSignal] Initializing with App ID: ${appId} (${isLocal ? 'LOCAL' : 'PRODUCTION'})`);
+
+            await OneSignal.init({
+                appId: appId,
+                notifyButton: { enable: false },
+                allowLocalhostAsSecureOrigin: true,
+                serviceWorkerPath: "/OneSignalSDKWorker.js",
+            });
+
+            window.OneSignal = OneSignal;
+            window.dispatchEvent(new CustomEvent('onesignal:ready'));
+            console.log('✅ OneSignal initialized! App:', appId);
         });
     </script>
 
