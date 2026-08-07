@@ -11,10 +11,10 @@ import {
   ChevronDown, CreditCard, ThumbsUp, ThumbsDown, Repeat2,
   Lock, TrendingUp, Check, Phone, Mail, Ban, ArrowUp, ArrowDown,
   Zap, Users, Award, Sparkles, ShieldCheck,
-  Crown, Star, MessageSquare, Wifi, Coins, Trophy
+  Crown, Star, MessageSquare, Wifi, Coins, Trophy, Bitcoin
 } from 'lucide-react';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
-import { BadgeChip } from '../lib/badge';
+import { BadgeChip, deriveBadge, BADGE_COLORS } from '../lib/badge';
 import ActiveTradeCard from '../components/ActiveTradeCard';
 import PRQFooter from '../components/PRQFooter';
 
