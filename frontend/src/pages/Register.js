@@ -11,6 +11,113 @@ import {
   ArrowUpRight, CircleDollarSign, Wallet, BarChart3
 } from 'lucide-react';
 
+// ─── Guided Onboarding Field Tips ───────────────────────────────────────────
+const FIELD_GUIDES = [
+  {
+    field: 'fullName',
+    Icon: User,
+    title: 'Your Full Name',
+    body: 'Enter your real full name as it appears on your ID. This helps verify your identity for secure trades.',
+    example: 'e.g. John Doe',
+  },
+  {
+    field: 'email',
+    Icon: Mail,
+    title: 'Email Address',
+    body: "We'll send a verification link to this email. Use one you check regularly so you never miss a trade notification.",
+    example: 'e.g. you@gmail.com',
+  },
+  {
+    field: 'phone',
+    Icon: Phone,
+    title: 'Phone Number',
+    body: 'Select your country code and enter your mobile number. We will send SMS verification code for fast trading.',
+    example: 'e.g. 244 123 4567',
+  },
+  {
+    field: 'username',
+    Icon: AtSign,
+    title: 'Choose a Username',
+    body: 'Your public trading handle on PRAQEN. Use letters, numbers, underscores or dots. At least 3 characters.',
+    example: 'e.g. john_doe99',
+  },
+  {
+    field: 'password',
+    Icon: Lock,
+    title: 'Create a Strong Password',
+    body: 'Must include uppercase, lowercase, and a number. A strong password keeps your Bitcoin wallet safe.',
+    example: 'e.g. MyP@ss2024',
+  },
+  {
+    field: 'confirm',
+    Icon: CheckCircle,
+    title: 'Confirm Your Password',
+    body: 'Retype your password exactly. This prevents typos from locking you out of your account.',
+    example: 'Must match your password above',
+  },
+  {
+    field: 'agreed',
+    Icon: Shield,
+    title: 'Accept Terms',
+    body: 'Check the box to confirm you agree to our Terms of Service and Privacy Policy. All trades are escrow-protected.',
+    example: 'Required to create your account',
+  },
+  {
+    field: 'submit',
+    Icon: ArrowRight,
+    title: 'Complete Registration',
+    body: 'Click to create your free account. You will receive a 6-digit verification code to activate your account.',
+    example: 'Fast & Secure setup',
+  },
+  {
+    field: 'otp',
+    Icon: Shield,
+    title: 'Verification Code',
+    body: 'Enter the 6-digit code sent to your email or phone. You can copy and paste all 6 digits directly.',
+    example: 'e.g. 123456',
+  },
+];
+
+// ─── Blue Tooltip Popup Component (left-side, responsive) ───────────────────
+function FieldTooltip({ guide, onDismiss }) {
+  if (!guide) return null;
+  const IconComponent = guide.Icon || User;
+  return (
+    <div className="field-tooltip">
+      {/* Arrow: points right on desktop (toward the input) */}
+      <div className="field-tooltip-arrow" />
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <IconComponent size={18} style={{ color: '#fff', flexShrink: 0, marginTop: 2 }} />
+        <div style={{ flex: 1 }}>
+          <p style={{ margin: '0 0 4px', fontWeight: 800, fontSize: 12, color: '#fff', lineHeight: 1.3 }}>
+            {guide.title}
+          </p>
+          <p style={{ margin: '0 0 6px', fontSize: 11, color: 'rgba(255,255,255,0.88)', lineHeight: 1.5 }}>
+            {guide.body}
+          </p>
+          <div style={{
+            fontSize: 10, color: 'rgba(255,255,255,0.65)',
+            fontStyle: 'italic', background: 'rgba(255,255,255,0.12)',
+            borderRadius: 6, padding: '3px 8px', display: 'inline-block',
+          }}>
+            {guide.example}
+          </div>
+        </div>
+        <button
+          onClick={onDismiss}
+          style={{
+            background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: '50%',
+            width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', color: 'white', flexShrink: 0, padding: 0, fontSize: 11,
+            lineHeight: 1,
+          }}
+          title="Dismiss"
+        >×</button>
+      </div>
+    </div>
+  );
+}
+
 const C = {
   forest: '#1B4332', green: '#2D6A4F', mint: '#40916C',
   gold: '#F4A422', white: '#FFFFFF', mist: '#F0F9F4',
@@ -175,6 +282,8 @@ export default function Register({ onLogin }) {
   const [showCodes, setShowCodes] = useState(false);
   const [globalError, setGlobalError] = useState('');
   const [currentTestimonial, setCurrentTestimonial] = useState(0);
+  // Hover-based tooltip state
+  const [hoveredField, setHoveredField] = useState(null);
 
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -248,16 +357,22 @@ export default function Register({ onLogin }) {
 
   useEffect(() => {
     /* global google */
-    if (window.google && window.google.accounts) {
+    const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+    if (googleClientId && window.google && window.google.accounts) {
       try {
         window.google.accounts.id.initialize({
-          client_id: process.env.REACT_APP_GOOGLE_CLIENT_ID || '',
+          client_id: googleClientId,
           callback: handleGoogleResponse,
         });
-        window.google.accounts.id.renderButton(
-          document.getElementById('googleBtnRegister'),
-          { theme: 'outline', size: 'large', width: '100%', text: 'continue_with' }
-        );
+        const btnContainer = document.getElementById('googleBtnRegister');
+        if (btnContainer) {
+          window.google.accounts.id.renderButton(btnContainer, {
+            theme: 'outline',
+            size: 'large',
+            width: '100%',
+            text: 'continue_with',
+          });
+        }
       } catch (err) {
         console.error('Google Sign-In initialization failed:', err);
       }
@@ -463,6 +578,10 @@ export default function Register({ onLogin }) {
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
+        @keyframes tooltipIn {
+          from { opacity: 0; transform: translateY(-50%) scale(0.85); }
+          to { opacity: 1; transform: translateY(-50%) scale(1); }
+        }
         @keyframes pulse-gold {
           0%, 100% { transform: scale(1); }
           50% { transform: scale(1.1); }
@@ -483,6 +602,61 @@ export default function Register({ onLogin }) {
         }
         .pulse-gold {
           animation: pulse-gold 2s ease-in-out infinite;
+        }
+
+        /* ─── Field Tooltip (Blue popup) ─────────────────────────── */
+        .field-tooltip {
+          position: absolute;
+          /* Default: LEFT of the input on desktop */
+          right: calc(100% + 14px);
+          top: 50%;
+          transform: translateY(-50%);
+          width: 210px;
+          background: linear-gradient(135deg, #1E40AF 0%, #2563EB 100%);
+          border-radius: 14px;
+          padding: 12px 14px;
+          box-shadow: 0 10px 36px rgba(37, 99, 235, 0.32), 0 2px 8px rgba(0,0,0,0.08);
+          z-index: 1000;
+          animation: tooltipFadeIn 0.22s ease both;
+          pointer-events: auto;
+        }
+
+        @keyframes tooltipFadeIn {
+          from { opacity: 0; transform: translateY(-50%) scale(0.9); }
+          to   { opacity: 1; transform: translateY(-50%) scale(1); }
+        }
+
+        /* Arrow: points RIGHT (toward the input) */
+        .field-tooltip-arrow {
+          position: absolute;
+          right: -8px;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 0;
+          height: 0;
+          border-top: 7px solid transparent;
+          border-bottom: 7px solid transparent;
+          border-left: 8px solid #1E40AF;
+        }
+
+        /* On screens where there's no room to the left — show BELOW */
+        @media (max-width: 1200px) {
+          .field-tooltip {
+            right: auto;
+            left: 0;
+            top: calc(100% + 8px);
+            transform: none;
+            width: 100%;
+            max-width: 100%;
+            animation: tooltipDropIn 0.22s ease both;
+          }
+          @keyframes tooltipDropIn {
+            from { opacity: 0; transform: translateY(-6px); }
+            to   { opacity: 1; transform: translateY(0); }
+          }
+          .field-tooltip-arrow {
+            display: none;
+          }
         }
 
         /* Hero Panel - Desktop Only */
@@ -1199,7 +1373,11 @@ export default function Register({ onLogin }) {
 
                     {/* Email or Phone */}
                     {method === 'email' ? (
-                      <div>
+                      <div
+                        style={{ position: 'relative' }}
+                        onMouseEnter={() => setHoveredField('email')}
+                        onMouseLeave={() => setHoveredField(null)}
+                      >
                         <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                           Email Address
                         </label>
@@ -1209,10 +1387,17 @@ export default function Register({ onLogin }) {
                             type="email"
                             value={email}
                             placeholder="you@example.com"
+                            onFocus={() => setHoveredField('email')}
                             onChange={e => setEmail(e.target.value)}
                             className="form-input-focus"
                             style={inputStyle(!!email, errs.email)}
                           />
+                          {hoveredField === 'email' && (
+                            <FieldTooltip
+                              guide={FIELD_GUIDES.find(g => g.field === 'email')}
+                              onDismiss={() => setHoveredField(null)}
+                            />
+                          )}
                         </div>
                         {errs.email && (
                           <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}>
@@ -1221,7 +1406,11 @@ export default function Register({ onLogin }) {
                         )}
                       </div>
                     ) : (
-                      <div>
+                      <div
+                        style={{ position: 'relative' }}
+                        onMouseEnter={() => setHoveredField('phone')}
+                        onMouseLeave={() => setHoveredField(null)}
+                      >
                         <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                           Phone Number
                         </label>
@@ -1280,12 +1469,19 @@ export default function Register({ onLogin }) {
                               type="tel"
                               value={phone}
                               placeholder="244 123 4567"
+                              onFocus={() => setHoveredField('phone')}
                               onChange={e => setPhone(e.target.value.replace(/\D/g, ''))}
                               className="form-input-focus"
                               style={{ ...inputStyle(!!phone, errs.phone), paddingLeft: 38 }}
                             />
                           </div>
                         </div>
+                        {hoveredField === 'phone' && (
+                          <FieldTooltip
+                            guide={FIELD_GUIDES.find(g => g.field === 'phone')}
+                            onDismiss={() => setHoveredField(null)}
+                          />
+                        )}
                         {errs.phone && (
                           <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}>
                             <AlertCircle size={10} />{errs.phone}
@@ -1295,13 +1491,17 @@ export default function Register({ onLogin }) {
                     )}
 
                     {/* Full Name */}
-                    <div>
+                    <div
+                      style={{ position: 'relative' }}
+                      onMouseEnter={() => setHoveredField('fullName')}
+                      onMouseLeave={() => setHoveredField(null)}
+                    >
                       <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                         Full Name
                       </label>
                       <div style={{ position: 'relative' }}>
                         <User size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
-                        <input
+                        <input id="reg-fullname-input"
                           type="text"
                           value={fullName}
                           placeholder="John Doe"
@@ -1309,6 +1509,12 @@ export default function Register({ onLogin }) {
                           className="form-input-focus"
                           style={inputStyle(!!fullName, errs.fullName)}
                         />
+                        {hoveredField === 'fullName' && (
+                          <FieldTooltip
+                            guide={FIELD_GUIDES.find(g => g.field === 'fullName')}
+                            onDismiss={() => setHoveredField(null)}
+                          />
+                        )}
                       </div>
                       {errs.fullName && (
                         <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}>
@@ -1318,13 +1524,17 @@ export default function Register({ onLogin }) {
                     </div>
 
                     {/* Username */}
-                    <div>
+                    <div
+                      style={{ position: 'relative' }}
+                      onMouseEnter={() => setHoveredField('username')}
+                      onMouseLeave={() => setHoveredField(null)}
+                    >
                       <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                         Username
                       </label>
                       <div style={{ position: 'relative' }}>
                         <AtSign size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
-                        <input
+                        <input id="reg-username-input"
                           type="text"
                           value={username}
                           placeholder="john_doe"
@@ -1332,6 +1542,12 @@ export default function Register({ onLogin }) {
                           className="form-input-focus"
                           style={inputStyle(!!username, errs.username)}
                         />
+                        {hoveredField === 'username' && (
+                          <FieldTooltip
+                            guide={FIELD_GUIDES.find(g => g.field === 'username')}
+                            onDismiss={() => setHoveredField(null)}
+                          />
+                        )}
                       </div>
                       {errs.username && (
                         <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}>
@@ -1341,13 +1557,17 @@ export default function Register({ onLogin }) {
                     </div>
 
                     {/* Password */}
-                    <div>
+                    <div
+                      style={{ position: 'relative' }}
+                      onMouseEnter={() => setHoveredField('password')}
+                      onMouseLeave={() => setHoveredField(null)}
+                    >
                       <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                         Password
                       </label>
                       <div style={{ position: 'relative' }}>
                         <Lock size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
-                        <input
+                        <input id="reg-password-input"
                           type={showPw ? 'text' : 'password'}
                           value={password}
                           placeholder="••••••••"
@@ -1367,6 +1587,12 @@ export default function Register({ onLogin }) {
                         >
                           {showPw ? <EyeOff size={17} /> : <Eye size={17} />}
                         </button>
+                        {hoveredField === 'password' && (
+                          <FieldTooltip
+                            guide={FIELD_GUIDES.find(g => g.field === 'password')}
+                            onDismiss={() => setHoveredField(null)}
+                          />
+                        )}
                       </div>
                       {errs.password && (
                         <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}>
@@ -1377,13 +1603,17 @@ export default function Register({ onLogin }) {
                     </div>
 
                     {/* Confirm Password */}
-                    <div>
+                    <div
+                      style={{ position: 'relative' }}
+                      onMouseEnter={() => setHoveredField('confirm')}
+                      onMouseLeave={() => setHoveredField(null)}
+                    >
                       <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                         Confirm Password
                       </label>
                       <div style={{ position: 'relative' }}>
                         <Lock size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
-                        <input
+                        <input id="reg-confirm-password-input"
                           type={showConfirm ? 'text' : 'password'}
                           value={confirm}
                           placeholder="Repeat your password"
@@ -1403,6 +1633,12 @@ export default function Register({ onLogin }) {
                         >
                           {showConfirm ? <EyeOff size={17} /> : <Eye size={17} />}
                         </button>
+                        {hoveredField === 'confirm' && (
+                          <FieldTooltip
+                            guide={FIELD_GUIDES.find(g => g.field === 'confirm')}
+                            onDismiss={() => setHoveredField(null)}
+                          />
+                        )}
                       </div>
                       {errs.confirm && (
                         <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}>
@@ -1412,8 +1648,13 @@ export default function Register({ onLogin }) {
                     </div>
 
                     {/* Terms */}
-                    <div>
+                    <div
+                      style={{ position: 'relative' }}
+                      onMouseEnter={() => setHoveredField('agreed')}
+                      onMouseLeave={() => setHoveredField(null)}
+                    >
                       <div
+                        id="reg-terms-checkbox"
                         onClick={() => setAgreed(!agreed)}
                         style={{
                           display: 'flex', alignItems: 'flex-start', gap: 10,
@@ -1442,6 +1683,12 @@ export default function Register({ onLogin }) {
                           I understand all trades are escrow-protected.
                         </p>
                       </div>
+                      {hoveredField === 'agreed' && (
+                        <FieldTooltip
+                          guide={FIELD_GUIDES.find(g => g.field === 'agreed')}
+                          onDismiss={() => setHoveredField(null)}
+                        />
+                      )}
                       {errs.agreed && (
                         <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}>
                           <AlertCircle size={10} />{errs.agreed}
@@ -1450,23 +1697,36 @@ export default function Register({ onLogin }) {
                     </div>
 
                     {/* Submit */}
-                    <button
-                      onClick={handleRegister}
-                      disabled={loading}
-                      className="submit-btn"
+                    <div
+                      style={{ position: 'relative' }}
+                      onMouseEnter={() => setHoveredField('submit')}
+                      onMouseLeave={() => setHoveredField(null)}
                     >
-                      {loading ? (
-                        <>
-                          <RefreshCw size={16} className="animate-spin" />
-                          Creating Account…
-                        </>
-                      ) : (
-                        <>
-                          Create Account
-                          <ArrowRight size={16} />
-                        </>
+                      <button
+                        id="reg-submit-btn"
+                        onClick={handleRegister}
+                        disabled={loading}
+                        className="submit-btn"
+                      >
+                        {loading ? (
+                          <>
+                            <RefreshCw size={16} className="animate-spin" />
+                            Creating Account…
+                          </>
+                        ) : (
+                          <>
+                            Create Account
+                            <ArrowRight size={16} />
+                          </>
+                        )}
+                      </button>
+                      {hoveredField === 'submit' && (
+                        <FieldTooltip
+                          guide={FIELD_GUIDES.find(g => g.field === 'submit')}
+                          onDismiss={() => setHoveredField(null)}
+                        />
                       )}
-                    </button>
+                    </div>
 
                     {/* Sign In Link */}
                     <p style={{ textAlign: 'center', fontSize: 13, color: '#64748B', margin: 0 }}>
@@ -1509,7 +1769,7 @@ export default function Register({ onLogin }) {
                         </label>
                         <div style={{ position: 'relative' }}>
                           <Mail size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
-                          <input type="email" value={email} placeholder="you@example.com"
+                          <input id="reg-email-input" type="email" value={email} placeholder="you@example.com"
                             onChange={e => setEmail(e.target.value)} className="form-input-focus"
                             style={inputStyle(!!email, errs.email)} />
                         </div>

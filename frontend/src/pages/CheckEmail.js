@@ -5,7 +5,7 @@ import axios from 'axios';
 import { API_URL } from '../App';
 import {
   Mail, CheckCircle, RefreshCw, ArrowRight, AlertCircle,
-  Shield, ChevronRight, Clock, Inbox
+  Shield, ChevronRight, Clock, Inbox, RotateCcw
 } from 'lucide-react';
 
 const C = {
@@ -17,7 +17,69 @@ const C = {
   success: '#10B981', danger: '#EF4444', amber: '#F59E0B',
 };
 
-function OTPInput({ value, onChange, hasError }) {
+const VERIFY_GUIDES = [
+  {
+    field: 'code',
+    Icon: Shield,
+    title: '6-Digit Verification Code',
+    body: 'Check your email inbox or spam folder for your 6-digit code. You can paste all 6 digits directly into the boxes.',
+    example: 'e.g. 123456',
+  },
+  {
+    field: 'submit',
+    Icon: CheckCircle,
+    title: 'Verify & Activate',
+    body: 'Click to verify your email code and log into your PRAQEN account securely.',
+    example: 'Instant Verification',
+  },
+  {
+    field: 'resend',
+    Icon: RotateCcw,
+    title: 'Resend Verification Code',
+    body: "Didn't receive the email? Wait for the timer to finish and click here to send a fresh code.",
+    example: 'Check inbox & spam folder',
+  },
+];
+
+function FieldTooltip({ guide, onDismiss }) {
+  if (!guide) return null;
+  const IconComponent = guide.Icon || Shield;
+  return (
+    <div className="field-tooltip">
+      <div className="field-tooltip-arrow" />
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <IconComponent size={18} style={{ color: '#fff', flexShrink: 0, marginTop: 2 }} />
+        <div style={{ flex: 1, textAlign: 'left' }}>
+          <p style={{ margin: '0 0 4px', fontWeight: 800, fontSize: 12, color: '#fff', lineHeight: 1.3 }}>
+            {guide.title}
+          </p>
+          <p style={{ margin: '0 0 6px', fontSize: 11, color: 'rgba(255,255,255,0.88)', lineHeight: 1.5 }}>
+            {guide.body}
+          </p>
+          <div style={{
+            fontSize: 10, color: 'rgba(255,255,255,0.65)',
+            fontStyle: 'italic', background: 'rgba(255,255,255,0.12)',
+            borderRadius: 6, padding: '3px 8px', display: 'inline-block',
+          }}>
+            {guide.example}
+          </div>
+        </div>
+        <button
+          onClick={onDismiss}
+          style={{
+            background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: '50%',
+            width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', color: 'white', flexShrink: 0, padding: 0, fontSize: 11,
+            lineHeight: 1,
+          }}
+          title="Dismiss"
+        >×</button>
+      </div>
+    </div>
+  );
+}
+
+function OTPInput({ value, onChange, hasError, onFocus }) {
   const refs = [useRef(), useRef(), useRef(), useRef(), useRef(), useRef()];
   const digits = (value + '      ').slice(0, 6).split('');
 
@@ -46,6 +108,7 @@ function OTPInput({ value, onChange, hasError }) {
       {digits.map((d, i) => (
         <input key={i} ref={refs[i]} type="text" inputMode="numeric" maxLength={1}
           value={d === ' ' ? '' : d}
+          onFocus={onFocus}
           onKeyDown={e => handleKey(i, e)}
           onPaste={handlePaste}
           onChange={() => { }}
@@ -76,6 +139,7 @@ export default function CheckEmail({ onLogin }) {
   const [otpTimer, setOtpTimer] = useState(0);
   const [globalError, setGlobalError] = useState('');
   const [devCode, setDevCode] = useState('');
+  const [hoveredField, setHoveredField] = useState(null);
 
   // If no email in URL, try to recover from localStorage or redirect to dashboard
   useEffect(() => {
@@ -188,6 +252,57 @@ export default function CheckEmail({ onLogin }) {
           -webkit-text-fill-color: transparent;
           background-clip: text;
           animation: shimmer 2s infinite;
+        }
+
+        .field-tooltip {
+          position: absolute;
+          right: calc(100% + 14px);
+          top: 50%;
+          transform: translateY(-50%);
+          width: 220px;
+          background: linear-gradient(135deg, #1E40AF 0%, #2563EB 100%);
+          border-radius: 14px;
+          padding: 12px 14px;
+          box-shadow: 0 10px 36px rgba(37, 99, 235, 0.32), 0 2px 8px rgba(0,0,0,0.08);
+          z-index: 1000;
+          animation: tooltipFadeIn 0.22s ease both;
+          pointer-events: auto;
+        }
+
+        @keyframes tooltipFadeIn {
+          from { opacity: 0; transform: translateY(-50%) scale(0.9); }
+          to   { opacity: 1; transform: translateY(-50%) scale(1); }
+        }
+
+        .field-tooltip-arrow {
+          position: absolute;
+          right: -8px;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 0;
+          height: 0;
+          border-top: 7px solid transparent;
+          border-bottom: 7px solid transparent;
+          border-left: 8px solid #1E40AF;
+        }
+
+        @media (max-width: 850px) {
+          .field-tooltip {
+            right: auto;
+            left: 0;
+            top: calc(100% + 8px);
+            transform: none;
+            width: 100%;
+            max-width: 100%;
+            animation: tooltipDropIn 0.22s ease both;
+          }
+          @keyframes tooltipDropIn {
+            from { opacity: 0; transform: translateY(-6px); }
+            to   { opacity: 1; transform: translateY(0); }
+          }
+          .field-tooltip-arrow {
+            display: none;
+          }
         }
       `}</style>
 
@@ -306,7 +421,11 @@ export default function CheckEmail({ onLogin }) {
                   )}
 
                   {/* OTP Input */}
-                  <div style={{ marginBottom: 20 }}>
+                  <div
+                    style={{ position: 'relative', marginBottom: 20 }}
+                    onMouseEnter={() => setHoveredField('code')}
+                    onMouseLeave={() => setHoveredField(null)}
+                  >
                     <p style={{
                       fontSize: 12, fontWeight: 700, color: '#475569',
                       textTransform: 'uppercase', letterSpacing: '0.5px',
@@ -314,7 +433,13 @@ export default function CheckEmail({ onLogin }) {
                     }}>
                       Enter Verification Code
                     </p>
-                    <OTPInput value={otp} onChange={setOtp} hasError={!!otpError} />
+                    <OTPInput value={otp} onChange={setOtp} hasError={!!otpError} onFocus={() => setHoveredField('code')} />
+                    {hoveredField === 'code' && (
+                      <FieldTooltip
+                        guide={VERIFY_GUIDES.find(g => g.field === 'code')}
+                        onDismiss={() => setHoveredField(null)}
+                      />
+                    )}
                     {otpError && (
                       <p style={{
                         textAlign: 'center', fontSize: 12, fontWeight: 600,
@@ -362,40 +487,52 @@ export default function CheckEmail({ onLogin }) {
                   </div>
 
                   {/* Verify Button */}
-                  <button
-                    onClick={handleVerify}
-                    disabled={loading || otp.length < 6}
-                    style={{
-                      width: '100%',
-                      padding: 15,
-                      borderRadius: 14,
-                      border: 'none',
-                      background: otp.length >= 6 && !loading
-                        ? 'linear-gradient(135deg, #2D6A4F 0%, #40916C 100%)'
-                        : '#E2E8F0',
-                      color: otp.length >= 6 && !loading ? '#FFFFFF' : '#94A3B8',
-                      fontSize: 15,
-                      fontWeight: 700,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 8,
-                      cursor: otp.length >= 6 && !loading ? 'pointer' : 'not-allowed',
-                      transition: 'all 0.2s ease',
-                      boxShadow: otp.length >= 6 && !loading
-                        ? '0 6px 20px rgba(45, 106, 79, 0.25)'
-                        : 'none',
-                      fontFamily: "'Inter', sans-serif",
-                      position: 'relative',
-                      overflow: 'hidden',
-                    }}
+                  <div
+                    style={{ position: 'relative' }}
+                    onMouseEnter={() => setHoveredField('submit')}
+                    onMouseLeave={() => setHoveredField(null)}
                   >
-                    {loading ? (
-                      <><RefreshCw size={16} className="animate-spin" /> Verifying…</>
-                    ) : (
-                      <><CheckCircle size={16} /> Verify Email <ArrowRight size={16} /></>
+                    <button
+                      onClick={handleVerify}
+                      disabled={loading || otp.length < 6}
+                      style={{
+                        width: '100%',
+                        padding: 15,
+                        borderRadius: 14,
+                        border: 'none',
+                        background: otp.length >= 6 && !loading
+                          ? 'linear-gradient(135deg, #2D6A4F 0%, #40916C 100%)'
+                          : '#E2E8F0',
+                        color: otp.length >= 6 && !loading ? '#FFFFFF' : '#94A3B8',
+                        fontSize: 15,
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        cursor: otp.length >= 6 && !loading ? 'pointer' : 'not-allowed',
+                        transition: 'all 0.2s ease',
+                        boxShadow: otp.length >= 6 && !loading
+                          ? '0 6px 20px rgba(45, 106, 79, 0.25)'
+                          : 'none',
+                        fontFamily: "'Inter', sans-serif",
+                        position: 'relative',
+                        overflow: 'visible',
+                      }}
+                    >
+                      {loading ? (
+                        <><RefreshCw size={16} className="animate-spin" /> Verifying…</>
+                      ) : (
+                        <><CheckCircle size={16} /> Verify Email <ArrowRight size={16} /></>
+                      )}
+                    </button>
+                    {hoveredField === 'submit' && (
+                      <FieldTooltip
+                        guide={VERIFY_GUIDES.find(g => g.field === 'submit')}
+                        onDismiss={() => setHoveredField(null)}
+                      />
                     )}
-                  </button>
+                  </div>
 
                   {/* Divider */}
                   <div style={{
@@ -410,7 +547,11 @@ export default function CheckEmail({ onLogin }) {
                   </div>
 
                   {/* Resend */}
-                  <div style={{ textAlign: 'center', marginBottom: 12 }}>
+                  <div
+                    style={{ position: 'relative', textAlign: 'center', marginBottom: 12 }}
+                    onMouseEnter={() => setHoveredField('resend')}
+                    onMouseLeave={() => setHoveredField(null)}
+                  >
                     {otpTimer > 0 ? (
                       <p style={{ fontSize: 12, color: '#94A3B8', margin: 0 }}>
                         Resend in <span style={{ fontWeight: 700, color: '#2D6A4F' }}>{otpTimer}s</span>
@@ -439,6 +580,12 @@ export default function CheckEmail({ onLogin }) {
                         <RefreshCw size={13} />
                         Resend Verification Code
                       </button>
+                    )}
+                    {hoveredField === 'resend' && (
+                      <FieldTooltip
+                        guide={VERIFY_GUIDES.find(g => g.field === 'resend')}
+                        onDismiss={() => setHoveredField(null)}
+                      />
                     )}
                   </div>
                 </div>
