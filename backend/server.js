@@ -1748,44 +1748,8 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
       }
     }
 
-    // ── 2FA check: if user has 2FA enabled, issue temp token instead of real JWT ─
-    if (userToAuth.two_factor_enabled) {
-      const method2FA = userToAuth.two_factor_method || 'email';
-      const twoFactorOtp = String(Math.floor(100000 + Math.random() * 900000));
-
-      const tempToken = jwt.sign(
-        { userId: userToAuth.id, email: userToAuth.email, pending2FA: true },
-        JWT_SECRET,
-        { expiresIn: '5m' }
-      );
-
-      pending2FALogin.set(tempToken, {
-        code: twoFactorOtp,
-        expires: Date.now() + 10 * 60 * 1000,
-        userId: userToAuth.id,
-        method: method2FA,
-      });
-
-      // Send 2FA code via the user's chosen method (skip for TOTP)
-      if (method2FA === 'email') {
-        sendVerificationEmail(userToAuth.email, twoFactorOtp, 'Your PRAQEN 2FA Login Code')
-          .catch(err => console.error('[2FA-google] email failed:', err.message));
-      } else if (method2FA === 'sms' || method2FA === 'whatsapp') {
-        const phone2FA = userToAuth.phone?.startsWith('+') ? userToAuth.phone : `+${userToAuth.phone}`;
-        sendSmsOtp(phone2FA, `${twoFactorOtp} is your PRAQEN login code. Valid for 10 minutes. Don't share this with anyone.`)
-          .catch(err => console.error('[2FA-google] SMS failed:', err.message));
-        storeOtp(phone2FA, twoFactorOtp).catch(e => console.warn('[2FA-google] DB store warn:', e.message));
-      }
-      // TOTP: no code sent — verify against stored secret
-
-      console.log(`[2FA] Google-login 2FA gate via ${method2FA} for user ${userToAuth.id.slice(0, 8)}`);
-      return res.json({
-        requires2FA: true,
-        tempToken,
-        twoFactorMethod: method2FA,
-        email: userToAuth.email,
-      });
-    }
+    // 2FA login gate removed — Settings > Security "Enable 2FA" toggle still
+    // exists and is stored, it just no longer blocks login with a second code.
 
     // 5. Sign JWT
     const token = jwt.sign(
@@ -2054,45 +2018,8 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       }
       if (!data) return res.status(404).json({ error: 'No account found for this phone number. Please register first.' });
 
-      // ── 2FA check: if user has 2FA enabled, issue temp token instead of real JWT ─
-      if (data.two_factor_enabled) {
-        const method2FA = data.two_factor_method || 'email';
-        const twoFactorOtp = String(Math.floor(100000 + Math.random() * 900000));
-
-        const tempToken = jwt.sign(
-          { userId: data.id, email: data.email, pending2FA: true },
-          JWT_SECRET,
-          { expiresIn: '5m' }
-        );
-
-        pending2FALogin.set(tempToken, {
-          code: twoFactorOtp,
-          expires: Date.now() + 10 * 60 * 1000,
-          userId: data.id,
-          method: method2FA,
-        });
-
-        // Send 2FA code via the user's chosen method (skip for TOTP)
-        if (method2FA === 'email') {
-          sendVerificationEmail(data.email, twoFactorOtp, 'Your PRAQEN 2FA Login Code')
-            .catch(err => console.error('[2FA-phone] email failed:', err.message));
-        } else if (method2FA === 'sms' || method2FA === 'whatsapp') {
-          const phone2FA = data.phone?.startsWith('+') ? data.phone : `+${data.phone}`;
-          sendSmsOtp(phone2FA, `${twoFactorOtp} is your PRAQEN login code. Valid for 10 minutes. Don't share this with anyone.`)
-            .catch(err => console.error('[2FA-phone] SMS failed:', err.message));
-          storeOtp(phone2FA, twoFactorOtp).catch(e => console.warn('[2FA-phone] DB store warn:', e.message));
-        }
-        // TOTP: no code sent — setting code to null so verify-2fa-login falls through to TOTP secret check
-
-        console.log(`[2FA] Phone-login 2FA gate via ${method2FA} for user ${data.id.slice(0, 8)}`);
-        return res.json({
-          requires2FA: true,
-          tempToken,
-          twoFactorMethod: method2FA,
-          email: data.email,
-        });
-      }
-
+      // 2FA login gate removed — Settings > Security "Enable 2FA" toggle still
+      // exists and is stored, it just no longer blocks login with a second code.
       const token = jwt.sign({ userId: data.id, email: data.email }, JWT_SECRET, { expiresIn: '7d' });
       const nowPhone = new Date().toISOString();
       await supabaseAdmin.from('users').update({ last_login: nowPhone, last_seen_at: nowPhone }).eq('id', data.id);
@@ -2168,50 +2095,10 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
     const { data } = await supabaseAdmin.from('users').select('*').eq('id', record.userId).single();
     if (!data) return res.status(404).json({ error: 'User not found' });
 
-    // ── 2FA check: if user has 2FA enabled, issue temp token instead of real JWT ─
-    if (data.two_factor_enabled) {
-      const method = data.two_factor_method || 'email';
-      const twoFactorOtp = String(Math.floor(100000 + Math.random() * 900000));
+    // 2FA login gate removed — Settings > Security "Enable 2FA" toggle still
+    // exists and is stored, it just no longer blocks login with a second code.
 
-      const tempToken = jwt.sign(
-        { userId: data.id, email: data.email, pending2FA: true },
-        JWT_SECRET,
-        { expiresIn: '5m' }
-      );
-
-      pending2FALogin.set(tempToken, {
-        code: twoFactorOtp,
-        expires: Date.now() + 10 * 60 * 1000,
-        userId: data.id,
-        method,
-      });
-
-      // Send 2FA code via the user's chosen method (skip for TOTP; authenticator app generates code)
-      if (method === 'email') {
-        sendVerificationEmail(data.email, twoFactorOtp, 'Your PRAQEN 2FA Login Code')
-          .catch(err => console.error('[2FA-login] email failed:', err.message));
-      } else if (method === 'sms' || method === 'whatsapp') {
-        const phone = data.phone?.startsWith('+') ? data.phone : `+${data.phone}`;
-        sendSmsOtp(phone, `${twoFactorOtp} is your PRAQEN login code. Valid for 10 minutes. Don't share this with anyone.`)
-          .catch(err => console.error('[2FA-login] SMS failed:', err.message));
-        storeOtp(phone, twoFactorOtp).catch(e => console.warn('[2FA-login] DB store warn:', e.message));
-      }
-      // TOTP: no code sent — user scans QR code and generates codes from their authenticator app
-
-      if (method !== 'totp') {
-        console.log(`[2FA] Login 2FA code sent via ${method} for user ${data.id.slice(0, 8)}`);
-      } else {
-        console.log(`[2FA] Login 2FA — TOTP mode (no code sent) for user ${data.id.slice(0, 8)}`);
-      }
-      return res.json({
-        requires2FA: true,
-        tempToken,
-        twoFactorMethod: method,
-        email: data.email,
-      });
-    }
-
-    // ── No 2FA — issue real JWT ────────────────────────────────────────────
+    // ── Issue real JWT ──────────────────────────────────────────────────────
     const token = jwt.sign({ userId: data.id, email: data.email }, JWT_SECRET, { expiresIn: '7d' });
     const now = new Date().toISOString();
     await supabaseAdmin.from('users').update({ last_login: now, last_seen_at: now }).eq('id', data.id);

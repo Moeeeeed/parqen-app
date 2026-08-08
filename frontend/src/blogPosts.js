@@ -261,7 +261,8 @@ const BLOG_POSTS = [
         text: 'Visit our P2P Marketplace or Create Your Account today!',
         label: 'Create Free Account',
         to: '/register'
-   ],
+      },
+    ],
   },
  {
     slug: 'p2p-crypto-payment-methods-south-africa-uganda',
@@ -314,7 +315,8 @@ const BLOG_POSTS = [
         text: 'Create your free account today and start trading securely!',
         label: 'Create Free Account',
         to: '/register'
-   ],
+      },
+    ],
   },
  {
     slug: 'p2p-crypto-escrow-works',
@@ -365,7 +367,8 @@ const BLOG_POSTS = [
         text: 'Create your free account and trade with complete peace of mind!',
         label: 'Create Free Account',
         to: '/register'
-   ],
+      },
+    ],
   },
  {
     slug: 'p2p-trading-scams-and-how-to-avoid-themes',

@@ -202,7 +202,7 @@ router.get('/wallet', verifyToken, async (req, res) => {
 
         // ── SINGLE SOURCE OF TRUTH: wallets table only ──────────────────────────
         const [{ data: walletRow, error: walletErr }, liveBtcPrice] = await Promise.all([
-            supabaseAdmin.from('wallets').select('balance_btc, locked_balance_btc').eq('user_id', userId).single(),
+            supabaseAdmin.from('wallets').select('balance_btc, locked_balance_btc, balance_usdt, locked_balance_usdt').eq('user_id', userId).single(),
             getLiveBtcPrice(),
         ]);
 
@@ -243,6 +243,8 @@ router.get('/wallet', verifyToken, async (req, res) => {
             available_btc,
             locked_btc,
             balance_usd,
+            balance_usdt:        parseFloat(walletRow.balance_usdt || 0),
+            locked_balance_usdt: parseFloat(walletRow.locked_balance_usdt || 0),
             btc_price:    liveBtcPrice,
             network:      process.env.HD_NETWORK || 'mainnet',
             has_address:  !!address,
