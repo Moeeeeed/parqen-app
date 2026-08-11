@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-toastify';
-import { Shield, RefreshCw, ArrowRight, CheckCircle, Mail, RotateCcw } from 'lucide-react';
+import { Shield, RefreshCw, ArrowRight, CheckCircle, Mail, RotateCcw, ArrowLeft } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -148,10 +148,10 @@ export default function VerifyOTP({ onLogin }) {
         // Auto-login if backend returned a token
         if (response.data.token && response.data.user && onLogin) {
           onLogin(response.data.user, response.data.token);
-          toast.success('✅ Email verified! Welcome to PRAQEN.');
+          toast.success('Email verified! Welcome to PRAQEN.');
           navigate('/');
         } else {
-          toast.success('✅ Email verified! Please login.');
+          toast.success('Email verified! Please login.');
           navigate('/login', { state: { message: 'Email verified! Please login.' } });
         }
       }
@@ -338,7 +338,7 @@ export default function VerifyOTP({ onLogin }) {
           {canResend ? (
             <button onClick={handleResend} disabled={resendLoad}
               className="text-sm font-bold" style={{ color: C.green }}>
-              {resendLoad ? 'Sending…' : '↩ Resend Code'}
+              {resendLoad ? 'Sending…' : (<><RotateCcw size={14} className="inline mr-1" />Resend Code</>)}
             </button>
           ) : (
             <p className="text-sm text-gray-400">Resend in {timer}s</p>
@@ -353,7 +353,7 @@ export default function VerifyOTP({ onLogin }) {
 
         <div className="mt-6 pt-5 border-t text-center">
           <button onClick={() => navigate('/login')} className="text-sm text-gray-400 hover:text-gray-600">
-            ← Back to Login
+            <ArrowLeft size={14} className="inline mr-1" /> Back to Login
           </button>
         </div>
       </div>

@@ -4,6 +4,7 @@ import {
   Shield, ShoppingCart, Gift, TrendingUp,
   Wallet, MessageCircle, X, ChevronRight,
   ChevronLeft, CheckCircle, Bitcoin,
+  PartyPopper, Home, Zap, ShoppingBag, Banknote, Rocket, Mail, Smartphone, AlertTriangle,
 } from 'lucide-react';
 
 const C = {
@@ -15,17 +16,17 @@ const C = {
 
 const STEPS = [
   {
-    emoji: '🎉',
+    emoji: <PartyPopper size={30} color="#fff" />,
     icon: null,
     bg: `linear-gradient(135deg, ${C.forest} 0%, ${C.mint} 100%)`,
     iconBg: 'rgba(244,164,34,0.2)',
     title: (name) => `Welcome to PRAQEN${name ? `, ${name}` : ''}!`,
-    body: "You've joined the world's most trusted peer-to-peer Bitcoin & USDT marketplace. We're so glad you're here — think of PRAQEN as your secure home to buy, sell and trade Bitcoin & USDT freely and confidently. 🏡",
+    body: <>You've joined the world's most trusted peer-to-peer Bitcoin & USDT marketplace. We're so glad you're here — think of PRAQEN as your secure home to buy, sell and trade Bitcoin & USDT freely and confidently. <Home size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /></>,
     cta: null,
     ctaPath: null,
   },
   {
-    emoji: '🔐',
+    emoji: <Shield size={30} color="#fff" />,
     icon: Shield,
     bg: `linear-gradient(135deg, #1e3a5f 0%, #2563EB 100%)`,
     iconBg: 'rgba(255,255,255,0.15)',
@@ -40,48 +41,48 @@ const STEPS = [
     bg: `linear-gradient(135deg, #78350F 0%, #D97706 100%)`,
     iconBg: 'rgba(255,255,255,0.15)',
     title: () => 'Buying Bitcoin is Easy!',
-    body: "Visit the Buy Bitcoin page, browse our trusted vendors, pick the best rate and payment method that works for you — Mobile Money, bank transfer and more — then open a trade. Your Bitcoin is safely held in escrow until payment is confirmed. Fast, safe and simple! ⚡",
+    body: <>Visit the Buy Bitcoin page, browse our trusted vendors, pick the best rate and payment method that works for you — Mobile Money, bank transfer and more — then open a trade. Your Bitcoin is safely held in escrow until payment is confirmed. Fast, safe and simple! <Zap size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /></>,
     cta: '→ Browse Bitcoin Sellers',
     ctaPath: '/buy-bitcoin',
   },
   {
-    emoji: '🎁',
+    emoji: <Gift size={30} color="#fff" />,
     icon: Gift,
     bg: `linear-gradient(135deg, #4C1D95 0%, #7C3AED 100%)`,
     iconBg: 'rgba(255,255,255,0.15)',
     title: () => 'Got a Gift Card? Cash It In!',
-    body: "Turn your unused gift cards into Bitcoin in minutes! Visit the Gift Card Marketplace, find trusted buyers offering the best rates, open a trade and receive Bitcoin straight to your PRAQEN wallet. Amazon, iTunes, Steam and many more accepted! 🛍️",
+    body: <>Turn your unused gift cards into Bitcoin in minutes! Visit the Gift Card Marketplace, find trusted buyers offering the best rates, open a trade and receive Bitcoin straight to your PRAQEN wallet. Amazon, iTunes, Steam and many more accepted! <ShoppingBag size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /></>,
     cta: '→ Visit Gift Card Marketplace',
     ctaPath: '/gift-cards',
   },
   {
-    emoji: '💸',
+    emoji: <Banknote size={30} color="#fff" />,
     icon: TrendingUp,
     bg: `linear-gradient(135deg, ${C.forest} 0%, #065F46 100%)`,
     iconBg: 'rgba(255,255,255,0.15)',
     title: () => 'Sell Bitcoin & Create Your Offers',
-    body: "Want to sell Bitcoin for cash? Visit the Sell page, pick a trusted buyer and open a trade — PRAQEN escrow keeps you covered. You can also load your wallet and create your own buy/sell offers at your own rates. Build your reputation and earn more! 📈",
+    body: <>Want to sell Bitcoin for cash? Visit the Sell page, pick a trusted buyer and open a trade — PRAQEN escrow keeps you covered. You can also load your wallet and create your own buy/sell offers at your own rates. Build your reputation and earn more! <TrendingUp size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /></>,
     cta: '→ Go to Sell Page',
     ctaPath: '/sell-bitcoin',
   },
   {
-    emoji: '🚀',
+    emoji: <Rocket size={30} color="#fff" />,
     icon: TrendingUp,
     bg: `linear-gradient(135deg, #4C1D95 0%, #7C3AED 100%)`,
     iconBg: 'rgba(255,255,255,0.15)',
     title: () => 'Earn Bitcoin by Referring Friends!',
-    body: "PRAQEN's Affiliate Program lets you earn 0.1–0.3% Bitcoin commission on every trade your referrals make — automatically, with no limits and no expiry! Share your unique referral link via WhatsApp, Telegram or Twitter. The more friends that trade, the more BTC you earn. Go to your Dashboard → Affiliate tab to get your link now! 💰",
+    body: <>PRAQEN's Affiliate Program lets you earn 0.1–0.3% Bitcoin commission on every trade your referrals make — automatically, with no limits and no expiry! Share your unique referral link via WhatsApp, Telegram or Twitter. The more friends that trade, the more BTC you earn. Go to your Dashboard → Affiliate tab to get your link now! <Banknote size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /></>,
     cta: '→ See My Affiliate Dashboard',
     ctaPath: '/dashboard',
   },
   {
-    emoji: '💬',
+    emoji: <MessageCircle size={30} color="#fff" />,
     icon: MessageCircle,
     bg: `linear-gradient(135deg, #134E4A 0%, #0F766E 100%)`,
     iconBg: 'rgba(255,255,255,0.15)',
     title: () => "We're Always Here for You",
-    body: "Any questions or issues? Reach our friendly support team at hello@praqen.com or through our social handles. Remember — always trade within PRAQEN to stay protected. Your safety is our top priority. Happy trading! 🚀",
-    cta: '🚀 Start Trading Now!',
+    body: <>Any questions or issues? Reach our friendly support team at hello@praqen.com or through our social handles. Remember — always trade within PRAQEN to stay protected. Your safety is our top priority. Happy trading! <Rocket size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /></>,
+    cta: <><Rocket size={14} style={{ display: 'inline', verticalAlign: 'middle' }} /> Start Trading Now!</>,
     ctaPath: '/buy-bitcoin',
     isLast: true,
   },
@@ -182,18 +183,18 @@ export default function WelcomeModal({ user, onClose }) {
             <div className="mt-4 rounded-xl p-4 space-y-2" style={{ backgroundColor: C.mist, border: `1px solid ${C.g200}` }}>
               <p className="text-xs font-black uppercase tracking-wider" style={{ color: C.g400 }}>Contact & Support</p>
               <div className="flex items-center gap-2">
-                <span className="text-base">📧</span>
+                <span className="text-base flex items-center"><Mail size={16} /></span>
                 <a href="mailto:hello@praqen.com" className="text-xs font-bold" style={{ color: C.green }}>
                   hello@praqen.com
                 </a>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-base">📱</span>
+                <span className="text-base flex items-center"><Smartphone size={16} /></span>
                 <span className="text-xs font-semibold" style={{ color: C.g500 }}>Follow us on our social handles for updates</span>
               </div>
               <div className="mt-2 p-3 rounded-lg text-xs font-bold text-center"
                 style={{ backgroundColor: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
-                ⚠️ Always trade within PRAQEN — never outside our platform
+                <AlertTriangle size={14} style={{ display: 'inline', verticalAlign: 'middle' }} /> Always trade within PRAQEN — never outside our platform
               </div>
             </div>
           )}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Gift, Lock, CheckCircle, Zap, Bitcoin } from 'lucide-react';
+import { X, Gift, Lock, CheckCircle, Zap, Bitcoin, PartyPopper } from 'lucide-react';
 import axios from 'axios';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -123,7 +123,7 @@ export default function WelcomeBonusModal({ user, onClose }) {
             icon={<Zap size={18} />}
             title="Verify your phone or email"
             desc={step >= 2 ? '$1 BTC is locked in your wallet.' : 'Verify to claim your first $1.'}
-            reward={step >= 2 ? '$1.00 BTC locked 🔒' : '$1.00 unlocks on verify'}
+            reward={step >= 2 ? <><span>$1.00 BTC locked</span> <Lock size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /></> : '$1.00 unlocks on verify'}
             rewardBtc={step >= 2 ? oneBtc : null}
             active={step === 1}
           />
@@ -137,7 +137,7 @@ export default function WelcomeBonusModal({ user, onClose }) {
             icon={<Bitcoin size={18} />}
             title="Complete your first trade"
             desc={step >= 3 ? 'Both $2 BTC have been added to your wallet!' : 'Trade once — both $2 instantly unlock.'}
-            reward={step >= 3 ? '$2.00 BTC unlocked 🎉' : '$2.00 unlocks on first trade'}
+            reward={step >= 3 ? <><span>$2.00 BTC unlocked</span> <PartyPopper size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /></> : '$2.00 unlocks on first trade'}
             rewardBtc={step >= 3 ? twoBtc : null}
             active={step === 2}
           />

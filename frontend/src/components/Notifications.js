@@ -1630,7 +1630,7 @@ export default function Notifications({ user }) {
                   {t.trade && (
                     <p style={{ margin: '5px 0 0', fontSize: 11, fontWeight: 700, color: T.success,
                       background: '#ECFDF5', display: 'inline-block', padding: '2px 8px', borderRadius: 6 }}>
-                      🔒 Active Trade
+                      <Lock size={11} style={{ display: 'inline', marginRight: 3, verticalAlign: 'middle' }} /> Active Trade
                     </p>
                   )}
                 </div>

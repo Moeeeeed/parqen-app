@@ -195,7 +195,9 @@ export default function Feedback({ user }) {
             {/* Sentiment label */}
             {isPositive !== null && (
               <p className={`text-center text-sm font-bold mb-4 ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
-                {isPositive ? '👍 Great experience!' : '👎 Bad experience'}
+                {isPositive
+                  ? <span className="inline-flex items-center gap-1.5"><ThumbsUp size={14} fill="currentColor" /> Great experience!</span>
+                  : <span className="inline-flex items-center gap-1.5"><ThumbsDown size={14} fill="currentColor" /> Bad experience</span>}
               </p>
             )}
 

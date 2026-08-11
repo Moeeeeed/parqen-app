@@ -13,6 +13,7 @@ import {
   PieChart, Briefcase, BarChart2, Megaphone, ClipboardList, FileText, AlertOctagon,
   CalendarDays, Download, Tag, Pin, GripVertical, CheckSquare, Square, FileDown,
   Globe, ShieldOff, UserX, Layers,
+  Gift, User, Mail, Smartphone, Circle, Medal, Scale, Minus, MailOpen,
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -57,7 +58,7 @@ const badgeColor = (b) => {
 function Spin() {
   return <div className="flex items-center justify-center py-16"><div className="w-8 h-8 border-4 rounded-full animate-spin" style={{ borderColor: `${C.forest}20`, borderTopColor: C.forest }} /></div>;
 }
-function Empty({ icon = '📭', text = 'No data found' }) {
+function Empty({ icon = <MailOpen size={36} className="mx-auto" style={{ color: C.g300 }} />, text = 'No data found' }) {
   return <div className="flex flex-col items-center py-12 gap-2"><span className="text-4xl">{icon}</span><p className="text-sm font-semibold" style={{ color: C.g500 }}>{text}</p></div>;
 }
 function Pill({ label, color = '#10B981', bg = '#F0FDF4' }) {
@@ -1343,7 +1344,7 @@ function ActiveOffersSection() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-black" style={{ color: C.g800 }}>{o.seller?.username || '—'}</span>
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: gc ? '#F5F3FF' : '#FFFBEB', color: gc ? '#8B5CF6' : '#F59E0B' }}>
-                            {gc ? `🎁 ${o.gift_card_brand || o.card_type || 'Gift Card'}` : '₿ BTC'}
+                            {gc ? <><Gift size={12} className="inline-block mr-1" /> {o.gift_card_brand || o.card_type || 'Gift Card'}</> : '₿ BTC'}
                           </span>
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: o.listing_type === 'SELL' ? '#FEF2F2' : '#ECFDF5', color: o.listing_type === 'SELL' ? '#EF4444' : '#10B981' }}>
                             {o.listing_type === 'SELL' ? 'SELL' : 'BUY'}
@@ -1352,14 +1353,14 @@ function ActiveOffersSection() {
                         <div className="flex items-center gap-3 mt-1 flex-wrap text-[11px]">
                           <span style={{ color: C.g500 }}>Limits: <span className="font-bold" style={{ color: C.g700 }}>{o.currency_symbol || '$'}{parseFloat(o.min_limit_usd || 0).toFixed(0)} – {o.currency_symbol || '$'}{parseFloat(o.max_limit_usd || 0).toFixed(0)}</span></span>
                           {pmList.length > 0 && <span style={{ color: C.g500 }}>via <span className="font-bold" style={{ color: C.g700 }}>{pmList.slice(0, 2).join(', ')}{pmList.length > 2 ? ` +${pmList.length - 2}` : ''}</span></span>}
-                          {o.country_name && <span style={{ color: C.g400 }}>🌍 {o.country_name}</span>}
+                          {o.country_name && <span className="inline-flex items-center gap-1" style={{ color: C.g400 }}><Globe size={11} className="inline-block" /> {o.country_name}</span>}
                         </div>
                       </div>
 
                       {/* Rate + seller stats */}
                       <div className="text-right flex-shrink-0">
                         {o.margin != null && <p className="text-sm font-black" style={{ color: o.margin >= 0 ? C.forest : '#EF4444' }}>{o.margin > 0 ? '+' : ''}{o.margin}%</p>}
-                        <p className="text-[10px]" style={{ color: C.g400 }}>{o.seller?.total_trades || 0} trades · ⭐{parseFloat(o.seller?.average_rating || 0).toFixed(1)}</p>
+                        <p className="inline-flex items-center text-[10px]" style={{ color: C.g400 }}>{o.seller?.total_trades || 0} trades · <Star size={10} className="inline-block mx-0.5" />{parseFloat(o.seller?.average_rating || 0).toFixed(1)}</p>
                         <p className="text-[9px]" style={{ color: onlineColor(o.seller?.last_seen_at) }}>{lastSeen(o.seller?.last_seen_at)}</p>
                       </div>
                     </div>
@@ -1400,15 +1401,15 @@ function ActiveOffersSection() {
                         </div>
                         <div className="flex items-center gap-3 mt-0.5 text-[11px] flex-wrap">
                           <span style={{ color: C.g500 }}>{user.total_trades || 0} trades</span>
-                          <span style={{ color: C.g500 }}>⭐ {parseFloat(user.average_rating || 0).toFixed(1)}</span>
+                          <span className="inline-flex items-center gap-1" style={{ color: C.g500 }}><Star size={11} className="inline-block" /> {parseFloat(user.average_rating || 0).toFixed(1)}</span>
                           <span style={{ color: C.g500 }}>{parseFloat(user.completion_rate || 0).toFixed(0)}% completion</span>
-                          <span style={{ color: C.g400 }}>🌍 {user.country || '—'}</span>
+                          <span className="inline-flex items-center gap-1" style={{ color: C.g400 }}><Globe size={11} className="inline-block" /> {user.country || '—'}</span>
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
                         <div className="flex items-center gap-1.5 justify-end">
                           {btcOffers.length > 0 && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#FFFBEB', color: '#F59E0B' }}>₿ {btcOffers.length}</span>}
-                          {gcOffers.length  > 0 && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F5F3FF', color: '#8B5CF6' }}>🎁 {gcOffers.length}</span>}
+                          {gcOffers.length  > 0 && <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F5F3FF', color: '#8B5CF6' }}><Gift size={11} className="inline-block" /> {gcOffers.length}</span>}
                         </div>
                         <p className="text-[9px] mt-1" style={{ color: onlineColor(user.last_seen_at) }}>{lastSeen(user.last_seen_at)}</p>
                         <ChevronRight size={14} className="ml-auto mt-1" style={{ color: C.g300, transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
@@ -1424,7 +1425,7 @@ function ActiveOffersSection() {
                             <div key={o.id} className="flex items-center gap-3 px-4 py-2.5" style={{ borderTop: i > 0 ? `1px solid ${C.g100}` : 'none', backgroundColor: '#FAFAFA' }}>
                               <div className="flex items-center gap-1.5 flex-shrink-0">
                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: isGiftCard(o) ? '#F5F3FF' : '#FFFBEB', color: isGiftCard(o) ? '#8B5CF6' : '#F59E0B' }}>
-                                  {isGiftCard(o) ? `🎁 ${o.gift_card_brand || o.card_type || 'GC'}` : '₿ BTC'}
+                                  {isGiftCard(o) ? <><Gift size={11} className="inline-block mr-1" /> {o.gift_card_brand || o.card_type || 'GC'}</> : '₿ BTC'}
                                 </span>
                                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: o.listing_type === 'SELL' ? '#FEF2F2' : '#ECFDF5', color: o.listing_type === 'SELL' ? '#EF4444' : '#10B981' }}>
                                   {o.listing_type === 'SELL' ? 'SELL' : 'BUY'}
@@ -2824,7 +2825,7 @@ function TeamFinanceSection() {
               <p className="text-xs mt-0.5" style={{ color: C.g400 }}>{records.length} records</p>
             </div>
             <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: C.g200 }}>
-              {[['all', 'All'], ['trade', '🔄 Trades'], ['gc', '🎁 Gift Cards']].map(([v, l]) => (
+              {[['all', 'All'], ['trade', <span className="inline-flex items-center gap-1"><RefreshCw size={12} className="inline-block" />Trades</span>], ['gc', <span className="inline-flex items-center gap-1"><Gift size={12} className="inline-block" />Gift Cards</span>]].map(([v, l]) => (
                 <button key={v} onClick={() => { setTab(v); setPage(1); }}
                   className="px-3 py-1.5 text-xs font-bold transition"
                   style={{ backgroundColor: tab === v ? C.forest : 'transparent', color: tab === v ? '#fff' : C.g500 }}>
@@ -2985,7 +2986,7 @@ function OverviewSection({ teamUser }) {
           <h3 className="font-black text-sm" style={{ color: C.g800 }}>Recent Trades</h3>
           <Pill label="Live" color={C.success} bg="#F0FDF4" />
         </div>
-        {recent.length === 0 ? <Empty icon="🔄" text="No trades yet" /> : (
+        {recent.length === 0 ? <Empty icon={<RefreshCw size={36} className="mx-auto" style={{ color: C.g300 }} />} text="No trades yet" /> : (
           <div className="divide-y" style={{ borderColor: C.g100 }}>
             {recent.map(t => (
               <div key={t.id} className="px-5 py-3 flex items-center gap-3 hover:bg-gray-50 transition">
@@ -3131,7 +3132,7 @@ function SupportChatSection({ teamUser }) {
       <div className="flex gap-4" style={{ minHeight: 500 }}>
         {/* Trade list */}
         <div className="w-80 flex-shrink-0 space-y-2 overflow-y-auto" style={{ maxHeight: 600 }}>
-          {loading ? <Spin /> : trades.length === 0 ? <Empty icon="💬" text="No trades found" /> :
+          {loading ? <Spin /> : trades.length === 0 ? <Empty icon={<MessageCircle size={36} className="mx-auto" style={{ color: C.g300 }} />} text="No trades found" /> :
             trades.map(t => (
               <div key={t.id}
                 onClick={() => openTrade(t)}
@@ -3315,10 +3316,10 @@ function LiveAIChatSection() {
   const chatEndRef              = useRef(null);
 
   const TICKET_STATUSES = {
-    open:     { label: 'Open',     color: '#3B82F6', bg: '#EFF6FF', dot: '🔵' },
-    active:   { label: 'Active',   color: '#166534', bg: '#F0FDF4', dot: '🟢' },
-    resolved: { label: 'Resolved', color: '#6D28D9', bg: '#F5F3FF', dot: '✅' },
-    closed:   { label: 'Closed',   color: '#6B7280', bg: '#F9FAFB', dot: '🔒' },
+    open:     { label: 'Open',     color: '#3B82F6', bg: '#EFF6FF', dot: <Circle size={10} fill="#3B82F6" strokeWidth={0} className="inline-block" /> },
+    active:   { label: 'Active',   color: '#166534', bg: '#F0FDF4', dot: <Circle size={10} fill="#10B981" strokeWidth={0} className="inline-block" /> },
+    resolved: { label: 'Resolved', color: '#6D28D9', bg: '#F5F3FF', dot: <CheckCircle size={10} className="inline-block" style={{ color: '#6D28D9' }} /> },
+    closed:   { label: 'Closed',   color: '#6B7280', bg: '#F9FAFB', dot: <Lock size={10} className="inline-block" style={{ color: '#6B7280' }} /> },
   };
 
   const load = useCallback(async () => {
@@ -3366,7 +3367,7 @@ function LiveAIChatSection() {
       setTickets(prev => prev.map(t => t.id === selected.id ? { ...t, status: 'active', updated_at: new Date().toISOString() } : t));
       setSelected(prev => prev ? { ...prev, status: 'active' } : prev);
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
-      toast.success('Reply sent ✅');
+      toast.success('Reply sent');
     } catch (e) { toast.error(e.response?.data?.error || 'Failed to send'); }
     finally { setSending(false); }
   };
@@ -3429,7 +3430,7 @@ function LiveAIChatSection() {
               <button key={s} onClick={() => setStat(s)}
                 className="px-3 py-1.5 rounded-lg text-xs font-black transition"
                 style={{ backgroundColor: statusFilter === s ? C.forest : C.g100, color: statusFilter === s ? '#fff' : C.g600 }}>
-                {s === '' ? 'All' : `${TICKET_STATUSES[s]?.dot} ${TICKET_STATUSES[s]?.label}`}
+                {s === '' ? 'All' : <span className="inline-flex items-center gap-1">{TICKET_STATUSES[s]?.dot} {TICKET_STATUSES[s]?.label}</span>}
               </button>
             ))}
           </div>
@@ -3513,9 +3514,9 @@ function LiveAIChatSection() {
                     <span className="font-normal text-xs ml-1.5" style={{ color: C.g500 }}>@{selected.username}</span>
                   </p>
                   <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                    {selected.user_email && <span className="text-[11px]" style={{ color: C.g500 }}>✉ {selected.user_email}</span>}
-                    {selected.user_phone && <span className="text-[11px]" style={{ color: C.g500 }}>📞 {selected.user_phone}</span>}
-                    {selected.user_country && <span className="text-[11px]" style={{ color: C.g500 }}>🌍 {selected.user_country}</span>}
+                    {selected.user_email && <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: C.g500 }}><Mail size={11} className="inline-block" /> {selected.user_email}</span>}
+                    {selected.user_phone && <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: C.g500 }}><Phone size={11} className="inline-block" /> {selected.user_phone}</span>}
+                    {selected.user_country && <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: C.g500 }}><Globe size={11} className="inline-block" /> {selected.user_country}</span>}
                     {selected.user_joined && <span className="text-[11px]" style={{ color: C.g400 }}>Joined {new Date(selected.user_joined).toLocaleDateString()}</span>}
                   </div>
                 </div>
@@ -3537,10 +3538,10 @@ function LiveAIChatSection() {
                   <select value={selected.status} onChange={e => updateStatus(selected.id, e.target.value)}
                     className="text-xs border rounded-lg px-2 py-1 outline-none"
                     style={{ borderColor: C.g200, color: C.g700, backgroundColor: '#fff' }}>
-                    <option value="open">🔵 Open</option>
-                    <option value="active">🟢 Active</option>
-                    <option value="resolved">✅ Resolved</option>
-                    <option value="closed">🔒 Closed</option>
+                    <option value="open">Open</option>
+                    <option value="active">Active</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="closed">Closed</option>
                   </select>
                   <button onClick={() => { setSelected(null); setMessages([]); }}
                     className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 transition">
@@ -3707,7 +3708,7 @@ function TradeLookupSection() {
               { label: 'BTC Amount', value: `${fmtBtc(result.amount_btc)} BTC`, color: C.g700 },
               { label: 'Payment Method', value: result.payment_method || '—', color: C.g700 },
               { label: 'Status', value: result.status, color: statusColor(result.status) },
-              { label: 'Buyer Confirmed', value: result.buyer_confirmed ? '✅ Yes' : '⏳ No', color: C.g700 },
+              { label: 'Buyer Confirmed', value: result.buyer_confirmed ? <><CheckCircle size={13} className="inline-block mr-1" style={{ color: C.success }} />Yes</> : <><Clock size={13} className="inline-block mr-1" style={{ color: C.warn }} />No</>, color: C.g700 },
               { label: 'Created', value: fmtDate(result.created_at), color: C.g700 },
               { label: 'Last Updated', value: fmtAge(result.updated_at), color: C.g500 },
             ].map(({ label, value, color }) => (
@@ -3743,7 +3744,7 @@ function TradeLookupSection() {
           </div>
         </div>
         <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
-          {listLoading ? <Spin /> : trades.length === 0 ? <Empty icon="🔄" text="No trades" /> : (
+          {listLoading ? <Spin /> : trades.length === 0 ? <Empty icon={<RefreshCw size={36} className="mx-auto" style={{ color: C.g300 }} />} text="No trades" /> : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead style={{ backgroundColor: C.g50 }}>
@@ -3917,7 +3918,7 @@ function DisputesSection({ teamUser }) {
                 </div>
               ))
             )}
-            {tab === 'resolved' && (resolved.length === 0 ? <Empty icon="⚖️" text="No resolved disputes yet" /> :
+            {tab === 'resolved' && (resolved.length === 0 ? <Empty icon={<Scale size={36} className="mx-auto" style={{ color: C.g300 }} />} text="No resolved disputes yet" /> :
               resolved.map(d => {
                 const res = d.resolution || d.dispute_resolution;
                 const rc = res === 'BUYER_WINS' ? C.success : res === 'SELLER_WINS' ? C.paid : C.danger;
@@ -3965,7 +3966,7 @@ function DisputesSection({ teamUser }) {
                       { l: 'Buyer', v: active.buyer?.username || '—', c: C.green },
                       { l: 'Seller', v: active.seller?.username || '—', c: C.paid },
                       { l: 'Payment', v: active.trade_details?.payment_method || '—', c: C.g600 },
-                      { l: 'Buyer Confirmed', v: active.trade_details?.buyer_confirmed ? '✅ Yes' : '⏳ No', c: C.g600 },
+                      { l: 'Buyer Confirmed', v: active.trade_details?.buyer_confirmed ? <><CheckCircle size={13} className="inline-block mr-1" style={{ color: C.success }} />Yes</> : <><Clock size={13} className="inline-block mr-1" style={{ color: C.warn }} />No</>, c: C.g600 },
                     ].map(({ l, v, c }) => (
                       <div key={l} className="flex justify-between py-2 border-b text-sm" style={{ borderColor: C.g100 }}>
                         <span style={{ color: C.g400 }}>{l}</span>
@@ -4034,9 +4035,9 @@ function DisputesSection({ teamUser }) {
                       style={{ borderColor: notes ? C.purple : C.g200 }} />
                     <div className="space-y-1.5">
                       {[
-                        { v: 'BUYER_WINS', l: '✅ Buyer Wins', c: C.success, bg: '#ECFDF5' },
-                        { v: 'SELLER_WINS', l: '✅ Seller Wins', c: C.paid, bg: '#EFF6FF' },
-                        { v: 'CANCEL', l: '❌ Cancel Trade', c: C.danger, bg: '#FEF2F2' },
+                        { v: 'BUYER_WINS', l: <span className="inline-flex items-center gap-1"><CheckCircle size={13} className="inline-block" style={{ color: C.success }} />Buyer Wins</span>, c: C.success, bg: '#ECFDF5' },
+                        { v: 'SELLER_WINS', l: <span className="inline-flex items-center gap-1"><CheckCircle size={13} className="inline-block" style={{ color: C.paid }} />Seller Wins</span>, c: C.paid, bg: '#EFF6FF' },
+                        { v: 'CANCEL', l: <span className="inline-flex items-center gap-1"><XCircle size={13} className="inline-block" style={{ color: C.danger }} />Cancel Trade</span>, c: C.danger, bg: '#FEF2F2' },
                       ].map(o => (
                         <button key={o.v} onClick={() => setResolution(o.v)}
                           className="w-full text-left py-2.5 px-3 rounded-xl text-xs font-bold border-2 transition"
@@ -4130,7 +4131,7 @@ function FeedbackSection() {
       </div>
 
       {/* Reviews list */}
-      {loading ? <Spin /> : reviews.length === 0 ? <Empty icon="⭐" text="No reviews yet" /> : (
+      {loading ? <Spin /> : reviews.length === 0 ? <Empty icon={<Star size={36} className="mx-auto" style={{ color: C.g300 }} />} text="No reviews yet" /> : (
         <div className="space-y-3">
           {reviews.map((rv, i) => (
             <div key={rv.id || i} className="bg-white rounded-2xl border p-4 hover:shadow-sm transition" style={{ borderColor: C.g200 }}>
@@ -4155,7 +4156,7 @@ function FeedbackSection() {
                       {rv.rating}/5
                     </span>
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${rv.rating >= 4 ? 'bg-green-50 text-green-700' : rv.rating <= 2 ? 'bg-red-50 text-red-700' : 'bg-yellow-50 text-yellow-700'}`}>
-                      {rv.rating >= 4 ? '👍 Positive' : rv.rating <= 2 ? '👎 Negative' : '➖ Neutral'}
+                      {rv.rating >= 4 ? <><ThumbsUp size={12} className="inline-block mr-1" />Positive</> : rv.rating <= 2 ? <><ThumbsDown size={12} className="inline-block mr-1" />Negative</> : <><Minus size={12} className="inline-block mr-1" />Neutral</>}
                     </span>
                   </div>
                   {rv.comment && (
@@ -4223,7 +4224,11 @@ function TopTradersSection() {
     setReviewsLoading(false);
   };
 
-  const medals = ['🥇', '🥈', '🥉'];
+  const medals = [
+    <Medal size={22} className="inline-block" style={{ color: '#F59E0B', fill: '#FDE68A' }} />,
+    <Medal size={22} className="inline-block" style={{ color: '#9CA3AF', fill: '#E5E7EB' }} />,
+    <Medal size={22} className="inline-block" style={{ color: '#92400E', fill: '#D6B38A' }} />,
+  ];
 
   return (
     <div className="space-y-5">
@@ -4253,7 +4258,7 @@ function TopTradersSection() {
       <div className="flex gap-4">
         {/* Leaderboard */}
         <div className="flex-1 bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
-          {loading ? <Spin /> : traders.length === 0 ? <Empty icon="🏆" text="No data yet" /> : (
+          {loading ? <Spin /> : traders.length === 0 ? <Empty icon={<Trophy size={36} className="mx-auto" style={{ color: C.g300 }} />} text="No data yet" /> : (
             <>
               {/* Top 3 podium */}
               {traders.slice(0, 3).length > 0 && (
@@ -4364,9 +4369,9 @@ function TopTradersSection() {
               {[
                 { l: 'Total Trades', v: fmt(selected.total_trades) },
                 { l: 'Volume', v: selected.total_volume_usd ? `$${fmt(selected.total_volume_usd, 0)}` : '—' },
-                { l: 'Avg Rating', v: `⭐ ${parseFloat(selected.average_rating || 0).toFixed(1)}` },
-                { l: 'Positive', v: `👍 ${fmt(selected.positive_feedback)}` },
-                { l: 'Negative', v: `👎 ${fmt(selected.negative_feedback)}` },
+                { l: 'Avg Rating', v: <span className="inline-flex items-center gap-1"><Star size={12} className="inline-block" style={{ color: C.gold }} />{parseFloat(selected.average_rating || 0).toFixed(1)}</span> },
+                { l: 'Positive', v: <span className="inline-flex items-center gap-1"><ThumbsUp size={12} className="inline-block" style={{ color: C.success }} />{fmt(selected.positive_feedback)}</span> },
+                { l: 'Negative', v: <span className="inline-flex items-center gap-1"><ThumbsDown size={12} className="inline-block" style={{ color: C.danger }} />{fmt(selected.negative_feedback)}</span> },
                 { l: 'Member Since', v: fmtDate(selected.created_at) },
                 { l: 'Last Active', v: fmtAge(selected.last_seen_at) },
                 { l: 'Status', v: selected.account_status || 'active' },
@@ -4448,7 +4453,7 @@ function UsersSection() {
       </div>
       <div className="flex gap-4">
         <div className="flex-1 bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
-          {loading ? <Spin /> : users.length === 0 ? <Empty icon="👤" text="No users found" /> : (
+          {loading ? <Spin /> : users.length === 0 ? <Empty icon={<User size={36} className="mx-auto" style={{ color: C.g300 }} />} text="No users found" /> : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead style={{ backgroundColor: C.g50 }}>
@@ -4472,7 +4477,11 @@ function UsersSection() {
                         <div className="flex items-center gap-1"><Stars rating={u.average_rating} /><span className="text-xs font-bold" style={{ color: C.g700 }}>{parseFloat(u.average_rating || 0).toFixed(1)}</span></div>
                       </td>
                       <td className="px-4 py-3"><span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: badgeColor(u.badge).bg, color: badgeColor(u.badge).c }}>{u.badge || 'BEGINNER'}</span></td>
-                      <td className="px-4 py-3 text-xs">{u.is_email_verified ? '📧 ' : ''}{u.is_phone_verified ? '📱 ' : ''}{u.is_id_verified ? '🪪' : ''}</td>
+                      <td className="px-4 py-3"><span className="inline-flex items-center gap-1 text-xs">
+                        {u.is_email_verified && <Mail size={13} style={{ color: C.success }} />}
+                        {u.is_phone_verified && <Smartphone size={13} style={{ color: C.success }} />}
+                        {u.is_id_verified && <FileText size={13} style={{ color: C.success }} />}
+                      </span></td>
                       <td className="px-4 py-3 text-xs" style={{ color: C.g400 }}>{fmtDate(u.created_at)}</td>
                       <td className="px-4 py-3">
                         <button onClick={() => viewUser(selected?.id === u.id ? null : u)} className="p-1.5 rounded-lg hover:bg-gray-100">
@@ -4506,7 +4515,7 @@ function UsersSection() {
                 { l: 'Status', v: selected.account_status || 'active' },
                 { l: 'Trades', v: fmt(selected.total_trades) },
                 { l: 'Volume', v: selected.total_volume_usd ? `$${fmt(selected.total_volume_usd, 0)}` : '—' },
-                { l: 'Rating', v: `⭐ ${parseFloat(selected.average_rating || 0).toFixed(1)}` },
+                { l: 'Rating', v: <span className="inline-flex items-center gap-1"><Star size={12} className="inline-block" style={{ color: C.gold }} />{parseFloat(selected.average_rating || 0).toFixed(1)}</span> },
                 { l: 'Badge', v: selected.badge || 'BEGINNER' },
                 { l: 'Phone', v: selected.phone_number || '—' },
                 { l: 'KYC', v: selected.kyc_status || '—' },

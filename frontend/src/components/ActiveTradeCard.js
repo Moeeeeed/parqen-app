@@ -323,19 +323,19 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
             {['CREATED', 'FUNDS_LOCKED'].includes(trade.status) && !effectiveExpiresAt && (
               <span className="inline-flex items-center gap-0.5 text-[9px] font-black px-2 py-0.5 rounded-full"
                 style={{ backgroundColor: '#DCFCE7', color: '#16A34A' }}>
-                🔒 Locked
+                <Lock size={9} /> Locked
               </span>
             )}
             {trade.status === 'PAYMENT_SENT' && (
               <span className="inline-flex items-center gap-0.5 text-[9px] font-black px-2 py-0.5 rounded-full"
                 style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>
-                🔒 Awaiting Release
+                <Lock size={9} /> Awaiting Release
               </span>
             )}
             {trade.status === 'DISPUTED' && (
               <span className="inline-flex items-center gap-0.5 text-[9px] font-black px-2 py-0.5 rounded-full"
                 style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>
-                ⚖️ In Review
+                <Scale size={9} /> In Review
               </span>
             )}
           </div>

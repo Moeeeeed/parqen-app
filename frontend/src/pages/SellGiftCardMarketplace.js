@@ -9,7 +9,8 @@ import {
   AlertCircle, CheckCircle, HelpCircle, MapPin,
   Globe, Activity, RefreshCw, Flag, Phone,
   Banknote, CreditCard, MessageCircle, ThumbsUp, ThumbsDown, Repeat2,
-  Sparkles, Package, Radio, Lock, Unlock, X
+  Sparkles, Package, Radio, Lock, Unlock, X,
+  Laptop, Landmark, FileText, AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import CountryFlag from '../components/CountryFlag';
@@ -39,8 +40,8 @@ const PRAQEN = {
 
 // Card Types
 const CARD_TYPES = [
-  { id: 'ecode', name: 'E-Code / Digital', icon: '💻', description: 'Digital code sent via email/SMS', color: '#10b981', bgColor: '#d1fae5' },
-  { id: 'physical', name: 'Physical Card', icon: '💳', description: 'Physical gift card will be shipped', color: '#f59e0b', bgColor: '#fed7aa' },
+  { id: 'ecode', name: 'E-Code / Digital', icon: <Laptop size={28} className="inline-block" style={{color:'#10b981'}}/>, description: 'Digital code sent via email/SMS', color: '#10b981', bgColor: '#d1fae5' },
+  { id: 'physical', name: 'Physical Card', icon: <CreditCard size={28} className="inline-block" style={{color:'#f59e0b'}}/>, description: 'Physical gift card will be shipped', color: '#f59e0b', bgColor: '#fed7aa' },
 ];
 
 // Buyer Offer Card Component
@@ -78,10 +79,10 @@ function BuyerOfferCard({ offer, onSelect, user }) {
 
   const getPaymentIcon = (method) => {
     const icons = {
-      'mtn': '📱', 'vodafone': '📱', 'airteltigo': '📱',
-      'bank_transfer': '🏦', 'paypal': '💰', 'opay': '💰'
+      'mtn': <Smartphone size={14} className="inline-block"/>, 'vodafone': <Smartphone size={14} className="inline-block"/>, 'airteltigo': <Smartphone size={14} className="inline-block"/>,
+      'bank_transfer': <Landmark size={14} className="inline-block"/>, 'paypal': <Wallet size={14} className="inline-block"/>, 'opay': <Wallet size={14} className="inline-block"/>
     };
-    return icons[method.toLowerCase()] || '💳';
+    return icons[method.toLowerCase()] || <CreditCard size={14} className="inline-block"/>;
   };
 
   return (
@@ -158,7 +159,7 @@ function BuyerOfferCard({ offer, onSelect, user }) {
         {/* Terms Preview */}
         {offer.description && (
           <div className="mt-2 text-xs text-gray-500">
-            📝 {offer.description.length > 80 ? offer.description.substring(0, 80) + '...' : offer.description}
+            <FileText size={12} className="inline-block" style={{color:'#64748B', marginRight:4, verticalAlign:'-1px'}}/>{offer.description.length > 80 ? offer.description.substring(0, 80) + '...' : offer.description}
           </div>
         )}
         
@@ -566,7 +567,8 @@ export default function SellGiftCardMarketplace({ user }) {
               
               <div className="bg-yellow-50 p-3 rounded-lg">
                 <p className="text-xs text-yellow-800">
-                  ⚠️ Bitcoin will be held in escrow until you provide the gift card code and buyer confirms.
+                  <AlertTriangle size={14} className="inline-block" style={{color:'#854D0E', marginRight:6, verticalAlign:'-2px'}}/>
+                  Bitcoin will be held in escrow until you provide the gift card code and buyer confirms.
                 </p>
               </div>
               

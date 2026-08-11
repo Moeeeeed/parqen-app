@@ -2208,7 +2208,7 @@ function WalletSwitcher({ activeCoin, onSelect, dark, pulse }) {
   const options = [
     { key: 'BTC',  label: 'Bitcoin', sub: 'BTC Network',   bg: 'linear-gradient(135deg,#F7931A,#e8830a)', icon: <span style={{ fontSize: 13, fontWeight: 900, color: '#fff' }}>₿</span> },
     { key: 'USDT', label: 'Tether',  sub: 'TRC-20',        bg: '#26A17B',                                   icon: <TetherGlyph size={14} /> },
-    { key: 'SWAP', label: 'Swap',    sub: 'BTC ↔ USDT',    bg: 'linear-gradient(135deg,#6366f1,#4f46e5)',   icon: <span style={{ fontSize: 12, fontWeight: 900, color: '#fff' }}>⇄</span> },
+    { key: 'SWAP', label: 'Swap',    sub: 'BTC ↔ USDT',    bg: 'linear-gradient(135deg,#6366f1,#4f46e5)',   icon: <ArrowLeftRight size={13} style={{ color: '#fff' }} /> },
   ];
 
   return (
@@ -2947,7 +2947,7 @@ export default function WalletPage({ user }) {
         {portfolioUsd < 10 && (
           <div className="rounded-2xl overflow-hidden shadow-lg" style={{ border: '2px solid #B91C1C' }}>
             <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: 'linear-gradient(135deg,#991B1B,#DC2626)' }}>
-              <span className="text-base">🚨</span>
+              <AlertTriangle size={15} style={{ color: '#fff' }} />
               <span className="text-xs sm:text-sm font-black text-white tracking-wide uppercase">
                 Action Required — Fund Your Wallet
               </span>

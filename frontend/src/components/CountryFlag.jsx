@@ -96,7 +96,7 @@ export default function CountryFlag({ countryCode, className = 'w-5 h-4', style 
       onError={(e) => {
         e.currentTarget.style.display = 'none';
         const span = document.createElement('span');
-        span.textContent = '🌍';
+        span.textContent = code.toUpperCase();
         span.style.fontSize = '14px';
         e.currentTarget.parentNode.insertBefore(span, e.currentTarget);
       }}

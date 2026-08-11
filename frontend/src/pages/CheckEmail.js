@@ -5,7 +5,8 @@ import axios from 'axios';
 import { API_URL } from '../App';
 import {
   Mail, CheckCircle, RefreshCw, ArrowRight, AlertCircle,
-  Shield, ChevronRight, Clock, Inbox, RotateCcw
+  Shield, ChevronRight, Clock, Inbox, RotateCcw,
+  PartyPopper, BadgeCheck, Zap
 } from 'lucide-react';
 
 const C = {
@@ -330,7 +331,9 @@ export default function CheckEmail({ onLogin }) {
                   fontSize: 24, fontWeight: 800, color: '#1B4332',
                   margin: '0 0 8px', fontFamily: "'Outfit', sans-serif"
                 }}>
-                  Email Verified! 🎉
+                  <span className="inline-flex items-center justify-center gap-2">
+                    Email Verified! <PartyPopper size={22} style={{ color: '#F4A422' }} />
+                  </span>
                 </h3>
                 <p style={{ fontSize: 14, color: '#64748B', margin: '0 0 20px', lineHeight: 1.6 }}>
                   Your email has been confirmed. Taking you to the marketplace…
@@ -360,7 +363,9 @@ export default function CheckEmail({ onLogin }) {
                     fontSize: 12, color: '#F4A422', fontWeight: 600,
                     margin: '0 0 8px', letterSpacing: '0.5px',
                   }}>
-                    ✅ Account created successfully!
+                    <span className="inline-flex items-center gap-1.5">
+                      <BadgeCheck size={14} style={{ flexShrink: 0 }} /> Account created successfully!
+                    </span>
                   </p>
                   <h1 style={{
                     fontSize: 22, fontWeight: 800, color: '#FFFFFF',
@@ -459,7 +464,9 @@ export default function CheckEmail({ onLogin }) {
                       fontSize: 11, color: '#92400E', textAlign: 'center',
                       marginBottom: 16,
                     }}>
-                      ⚡ Dev mode: code <strong>{devCode}</strong> auto-filled
+                      <span className="inline-flex items-center gap-1.5">
+                        <Zap size={12} style={{ flexShrink: 0 }} /> Dev mode: code <strong>{devCode}</strong> auto-filled
+                      </span>
                     </div>
                   )}
 

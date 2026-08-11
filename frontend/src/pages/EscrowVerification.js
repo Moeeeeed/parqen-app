@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { API_URL } from '../App';
-import { CheckCircle, AlertCircle, Shield } from 'lucide-react';
+import { CheckCircle, AlertCircle, AlertTriangle, Shield } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 export default function EscrowVerification({ trade, user, onVerified }) {
@@ -41,7 +41,7 @@ export default function EscrowVerification({ trade, user, onVerified }) {
     <div className="bg-white rounded-lg shadow p-6 mb-6">
       <div className="flex items-center gap-3 mb-6">
         <Shield size={28} className="text-blue-600" />
-        <h3 className="text-2xl font-bold text-slate-900">🛡️ Escrow Verification</h3>
+        <h3 className="text-2xl font-bold text-slate-900">Escrow Verification</h3>
       </div>
 
       {/* Info Box */}
@@ -156,7 +156,7 @@ export default function EscrowVerification({ trade, user, onVerified }) {
       {/* Warning */}
       <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
         <p className="text-sm text-yellow-800">
-          ⚠️ <strong>Important:</strong> Only click "Release Bitcoin" after thoroughly testing the code. Once released, it cannot be reversed. If the code doesn't work, open a dispute immediately.
+          <AlertTriangle size={16} className="inline-block text-yellow-600 mr-1.5 align-text-bottom" /> <strong>Important:</strong> Only click "Release Bitcoin" after thoroughly testing the code. Once released, it cannot be reversed. If the code doesn't work, open a dispute immediately.
         </p>
       </div>
     </div>

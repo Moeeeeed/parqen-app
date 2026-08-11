@@ -4,6 +4,7 @@ import {
   Bitcoin, TrendingUp, Plus, Gift, Wallet,
   ArrowRight, Shield, Clock, Eye, EyeOff,
   BarChart2, Star, Bell, ChevronRight,
+  Zap, CheckCircle, CircleDollarSign, Hand,
 } from 'lucide-react';
 
 const C = {
@@ -46,7 +47,7 @@ export default function Home({ user }) {
           <div className="absolute inset-0 pointer-events-none"
             style={{ backgroundImage: 'radial-gradient(circle at 2px 2px,rgba(255,255,255,0.06) 1px,transparent 0)', backgroundSize: '22px 22px' }} />
           <div className="relative">
-            <p className="text-white/60 text-xs mb-0.5">Welcome back 👋</p>
+            <p className="text-white/60 text-xs mb-0.5 flex items-center gap-1">Welcome back <Hand size={14} /></p>
             <h1 className="text-lg font-black mb-3 truncate" style={{ fontFamily: "'Syne',sans-serif" }}>
               {name}
             </h1>
@@ -107,14 +108,14 @@ export default function Home({ user }) {
       <div className="px-3 mb-4 max-w-2xl mx-auto w-full slide d2">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
           {[
-            { label: 'Active Trades', value: '2',     icon: '⚡', color: C.gold    },
-            { label: 'Completed',     value: '47',    icon: '✅', color: C.success },
-            { label: 'Volume',        value: '₵125K', icon: '💰', color: C.paid    },
-            { label: 'Rating',        value: '4.9 ★', icon: '⭐', color: C.gold    },
+            { label: 'Active Trades', value: '2',     icon: <Zap size={16} />,            color: C.gold    },
+            { label: 'Completed',     value: '47',    icon: <CheckCircle size={16} />,    color: C.success },
+            { label: 'Volume',        value: '₵125K', icon: <CircleDollarSign size={16} />, color: C.paid  },
+            { label: 'Rating',        value: '4.9 ★', icon: <Star size={16} fill="currentColor" />, color: C.gold },
           ].map(({ label, value, icon, color }) => (
             <div key={label} className="bg-white rounded-xl p-3 border" style={{ borderColor: C.g200 }}>
               <div className="flex items-center justify-between mb-1">
-                <span className="text-base">{icon}</span>
+                <span className="text-base flex" style={{ color }}>{icon}</span>
                 <p className="text-xs truncate ml-1" style={{ color: C.g400 }}>{label}</p>
               </div>
               <p className="text-lg font-black" style={{ color: C.forest }}>{value}</p>

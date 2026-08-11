@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Wallet, Repeat2, Gift, Award, X, ArrowRight } from 'lucide-react';
+import { Wallet, Repeat2, Gift, Award, X, ArrowRight, Rocket } from 'lucide-react';
 
 const C = {
   forest: '#1B4332', green: '#2D6A4F', gold: '#F4A422',
@@ -34,7 +34,7 @@ export default function GettingStartedSteps({ userId }) {
         <div className="flex items-center justify-between gap-2 px-4 py-2.5"
           style={{ background: `linear-gradient(135deg,${C.forest},${C.green})` }}>
           <span className="text-xs sm:text-sm font-black text-white tracking-wide">
-            🚀 New here? Here's how to become an active vendor
+            <Rocket size={14} className="inline-block mr-1" />New here? Here's how to become an active vendor
           </span>
           <button onClick={handleDismiss} className="flex-shrink-0 opacity-70 hover:opacity-100" title="Dismiss">
             <X size={14} color="#fff" />

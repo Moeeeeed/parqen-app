@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Lock } from 'lucide-react';
 
 const TradeDisplay = ({
   usdAmount = 100,
@@ -102,7 +103,7 @@ const TradeDisplay = ({
       {/* Escrow Breakdown */}
       {showBreakdown && (
         <div className="border-t pt-3 mt-3">
-          <h4 className="font-semibold mb-2 text-sm">🔒 Escrow Breakdown</h4>
+          <h4 className="font-semibold mb-2 text-sm flex items-center gap-1.5"><Lock size={13} /> Escrow Breakdown</h4>
           <div className="space-y-1 text-xs">
             <div className="flex justify-between">
               <span>You send (BTC):</span>

@@ -6,7 +6,9 @@ import {
   Bitcoin, Shield, AlertTriangle, Star, TrendingUp,
   ThumbsUp, ThumbsDown, Lock, RefreshCw, LogIn,
   Phone, Building, Image, UserCheck, Gavel, Stamp,
-  ChevronDown, BookOpen, History, Users,
+  ChevronDown, BookOpen, History, Users, Scale,
+  XCircle, ClipboardList, Paperclip, MessageSquare,
+  ShoppingBag, Zap, ClipboardEdit, BarChart3,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -28,7 +30,7 @@ const fmtUsd   = n => `$${parseFloat(n || 0).toLocaleString('en-US', { minimumFr
 const fmtAge   = d => { if (!d) return '—'; const s = (Date.now()-new Date(d))/1000; if(s<3600) return `${~~(s/60)}m ago`; if(s<86400) return `${~~(s/3600)}h ago`; return `${~~(s/86400)}d ago`; };
 const getRatingStars = r => [...Array(5)].map((_,i) => <Star key={i} size={13} className={i < Math.round(r||0) ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'} />);
 const resBadge = res => {
-  const m = { BUYER_WINS:{l:'✅ Buyer Won',bg:'#ECFDF5',c:P.success}, SELLER_WINS:{l:'✅ Seller Won',bg:'#EFF6FF',c:P.info}, CANCEL:{l:'❌ Trade Cancelled',bg:'#FEF2F2',c:P.danger} }[res] || {l:res||'—',bg:'#f3f4f6',c:'#6b7280'};
+  const m = { BUYER_WINS:{l:<span className="inline-flex items-center gap-1"><CheckCircle size={13} className="inline-block" /> Buyer Won</span>,bg:'#ECFDF5',c:P.success}, SELLER_WINS:{l:<span className="inline-flex items-center gap-1"><CheckCircle size={13} className="inline-block" /> Seller Won</span>,bg:'#EFF6FF',c:P.info}, CANCEL:{l:<span className="inline-flex items-center gap-1"><XCircle size={13} className="inline-block" /> Trade Cancelled</span>,bg:'#FEF2F2',c:P.danger} }[res] || {l:res||'—',bg:'#f3f4f6',c:'#6b7280'};
   return <span className="px-3 py-1 rounded-full text-sm font-bold" style={{backgroundColor:m.bg,color:m.c}}>{m.l}</span>;
 };
 const badgeColor = b => {
@@ -207,7 +209,7 @@ function ModeratorLogin({ onLogin, user }) {
                     {loading ? <><RefreshCw size={14} className="animate-spin" /> Verifying…</> : <><LogIn size={14} /> Continue</>}
                   </button>
                 </form>
-                <p className="text-center text-xs text-gray-400 mt-6">🔒 Restricted access — all actions are permanently logged.</p>
+                <p className="text-center text-xs text-gray-400 mt-6 inline-flex items-center gap-1"><Lock size={11} className="inline-block" /> Restricted access — all actions are permanently logged.</p>
               </>
             ) : (
               <>
@@ -254,10 +256,10 @@ function ModeratorLogin({ onLogin, user }) {
 // ================================================================
 function ConfirmResolutionModal({ decision, tradeId, btcAmount, usdAmount, buyer, seller, modName, quorum, onConfirm, onCancel, submitting }) {
   const cfg = {
-    BUYER_WINS:  { label:'BUYER WINS',       icon:'✅', color:P.success,  bg:'#ECFDF5', borderColor:'#6EE7B7', action:'Release BTC to Buyer' },
-    SELLER_WINS: { label:'SELLER WINS',      icon:'✅', color:P.info,     bg:'#EFF6FF', borderColor:'#93C5FD', action:'Return BTC to Seller' },
-    CANCEL:      { label:'CANCEL TRADE',     icon:'❌', color:P.danger,   bg:'#FEF2F2', borderColor:'#FCA5A5', action:'Refund Escrow to Seller' },
-  }[decision] || { label:decision, icon:'⚖️', color:P.purple, bg:P.purpleLight, borderColor:P.purple, action:'Resolve' };
+    BUYER_WINS:  { label:'BUYER WINS',       icon:<CheckCircle size={15} className="inline-block" />, color:P.success,  bg:'#ECFDF5', borderColor:'#6EE7B7', action:'Release BTC to Buyer' },
+    SELLER_WINS: { label:'SELLER WINS',      icon:<CheckCircle size={15} className="inline-block" />, color:P.info,     bg:'#EFF6FF', borderColor:'#93C5FD', action:'Return BTC to Seller' },
+    CANCEL:      { label:'CANCEL TRADE',     icon:<XCircle size={15} className="inline-block" />, color:P.danger,   bg:'#FEF2F2', borderColor:'#FCA5A5', action:'Refund Escrow to Seller' },
+  }[decision] || { label:decision, icon:<Scale size={15} className="inline-block" />, color:P.purple, bg:P.purpleLight, borderColor:P.purple, action:'Resolve' };
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ backgroundColor:'rgba(0,0,0,0.75)' }}>
@@ -669,8 +671,22 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
   };
 
   const tabs = readOnly
-    ? [{ id:'details', l:'📋 Details' }, { id:'user-history', l:'👥 Profiles' }, { id:'evidence', l:`📎 Evidence (${images.length})` }, { id:'chat', l:'💬 Chat History' }, { id:'discussion', l:'🗣️ Team Discussion' }, { id:'ruling', l:'⚖️ Ruling' }]
-    : [{ id:'details', l:'📋 Details' }, { id:'user-history', l:'👥 User History' }, { id:'evidence', l:`📎 Evidence (${images.length})` }, { id:'chat', l:'💬 Live Chat' }, { id:'discussion', l:'🗣️ Team Discussion' }, { id:'resolve', l:'⚖️ Resolve' }];
+    ? [
+        { id:'details', l:<span className="inline-flex items-center gap-1.5"><ClipboardList size={13} /> Details</span> },
+        { id:'user-history', l:<span className="inline-flex items-center gap-1.5"><Users size={13} /> Profiles</span> },
+        { id:'evidence', l:<span className="inline-flex items-center gap-1.5"><Paperclip size={13} /> Evidence ({images.length})</span> },
+        { id:'chat', l:<span className="inline-flex items-center gap-1.5"><MessageCircle size={13} /> Chat History</span> },
+        { id:'discussion', l:<span className="inline-flex items-center gap-1.5"><MessageSquare size={13} /> Team Discussion</span> },
+        { id:'ruling', l:<span className="inline-flex items-center gap-1.5"><Scale size={13} /> Ruling</span> },
+      ]
+    : [
+        { id:'details', l:<span className="inline-flex items-center gap-1.5"><ClipboardList size={13} /> Details</span> },
+        { id:'user-history', l:<span className="inline-flex items-center gap-1.5"><Users size={13} /> User History</span> },
+        { id:'evidence', l:<span className="inline-flex items-center gap-1.5"><Paperclip size={13} /> Evidence ({images.length})</span> },
+        { id:'chat', l:<span className="inline-flex items-center gap-1.5"><MessageCircle size={13} /> Live Chat</span> },
+        { id:'discussion', l:<span className="inline-flex items-center gap-1.5"><MessageSquare size={13} /> Team Discussion</span> },
+        { id:'resolve', l:<span className="inline-flex items-center gap-1.5"><Scale size={13} /> Resolve</span> },
+      ];
 
   return (
     <>
@@ -747,7 +763,7 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                 <div className="grid md:grid-cols-2 gap-5">
                   {[
                     { title:'Trade Information', icon:DollarSign, rows:[{ l:'BTC Amount', v:`₿ ${fmtBtc(dispute.trade_details?.amount_btc)}` }, { l:'USD Amount', v:fmtUsd(dispute.trade_details?.amount_usd) }, { l:'Status', v:dispute.trade_details?.status||'DISPUTED' }, { l:'Started', v:fmtDate(dispute.trade_details?.created_at) }] },
-                    { title:'Payment Info', icon:CreditCard, rows:[{ l:'Method', v:dispute.trade_details?.payment_method||'—' }, { l:'Buyer Confirmed', v:dispute.trade_details?.buyer_confirmed ? '✅ Yes' : '⏳ No' }, { l:'Sent At', v:fmtDate(dispute.trade_details?.buyer_confirmed_at) }] },
+                    { title:'Payment Info', icon:CreditCard, rows:[{ l:'Method', v:dispute.trade_details?.payment_method||'—' }, { l:'Buyer Confirmed', v:dispute.trade_details?.buyer_confirmed ? <span className="inline-flex items-center gap-1"><CheckCircle size={13} style={{color:P.success}} /> Yes</span> : <span className="inline-flex items-center gap-1"><Clock size={13} style={{color:'#9ca3af'}} /> No</span> }, { l:'Sent At', v:fmtDate(dispute.trade_details?.buyer_confirmed_at) }] },
                   ].map(({ title, icon:Icon, rows }) => (
                     <div key={title} className="bg-gray-50 rounded-xl p-4 border">
                       <h3 className="font-black text-gray-800 mb-3 flex items-center gap-2"><Icon size={16} /> {title}</h3>
@@ -757,7 +773,7 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                 </div>
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                   <h3 className="font-black text-blue-800 mb-2 flex items-center gap-2"><Shield size={16} /> Escrow Status</h3>
-                  <p className="text-base font-bold text-blue-700">🔒 ₿{fmtBtc(dispute.trade_details?.amount_btc)} locked in escrow. {readOnly ? 'Dispute resolved.' : 'Awaiting your decision.'}</p>
+                  <p className="text-base font-bold text-blue-700 flex items-center gap-1.5"><Lock size={15} className="inline-block" /> ₿{fmtBtc(dispute.trade_details?.amount_btc)} locked in escrow. {readOnly ? 'Dispute resolved.' : 'Awaiting your decision.'}</p>
                 </div>
               </div>
             )}
@@ -785,7 +801,7 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                     </div>
                     <div className="grid md:grid-cols-2 gap-4">
                       <div className="bg-white rounded-xl p-4 border">
-                        <p className="font-black text-sm mb-3 text-gray-700">📊 Trade Stats</p>
+                        <p className="font-black text-sm mb-3 text-gray-700 flex items-center gap-1.5"><BarChart3 size={14} /> Trade Stats</p>
                         {[
                           { l:'Total Trades',     v:stats?.total_trades||0 },
                           { l:'Completion Rate',  v:`${parseFloat(stats?.completion_rate||0).toFixed(1)}%` },
@@ -800,7 +816,7 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                       </div>
 
                       <div className="bg-white rounded-xl p-4 border">
-                        <p className="font-black text-sm mb-3 text-gray-700">🛡️ Verification &amp; Trust</p>
+                        <p className="font-black text-sm mb-3 text-gray-700 flex items-center gap-1.5"><Shield size={14} /> Verification &amp; Trust</p>
                         {[
                           { l:'Email Verified', v:stats?.is_email_verified },
                           { l:'Phone Verified', v:stats?.is_phone_verified },
@@ -816,7 +832,7 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                       </div>
 
                       <div className="bg-white rounded-xl p-4 border">
-                        <p className="font-black text-sm mb-3 text-gray-700">⚖️ Dispute Record</p>
+                        <p className="font-black text-sm mb-3 text-gray-700 flex items-center gap-1.5"><Scale size={14} /> Dispute Record</p>
                         {disputes == null ? (
                           <p className="text-sm text-gray-400 font-semibold">Loading…</p>
                         ) : disputes.total === 0 ? (
@@ -849,7 +865,7 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                       </div>
 
                       <div className="bg-white rounded-xl p-4 border">
-                        <p className="font-black text-sm mb-3 text-gray-700">💬 Recent Feedback</p>
+                        <p className="font-black text-sm mb-3 text-gray-700 flex items-center gap-1.5"><MessageCircle size={14} /> Recent Feedback</p>
                         {reviews.length === 0 ? <p className="text-sm text-gray-500 font-semibold">No feedback yet</p> :
                           reviews.slice(0, 3).map((rv, i) => (
                             <div key={i} className="border-b py-2 last:border-0">
@@ -874,7 +890,7 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                       <div key={i} className="border-2 rounded-xl overflow-hidden cursor-pointer hover:shadow-lg transition" onClick={() => setZoomImg(img.image_url||img.url)}>
                         <img src={img.image_url||img.url} alt={`Evidence ${i+1}`} className="w-full h-48 object-cover" />
                         <div className="p-3 bg-gray-50">
-                          <p className="text-sm font-bold text-gray-700">📎 {img.user_id===dispute.buyer?.id ? 'Buyer' : 'Seller'}</p>
+                          <p className="text-sm font-bold text-gray-700 flex items-center gap-1"><Paperclip size={13} className="inline-block" /> {img.user_id===dispute.buyer?.id ? 'Buyer' : 'Seller'}</p>
                           <p className="text-xs text-gray-500">{fmtDate(img.created_at)}</p>
                         </div>
                       </div>
@@ -889,8 +905,8 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                   <div className="bg-purple-50 border border-purple-200 rounded-xl p-5 mb-4 text-center">
                     <Shield size={32} className="mx-auto mb-2 text-purple-600" />
                     <p className="font-black text-purple-800 mb-3">Your messages will appear with a special MODERATOR badge visible to both parties</p>
-                    <button onClick={joinChat} className="px-6 py-2.5 rounded-xl text-white font-black text-sm" style={{ backgroundColor:P.purple }}>
-                      👨‍⚖️ Join Dispute Chat
+                    <button onClick={joinChat} className="px-6 py-2.5 rounded-xl text-white font-black text-sm inline-flex items-center gap-1.5" style={{ backgroundColor:P.purple }}>
+                      <Gavel size={14} /> Join Dispute Chat
                     </button>
                   </div>
                 )}
@@ -924,7 +940,7 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                           <div className="rounded-2xl overflow-hidden border-2 border-amber-400 shadow-lg max-w-[90%] w-full">
                             <div className="flex items-center gap-2 px-4 py-2.5" style={{ background:'linear-gradient(90deg,#D97706,#F59E0B)' }}>
                               <Gavel size={16} className="text-white" />
-                              <span className="text-sm font-black text-white tracking-wide">⚖️ OFFICIAL RULING</span>
+                              <span className="text-sm font-black text-white tracking-wide inline-flex items-center gap-1.5"><Scale size={14} className="inline-block" /> OFFICIAL RULING</span>
                               <span className="ml-auto text-xs text-white/70">{timeStr}</span>
                             </div>
                             <div className="px-4 py-3" style={{ backgroundColor:'#FFFBEB' }}>
@@ -959,7 +975,7 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                             </div>
                             <div className="flex-1 min-w-0">
                               <span className="text-xs font-black text-white/60 uppercase tracking-widest">Official Moderator</span>
-                              <p className="text-sm font-black text-white leading-none">👨‍⚖️ {modName || 'PRAQEN Moderator'}</p>
+                              <p className="text-sm font-black text-white leading-none inline-flex items-center gap-1.5"><Gavel size={13} className="inline-block" /> {modName || 'PRAQEN Moderator'}</p>
                             </div>
                             <div className="flex items-center gap-1.5 flex-shrink-0">
                               <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -985,7 +1001,7 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                           <div className="px-3 py-1.5 flex items-center gap-1.5" style={{ backgroundColor: isBuyer ? '#f9fafb' : '#dcfce7' }}>
                             <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0"
                               style={{ backgroundColor: isBuyer ? P.primary : P.info }}>{(isBuyer ? dispute.buyer?.username : dispute.seller?.username || '?')[0]?.toUpperCase()}</div>
-                            <span className="text-xs font-black" style={{ color: isBuyer ? P.primary : P.info }}>{isBuyer ? '👤 Buyer' : '🛒 Seller'} · {isBuyer ? dispute.buyer?.username : dispute.seller?.username}</span>
+                            <span className="text-xs font-black inline-flex items-center gap-1.5" style={{ color: isBuyer ? P.primary : P.info }}>{isBuyer ? <><User size={11} className="inline-block" /> Buyer</> : <><ShoppingBag size={11} className="inline-block" /> Seller</>} · {isBuyer ? dispute.buyer?.username : dispute.seller?.username}</span>
                           </div>
                           <div className="px-4 py-3">
                             <p className="text-sm font-medium text-slate-800 break-words">{text}</p>
@@ -1027,8 +1043,14 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                 <div className="p-4 rounded-xl border-2" style={{ backgroundColor:'#faf5ff', borderColor:'#c4b5fd' }}>
                   <h3 className="font-black mb-3 flex items-center gap-2" style={{ color:P.purpleDark }}><Shield size={18} /> Before You Vote</h3>
                   <ul className="space-y-1.5">
-                    {['✅ Review all uploaded evidence (Evidence tab)','💬 Read the full chat history (Chat tab)','🗣️ Read the Team Discussion tab — and add your own notes','👥 Check both user trade profiles','📝 Write clear notes explaining your reasoning'].map(p => (
-                      <li key={p} className="text-sm font-semibold" style={{ color:P.purpleDark }}>{p}</li>
+                    {[
+                        { icon:CheckCircle, text:'Review all uploaded evidence (Evidence tab)' },
+                        { icon:MessageCircle, text:'Read the full chat history (Chat tab)' },
+                        { icon:MessageSquare, text:'Read the Team Discussion tab — and add your own notes' },
+                        { icon:Users, text:'Check both user trade profiles' },
+                        { icon:ClipboardEdit, text:'Write clear notes explaining your reasoning' },
+                      ].map(({ icon:Icon, text }) => (
+                      <li key={text} className="text-sm font-semibold flex items-start gap-2" style={{ color:P.purpleDark }}><Icon size={14} className="mt-0.5 flex-shrink-0" /> {text}</li>
                     ))}
                   </ul>
                 </div>
@@ -1066,8 +1088,8 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                 )}
 
                 <div>
-                  <label className="block text-base font-black text-gray-800 mb-2">
-                    📝 Your Reasoning <span className="text-red-500">*</span>
+                  <label className="block text-base font-black text-gray-800 mb-2 inline-flex items-center gap-1.5">
+                    <ClipboardEdit size={16} className="inline-block" /> Your Reasoning <span className="text-red-500">*</span>
                   </label>
                   <textarea value={resolutionNotes} onChange={e => setNotes(e.target.value)} rows={5}
                     placeholder="Write your full reasoning here — visible to the rest of the moderator team once you vote…"
@@ -1079,9 +1101,9 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                 </div>
                 <div className="grid md:grid-cols-3 gap-4">
                   {[
-                    { label:'✅ Buyer Wins', sub:'Release BTC to buyer', decision:'BUYER_WINS', color:P.success, bg:'#ECFDF5', border:'#6EE7B7' },
-                    { label:'✅ Seller Wins', sub:'Return BTC to seller', decision:'SELLER_WINS', color:P.info, bg:'#EFF6FF', border:'#93C5FD' },
-                    { label:'❌ Cancel Trade', sub:'Refund escrow to seller', decision:'CANCEL', color:P.danger, bg:'#FEF2F2', border:'#FCA5A5' },
+                    { label:<span className="inline-flex items-center gap-1.5"><CheckCircle size={16} className="inline-block" /> Buyer Wins</span>, sub:'Release BTC to buyer', decision:'BUYER_WINS', color:P.success, bg:'#ECFDF5', border:'#6EE7B7' },
+                    { label:<span className="inline-flex items-center gap-1.5"><CheckCircle size={16} className="inline-block" /> Seller Wins</span>, sub:'Return BTC to seller', decision:'SELLER_WINS', color:P.info, bg:'#EFF6FF', border:'#93C5FD' },
+                    { label:<span className="inline-flex items-center gap-1.5"><XCircle size={16} className="inline-block" /> Cancel Trade</span>, sub:'Refund escrow to seller', decision:'CANCEL', color:P.danger, bg:'#FEF2F2', border:'#FCA5A5' },
                   ].map(({ label, sub, decision, color, bg, border }) => (
                     <button key={decision} onClick={() => openConfirm(decision)} disabled={!resolutionNotes.trim()}
                       className="p-5 rounded-2xl border-2 text-left transition disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-xl hover:-translate-y-0.5"
@@ -1158,13 +1180,13 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                     </div>
                     {dispute.override_reason && (
                       <div className="p-4 rounded-xl border" style={{ backgroundColor:'#FFFBEB', borderColor:P.gold }}>
-                        <p className="text-sm font-black mb-1" style={{ color:'#92400E' }}>⚠️ Admin Override Reason</p>
+                        <p className="text-sm font-black mb-1 inline-flex items-center gap-1.5" style={{ color:'#92400E' }}><AlertTriangle size={13} className="inline-block" /> Admin Override Reason</p>
                         <p className="text-sm leading-relaxed" style={{ color:'#92400E' }}>{dispute.override_reason}</p>
                       </div>
                     )}
                     {(dispute.resolution_notes||dispute.dispute_notes) && (
                       <div className="p-4 rounded-xl border" style={{ backgroundColor:'#faf5ff', borderColor:'#c4b5fd' }}>
-                        <p className="text-sm font-black text-purple-700 mb-2">📝 Moderator's Ruling Notes</p>
+                        <p className="text-sm font-black text-purple-700 mb-2 inline-flex items-center gap-1.5"><ClipboardEdit size={14} className="inline-block" /> Moderator's Ruling Notes</p>
                         <p className="text-sm text-purple-800 leading-relaxed whitespace-pre-wrap">{dispute.resolution_notes||dispute.dispute_notes}</p>
                       </div>
                     )}
@@ -1313,12 +1335,12 @@ export default function ModeratorDashboard({ user }) {
             </h3>
             <div className="grid md:grid-cols-3 gap-4">
               {[
-                { title:'✅ Buyer Wins', c:'text-green-700', bg:'bg-green-50', pts:['Buyer has valid payment proof','Seller failed to release BTC','Seller sent fake/invalid item','Clear evidence of seller fraud'] },
-                { title:'✅ Seller Wins', c:'text-blue-700', bg:'bg-blue-50', pts:['Buyer never sent payment','Buyer provided fake proof','Buyer attempted scam','Seller provided valid item'] },
-                { title:'❌ Cancel Trade', c:'text-red-700', bg:'bg-red-50', pts:['Mutual misunderstanding','Technical platform issue','Insufficient evidence from both','Refund BTC to seller'] },
-              ].map(({ title, c, bg, pts }) => (
+                { icon:CheckCircle, title:'Buyer Wins', c:'text-green-700', bg:'bg-green-50', pts:['Buyer has valid payment proof','Seller failed to release BTC','Seller sent fake/invalid item','Clear evidence of seller fraud'] },
+                { icon:CheckCircle, title:'Seller Wins', c:'text-blue-700', bg:'bg-blue-50', pts:['Buyer never sent payment','Buyer provided fake proof','Buyer attempted scam','Seller provided valid item'] },
+                { icon:XCircle, title:'Cancel Trade', c:'text-red-700', bg:'bg-red-50', pts:['Mutual misunderstanding','Technical platform issue','Insufficient evidence from both','Refund BTC to seller'] },
+              ].map(({ icon:Icon, title, c, bg, pts }) => (
                 <div key={title} className={`${bg} rounded-xl p-4`}>
-                  <p className={`font-black text-base ${c} mb-3`}>{title}</p>
+                  <p className={`font-black text-base ${c} mb-3 inline-flex items-center gap-1.5`}><Icon size={16} className="inline-block" /> {title}</p>
                   <ul className="space-y-1.5">{pts.map(p => <li key={p} className={`text-sm ${c}`}>• {p}</li>)}</ul>
                 </div>
               ))}
@@ -1329,7 +1351,7 @@ export default function ModeratorDashboard({ user }) {
         {/* STATS */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mb-8">
           {[
-            { icon:AlertCircle, label:'Open Disputes',  value:open.length,       color:P.danger,   sub:open.length>0 ? '⚡ Needs action' : '✅ All clear' },
+            { icon:AlertCircle, label:'Open Disputes',  value:open.length,       color:P.danger,   sub:open.length>0 ? <span className="inline-flex items-center gap-1"><Zap size={13} className="inline-block" /> Needs action</span> : <span className="inline-flex items-center gap-1"><CheckCircle size={13} className="inline-block" /> All clear</span> },
             { icon:Clock,       label:'In Review',      value:inReview.length,   color:P.warning,  sub:'Being reviewed now' },
             { icon:CheckCircle, label:'Total Resolved', value:resolved.length,   color:P.success,  sub:'Click any to review' },
             { icon:TrendingUp,  label:'Total Volume',   value:fmtUsd(totalUsd),  color:P.purple,   sub:`₿ ${fmtBtc(totalBtc)} BTC` },
@@ -1344,7 +1366,7 @@ export default function ModeratorDashboard({ user }) {
 
         {/* OPEN DISPUTES */}
         <div className="bg-white rounded-2xl shadow p-6 mb-6">
-          <h2 className="text-2xl font-black mb-6" style={{ color:P.primary }}>🚨 Open Disputes ({open.length})</h2>
+          <h2 className="text-2xl font-black mb-6 inline-flex items-center gap-2" style={{ color:P.primary }}><AlertTriangle size={22} className="inline-block" /> Open Disputes ({open.length})</h2>
           {open.length === 0 ? (
             <div className="text-center py-12"><CheckCircle size={48} className="mx-auto mb-3 text-green-400" /><p className="text-lg font-bold text-gray-500">No open disputes — all clear!</p></div>
           ) : (
@@ -1383,7 +1405,7 @@ export default function ModeratorDashboard({ user }) {
         {/* IN REVIEW */}
         {inReview.length > 0 && (
           <div className="bg-white rounded-2xl shadow p-6 mb-6">
-            <h2 className="text-2xl font-black mb-6" style={{ color:P.primary }}>⏳ In Review ({inReview.length})</h2>
+            <h2 className="text-2xl font-black mb-6 inline-flex items-center gap-2" style={{ color:P.primary }}><Clock size={22} className="inline-block" /> In Review ({inReview.length})</h2>
             <div className="space-y-4">
               {inReview.map(d => (
                 <div key={d.id} className="border-2 border-yellow-300 bg-yellow-50 rounded-xl p-4 hover:shadow-md transition">
@@ -1496,7 +1518,7 @@ export default function ModeratorDashboard({ user }) {
                       </div>
                       {(d.resolution_notes||d.dispute_notes) && (
                         <div className="mt-3 p-3 rounded-xl border" style={{ backgroundColor:'#faf5ff', borderColor:'#c4b5fd' }}>
-                          <p className="text-xs font-black text-purple-700 mb-1">📝 Notes Preview</p>
+                          <p className="text-xs font-black text-purple-700 mb-1 inline-flex items-center gap-1.5"><ClipboardEdit size={13} className="inline-block" /> Notes Preview</p>
                           <p className="text-sm text-purple-800 leading-relaxed line-clamp-2">{d.resolution_notes||d.dispute_notes}</p>
                         </div>
                       )}

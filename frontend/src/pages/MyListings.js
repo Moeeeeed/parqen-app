@@ -11,6 +11,8 @@ import {
   ArrowRight, ShoppingCart, BarChart2,
   TrendingUp, Tag, CreditCard, ToggleLeft, ToggleRight,
   AlertTriangle, Copy, Zap, Minus, Share2,
+  Globe, Wallet, Circle, Pause, Inbox, BellOff,
+  Lightbulb, Link2, ClipboardEdit,
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -27,7 +29,7 @@ const C = {
 const CUR_SYM = {GHS:'₵',NGN:'₦',KES:'KSh',ZAR:'R',USD:'$',GBP:'£',EUR:'€',UGX:'USh',TZS:'TSh',XAF:'CFA',XOF:'CFA',RWF:'RF',ETB:'Br',AUD:'A$',CAD:'C$',SGD:'S$',INR:'₹'};
 const fmt    = (n,d=0) => new Intl.NumberFormat('en-US',{minimumFractionDigits:0,maximumFractionDigits:d}).format(n||0);
 const authH  = () => { const t=localStorage.getItem('token'); return t?{Authorization:`Bearer ${t}`}:{}; };
-const flag   = code => !code||code.length!==2?'🌍':code.toUpperCase().replace(/./g,c=>String.fromCodePoint(0x1F1E0+c.charCodeAt(0)-65));
+const flag   = code => !code||code.length!==2?<Globe size={13} className="inline-block" />:code.toUpperCase().replace(/./g,c=>String.fromCodePoint(0x1F1E0+c.charCodeAt(0)-65));
 
 const tabOf = l => {
   const lt = (l.listing_type||'').toUpperCase();
@@ -151,9 +153,9 @@ function EditModal({ listing, onClose, onSave, saving, walletBtc, btcPrice }) {
             <div className="flex items-center justify-between mb-2">
               <label className="text-sm font-black" style={{color:C.g700}}>Trade Range ({sym} {cur})</label>
               {isSell && walletCapLocal < Infinity && (
-                <span className="text-xs font-bold px-2 py-0.5 rounded-lg"
+                <span className="text-xs font-bold px-2 py-0.5 rounded-lg inline-flex items-center gap-1"
                   style={{backgroundColor:`${C.success}15`, color:C.success}}>
-                  💼 Wallet cap: {sym}{fmt(walletCapLocal)}
+                  <Wallet size={12} className="inline-block" /> Wallet cap: {sym}{fmt(walletCapLocal)}
                 </span>
               )}
             </div>
@@ -371,7 +373,9 @@ function OfferCard({ listing, onEdit, onDelete, onToggle, walletBtc }) {
             )}
           </div>
           <p className="text-xs font-bold mt-0.5" style={{color:isActive?C.success:C.g400}}>
-            {isActive?'🟢 Live':'⏸ Paused'} · #{String(listing.id||'').slice(0,6).toUpperCase()}
+            {isActive
+            ? <span className="inline-flex items-center gap-1"><Circle size={9} fill="currentColor" className="inline-block" /> Live</span>
+            : <span className="inline-flex items-center gap-1"><Pause size={10} className="inline-block" /> Paused</span>} · #{String(listing.id||'').slice(0,6).toUpperCase()}
           </p>
         </div>
 
@@ -431,7 +435,7 @@ function OfferCard({ listing, onEdit, onDelete, onToggle, walletBtc }) {
         <div className="mx-3 mb-3 rounded-xl overflow-hidden border-2" style={{borderColor:'#F59E0B'}}>
           <div className="flex items-center gap-2 px-3 py-2"
             style={{background:'linear-gradient(135deg,#92400E,#B45309)'}}>
-            <span className="text-sm">⚠️</span>
+            <AlertTriangle size={14} className="inline-block" style={{color:'#FDE68A'}} />
             <span className="text-xs font-black text-white tracking-wide">Offer Paused — Insufficient Balance</span>
           </div>
           <div className="px-3 py-2.5" style={{backgroundColor:'#FFFBEB'}}>
@@ -439,7 +443,7 @@ function OfferCard({ listing, onEdit, onDelete, onToggle, walletBtc }) {
               Your gift card buying offer was automatically paused because your PRAQEN wallet has less than <strong>$10 worth of Bitcoin</strong>.
             </p>
             <p className="text-xs font-bold mt-1.5" style={{color:'#B45309'}}>
-              👉 Top up your wallet with at least <strong>$10 in BTC</strong> and your offer will be reactivated automatically.
+              <ArrowRight size={12} className="inline-block mr-1" /> Top up your wallet with at least <strong>$10 in BTC</strong> and your offer will be reactivated automatically.
             </p>
           </div>
         </div>
@@ -450,7 +454,7 @@ function OfferCard({ listing, onEdit, onDelete, onToggle, walletBtc }) {
         <div className="mx-3 mb-3 rounded-xl overflow-hidden" style={{border:`2px solid ${C.danger}50`}}>
           <div className="flex items-center gap-2 px-3 py-2"
             style={{background:`linear-gradient(135deg,#991B1B,${C.danger})`}}>
-            <span className="text-sm">🔕</span>
+            <BellOff size={14} className="inline-block" style={{color:'#FECACA'}} />
             <span className="text-xs font-black text-white tracking-wide">Offer Paused — Inactivity Detected</span>
           </div>
           <div className="px-3 py-2.5" style={{backgroundColor:'#FEF2F2'}}>
@@ -506,7 +510,7 @@ function TabPanel({ listings, onEdit, onDelete, onToggle, onToggleAll, search, w
   if (listings.length === 0) {
     return (
       <div className="text-center py-10">
-        <p className="text-3xl mb-2">📭</p>
+        <Inbox size={42} className="inline-block mb-2" style={{color:C.g400}} />
         <p className="font-bold text-sm" style={{color:C.g700}}>No offers here yet</p>
         <p className="text-xs mt-1" style={{color:C.g400}}>Create an offer to get started</p>
       </div>
@@ -532,7 +536,7 @@ function TabPanel({ listings, onEdit, onDelete, onToggle, onToggleAll, search, w
 
       {filtered.length === 0 ? (
         <div className="text-center py-6 rounded-xl border" style={{borderColor:C.g200}}>
-          <p className="text-xl mb-1">🔍</p>
+          <Search size={22} className="inline-block mb-1" style={{color:C.g400}} />
           <p className="font-bold text-xs" style={{color:C.g700}}>No offers match your search</p>
         </div>
       ) : (
@@ -675,7 +679,7 @@ export default function MyListings({ user }) {
         setListings(prev=>prev.map(l=>l.id===id?{...l,status:current}:l));
         toast.error('Failed to update status');
       } else {
-        toast.success(`Offer ${next==='ACTIVE'?'activated ✅':'paused ⏸'}`);
+        toast.success(`Offer ${next==='ACTIVE'?'activated':'paused'}`);
       }
     } catch {
       setListings(prev=>prev.map(l=>l.id===id?{...l,status:current}:l));
@@ -690,7 +694,7 @@ export default function MyListings({ user }) {
       ids.map(id=>axios.patch(`${API_URL}/listings/${id}/status`,{status:targetStatus},{headers:authH()}))
     );
     const failed = results.filter(r=>r.status==='rejected').length;
-    if (failed===0) toast.success(`All offers ${targetStatus==='ACTIVE'?'activated ✅':'paused ⏸'}`);
+    if (failed===0) toast.success(`All offers ${targetStatus==='ACTIVE'?'activated':'paused'}`);
     else { toast.warn(`${failed} offer(s) failed to update`); load(); }
   };
 
@@ -761,7 +765,11 @@ export default function MyListings({ user }) {
             style={{backgroundColor:allAreActive?`${C.warn}08`:`${C.success}08`,borderColor:allAreActive?`${C.warn}30`:`${C.success}30`}}>
             <div className="min-w-0">
               <p className="text-xs font-black" style={{color:C.forest}}>
-                {allAreActive ? '⚡ All offers are live' : totalActive===0 ? '⏸ All offers are paused' : `${totalActive} of ${listings.length} offers active`}
+                {allAreActive
+                ? <span className="inline-flex items-center gap-1"><Zap size={12} /> All offers are live</span>
+                : totalActive===0
+                ? <span className="inline-flex items-center gap-1"><Pause size={12} /> All offers are paused</span>
+                : `${totalActive} of ${listings.length} offers active`}
               </p>
               <p className="text-xs mt-0.5" style={{color:C.g500}}>Toggle all offers at once</p>
             </div>
@@ -787,7 +795,7 @@ export default function MyListings({ user }) {
         {/* ── EMPTY STATE ── */}
         {listings.length === 0 && (
           <div className="bg-white rounded-2xl border p-10 text-center shadow-sm" style={{borderColor:C.g200}}>
-            <div className="text-5xl mb-4">📝</div>
+            <div className="mb-4 flex justify-center"><ClipboardEdit size={44} style={{color:C.g200}} /></div>
             <h3 className="font-black text-lg mb-2" style={{color:C.forest}}>No offers yet</h3>
             <p className="text-sm mb-5" style={{color:C.g500}}>Create your first offer to start earning on PRAQEN.</p>
             <button onClick={()=>navigate('/create-offer')}
@@ -879,13 +887,13 @@ export default function MyListings({ user }) {
             {/* ── TIPS ── */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {[
-                {icon:'💡',title:'Competitive margin gets more trades',desc:'Offers within ±5% of market rate receive 3× more trade requests.'},
-                {icon:'⚡',title:'Keep offers active',               desc:'Paused offers disappear from the marketplace. Activate to stay visible.'},
-                {icon:'🔗',title:'Share your offer link',             desc:'Send your offer link directly to buyers or sellers to skip the marketplace queue.'},
+                {icon:<Lightbulb size={14} style={{color:C.gold}} />,title:'Competitive margin gets more trades',desc:'Offers within ±5% of market rate receive 3× more trade requests.'},
+                {icon:<Zap size={14} style={{color:C.gold}} />,title:'Keep offers active',               desc:'Paused offers disappear from the marketplace. Activate to stay visible.'},
+                {icon:<Link2 size={14} style={{color:C.gold}} />,title:'Share your offer link',             desc:'Send your offer link directly to buyers or sellers to skip the marketplace queue.'},
               ].map(({icon,title,desc})=>(
                 <div key={title} className="flex items-start gap-2.5 p-3 rounded-xl border"
                   style={{backgroundColor:`${C.gold}06`,borderColor:`${C.gold}20`}}>
-                  <span className="text-base flex-shrink-0">{icon}</span>
+                  <span className="text-base flex-shrink-0 inline-flex items-center">{icon}</span>
                   <div>
                     <p className="text-xs font-black" style={{color:C.forest}}>{title}</p>
                     <p className="text-xs mt-0.5 leading-relaxed" style={{color:C.g500}}>{desc}</p>
