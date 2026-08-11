@@ -2,7 +2,9 @@
 import { useRates } from '../contexts/RatesContext';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowRight, BadgeCheck, RefreshCw, Lock, ChevronRight, ThumbsUp, ThumbsDown, Repeat2 } from 'lucide-react';
+import { ArrowRight, BadgeCheck, RefreshCw, Lock, ChevronRight, ThumbsUp, ThumbsDown, Repeat2,
+  Gift, CircleDollarSign, Smartphone, Landmark, CreditCard, Satellite, Search, Zap, Star,
+  Mail, Fingerprint, CheckCircle, Info, Video, Scale, AlertTriangle, MessageSquare, Send } from 'lucide-react';
 import { BadgeChip } from '../lib/badge';
 import { toast } from 'react-toastify';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
@@ -52,21 +54,21 @@ function Avatar({ user, size=48 }) {
 function getListingConfig(listing) {
   const type  = listing?.listing_type||'';
   const brand = listing?.gift_card_brand||'';
-  if (type.includes('GIFT')||brand) return { label:'Gift Card Trade', color:C.teal,  bg:'#CCFBF1', icon:'🎁', action:'Trade Gift Card' };
+  if (type.includes('GIFT')||brand) return { label:'Gift Card Trade', color:C.teal,  bg:'#CCFBF1', icon:<Gift size={14} className="inline-block" />, action:'Trade Gift Card' };
   if (type==='SELL'||type==='SELL_BITCOIN') return { label:'Buy Bitcoin', color:C.green, bg:C.mist,    icon:'₿',   action:'Buy BTC' };
-  return { label:'Sell Bitcoin', color:'#D97706', bg:'#FFFBEB', icon:'💰', action:'Sell BTC' };
+  return { label:'Sell Bitcoin', color:'#D97706', bg:'#FFFBEB', icon:<CircleDollarSign size={14} className="inline-block" />, action:'Sell BTC' };
 }
 
 function pmLabel(raw) {
   const m = String(raw||'').toLowerCase();
-  if (m.includes('mtn'))           return { icon:'📱', label:raw||'MTN Mobile Money' };
-  if (m.includes('vodafone'))      return { icon:'📱', label:raw||'Vodafone Cash' };
-  if (m.includes('mpesa')||m.includes('m-pesa')) return { icon:'📱', label:raw||'M-Pesa' };
-  if (m.includes('bank'))          return { icon:'🏦', label:raw||'Bank Transfer' };
-  if (m.includes('paypal'))        return { icon:'💰', label:raw||'PayPal' };
-  if (m.includes('opay'))          return { icon:'💳', label:'OPay' };
-  if (m.includes('palmpay'))       return { icon:'💳', label:'PalmPay' };
-  return { icon:'💳', label:raw||'Mobile Money' };
+  if (m.includes('mtn'))           return { icon:<Smartphone size={14} className="inline-block" />, label:raw||'MTN Mobile Money' };
+  if (m.includes('vodafone'))      return { icon:<Smartphone size={14} className="inline-block" />, label:raw||'Vodafone Cash' };
+  if (m.includes('mpesa')||m.includes('m-pesa')) return { icon:<Smartphone size={14} className="inline-block" />, label:raw||'M-Pesa' };
+  if (m.includes('bank'))          return { icon:<Landmark size={14} className="inline-block" />, label:raw||'Bank Transfer' };
+  if (m.includes('paypal'))        return { icon:<CircleDollarSign size={14} className="inline-block" />, label:raw||'PayPal' };
+  if (m.includes('opay'))          return { icon:<CreditCard size={14} className="inline-block" />, label:'OPay' };
+  if (m.includes('palmpay'))       return { icon:<CreditCard size={14} className="inline-block" />, label:'PalmPay' };
+  return { icon:<CreditCard size={14} className="inline-block" />, label:raw||'Mobile Money' };
 }
 
 // Seed listing from the marketplace localStorage cache so the page renders
@@ -189,7 +191,7 @@ const loadAll = useCallback(async (isBackground = false) => {
   if (loadError) return (
     <div className="min-h-screen flex items-center justify-center" style={{backgroundColor:C.mist}}>
       <div className="text-center px-6">
-        <p className="text-4xl mb-3">📡</p>
+        <Satellite size={48} className="mx-auto mb-3" style={{ color: C.g400 }} />
         <p className="font-black text-sm mb-2" style={{color:C.g800}}>Could not load offer</p>
         <p className="text-xs mb-4" style={{color:C.g500}}>Server may be busy. Please tap Try Again.</p>
         <button onClick={loadAll} className="px-6 py-2.5 rounded-xl text-white font-bold text-sm mr-2" style={{backgroundColor:C.green}}>Try Again</button>
@@ -200,7 +202,7 @@ const loadAll = useCallback(async (isBackground = false) => {
   if (!listing) return (
     <div className="min-h-screen flex items-center justify-center" style={{backgroundColor:C.mist}}>
       <div className="text-center">
-        <p className="text-4xl mb-3">🔍</p>
+        <Search size={48} className="mx-auto mb-3" style={{ color: C.g400 }} />
         <p className="font-black text-sm mb-3" style={{color:C.g800}}>Listing not found</p>
         <button onClick={()=>navigate('/buy-bitcoin')} className="px-5 py-2 rounded-xl text-white font-bold text-sm" style={{backgroundColor:C.green}}>Browse Offers</button>
       </div>
@@ -512,7 +514,7 @@ const loadAll = useCallback(async (isBackground = false) => {
               <div style={{ fontSize: 10, fontWeight: 700, color: C.g400, textTransform: 'uppercase', letterSpacing: 0.5 }}>Feedback</div>
             </div>
             <div style={{ padding: '10px 8px', textAlign: 'center', background: '#fff' }}>
-              <div style={{ fontSize: 13, fontWeight: 900, color: C.forest, marginBottom: 2 }}>⚡ {responseTime}</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 13, fontWeight: 900, color: C.forest, marginBottom: 2 }}><Zap size={13} style={{ color: C.gold }} />{responseTime}</div>
               <div style={{ fontSize: 10, fontWeight: 700, color: C.g400, textTransform: 'uppercase', letterSpacing: 0.5 }}>Response</div>
             </div>
           </div>
@@ -568,7 +570,7 @@ const loadAll = useCallback(async (isBackground = false) => {
                 {/* Rating bar */}
                 {rating > 0 && (
                   <div style={{ marginTop:12, background:'rgba(255,255,255,0.12)', borderRadius:10, padding:'8px 12px', display:'flex', alignItems:'center', gap:8 }}>
-                    <span style={{ fontSize:18 }}>⭐</span>
+                    <Star size={18} fill="currentColor" style={{ color: C.gold }} />
                     <div>
                       <span style={{ fontSize:18, fontWeight:900, color:'#fff', lineHeight:1 }}>{rating.toFixed(1)}</span>
                       <span style={{ fontSize:11, color:'rgba(255,255,255,0.6)', marginLeft:4, fontWeight:600 }}>/ 5.0 · {totalFeedback} reviews</span>
@@ -602,7 +604,11 @@ const loadAll = useCallback(async (isBackground = false) => {
                   <div style={{ fontSize:16, fontWeight:900, color:C.forest, marginBottom:2, lineHeight:1 }}>
                     {rating > 0 ? rating.toFixed(1) : '—'}
                   </div>
-                  <div style={{ fontSize:11, marginBottom:2 }}>{'⭐'.repeat(Math.round(rating))}</div>
+                  <div style={{ fontSize:11, marginBottom:2, display:'flex', alignItems:'center', justifyContent:'center', gap:2 }}>
+                    {Array.from({ length: Math.round(rating) }).map((_, i) => (
+                      <Star key={i} size={11} fill="currentColor" style={{ color: C.gold }} />
+                    ))}
+                  </div>
                   <div style={{ fontSize:10, fontWeight:700, color:C.g400, textTransform:'uppercase', letterSpacing:0.5 }}>Rating</div>
                 </div>
               </div>
@@ -612,9 +618,9 @@ const loadAll = useCallback(async (isBackground = false) => {
                 <p style={{ fontSize:10, fontWeight:800, color:C.g500, textTransform:'uppercase', letterSpacing:0.8, marginBottom:10, margin:'0 0 10px' }}>Verification</p>
                 <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                   {[
-                    { label:'Phone',  ok:hasPhone,  icon:'📱', yes:'Verified',    no:'Not verified' },
-                    { label:'Email',  ok:hasEmail,  icon:'✉️',  yes:'Verified',    no:'Not verified' },
-                    { label:'KYC ID', ok:hasKyc,    icon:'🪪',  yes:'100% Verified', no:'Not verified' },
+                    { label:'Phone',  ok:hasPhone,  icon:<Smartphone size={16} />,  yes:'Verified',    no:'Not verified' },
+                    { label:'Email',  ok:hasEmail,  icon:<Mail size={16} />,      yes:'Verified',    no:'Not verified' },
+                    { label:'KYC ID', ok:hasKyc,    icon:<Fingerprint size={16} />,    yes:'100% Verified', no:'Not verified' },
                   ].map(v => (
                     <div key={v.label} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 12px', borderRadius:10, background: v.ok ? '#F0FDF4' : C.g50, border:`1px solid ${v.ok ? '#BBF7D0' : C.g200}` }}>
                       <span style={{ fontSize:16, flexShrink:0 }}>{v.icon}</span>
@@ -845,7 +851,7 @@ const loadAll = useCallback(async (isBackground = false) => {
               {/* Low-balance advisory (soft warning, not a block) */}
               {sellerHasLowBalance && !tradeError && (
                 <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 10, background: '#FFFBEB', border: '1px solid #FDE68A', fontSize: 12, fontWeight: 700, color: '#92400E', display: 'flex', alignItems: 'flex-start', gap: 7 }}>
-                  <span style={{ flexShrink: 0, fontSize: 14 }}>⚡</span>
+                  <Zap size={14} style={{ flexShrink: 0, color: '#B45309' }} />
                   <span>Seller's available balance may be low — try a smaller amount if the trade fails to open.</span>
                 </div>
               )}
@@ -853,7 +859,7 @@ const loadAll = useCallback(async (isBackground = false) => {
               {/* Inline trade error */}
               {tradeError && (
                 <div style={{ marginBottom:14, padding:'10px 14px', borderRadius:10, background:'#FEF2F2', border:'1.5px solid #FECACA', fontSize:13, fontWeight:700, color:'#B91C1C', display:'flex', alignItems:'flex-start', gap:8 }}>
-                  <span style={{ flexShrink:0, fontSize:16 }}>⚠️</span>
+                  <span style={{ flexShrink:0 }}><AlertTriangle size={16} style={{ color:'#B91C1C' }} /></span>
                   <span>{tradeError}</span>
                 </div>
               )}
@@ -866,7 +872,7 @@ const loadAll = useCallback(async (isBackground = false) => {
                 </div>
               ) : sellerCantFulfillMin ? (
                 <div style={{ padding:'14px', borderRadius:14, background:'#FEF2F2', border:'2px solid #FCA5A5', textAlign:'center' }}>
-                  <p style={{ fontSize:14, fontWeight:900, color:'#B91C1C', margin:'0 0 4px' }}>⚠️ Offer unavailable</p>
+                  <p style={{ fontSize:14, fontWeight:900, color:'#B91C1C', margin:'0 0 4px' }}><AlertTriangle size={14} className="inline-block align-text-bottom" /> Offer unavailable</p>
                   <p style={{ fontSize:12, color:'#B91C1C', margin:0 }}>The seller's available balance can't currently cover this offer's minimum amount. Try another offer.</p>
                 </div>
               ) : (
@@ -893,7 +899,7 @@ const loadAll = useCallback(async (isBackground = false) => {
 
               {/* Simple steps */}
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.g100}` }}>
-                {[['🔒','Escrow locks'],['💬','Chat opens'],['💸','Send payment'],['✅','BTC released']].map(([e,t])=>(
+                {[[<Lock size={18} />, 'Escrow locks'], [<MessageSquare size={18} />, 'Chat opens'], [<Send size={18} />, 'Send payment'], [<CheckCircle size={18} />, 'BTC released']].map(([e,t])=>(
                   <div key={t} style={{ textAlign:'center', flex:1 }}>
                     <div style={{ fontSize:18, marginBottom:3 }}>{e}</div>
                     <div style={{ fontSize:10, fontWeight:700, color:C.g400, lineHeight:1.3 }}>{t}</div>
@@ -907,7 +913,7 @@ const loadAll = useCallback(async (isBackground = false) => {
         {/* ── Multi-offer info banner ── */}
         {!isOwner && !isGiftCard && (
           <div style={{ marginTop: 14, borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'flex-start', gap: 9, background: '#EFF6FF', border: '1px solid #BFDBFE' }}>
-            <span style={{ fontSize: 15, flexShrink: 0, marginTop: 1 }}>ℹ️</span>
+            <Info size={15} style={{ flexShrink: 0, marginTop: 1, color: '#1E40AF' }} />
             <p style={{ margin: 0, fontSize: 11.5, fontWeight: 700, color: '#1E40AF', lineHeight: 1.6 }}>
               This seller may have <strong>other active offers</strong> on the marketplace — they will remain available to other buyers even after your trade starts. Bitcoin is only locked at the moment your trade is opened.
             </p>
@@ -919,7 +925,7 @@ const loadAll = useCallback(async (isBackground = false) => {
           <div style={{ marginTop:16, borderRadius:16, overflow:'hidden', border:'1.5px solid #F59E0B', boxShadow:'0 4px 24px rgba(245,158,11,0.13)' }}>
             {/* Warning header */}
             <div style={{ background:'linear-gradient(135deg,#F59E0B,#D97706)', padding:'10px 14px', display:'flex', alignItems:'center', gap:8 }}>
-              <span style={{ fontSize:18 }}>⚠️</span>
+              <AlertTriangle size={18} style={{ color:'#fff' }} />
               <span style={{ fontWeight:900, fontSize:13, color:'#fff', letterSpacing:0.3 }}>Gift Card Warning!</span>
             </div>
             {/* Warning body */}
@@ -929,10 +935,10 @@ const loadAll = useCallback(async (isBackground = false) => {
               </p>
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                 {[
-                  { icon:'🎥', text:'Do a video recording of your card when you start this trade.' },
-                  { icon:'✅', text:'Make sure your card is correct and valid before sending.' },
-                  { icon:'📹', text:'Stay on the video recording till the end of this trade — it may be needed for moderator review.' },
-                  { icon:'⚖️', text:'Praqen is NOT responsible for any loss if you do not follow these simple rules.' },
+                  { icon:<Video size={14} />, text:'Do a video recording of your card when you start this trade.' },
+                  { icon:<CheckCircle size={14} />, text:'Make sure your card is correct and valid before sending.' },
+                  { icon:<Video size={14} />, text:'Stay on the video recording till the end of this trade — it may be needed for moderator review.' },
+                  { icon:<Scale size={14} />, text:'Praqen is NOT responsible for any loss if you do not follow these simple rules.' },
                 ].map((item, i) => (
                   <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:8, padding:'8px 10px', borderRadius:10, background: i === 3 ? '#FEE2E2' : '#FEF3C7', border: i === 3 ? '1px solid #FCA5A5' : '1px solid #FDE68A' }}>
                     <span style={{ fontSize:14, flexShrink:0, marginTop:1 }}>{item.icon}</span>

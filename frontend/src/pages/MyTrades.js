@@ -6,7 +6,9 @@ import {
   ArrowRight, RefreshCw, TrendingUp, Activity,
   AlertTriangle, Eye, MessageCircle, Zap, Timer,
   Filter, Search, DollarSign, X, Bell, ChevronRight, SlidersHorizontal,
-  ArrowUpDown, Calendar, ChevronDown
+  ArrowUpDown, Calendar, ChevronDown,
+  Banknote, BarChart3, CreditCard, Gift, Globe, Hourglass, Lock,
+  ShoppingCart, Siren, Unlock, User
 } from 'lucide-react';
 import { getStatusStyle } from '../components/Notifications';
 
@@ -32,7 +34,18 @@ const fmtAge = d => {
   if(s<86400)return`${~~(s/3600)}h ago`;
   return`${~~(s/86400)}d ago`;
 };
-const flag = code => !code||code.length!==2?'🌍':code.toUpperCase().replace(/./g,c=>String.fromCodePoint(0x1F1E0+c.charCodeAt(0)-65));
+// Country flags are emoji, so render the ISO country code as a small chip instead
+const flag = code => (code && code.length===2) ? code.toUpperCase() : '';
+function CountryBadge({ code }) {
+  const c = (code||'').toUpperCase();
+  const ok = /^[A-Z]{2}$/.test(c);
+  return (
+    <span className="inline-flex items-center align-middle rounded-md px-1.5 py-px mr-0.5 text-[9px] font-black tracking-wider"
+      style={{ backgroundColor:C.g100, color:C.g600, border:`1px solid ${C.g200}` }}>
+      {ok ? c : <Globe size={9} style={{display:'block'}}/>}
+    </span>
+  );
+}
 const tradeTypeOf = t => {
   const lt = (t.listing_type||t.listing?.listing_type||'').toUpperCase();
   if (lt.includes('GIFT')) return 'gift';
@@ -131,11 +144,13 @@ function ActiveAlert({trade, userId, onDismiss, onExpire}) {
   };
   const urgent = timeLeft!==null&&timeLeft<300&&timeLeft>0;
 
+  const RoleIcon = isPaid ? (isBuyer ? CheckCircle : Unlock) : (isBuyer ? Banknote : Hourglass);
+
   const roleMsg = isBuyer
-    ? isPaid ? `✅ Payment sent — awaiting Bitcoin release from ${cp?.username||'seller'}`
-             : `💸 Send ${sym}${fmt(localAmt)} ${cur} via ${payMethod} to ${cp?.username||'seller'}`
-    : isPaid ? `🔓 ${cp?.username||'Buyer'} paid! Check your ${payMethod} and RELEASE BITCOIN`
-             : `⏳ ${cp?.username||'Buyer'} is sending ${sym}${fmt(localAmt)} via ${payMethod}…`;
+    ? isPaid ? <><RoleIcon size={12} className="inline mr-1" style={{color:C.success}}/>Payment sent — awaiting Bitcoin release from {cp?.username||'seller'}</>
+             : <><RoleIcon size={12} className="inline mr-1" style={{color:C.amber}}/>Send {sym}{fmt(localAmt)} {cur} via {payMethod} to {cp?.username||'seller'}</>
+    : isPaid ? <><RoleIcon size={12} className="inline mr-1" style={{color:C.success}}/>{cp?.username||'Buyer'} paid! Check your {payMethod} and RELEASE BITCOIN</>
+             : <><RoleIcon size={12} className="inline mr-1" style={{color:C.g500}}/>{cp?.username||'Buyer'} is sending {sym}{fmt(localAmt)} via {payMethod}…</>;
 
   return(
     <div className="rounded-2xl overflow-hidden shadow-xl border-2"
@@ -147,9 +162,9 @@ function ActiveAlert({trade, userId, onDismiss, onExpire}) {
         <div className="w-2 h-2 rounded-full flex-shrink-0 animate-pulse" style={{backgroundColor:C.online}}/>
         <Bell size={12} className="text-white flex-shrink-0"/>
         <span className="text-xs font-black text-white flex-1">
-          {isDisputed?'🚨 DISPUTE ACTIVE — SUPPORT REVIEWING'
-           :isGift?'🎁 GIFT CARD TRADE — ACTION REQUIRED'
-           :'⚡ ACTIVE TRADE — ACTION REQUIRED'}
+          {isDisputed?<><Siren size={12} className="inline mr-1.5"/>DISPUTE ACTIVE — SUPPORT REVIEWING</>
+           :isGift?<><Gift size={12} className="inline mr-1.5"/>GIFT CARD TRADE — ACTION REQUIRED</>
+           :<><Zap size={12} className="inline mr-1.5"/>ACTIVE TRADE — ACTION REQUIRED</>}
         </span>
         {timeLeft!==null&&!isPaid&&!isDisputed&&(
           <span className={`text-xs font-black px-2.5 py-0.5 rounded-full flex-shrink-0 ${urgent?'animate-pulse':''}`}
@@ -171,7 +186,9 @@ function ActiveAlert({trade, userId, onDismiss, onExpire}) {
               <div className="flex items-center gap-2 mb-1 flex-wrap">
                 <span className="text-xs font-black px-2 py-0.5 rounded-full"
                   style={{backgroundColor:`${typeColor}20`,color:typeColor}}>
-                  {isGift?'🎁 GIFT CARD':isBuyer?'🛒 YOU ARE BUYING':'💰 YOU ARE SELLING'}
+                  {isGift?<><Gift size={10} className="inline mr-1"/>GIFT CARD</>
+                  :isBuyer?<><ShoppingCart size={10} className="inline mr-1"/>YOU ARE BUYING</>
+                  :<><Banknote size={10} className="inline mr-1"/>YOU ARE SELLING</>}
                 </span>
                 <span className="text-xs font-black px-2 py-0.5 rounded-full"
                   style={{backgroundColor:getStatusStyle(trade.status, trade.cancel_reason).bg,color:getStatusStyle(trade.status, trade.cancel_reason).color}}>{st.label}</span>
@@ -196,7 +213,7 @@ function ActiveAlert({trade, userId, onDismiss, onExpire}) {
               {isBuyer?'Seller':'Buyer'}
             </p>
             <p className="text-xs font-black" style={{color:C.forest}}>
-              {cpFlag} {cp?.username||'—'}
+              {<CountryBadge code={cpFlag}/>} {cp?.username||'—'}
             </p>
           </div>
           <div className="px-3 py-2.5 text-center border-r" style={{borderColor:C.g100}}>
@@ -228,7 +245,7 @@ function ActiveAlert({trade, userId, onDismiss, onExpire}) {
             style={{borderColor:C.danger,backgroundColor:`${C.danger}08`}}>
             <AlertTriangle size={12} style={{color:C.danger,flexShrink:0}}/>
             <p className="text-xs font-black" style={{color:C.danger}}>
-              ⚠️ Under 5 minutes left! Trade auto-cancels at 00:00 — BTC returns to wallet instantly.
+              Under 5 minutes left! Trade auto-cancels at 00:00 — BTC returns to wallet instantly.
             </p>
           </div>
         )}
@@ -245,7 +262,9 @@ function TradeCard({trade, userId}) {
   const active   = isActive(trade.status);
   const isGift   = tradeTypeOf(trade)==='gift';
   const typeColor= isGift ? C.purple : isBuyer ? C.amber : C.green;
-  const typeLabel= isGift ? '🎁 GIFT CARD' : isBuyer ? '🛒 BUYING BTC' : '💰 SELLING BTC';
+  const typeLabel = isGift ? <><Gift size={10} className="inline mr-1"/>GIFT CARD</>
+    : isBuyer ? <><ShoppingCart size={10} className="inline mr-1"/>BUYING BTC</>
+    : <><Banknote size={10} className="inline mr-1"/>SELLING BTC</>;
 
   const lcur     = trade.local_currency||trade.currency||trade.listing?.currency||'';
   const lsym     = SYM[lcur]||'';
@@ -283,28 +302,28 @@ function TradeCard({trade, userId}) {
       <div className="px-4 py-3 space-y-2.5">
         <div className="flex justify-between items-center">
           <span className="text-xs font-bold uppercase" style={{color:C.g500}}>
-            👤 {isBuyer?'Seller':'Buyer'}
+            <User size={10} className="inline mr-1"/>{isBuyer?'Seller':'Buyer'}
           </span>
           <span className="font-bold text-sm" style={{color:C.forest}}>
-            {cpFlag} {cp?.username||'—'}
+            {<CountryBadge code={cpFlag}/>} {cp?.username||'—'}
           </span>
         </div>
         <div className="flex justify-between items-center">
-          <span className="text-xs font-bold uppercase" style={{color:C.g500}}>💳 Payment</span>
+          <span className="text-xs font-bold uppercase" style={{color:C.g500}}><CreditCard size={10} className="inline mr-1"/>Payment</span>
           <span className="text-sm font-medium" style={{color:C.g700}}>{trade.payment_method||'—'}</span>
         </div>
         <div className="flex justify-between items-center">
           <span className="text-xs font-bold uppercase" style={{color:C.g500}}>
-            💵 {isBuyer?'You Pay':'Buyer Pays'}
+            <Banknote size={10} className="inline mr-1"/>{isBuyer?'You Pay':'Buyer Pays'}
           </span>
           <span className="font-black text-sm" style={{color:C.forest}}>{payDisplay}</span>
         </div>
         <div className="flex justify-between items-center">
-          <span className="text-xs font-bold uppercase" style={{color:C.g500}}>🔒 BTC Escrow</span>
+          <span className="text-xs font-bold uppercase" style={{color:C.g500}}><Lock size={10} className="inline mr-1"/>BTC Escrow</span>
           <span className="font-black text-sm" style={{color:C.amber}}>₿{btcAmt.toFixed(8)}</span>
         </div>
         <div className="flex justify-between items-center pt-1 border-t" style={{borderColor:C.g100}}>
-          <span className="text-xs font-bold uppercase" style={{color:C.g500}}>✅ You Receive</span>
+          <span className="text-xs font-bold uppercase" style={{color:C.g500}}><CheckCircle size={10} className="inline mr-1"/>You Receive</span>
           <span className="font-black text-sm" style={{color:isBuyer?C.success:typeColor}}>
             {isBuyer ? `₿${btcNet.toFixed(8)}` : payDisplay}
           </span>
@@ -336,7 +355,7 @@ function ActiveTradeModal({ trades, userId, onClose }) {
           <div className="w-3 h-3 rounded-full animate-pulse flex-shrink-0" style={{backgroundColor:C.online}}/>
           <Bell size={16} className="text-white flex-shrink-0"/>
           <div className="flex-1 min-w-0">
-            <p className="text-white font-black text-sm">⚡ You Have {trades.length} Active Trade{trades.length>1?'s':''}</p>
+            <p className="text-white font-black text-sm"><Zap size={13} className="inline mr-1"/>You Have {trades.length} Active Trade{trades.length>1?'s':''}</p>
             <p className="text-xs" style={{color:'rgba(255,255,255,0.7)'}}>Action required — 30 min window per trade</p>
           </div>
           <button onClick={onClose} className="text-white/50 hover:text-white transition flex-shrink-0">
@@ -353,7 +372,9 @@ function ActiveTradeModal({ trades, userId, onClose }) {
             const cpFlag   = flag(cp?.country_code||trade.listing?.country_code||'');
             const isGift   = tradeTypeOf(trade)==='gift';
             const typeColor= isGift ? C.purple : isBuyer ? C.amber : C.green;
-            const typeLabel= isGift ? '🎁 GIFT CARD' : isBuyer ? '🛒 BUYING BTC' : '💰 SELLING BTC';
+            const typeLabel = isGift ? <><Gift size={10} className="inline mr-1"/>GIFT CARD</>
+              : isBuyer ? <><ShoppingCart size={10} className="inline mr-1"/>BUYING BTC</>
+              : <><Banknote size={10} className="inline mr-1"/>SELLING BTC</>;
             const cur      = trade.local_currency||trade.currency||'';
             const sym      = SYM[cur]||'';
             const localAmt = trade.amount_local||trade.local_amount||0;
@@ -375,29 +396,29 @@ function ActiveTradeModal({ trades, userId, onClose }) {
 
                 <div className="px-4 py-3 space-y-2 bg-white">
                   <div className="flex justify-between text-xs">
-                    <span style={{color:C.g500}}>👤 {isBuyer?'Seller':'Buyer'}</span>
-                    <span className="font-bold" style={{color:C.forest}}>{cpFlag} {cpName}</span>
+                    <span style={{color:C.g500}}><User size={10} className="inline mr-1"/>{isBuyer?'Seller':'Buyer'}</span>
+                    <span className="font-bold" style={{color:C.forest}}>{<CountryBadge code={cpFlag}/>} {cpName}</span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span style={{color:C.g500}}>💳 Payment</span>
+                    <span style={{color:C.g500}}><CreditCard size={10} className="inline mr-1"/>Payment</span>
                     <span className="font-bold">{trade.payment_method||'—'}</span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span style={{color:C.g500}}>💵 {isBuyer?'You Pay':'Buyer Pays'}</span>
+                    <span style={{color:C.g500}}><Banknote size={10} className="inline mr-1"/>{isBuyer?'You Pay':'Buyer Pays'}</span>
                     <span className="font-black" style={{color:C.forest}}>{payDisp}</span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span style={{color:C.g500}}>🔒 BTC Escrow</span>
+                    <span style={{color:C.g500}}><Lock size={10} className="inline mr-1"/>BTC Escrow</span>
                     <span className="font-black" style={{color:C.amber}}>₿{btcAmt.toFixed(8)}</span>
                   </div>
                   <div className="flex justify-between text-xs pt-1 border-t" style={{borderColor:C.g100}}>
-                    <span style={{color:C.g500}}>✅ You Receive</span>
+                    <span style={{color:C.g500}}><CheckCircle size={10} className="inline mr-1"/>You Receive</span>
                     <span className="font-black" style={{color:isBuyer?C.success:typeColor}}>
                       {isBuyer?`₿${btcNet.toFixed(8)}`:payDisp}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span style={{color:C.g500}}>📊 Status</span>
+                    <span style={{color:C.g500}}><BarChart3 size={10} className="inline mr-1"/>Status</span>
                     <span className="font-bold px-2 py-0.5 rounded-full"
                       style={{backgroundColor:getStatusStyle(trade.status, trade.cancel_reason).bg,color:getStatusStyle(trade.status, trade.cancel_reason).color}}>{st.label}</span>
                   </div>
@@ -739,17 +760,18 @@ export default function MyTrades({user}) {
                 <p className="text-xs font-black uppercase tracking-wide mb-1.5" style={{color:C.g400}}>Trade Type</p>
                 <div className="flex gap-1 flex-wrap">
                   {[
-                    ['all',     'All Types'],
-                    ['buying',  '🛒 Buying'],
-                    ['selling', '💰 Selling'],
-                    ['gift',    '🎁 Gift Cards'],
-                  ].map(([val,lbl])=>(
+                    ['all',     'All Types',     null],
+                    ['buying',  'Buying',        ShoppingCart],
+                    ['selling', 'Selling',       Banknote],
+                    ['gift',    'Gift Cards',    Gift],
+                  ].map(([val,lbl,TypeIcon])=>(
                     <button key={val} onClick={()=>setTypeFilter(val)}
                       className="px-3 py-1.5 rounded-xl text-xs font-bold transition"
                       style={{
                         backgroundColor:typeFilter===val?C.forest:C.g50,
                         color:typeFilter===val?C.white:C.g600,
                       }}>
+                      {TypeIcon && <TypeIcon size={10} className="inline mr-1"/>}
                       {lbl}
                     </button>
                   ))}
@@ -844,7 +866,7 @@ export default function MyTrades({user}) {
           </div>
         ) : trades.length===0?(
           <div className="bg-white rounded-2xl border p-10 text-center shadow-sm" style={{borderColor:C.g200}}>
-            <div className="text-5xl mb-4">🔄</div>
+            <RefreshCw size={44} className="mx-auto mb-4" style={{color:C.g200}}/>
             <h3 className="font-black text-lg mb-2" style={{color:C.forest}}>No trades yet</h3>
             <p className="text-sm mb-5" style={{color:C.g500}}>
               Browse the marketplace and start your first Bitcoin trade.
@@ -864,7 +886,7 @@ export default function MyTrades({user}) {
           </div>
         ) : filtered.length===0 ? (
           <div className="bg-white rounded-2xl border p-8 text-center" style={{borderColor:C.g200}}>
-            <p className="text-3xl mb-2">🔍</p>
+            <Search size={28} className="mx-auto mb-2" style={{color:C.g200}}/>
             <p className="font-bold text-sm" style={{color:C.g700}}>No trades match your filter</p>
           </div>
         ) : (

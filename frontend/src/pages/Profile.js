@@ -15,7 +15,8 @@ import {
   ThumbsDown, Target, Smartphone, ArrowRight,
   Bitcoin, ShoppingCart, Gift, Plus, Tag,
   Filter, ArrowUpDown, Zap, Briefcase, Medal,
-  Crown, Diamond, Flame, Rocket
+  Crown, Diamond, Flame, Rocket,
+  AlertTriangle, User, Info, XCircle, Lightbulb, PartyPopper
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { BadgeChip, TRUST_MAP, BADGE_ORDER, BADGE_THRESHOLDS, renderBadgeIcon } from '../lib/badge';
@@ -341,7 +342,7 @@ export default function Profile({ userId: propUserId }) {
   if (!loading && loadError) return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: C.mist }}>
       <div className="bg-white rounded-2xl p-8 text-center max-w-sm w-full shadow-sm" style={{ border: `1px solid ${C.g200}` }}>
-        <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: '#FFF7ED' }}><span style={{ fontSize: 32 }}>⚠️</span></div>
+        <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: '#FFF7ED' }}><AlertTriangle size={30} style={{ color: '#F59E0B' }} /></div>
         <h2 className="font-black text-lg mb-2" style={{ color: C.forest }}>Couldn't Load Profile</h2>
         <p className="text-sm mb-6 leading-relaxed" style={{ color: C.g500 }}>Something went wrong loading this profile. Please check your connection and try again.</p>
         <div className="flex flex-col gap-2">
@@ -354,7 +355,7 @@ export default function Profile({ userId: propUserId }) {
   if (!loading && !user) return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: C.mist }}>
       <div className="bg-white rounded-2xl p-8 text-center max-w-sm w-full shadow-sm" style={{ border: `1px solid ${C.g200}` }}>
-        <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: '#FEF2F2' }}><span style={{ fontSize: 32 }}>👤</span></div>
+        <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: '#FEF2F2' }}><User size={30} style={{ color: '#EF4444' }} /></div>
         <h2 className="font-black text-lg mb-2" style={{ color: C.forest }}>Profile Not Found</h2>
         <p className="text-sm mb-6 leading-relaxed" style={{ color: C.g500 }}>This profile doesn't exist or may have been removed.</p>
         <button onClick={() => navigate('/buy-bitcoin')} className="px-5 py-2.5 rounded-xl text-white font-bold text-sm" style={{ backgroundColor: C.green }}>Go to Marketplace</button>
@@ -660,7 +661,7 @@ export default function Profile({ userId: propUserId }) {
                               style={{ borderColor: form.username ? C.sage : C.g200, color: C.g800 }} />
                           )}
                           <p className="text-[11px] mt-1 flex items-center gap-1" style={{ color: user.username_changed ? C.g400 : '#B45309' }}>
-                            {user.username_changed ? <><Lock size={8} />Permanently locked</> : <>⚠ One-time change — choose carefully</>}
+                            {user.username_changed ? <><Lock size={8} />Permanently locked</> : <><AlertTriangle size={10} style={{ color: 'currentColor' }} />One-time change — choose carefully</>}
                           </p>
                         </div>
                         <div>
@@ -677,7 +678,7 @@ export default function Profile({ userId: propUserId }) {
                               style={{ borderColor: form.full_name ? C.sage : C.g200, color: C.g800 }} />
                           )}
                           <p className="text-[11px] mt-1 flex items-center gap-1" style={{ color: kycOk ? C.g400 : C.g500 }}>
-                            {kycOk ? <><Lock size={8} />Locked after ID verification</> : <>ℹ Locks permanently after ID verification</>}
+                            {kycOk ? <><Lock size={8} />Locked after ID verification</> : <><Info size={10} style={{ color: 'currentColor' }} />Locks permanently after ID verification</>}
                           </p>
                         </div>
                       </div>
@@ -1077,7 +1078,7 @@ export default function Profile({ userId: propUserId }) {
             <div style={{ maxWidth: 640, display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div style={{ borderRadius: 20, padding: 24, background: verifPct === 100 ? `linear-gradient(135deg,${C.success},${C.mint})` : `linear-gradient(135deg,${C.forest},${C.green})`, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <p style={{ fontWeight: 900, fontSize: 18, fontFamily: "'Syne',sans-serif" }}>{verifPct === 100 ? '✅ Fully Verified!' : 'Complete Verification'}</p>
+                  <p style={{ fontWeight: 900, fontSize: 18, fontFamily: "'Syne',sans-serif" }}>{verifPct === 100 ? <span className="inline-flex items-center gap-1.5"><CheckCircle size={16} /> Fully Verified!</span> : 'Complete Verification'}</p>
                   <p style={{ opacity: 0.7, fontSize: 12, marginTop: 4 }}>{[emailOk, phoneOk, kycOk].filter(Boolean).length}/3 steps — unlock higher trade limits</p>
                 </div>
                 <p style={{ fontWeight: 900, fontSize: 36, lineHeight: 1 }}>{verifPct}%</p>
@@ -1086,20 +1087,20 @@ export default function Profile({ userId: propUserId }) {
               {[
                 {
                   ok: emailOk, icon: <Mail size={18} />, title: 'Email',
-                  status: emailOk ? '✅ Verified' : '❌ Not Verified', statusColor: emailOk ? C.success : C.danger,
+                  status: emailOk ? <span className="inline-flex items-center gap-1"><CheckCircle size={11} /> Verified</span> : <span className="inline-flex items-center gap-1"><XCircle size={11} /> Not Verified</span>, statusColor: emailOk ? C.success : C.danger,
                   detail: emailOk ? `${user.email || ''} — required to create offers & trade` : 'Go to Settings → Verification to verify your email.',
                   lockIcon: emailOk && <Lock size={14} style={{ color: C.success }} />
                 },
                 {
                   ok: phoneOk, icon: <Phone size={18} />, title: 'Phone Number',
-                  status: phoneOk ? '✅ Verified' : user.phone ? '⏳ Under Review' : '⚠️ Not Added',
+                  status: phoneOk ? <span className="inline-flex items-center gap-1"><CheckCircle size={11} /> Verified</span> : user.phone ? <span className="inline-flex items-center gap-1"><Clock size={11} /> Under Review</span> : <span className="inline-flex items-center gap-1"><AlertTriangle size={11} /> Not Added</span>,
                   statusColor: phoneOk ? C.success : user.phone ? C.warn : C.g400,
                   detail: phoneOk ? `${user.phone || ''} — verified` : user.phone ? `${user.phone} — waiting for approval` : 'Go to Settings → Verification to add your phone.',
                   lockIcon: phoneOk ? <Lock size={14} style={{ color: C.success }} /> : user.phone ? <Clock size={14} style={{ color: C.warn }} /> : null
                 },
                 {
                   ok: kycOk, icon: <FileText size={18} />, title: 'Identity (KYC)',
-                  status: kycOk ? '✓ Verified' : user.kyc_status === 'pending' ? '⏳ Under Review' : 'Not Submitted',
+                  status: kycOk ? <span className="inline-flex items-center gap-1"><CheckCircle size={11} /> Verified</span> : user.kyc_status === 'pending' ? <span className="inline-flex items-center gap-1"><Clock size={11} /> Under Review</span> : 'Not Submitted',
                   statusColor: kycOk ? C.success : user.kyc_status === 'pending' ? C.warn : C.g400,
                   detail: kycOk ? 'ID verified — Advanced & VIP limits unlocked' : user.kyc_status === 'pending' ? 'Documents submitted — waiting for approval' : 'Go to Settings → Verification to upload your ID.',
                   lockIcon: kycOk ? <Lock size={14} style={{ color: C.success }} /> : user.kyc_status === 'pending' ? <Clock size={14} style={{ color: C.warn }} /> : null
@@ -1237,7 +1238,7 @@ export default function Profile({ userId: propUserId }) {
                     </p>
                     <p style={{ opacity: 0.6, fontSize: 12, marginTop: 4 }}>
                       {earned.length === 0 ? 'Complete tasks below to start earning badges' :
-                        earned.length === BADGE_DEFS.length ? '🎉 All badges earned — legendary status!' :
+                        earned.length === BADGE_DEFS.length ? <span className="inline-flex items-center gap-1"><PartyPopper size={12} /> All badges earned — legendary status!</span> :
                           `${earned.length} earned · ${BADGE_DEFS.length - earned.length} more to unlock`}
                     </p>
                   </div>
@@ -1326,15 +1327,15 @@ export default function Profile({ userId: propUserId }) {
               {earned.length < BADGE_DEFS.length && own && (
                 <div style={{ borderRadius: 18, padding: 20, border: `1.5px solid ${C.gold}40`, background: 'linear-gradient(135deg,#FFFBEB,#FFF7ED)' }}>
                   <div style={{ display: 'flex', gap: 12 }}>
-                    <span style={{ fontSize: 22, flexShrink: 0 }}>💡</span>
+                    <span style={{ fontSize: 22, flexShrink: 0 }}><Lightbulb size={22} style={{ color: '#F59E0B' }} /></span>
                     <div>
                       <p style={{ fontWeight: 900, fontSize: 13, color: '#92400E', marginBottom: 10 }}>Tips to earn badges faster</p>
                       {[
-                        ['✅', 'Start with Verification — completing KYC unlocks Verified Identity badge immediately.'],
-                        ['📈', 'Every completed trade counts toward Top Trader (100 trades) and High Volume ($10k).'],
-                        ['⚡', 'Reply to trade requests in under 5 minutes consistently to earn Fast Responder.'],
-                        ['🔒', 'Complete 20+ trades with 98%+ positive feedback to unlock Trusted Seller.'],
-                        ['🎖️', 'Veteran badge is time-based — it unlocks automatically after your account turns 1 year old.'],
+                        [<CheckCircle size={13} className="inline-block" />, 'Start with Verification — completing KYC unlocks Verified Identity badge immediately.'],
+                        [<TrendingUp size={13} className="inline-block" />, 'Every completed trade counts toward Top Trader (100 trades) and High Volume ($10k).'],
+                        [<Zap size={13} className="inline-block" />, 'Reply to trade requests in under 5 minutes consistently to earn Fast Responder.'],
+                        [<Lock size={13} className="inline-block" />, 'Complete 20+ trades with 98%+ positive feedback to unlock Trusted Seller.'],
+                        [<Award size={13} className="inline-block" />, 'Veteran badge is time-based — it unlocks automatically after your account turns 1 year old.'],
                       ].map(([icon, tip], i) => (
                         <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 6 }}>
                           <span style={{ fontSize: 13, flexShrink: 0 }}>{icon}</span>
@@ -1349,7 +1350,7 @@ export default function Profile({ userId: propUserId }) {
               {earned.length === BADGE_DEFS.length && (
                 <div style={{ borderRadius: 20, padding: 32, textAlign: 'center', background: `linear-gradient(135deg,${C.forest},${C.gold})`, position: 'relative', overflow: 'hidden' }}>
                   <div style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle at 2px 2px,rgba(255,255,255,0.06) 1px,transparent 0)', backgroundSize: '20px 20px' }} />
-                  <p style={{ fontSize: 48, marginBottom: 8 }}>🎉</p>
+                  <p style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}><PartyPopper size={48} style={{ color: '#FBBF24' }} /></p>
                   <p style={{ fontWeight: 900, fontSize: 24, color: 'white', fontFamily: "'Syne',sans-serif", marginBottom: 6 }}>Legendary Status!</p>
                   <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>You've earned all 6 badges. You're among the most trusted traders on PRAQEN.</p>
                 </div>

@@ -11,7 +11,7 @@ import {
   ChevronDown, CreditCard, ThumbsUp, ThumbsDown, Repeat2,
   Phone, Mail, Ban, ArrowUp, ArrowDown,
   Zap, Users, TrendingUp, Award, Sparkles, ShieldCheck,
-  Crown, Star, MessageSquare, Wifi, Coins, Trophy
+  Crown, Star, MessageSquare, Wifi, Coins, Trophy, Globe
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
@@ -79,7 +79,7 @@ const COUNTRY_REGIONS = {
 };
 
 const COUNTRIES = [
-  { code: 'ALL', name: 'All Countries', flag: '🌍', region: null },
+  { code: 'ALL', name: 'All Countries', flag: <Globe size={14} className="inline-block align-middle" />, region: null },
   // Africa
   { code: 'GH', name: 'Ghana', flag: '🇬🇭', region: 'Africa' },
   { code: 'NG', name: 'Nigeria', flag: '🇳🇬', region: 'Africa' },

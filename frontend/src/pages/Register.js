@@ -8,7 +8,7 @@ import {
   ArrowRight, ArrowLeft, RefreshCw, AlertCircle, Smartphone,
   AtSign, Check, X, Home, Gift, LogIn, Phone, ChevronDown,
   Bitcoin, Zap, Globe, TrendingUp, Users, BadgeCheck, Star,
-  ArrowUpRight, CircleDollarSign, Wallet, BarChart3
+  ArrowUpRight, CircleDollarSign, Wallet, BarChart3, MapPin, PartyPopper
 } from 'lucide-react';
 
 // ─── Guided Onboarding Field Tips ───────────────────────────────────────────
@@ -1183,7 +1183,7 @@ export default function Register({ onLogin }) {
                     {TESTIMONIALS[currentTestimonial].name}
                   </p>
                   <p className="testimonial-location">
-                    📍 {TESTIMONIALS[currentTestimonial].location}
+                    <MapPin size={12} style={{ color: 'currentColor', verticalAlign: '-1px', flexShrink: 0 }} /> {TESTIMONIALS[currentTestimonial].location}
                   </p>
                 </div>
                 <div className="testimonial-dots">
@@ -1294,7 +1294,7 @@ export default function Register({ onLogin }) {
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontWeight: 900, fontSize: 15, color: '#1B4332',
                   }}>
-                    {!referrerInfo?.avatar_url && (referrerInfo?.username?.charAt(0).toUpperCase() || '🎁')}
+                    {!referrerInfo?.avatar_url && (referrerInfo?.username?.charAt(0).toUpperCase() || <Gift size={18} style={{ color: '#1B4332' }} />)}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {referrerInfo ? (
@@ -1826,7 +1826,7 @@ export default function Register({ onLogin }) {
                         alignItems: 'center', justifyContent: 'center',
                         margin: '0 auto 12px', fontSize: 26
                       }}>
-                        {method === 'email' ? '📧' : '📱'}
+                        {method === 'email' ? <Mail size={26} style={{ color: '#2D6A4F' }} /> : <Smartphone size={26} style={{ color: '#2D6A4F' }} />}
                       </div>
                       <p style={{ fontSize: 12, color: '#64748B', margin: '0 0 4px' }}>We sent a 6-digit code to</p>
                       <p style={{ fontSize: 14, fontWeight: 700, color: '#1B4332', margin: 0, wordBreak: 'break-all' }}>{contact}</p>
@@ -1939,7 +1939,7 @@ export default function Register({ onLogin }) {
                       <CheckCircle size={42} style={{ color: '#10B981' }} />
                     </div>
                     <h3 style={{ fontSize: 24, fontWeight: 800, color: '#1B4332', margin: '0 0 8px', fontFamily: "'Outfit', sans-serif" }}>
-                      Welcome to <span className="shimmer-text">PRAQEN</span>! 🎉
+                      Welcome to <span className="shimmer-text">PRAQEN</span>! <PartyPopper size={18} style={{ color: '#F4A422', verticalAlign: 'middle' }} />
                     </h3>
                     <p style={{ fontSize: 14, color: '#64748B', margin: '0 0 16px', lineHeight: 1.6 }}>
                       Your account is ready. Redirecting to the marketplace…
@@ -1962,7 +1962,7 @@ export default function Register({ onLogin }) {
                       <CheckCircle size={42} style={{ color: '#10B981' }} />
                     </div>
                     <h3 style={{ fontSize: 24, fontWeight: 800, color: '#1B4332', margin: '0 0 8px', fontFamily: "'Outfit', sans-serif" }}>
-                      Password Reset! ✅
+                      Password Reset! <CheckCircle size={18} style={{ color: '#10B981', verticalAlign: 'middle' }} />
                     </h3>
                     <p style={{ fontSize: 14, color: '#64748B', margin: '0 0 20px', lineHeight: 1.6 }}>
                       You can now log in with your new password.

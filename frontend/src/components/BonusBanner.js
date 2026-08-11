@@ -106,7 +106,7 @@ export default function BonusBanner({ userId }) {
             {bonus.step === 1 && (
               <>
                 <p style={{ margin: 0, color: C.white, fontWeight: 800, fontSize: 13 }}>
-                  🎁 $1 Bitcoin waiting — verify to claim it!
+                  <Gift size={14} className="inline-block mr-1" />$1 Bitcoin waiting — verify to claim it!
                 </p>
                 <p style={{ margin: 0, color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 1 }}>
                   Verify your account to lock in your first $1 BTC · {fmtCountdown(msLeft)}
@@ -116,7 +116,7 @@ export default function BonusBanner({ userId }) {
             {bonus.step === 2 && (
               <>
                 <p style={{ margin: 0, color: C.white, fontWeight: 800, fontSize: 13 }}>
-                  🔒 $1 BTC locked · Trade once to unlock $2 instantly!
+                  <Lock size={14} className="inline-block mr-1" />$1 BTC locked · Trade once to unlock $2 instantly!
                 </p>
                 <p style={{ margin: 0, color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 1 }}>
                   ≈ {fmtBtc(bonus.locked_btc)} BTC locked · Complete your first trade · {fmtCountdown(msLeft)}
@@ -126,7 +126,7 @@ export default function BonusBanner({ userId }) {
             {bonus.step === 3 && (
               <>
                 <p style={{ margin: 0, color: C.gold, fontWeight: 800, fontSize: 13 }}>
-                  🎉 $2 Bitcoin unlocked — check your wallet!
+                  <CheckCircle size={14} className="inline-block mr-1" />$2 Bitcoin unlocked — check your wallet!
                 </p>
                 <p style={{ margin: 0, color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 1 }}>
                   ≈ {fmtBtc(bonus.unlocked_btc)} BTC has been credited to your balance.

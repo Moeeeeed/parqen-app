@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { 
-  Search, Filter, Star, Clock, Bitcoin, DollarSign, 
+import {
+  Search, Filter, Star, Clock, Bitcoin, DollarSign,
   TrendingUp, Shield, User, ChevronDown, ChevronUp,
   ArrowRight, Wallet, Gift, Smartphone, Building2,
-  Tag, Percent, Zap, Award, Users, Eye
+  Tag, Percent, Zap, Award, Users, Eye,
+  CreditCard, CircleDollarSign, ShoppingBag, Plus,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -33,18 +34,18 @@ const PRAQEN = {
 // Payment method icons
 const getPaymentIcon = (method) => {
   const icons = {
-    'mtn': '📱',
-    'vodafone': '📱',
-    'airteltigo': '📱',
-    'kuda': '🏦',
-    'gcb': '🏦',
-    'paypal': '💰',
-    'opay': '💰',
-    'amazon': '🎁',
-    'steam': '🎁',
-    'google': '🎁',
+    'mtn': <Smartphone size={14} className="inline-block" />,
+    'vodafone': <Smartphone size={14} className="inline-block" />,
+    'airteltigo': <Smartphone size={14} className="inline-block" />,
+    'kuda': <Building2 size={14} className="inline-block" />,
+    'gcb': <Building2 size={14} className="inline-block" />,
+    'paypal': <CircleDollarSign size={14} className="inline-block" />,
+    'opay': <DollarSign size={14} className="inline-block" />,
+    'amazon': <Gift size={14} className="inline-block" />,
+    'steam': <Gift size={14} className="inline-block" />,
+    'google': <Gift size={14} className="inline-block" />,
   };
-  return icons[method.toLowerCase()] || '💳';
+  return icons[method.toLowerCase()] || <CreditCard size={14} className="inline-block" />;
 };
 
 export default function Marketplace({ user }) {
@@ -389,7 +390,7 @@ export default function Marketplace({ user }) {
         {/* Listings Grid */}
         {filteredListings.length === 0 ? (
           <div className="bg-white rounded-2xl shadow-lg p-12 text-center">
-            <div className="text-6xl mb-4">🔍</div>
+            <div className="mb-4"><Search size={56} className="inline-block" style={{ color: PRAQEN.gray[300] }} /></div>
             <h3 className="text-xl font-bold mb-2" style={{ color: PRAQEN.primary }}>No offers found</h3>
             <p className="text-gray-500 mb-4">
               {activeTab === 'buy' 
@@ -418,6 +419,3 @@ export default function Marketplace({ user }) {
   );
 }
 
-// Missing imports
-const ShoppingBag = (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>;
-const Plus = (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;

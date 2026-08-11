@@ -12,21 +12,22 @@ import {
   Mail, Phone, UserPlus, MessageSquare, MessageCircle, Maximize2,
   ChevronUp, Lightbulb, Send, ExternalLink, Shield,
 } from 'lucide-react';
+import { Image, MapPin, CreditCard, User, Globe, ShoppingCart, Scale, Wrench, Upload, Landmark, Banknote, ClipboardList, Repeat, Moon, EyeOff, Pin, Sparkles, BarChart2, Inbox, Bug, Zap } from 'lucide-react';
 
 // ─── Suggestion constants (shared with SuggestionsPanel) ─────
 const SUGGESTION_CATS = [
-  { id: 'feature',     label: 'Feature Request', emoji: '💡' },
-  { id: 'trading',     label: 'Trading Tip',      emoji: '📈' },
-  { id: 'bug',         label: 'Bug Report',       emoji: '🐛' },
-  { id: 'improvement', label: 'Improvement',      emoji: '⚡' },
-  { id: 'other',       label: 'Other',            emoji: '💬' },
+  { id: 'feature',     label: 'Feature Request', icon: <Lightbulb size={14} className="inline-block" /> },
+  { id: 'trading',     label: 'Trading Tip',      icon: <TrendingUp size={14} className="inline-block" /> },
+  { id: 'bug',         label: 'Bug Report',       icon: <Bug size={14} className="inline-block" /> },
+  { id: 'improvement', label: 'Improvement',      icon: <Zap size={14} className="inline-block" /> },
+  { id: 'other',       label: 'Other',            icon: <MessageSquare size={14} className="inline-block" /> },
 ];
 const SUGGESTION_STATUS = {
   open:      { label: 'Open',         color: '#3B82F6', bg: '#EFF6FF'  },
   reviewing: { label: 'Under Review', color: '#92400E', bg: '#FFFBEB'  },
   planned:   { label: 'Planned',      color: '#6D28D9', bg: '#F5F3FF'  },
   building:  { label: 'Building',     color: '#EA580C', bg: '#FFF7ED'  },
-  done:      { label: 'Done ✅',       color: '#166534', bg: '#F0FDF4'  },
+  done:      { label: 'Done',         color: '#166534', bg: '#F0FDF4'  },
   rejected:  { label: 'Not Planned',  color: '#6B7280', bg: '#F9FAFB'  },
 };
 
@@ -145,7 +146,7 @@ function KycImageBlock({ userId, type, label, large, onZoom }) {
         )}
         {status === 'error' && (
           <div className="flex flex-col items-center gap-2 px-3 text-center">
-            <span className="text-2xl">🖼️</span>
+            <Image size={32} strokeWidth={1.5} style={{ color: C.g400 }} />
             <span className="text-xs font-semibold" style={{ color: C.g500 }}>Image not available</span>
             <button
               onClick={() => { setStatus('loading'); setSrc(null); const t = localStorage.getItem('token') || localStorage.getItem('adminToken'); fetch(`${API_URL}/admin/kyc/${userId}/image?type=${type}&t=${Date.now()}`, { headers: t ? { Authorization: `Bearer ${t}` } : {} }).then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); }).then(b => { setSrc(URL.createObjectURL(b)); setStatus('ok'); }).catch(() => setStatus('error')); }}
@@ -169,7 +170,7 @@ function Spin() {
 }
 
 // ─── Empty state ─────────────────────────────────────────────
-function Empty({ icon = '📭', text = 'No data found' }) {
+function Empty({ icon = <Inbox size={40} strokeWidth={1.5} style={{ color: C.g400 }} />, text = 'No data found' }) {
   return <div className="flex flex-col items-center py-16 gap-2"><span className="text-4xl">{icon}</span><p className="text-sm font-semibold" style={{ color: C.g500 }}>{text}</p></div>;
 }
 
@@ -515,12 +516,12 @@ function UsersSection() {
           <option value="active">Active</option>
           <option value="suspended">Suspended</option>
           <option value="banned">Banned</option>
-          <option value="phone_pending">⏳ Phone Pending</option>
-          <option value="kyc_pending">📋 KYC Pending</option>
+          <option value="phone_pending">Phone Pending</option>
+          <option value="kyc_pending">KYC Pending</option>
         </select>
         <select value={countryFilter} onChange={e => setCountryFilter(e.target.value)}
           className="bg-white border rounded-xl px-3 py-2 text-sm font-semibold outline-none" style={{ borderColor: C.g200, color: C.g700 }}>
-          <option value="">🌍 All countries</option>
+          <option value="">All countries</option>
           {FILTER_COUNTRIES.map(({ cc, name }) => (
             <option key={cc} value={cc}>{ccToFlag(cc)} {name}</option>
           ))}
@@ -533,7 +534,7 @@ function UsersSection() {
       <div className="flex gap-4">
         {/* Table */}
         <div className="flex-1 bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
-          {loading ? <Spin /> : users.length === 0 ? <Empty icon="👤" text="No users found" /> : (
+          {loading ? <Spin /> : users.length === 0 ? <Empty icon={<User size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No users found" /> : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead style={{ backgroundColor: C.g50 }}>
@@ -568,13 +569,13 @@ function UsersSection() {
                       <td className="px-4 py-3 text-xs font-bold" style={{ color: C.g700 }}>{u.total_trades || 0}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1 flex-wrap">
-                          {u.is_email_verified && <span title="Email verified" className="text-xs">📧</span>}
+                          {u.is_email_verified && <span title="Email verified" className="inline-flex items-center"><Mail size={13} /></span>}
                           {u.is_phone_verified
-                            ? <span title="Phone verified" className="text-xs">📱</span>
-                            : u.phone_number && <span title="Phone pending review" className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-black" style={{ backgroundColor:'#FFFBEB', color:'#92400E' }}>📱 Pending</span>}
+                            ? <span title="Phone verified" className="inline-flex items-center"><Phone size={13} /></span>
+                            : u.phone_number && <span title="Phone pending review" className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-black" style={{ backgroundColor:'#FFFBEB', color:'#92400E' }}><Phone size={12} /> Pending</span>}
                           {u.is_id_verified
-                            ? <span title="KYC verified" className="text-xs">🪪</span>
-                            : u.kyc_status === 'pending' && <span title="KYC pending review" className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-black" style={{ backgroundColor:'#F5F3FF', color:'#6D28D9' }}>🪪 Pending</span>}
+                            ? <span title="KYC verified" className="inline-flex items-center"><CreditCard size={13} /></span>
+                            : u.kyc_status === 'pending' && <span title="KYC pending review" className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-black" style={{ backgroundColor:'#F5F3FF', color:'#6D28D9' }}><CreditCard size={12} /> Pending</span>}
                         </div>
                       </td>
                       <td className="px-4 py-3 text-xs" style={{ color: C.g400 }}>{fmtDate(u.created_at)}</td>
@@ -630,7 +631,7 @@ function UsersSection() {
             <div className="space-y-1.5 mb-4">
               {[
                 { label:'Trades',     value: selected.total_trades || 0 },
-                { label:'Rating',     value: `⭐ ${parseFloat(selected.average_rating || 0).toFixed(1)}` },
+                { label:'Rating',     value: <span className="inline-flex items-center gap-1"><Star size={13} className="text-amber-400" fill="currentColor" />{parseFloat(selected.average_rating || 0).toFixed(1)}</span> },
                 { label:'Completion', value: `${parseFloat(selected.completion_rate || 0).toFixed(1)}%` },
                 { label:'Badge',      value: selected.badge || 'BEGINNER' },
                 { label:'Last login', value: fmtAge(selected.last_login) },
@@ -643,7 +644,7 @@ function UsersSection() {
 
               {/* ── Country block ── */}
               <div className="py-2 border-b" style={{ borderColor: C.g100 }}>
-                <p className="text-xs font-black uppercase tracking-wide mb-1.5" style={{ color: C.g400 }}>📍 Location</p>
+                <p className="text-xs font-black uppercase tracking-wide mb-1.5 inline-flex items-center gap-1" style={{ color: C.g400 }}><MapPin size={12} /> Location</p>
                 {(() => {
                   const ipCC    = selected.country;
                   const phoneCC = selected.phone_country;
@@ -684,7 +685,7 @@ function UsersSection() {
                 <span className="text-xs" style={{ color: C.g400 }}>Phone</span>
                 {selected.phone_number
                   ? <span className="text-xs font-bold" style={{ color: selected.is_phone_verified ? C.success : '#D97706' }}>
-                      {selected.phone_number}{!selected.is_phone_verified && ' ⏳'}
+                      {selected.phone_number}{!selected.is_phone_verified && <Clock size={11} className="inline-block ml-1" />}
                     </span>
                   : <span className="text-xs" style={{ color: C.g400 }}>—</span>}
               </div>
@@ -702,8 +703,8 @@ function UsersSection() {
             {/* ── KYC ID images ── */}
             {(selected.id_front_url || selected.id_back_url) && (
               <div className="mt-3 space-y-2">
-                <p className="text-xs font-black uppercase tracking-wider" style={{ color: C.g400 }}>
-                  🪪 Identity Documents
+                <p className="text-xs font-black uppercase tracking-wider inline-flex items-center gap-1" style={{ color: C.g400 }}>
+                  <CreditCard size={13} /> Identity Documents
                 </p>
                 {selected.id_front_url && (
                   <KycImageBlock
@@ -727,7 +728,7 @@ function UsersSection() {
                   setActing(true);
                   try {
                     await axios.put(`${API_URL}/admin/users/${selected.id}/verify-email`, {}, { headers: authH() });
-                    toast.success('Email verified ✅');
+                    toast.success(<span className="inline-flex items-center gap-1">Email verified <CheckCircle size={14} /></span>);
                     load();
                     setSelected(s => ({ ...s, is_email_verified: true }));
                   } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
@@ -748,7 +749,7 @@ function UsersSection() {
                     setActing(true);
                     try {
                       await axios.put(`${API_URL}/admin/users/${selected.id}/verify-phone`, {}, { headers: authH() });
-                      toast.success('Phone verified ✅');
+                      toast.success(<span className="inline-flex items-center gap-1">Phone verified <CheckCircle size={14} /></span>);
                       load();
                       setSelected(s => ({ ...s, is_phone_verified: true }));
                     } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
@@ -794,7 +795,7 @@ function UsersSection() {
                     setSelected(s => ({ ...s, is_id_verified: false, kyc_status: 'rejected' }));
                   } else {
                     await axios.put(`${API_URL}/admin/kyc/${selected.id}/approve`, {}, { headers: authH() });
-                    toast.success('KYC approved ✅');
+                    toast.success(<span className="inline-flex items-center gap-1">KYC approved <CheckCircle size={14} /></span>);
                     setSelected(s => ({ ...s, is_id_verified: true, kyc_status: 'approved' }));
                   }
                   load();
@@ -889,7 +890,7 @@ function TradesSection() {
 
       <div className="flex gap-4">
         <div className="flex-1 bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
-          {loading ? <Spin /> : trades.length === 0 ? <Empty icon="🔄" text="No trades found" /> : (
+          {loading ? <Spin /> : trades.length === 0 ? <Empty icon={<RefreshCw size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No trades found" /> : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead style={{ backgroundColor: C.g50 }}>
@@ -959,11 +960,11 @@ function TradesSection() {
               <div className="space-y-2">
                 <p className="text-xs font-black mb-1" style={{ color: C.g500 }}>Force Actions</p>
                 <button disabled={acting} onClick={() => forceStatus(selected.id, 'COMPLETED')}
-                  className="w-full py-2.5 rounded-xl text-xs font-black" style={{ backgroundColor:'#F0FDF4', color:'#166534' }}>✅ Force Complete</button>
+                  className="w-full py-2.5 rounded-xl text-xs font-black inline-flex items-center justify-center gap-1.5" style={{ backgroundColor:'#F0FDF4', color:'#166534' }}><CheckCircle size={13} /> Force Complete</button>
                 <button disabled={acting} onClick={() => forceStatus(selected.id, 'CANCELLED')}
-                  className="w-full py-2.5 rounded-xl text-xs font-black" style={{ backgroundColor:'#FEF2F2', color:'#991B1B' }}>❌ Force Cancel</button>
+                  className="w-full py-2.5 rounded-xl text-xs font-black inline-flex items-center justify-center gap-1.5" style={{ backgroundColor:'#FEF2F2', color:'#991B1B' }}><XCircle size={13} /> Force Cancel</button>
                 <button disabled={acting} onClick={() => forceStatus(selected.id, 'DISPUTED')}
-                  className="w-full py-2.5 rounded-xl text-xs font-black" style={{ backgroundColor:'#F5F3FF', color:'#6D28D9' }}>⚠️ Mark Disputed</button>
+                  className="w-full py-2.5 rounded-xl text-xs font-black inline-flex items-center justify-center gap-1.5" style={{ backgroundColor:'#F5F3FF', color:'#6D28D9' }}><AlertTriangle size={13} /> Mark Disputed</button>
               </div>
             )}
           </div>
@@ -1018,7 +1019,7 @@ function DisputesSection() {
       <SectionHead title={`Open Disputes (${disputes.length})`} sub="Mediate and resolve trade disputes"
         action={<button onClick={load} className="p-2 rounded-xl border" style={{ borderColor: C.g200 }}><RefreshCw size={14} style={{ color: C.g500 }} /></button>} />
 
-      {loading ? <Spin /> : disputes.length === 0 ? <Empty icon="⚖️" text="No open disputes" /> : (
+      {loading ? <Spin /> : disputes.length === 0 ? <Empty icon={<Scale size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No open disputes" /> : (
         <div className="flex gap-4">
           <div className="flex-1 space-y-3">
             {disputes.map(d => (
@@ -1030,7 +1031,7 @@ function DisputesSection() {
                   <span className="text-xs" style={{ color: C.g400 }}>{fmtAge(d.created_at)}</span>
                 </div>
                 <p className="text-xs font-bold mb-1" style={{ color: C.g700 }}>
-                  🛒 {d.buyer?.username || 'Buyer'} vs {d.seller?.username || 'Seller'}
+                  <ShoppingCart size={12} className="inline-block mr-1 mb-0.5" /> {d.buyer?.username || 'Buyer'} vs {d.seller?.username || 'Seller'}
                 </p>
                 <p className="text-xs" style={{ color: C.g500 }}>Trade #{(d.trade_id || '').slice(0, 8).toUpperCase()}</p>
                 <p className="text-xs mt-1.5 leading-relaxed" style={{ color: C.g600 }}>
@@ -1082,7 +1083,7 @@ function DisputesSection() {
               <button onClick={resolve} disabled={submitting}
                 className="w-full py-3 rounded-xl text-sm font-black transition"
                 style={{ backgroundColor: submitting ? C.g200 : C.forest, color: submitting ? C.g400 : '#fff' }}>
-                {submitting ? 'Casting vote…' : '⚖️ Cast Vote'}
+                {submitting ? 'Casting vote…' : <span className="inline-flex items-center gap-2"><Scale size={15} /> Cast Vote</span>}
               </button>
             </div>
           )}
@@ -1117,7 +1118,7 @@ function TeamActivitySection() {
       <SectionHead title={`Team (${team.length})`} sub="Everyone with moderator or admin access, and when they last logged in"
         action={<button onClick={load} className="p-2 rounded-xl border" style={{ borderColor: C.g200 }}><RefreshCw size={14} style={{ color: C.g500 }} /></button>} />
 
-      {loading ? <Spin /> : team.length === 0 ? <Empty icon="🛡️" text="No team members yet" /> : (
+      {loading ? <Spin /> : team.length === 0 ? <Empty icon={<ShieldCheck size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No team members yet" /> : (
         <div className="grid md:grid-cols-2 gap-4">
           {team.map(m => {
             const online = isOnline(m.last_seen_at);
@@ -1194,7 +1195,7 @@ function PhoneVerifSection() {
     setActing(userId);
     try {
       await axios.post(`${API_URL}/admin/phone/approve`, { userId }, { headers: authH() });
-      toast.success('✅ Phone number approved! User notified.');
+      toast.success(<span className="inline-flex items-center gap-1"><CheckCircle size={14} /> Phone number approved! User notified.</span>);
       load();
     } catch (e) { toast.error(e.response?.data?.error || 'Approval failed'); }
     finally { setActing(null); }
@@ -1263,7 +1264,7 @@ function PhoneVerifSection() {
       {/* Table */}
       <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
         {loading ? <Spin /> : users.length === 0 ? (
-          <Empty icon="📱" text="No pending phone verifications — all clear!" />
+          <Empty icon={<Phone size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No pending phone verifications — all clear!" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -1292,7 +1293,7 @@ function PhoneVerifSection() {
                         <div>
                           <p className="font-black text-xs" style={{ color: C.g800 }}>{u.username}</p>
                           {u.full_name && (
-                            <p className="text-xs font-semibold" style={{ color: C.mint }}>👤 {u.full_name}</p>
+                            <p className="text-xs font-semibold inline-flex items-center gap-1" style={{ color: C.mint }}><User size={12} /> {u.full_name}</p>
                           )}
                           <p className="text-xs" style={{ color: C.g400 }}>{u.email}</p>
                         </div>
@@ -1410,7 +1411,7 @@ function KycSection() {
     setActing(true);
     try {
       await axios.put(`${API_URL}/admin/kyc/${id}/approve`, {}, { headers: authH() });
-      toast.success('KYC approved ✅');
+      toast.success(<span className="inline-flex items-center gap-1">KYC approved <CheckCircle size={14} /></span>);
       setSelected(null); load();
     } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
     finally { setActing(false); }
@@ -1467,7 +1468,7 @@ function KycSection() {
               <button onClick={confirmReject} disabled={acting}
                 className="flex-1 py-2.5 rounded-xl text-sm font-black text-white"
                 style={{ backgroundColor: '#EF4444' }}>
-                {acting ? 'Rejecting…' : '❌ Reject & Notify'}
+                {acting ? 'Rejecting…' : <span className="inline-flex items-center gap-1.5"><XCircle size={14} /> Reject & Notify</span>}
               </button>
             </div>
           </div>
@@ -1527,7 +1528,7 @@ UPDATE users SET kyc_status = 'approved' WHERE is_id_verified = true AND kyc_sta
           <button onClick={backfill} disabled={backfilling}
             className="flex-shrink-0 px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition"
             style={{ backgroundColor: backfilling ? C.g200 : C.forest, color: backfilling ? C.g400 : '#fff' }}>
-            {backfilling ? <><RefreshCw size={12} className="animate-spin" /> Fixing…</> : '🔧 Fix Legacy Submissions'}
+            {backfilling ? <><RefreshCw size={12} className="animate-spin" /> Fixing…</> : <><Wrench size={13} /> Fix Legacy Submissions</>}
           </button>
         </div>
       )}
@@ -1549,9 +1550,9 @@ UPDATE users SET kyc_status = 'approved' WHERE is_id_verified = true AND kyc_sta
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-black text-sm" style={{ color: C.g800 }}>{u.username}</p>
-                    {u.full_name && <p className="text-xs font-semibold" style={{ color: C.mint }}>👤 {u.full_name}</p>}
+                    {u.full_name && <p className="text-xs font-semibold inline-flex items-center gap-1" style={{ color: C.mint }}><User size={12} /> {u.full_name}</p>}
                     <p className="text-xs truncate" style={{ color: C.g400 }}>{u.email}</p>
-                    {u.country && <p className="text-xs" style={{ color: C.g500 }}>🌍 {u.country}</p>}
+                    {u.country && <p className="text-xs inline-flex items-center gap-1" style={{ color: C.g500 }}><Globe size={12} /> {u.country}</p>}
                   </div>
                   <div className="text-right flex flex-col items-end gap-1">
                     <Pill label={u.kyc_status || 'unverified'}
@@ -1607,10 +1608,10 @@ UPDATE users SET kyc_status = 'approved' WHERE is_id_verified = true AND kyc_sta
 
               {/* Always show image section — null URL means storage upload failed */}
               <div className="mb-3">
-                <p className="text-xs font-black uppercase tracking-wider mb-2" style={{ color: C.g400 }}>🪪 Identity Documents</p>
+                <p className="text-xs font-black uppercase tracking-wider mb-2 inline-flex items-center gap-1" style={{ color: C.g400 }}><CreditCard size={13} /> Identity Documents</p>
                 {(!selected.id_front_url && !selected.id_back_url) ? (
                   <div className="rounded-xl border-2 border-dashed p-4" style={{ borderColor: '#FCA5A5', backgroundColor: '#FEF2F2' }}>
-                    <p className="text-xs font-black mb-1" style={{ color: '#991B1B' }}>⚠ Documents not saved to storage</p>
+                    <p className="text-xs font-black mb-1 inline-flex items-center gap-1.5" style={{ color: '#991B1B' }}><AlertTriangle size={13} /> Documents not saved to storage</p>
                     <p className="text-xs mb-3" style={{ color: '#B91C1C' }}>
                       The user's images failed to upload. Make sure the <code className="font-mono bg-red-100 px-1 rounded">kyc-documents</code> bucket exists in Supabase Storage, then ask the user to resubmit.
                     </p>
@@ -1618,9 +1619,9 @@ UPDATE users SET kyc_status = 'approved' WHERE is_id_verified = true AND kyc_sta
                       <button
                         disabled={acting}
                         onClick={() => { setRejectTarget(selected); setRejectReason('Your document upload failed on our end. Please go to Settings → Verification → Identity (KYC) and resubmit your ID photos.'); }}
-                        className="w-full py-2 rounded-lg text-xs font-black"
+                        className="w-full py-2 rounded-lg text-xs font-black inline-flex items-center justify-center gap-1.5"
                         style={{ backgroundColor: '#EF4444', color: '#fff' }}>
-                        📤 Reject & Ask User to Resubmit
+                        <Upload size={12} /> Reject & Ask User to Resubmit
                       </button>
                     )}
                   </div>
@@ -1646,11 +1647,11 @@ UPDATE users SET kyc_status = 'approved' WHERE is_id_verified = true AND kyc_sta
                 <div className="flex gap-2">
                   <button disabled={acting} onClick={() => approve(selected.id)}
                     className="flex-1 py-2.5 rounded-xl text-xs font-black" style={{ backgroundColor:'#F0FDF4', color:'#166534' }}>
-                    {acting ? '…' : '✅ Approve'}
+                    {acting ? '…' : <span className="inline-flex items-center gap-1.5"><CheckCircle size={13} /> Approve</span>}
                   </button>
                   <button disabled={acting} onClick={() => reject(selected)}
                     className="flex-1 py-2.5 rounded-xl text-xs font-black" style={{ backgroundColor:'#FEF2F2', color:'#991B1B' }}>
-                    ❌ Reject
+                    <span className="inline-flex items-center gap-1.5"><XCircle size={13} /> Reject</span>
                   </button>
                 </div>
               )}
@@ -1724,7 +1725,7 @@ function PlatformWalletsCard() {
     <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
       <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.g100, backgroundColor: '#F0FDF4' }}>
         <div>
-          <h3 className="font-black text-sm" style={{ color: C.forest }}>🏦 Platform Wallets — Live BTC Balance</h3>
+          <h3 className="font-black text-sm inline-flex items-center gap-1.5" style={{ color: C.forest }}><Landmark size={15} /> Platform Wallets — Live BTC Balance</h3>
           <p className="text-xs mt-0.5" style={{ color: C.g500 }}>Hot withdrawal wallet + fee collection wallet</p>
         </div>
         <button onClick={fetchWallets} disabled={checking}
@@ -1800,12 +1801,12 @@ function PlatformWalletsCard() {
 
                   {isEmpty && (
                     <p className="text-xs font-bold mt-2" style={{ color: '#DC2626' }}>
-                      ⚠️ Empty — users cannot withdraw until funded
+                      <AlertTriangle size={12} className="inline-block mr-1" /> Empty — users cannot withdraw until funded
                     </p>
                   )}
                   {hw.balance_error && (
                     <p className="text-[10px] mt-1" style={{ color: '#DC2626' }}>
-                      ⚠️ API error: {hw.balance_error}
+                      <AlertTriangle size={11} className="inline-block mr-1" /> API error: {hw.balance_error}
                     </p>
                   )}
                 </div>
@@ -1953,9 +1954,9 @@ function FinanceSection() {
         <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.g100 }}>
           <h3 className="font-black text-sm" style={{ color: C.g800 }}>Transfer Activity</h3>
           <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: C.g200 }}>
-            {[['internal', '🔄 Internal'], ['external', '↗ External']].map(([key, label]) => (
+            {[['internal', <><Repeat size={12} /> Internal</>], ['external', <><ArrowUpRight size={12} /> External</>]].map(([key, label]) => (
               <button key={key} onClick={() => setTxTab(key)}
-                className="px-3 py-1.5 text-xs font-black transition"
+                className="px-3 py-1.5 text-xs font-black inline-flex items-center gap-1 transition"
                 style={{ backgroundColor: txTab === key ? C.forest : 'transparent', color: txTab === key ? '#fff' : C.g500 }}>
                 {label}
               </button>
@@ -1965,7 +1966,7 @@ function FinanceSection() {
 
         {txTab === 'internal' && (
           transfers?.internal?.length === 0
-            ? <Empty icon="🔄" text="No internal transfers yet" />
+            ? <Empty icon={<Repeat size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No internal transfers yet" />
             : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -1998,7 +1999,7 @@ function FinanceSection() {
 
         {txTab === 'external' && (
           transfers?.withdrawals?.length === 0
-            ? <Empty icon="↗" text="No external withdrawals yet" />
+            ? <Empty icon={<ArrowUpRight size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No external withdrawals yet" />
             : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -2038,7 +2039,7 @@ function FinanceSection() {
           <h3 className="font-black text-sm" style={{ color: C.g800 }}>Escrow Fee Collections</h3>
           <p className="text-xs mt-0.5" style={{ color: C.g400 }}>1% on BTC trades · 2% on gift card trades — credited to escrow wallet on completion</p>
         </div>
-        {(data.profits || []).length === 0 ? <Empty icon="💰" text="No fee collections yet" /> : (
+        {(data.profits || []).length === 0 ? <Empty icon={<Banknote size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No fee collections yet" /> : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead style={{ backgroundColor: C.g50 }}>
@@ -2206,7 +2207,7 @@ function ListingsSection() {
       </div>
 
       <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
-        {loading ? <Spin /> : listings.length === 0 ? <Empty icon="📋" text="No listings found" /> : (
+        {loading ? <Spin /> : listings.length === 0 ? <Empty icon={<ClipboardList size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No listings found" /> : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead style={{ backgroundColor: C.g50 }}>
@@ -2329,7 +2330,7 @@ function BroadcastSection() {
     setSend(true);
     try {
       const r = await axios.post(`${API_URL}/admin/broadcast`, { title, message: msg, type }, { headers: authH() });
-      toast.success(`Sent to ${r.data.sent} users ✅`);
+      toast.success(<span className="inline-flex items-center gap-1">Sent to {r.data.sent} users <CheckCircle size={14} /></span>);
       setHistory(h => [{ title, message: msg, type, sent: r.data.sent, time: new Date() }, ...h.slice(0, 9)]);
       setTitle(''); setMsg('');
     } catch (e) { toast.error(e.response?.data?.error || 'Failed to broadcast'); }
@@ -2345,7 +2346,7 @@ function BroadcastSection() {
         htmlBody: emailBody,
         broadcastType: 'promo',
       }, { headers: authH() });
-      toast.success('📧 Email broadcast started! Check server logs for progress.');
+      toast.success(<span className="inline-flex items-center gap-1.5"><Mail size={13} /> Email broadcast started! Check server logs for progress.</span>);
       setEmailResult({ ok: true, message: r.data.message });
     } catch (e) {
       const err = e.response?.data?.error || 'Failed to send email broadcast';
@@ -2360,7 +2361,7 @@ function BroadcastSection() {
     setEidResult(null);
     try {
       const r = await axios.post(`${API_URL}/admin/broadcast/eid-bonus`, {}, { headers: authH() });
-      toast.success('🌙 Eid broadcast started! Check server logs for progress.');
+      toast.success(<span className="inline-flex items-center gap-1.5"><Moon size={13} /> Eid broadcast started! Check server logs for progress.</span>);
       setEidResult({ ok: true, message: r.data.message });
     } catch (e) {
       const err = e.response?.data?.error || 'Failed to send Eid broadcast';
@@ -2374,7 +2375,7 @@ function BroadcastSection() {
     setUsdtResult(null);
     try {
       const r = await axios.post(`${API_URL}/admin/broadcast/usdt-announcement`, {}, { headers: authH() });
-      toast.success('💵 USDT announcement broadcast started! Check server logs for progress.');
+      toast.success(<span className="inline-flex items-center gap-1.5"><DollarSign size={13} /> USDT announcement broadcast started! Check server logs for progress.</span>);
       setUsdtResult({ ok: true, message: r.data.message });
     } catch (e) {
       const err = e.response?.data?.error || 'Failed to send USDT announcement broadcast';
@@ -2390,10 +2391,10 @@ function BroadcastSection() {
       {/* Tab switcher */}
       <div className="flex gap-1 p-1 rounded-2xl w-fit" style={{ backgroundColor: C.g100 }}>
         {[
-          { id: 'push',  label: '📣 Push / In-App' },
-          { id: 'email', label: '📧 Email Blast'   },
-          { id: 'eid',   label: '🌙 Eid Blast'     },
-          { id: 'usdt',  label: '💵 USDT Blast'    },
+          { id: 'push',  label: <span className="inline-flex items-center gap-1.5"><Megaphone size={14} /> Push / In-App</span> },
+          { id: 'email', label: <span className="inline-flex items-center gap-1.5"><Mail size={14} /> Email Blast</span> },
+          { id: 'eid',   label: <span className="inline-flex items-center gap-1.5"><Moon size={14} /> Eid Blast</span> },
+          { id: 'usdt',  label: <span className="inline-flex items-center gap-1.5"><DollarSign size={14} /> USDT Blast</span> },
         ].map(t => (
           <button key={t.id} onClick={() => setBTab(t.id)}
             className="px-5 py-2.5 rounded-xl text-sm font-black transition"
@@ -2415,10 +2416,10 @@ function BroadcastSection() {
                 <label className="text-xs font-bold block mb-1.5" style={{ color: C.g600 }}>Type</label>
                 <select value={type} onChange={e => setType(e.target.value)}
                   className="w-full border rounded-xl px-3 py-2.5 text-sm font-semibold outline-none" style={{ borderColor: C.g200, color: C.g700 }}>
-                  <option value="system">📢 System Announcement</option>
-                  <option value="promo">🎁 Promotion</option>
-                  <option value="security">🔒 Security Alert</option>
-                  <option value="update">🚀 Platform Update</option>
+                  <option value="system">System Announcement</option>
+                  <option value="promo">Promotion</option>
+                  <option value="security">Security Alert</option>
+                  <option value="update">Platform Update</option>
                 </select>
               </div>
               <div>
@@ -2445,7 +2446,7 @@ function BroadcastSection() {
           <div className="bg-white rounded-2xl border p-6" style={{ borderColor: C.g200 }}>
             <h3 className="font-black text-sm mb-4" style={{ color: C.g800 }}>Recent Broadcasts</h3>
             {history.length === 0 ? (
-              <Empty icon="📣" text="No broadcasts sent this session" />
+              <Empty icon={<Megaphone size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No broadcasts sent this session" />
             ) : (
               <div className="space-y-3">
                 {history.map((h, i) => (
@@ -2455,7 +2456,7 @@ function BroadcastSection() {
                       <span className="text-xs" style={{ color: C.g400 }}>{h.time.toLocaleTimeString()}</span>
                     </div>
                     <p className="text-xs" style={{ color: C.g600 }}>{h.message.slice(0, 80)}…</p>
-                    <p className="text-xs mt-1 font-semibold" style={{ color: C.success }}>✅ Sent to {h.sent} users</p>
+                    <p className="text-xs mt-1 font-semibold inline-flex items-center gap-1" style={{ color: C.success }}><CheckCircle size={12} /> Sent to {h.sent} users</p>
                   </div>
                 ))}
               </div>
@@ -2467,7 +2468,7 @@ function BroadcastSection() {
         <div className="grid lg:grid-cols-2 gap-5">
           <div className="bg-white rounded-2xl border p-6 space-y-4" style={{ borderColor: C.g200 }}>
             <div className="flex items-center justify-between">
-              <h3 className="font-black text-sm" style={{ color: C.g800 }}>📧 Compose Email Blast</h3>
+              <h3 className="font-black text-sm inline-flex items-center gap-1.5" style={{ color: C.g800 }}><Mail size={14} /> Compose Email Blast</h3>
               <span className="text-xs px-2 py-1 rounded-full font-black" style={{ backgroundColor: '#FFF7ED', color: '#C2410C' }}>
                 Sends to ALL users
               </span>
@@ -2475,7 +2476,7 @@ function BroadcastSection() {
 
             {/* Warning */}
             <div className="p-3 rounded-xl flex items-start gap-2.5" style={{ backgroundColor: '#FFF7ED', border: '1px solid #FDE68A' }}>
-              <span className="text-lg flex-shrink-0">⚠️</span>
+              <AlertTriangle size={18} className="flex-shrink-0" />
               <p className="text-xs font-semibold leading-relaxed" style={{ color: '#92400E' }}>
                 This sends a real email to every user with a registered email address.
                 Use <strong>{'{{username}}'}</strong> in the body — it will be replaced with each user's name.
@@ -2500,7 +2501,7 @@ function BroadcastSection() {
               <button onClick={() => setShowPreview(p => !p)}
                 className="flex-1 py-3 rounded-xl text-sm font-black border transition hover:bg-gray-50"
                 style={{ borderColor: C.g200, color: C.g600 }}>
-                {showPreview ? '🙈 Hide Preview' : '👁 Preview Email'}
+                {showPreview ? <span className="inline-flex items-center gap-1.5"><EyeOff size={14} /> Hide Preview</span> : <span className="inline-flex items-center gap-1.5"><Eye size={14} /> Preview Email</span>}
               </button>
               <button
                 onClick={() => {
@@ -2526,7 +2527,7 @@ function BroadcastSection() {
                   color: emailResult.ok ? '#166534' : '#991B1B',
                   border: `1px solid ${emailResult.ok ? '#86EFAC' : '#FECACA'}`,
                 }}>
-                {emailResult.ok ? '✅' : '❌'} {emailResult.message}
+                <span className="inline-flex items-center gap-1.5">{emailResult.ok ? <CheckCircle size={13} /> : <XCircle size={13} />} {emailResult.message}</span>
               </div>
             )}
           </div>
@@ -2534,7 +2535,7 @@ function BroadcastSection() {
           {/* Preview pane */}
           <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
             <div className="px-5 py-3 border-b flex items-center justify-between" style={{ borderColor: C.g100 }}>
-              <h3 className="font-black text-sm" style={{ color: C.g800 }}>📬 Email Preview</h3>
+              <h3 className="font-black text-sm inline-flex items-center gap-1.5" style={{ color: C.g800 }}><Mail size={14} /> Email Preview</h3>
               <span className="text-xs" style={{ color: C.g400 }}>Rendered for: <strong>Preview User</strong></span>
             </div>
             {showPreview ? (
@@ -2546,7 +2547,7 @@ function BroadcastSection() {
               />
             ) : (
               <div className="flex flex-col items-center justify-center py-20" style={{ color: C.g400 }}>
-                <span className="text-4xl mb-3">📧</span>
+                <Mail size={40} strokeWidth={1.5} />
                 <p className="text-sm font-semibold">Click "Preview Email" to see how it looks</p>
               </div>
             )}
@@ -2560,7 +2561,7 @@ function BroadcastSection() {
           {/* Left: send panel */}
           <div className="bg-white rounded-2xl border p-6 space-y-4" style={{ borderColor: C.g200 }}>
             <div className="flex items-center justify-between">
-              <h3 className="font-black text-sm" style={{ color: C.g800 }}>🌙 Eid Mubarak Email Blast</h3>
+              <h3 className="font-black text-sm inline-flex items-center gap-1.5" style={{ color: C.g800 }}><Moon size={14} /> Eid Mubarak Email Blast</h3>
               <span className="text-xs px-2 py-1 rounded-full font-black" style={{ backgroundColor: '#FFF7ED', color: '#C2410C' }}>
                 Sends to ALL users
               </span>
@@ -2599,7 +2600,7 @@ function BroadcastSection() {
 
             {/* Warning */}
             <div className="p-3 rounded-xl flex items-start gap-2.5" style={{ backgroundColor: '#FFF7ED', border: '1px solid #FDE68A' }}>
-              <span className="text-lg flex-shrink-0">⚠️</span>
+              <AlertTriangle size={18} className="flex-shrink-0" />
               <p className="text-xs font-semibold leading-relaxed" style={{ color: '#92400E' }}>
                 This sends a real personalised email to every user. Each email includes their actual username and referral code from the database.
               </p>
@@ -2616,7 +2617,7 @@ function BroadcastSection() {
               }}>
               {sendingEid
                 ? <><RefreshCw size={14} className="animate-spin" /> Sending…</>
-                : <>🌙 Send Eid Mubarak Email to All Users</>}
+                : <span className="inline-flex items-center gap-1.5"><Moon size={14} /> Send Eid Mubarak Email to All Users</span>}
             </button>
 
             {eidResult && (
@@ -2626,14 +2627,14 @@ function BroadcastSection() {
                   color: eidResult.ok ? '#166534' : '#991B1B',
                   border: `1px solid ${eidResult.ok ? '#86EFAC' : '#FECACA'}`,
                 }}>
-                {eidResult.ok ? '✅' : '❌'} {eidResult.message}
+                <span className="inline-flex items-center gap-1.5">{eidResult.ok ? <CheckCircle size={13} /> : <XCircle size={13} />} {eidResult.message}</span>
               </div>
             )}
           </div>
 
           {/* Right: what's included */}
           <div className="bg-white rounded-2xl border p-6" style={{ borderColor: C.g200 }}>
-            <h3 className="font-black text-sm mb-4" style={{ color: C.g800 }}>📋 What's in the Email</h3>
+            <h3 className="font-black text-sm mb-4 inline-flex items-center gap-1.5" style={{ color: C.g800 }}><List size={15} /> What's in the Email</h3>
             <div className="space-y-3">
               {[
                 { icon: '🌙', title: 'Eid Mubarak header', desc: 'Dark green gradient with crescent and Arabic text "عيد مبارك"' },
@@ -2687,7 +2688,7 @@ function BroadcastSection() {
               </div>
 
               <div className="flex items-start gap-3 p-3 rounded-2xl" style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA' }}>
-                <span className="text-xl flex-shrink-0 mt-0.5">📢</span>
+                <Megaphone size={20} className="flex-shrink-0 mt-0.5" />
                 <div>
                   <p className="text-xs font-black" style={{ color: '#991B1B' }}>Sends to EVERY registered user</p>
                   <p className="text-xs mt-0.5" style={{ color: '#B91C1C' }}>
@@ -2708,7 +2709,7 @@ function BroadcastSection() {
                 onClick={() => { setShowEidConfirm(false); sendEidBlast(); }}
                 className="flex-1 py-3.5 rounded-2xl text-sm font-black text-white flex items-center justify-center gap-2 transition"
                 style={{ background: 'linear-gradient(135deg,#1B4332,#2D6A4F)', boxShadow: '0 4px 14px rgba(27,67,50,0.4)' }}>
-                🌙 Yes, Send Now
+                <Moon size={15} /> Yes, Send Now
               </button>
             </div>
           </div>
@@ -2721,7 +2722,7 @@ function BroadcastSection() {
           {/* Left: send panel */}
           <div className="bg-white rounded-2xl border p-6 space-y-4" style={{ borderColor: C.g200 }}>
             <div className="flex items-center justify-between">
-              <h3 className="font-black text-sm" style={{ color: C.g800 }}>💵 Happy New Month — USDT Wallet Live</h3>
+              <h3 className="font-black text-sm inline-flex items-center gap-1.5" style={{ color: C.g800 }}><DollarSign size={14} /> Happy New Month — USDT Wallet Live</h3>
               <span className="text-xs px-2 py-1 rounded-full font-black" style={{ backgroundColor: '#FFF7ED', color: '#C2410C' }}>
                 Sends to ALL users
               </span>
@@ -2760,7 +2761,7 @@ function BroadcastSection() {
 
             {/* Warning */}
             <div className="p-3 rounded-xl flex items-start gap-2.5" style={{ backgroundColor: '#FFF7ED', border: '1px solid #FDE68A' }}>
-              <span className="text-lg flex-shrink-0">⚠️</span>
+              <AlertTriangle size={18} className="flex-shrink-0" />
               <p className="text-xs font-semibold leading-relaxed" style={{ color: '#92400E' }}>
                 This sends a real personalised email to every user. Each email includes their actual username and referral code from the database.
               </p>
@@ -2777,7 +2778,7 @@ function BroadcastSection() {
               }}>
               {sendingUsdt
                 ? <><RefreshCw size={14} className="animate-spin" /> Sending…</>
-                : <>💵 Send USDT Announcement to All Users</>}
+                : <span className="inline-flex items-center gap-1.5"><DollarSign size={14} /> Send USDT Announcement to All Users</span>}
             </button>
 
             {usdtResult && (
@@ -2787,14 +2788,14 @@ function BroadcastSection() {
                   color: usdtResult.ok ? '#166534' : '#991B1B',
                   border: `1px solid ${usdtResult.ok ? '#86EFAC' : '#FECACA'}`,
                 }}>
-                {usdtResult.ok ? '✅' : '❌'} {usdtResult.message}
+                <span className="inline-flex items-center gap-1.5">{usdtResult.ok ? <CheckCircle size={13} /> : <XCircle size={13} />} {usdtResult.message}</span>
               </div>
             )}
           </div>
 
           {/* Right: what's included */}
           <div className="bg-white rounded-2xl border p-6" style={{ borderColor: C.g200 }}>
-            <h3 className="font-black text-sm mb-4" style={{ color: C.g800 }}>📋 What's in the Email</h3>
+            <h3 className="font-black text-sm mb-4 inline-flex items-center gap-1.5" style={{ color: C.g800 }}><List size={15} /> What's in the Email</h3>
             <div className="space-y-3">
               {[
                 { icon: '🎉', title: 'Happy New Month header', desc: 'Dark green gradient banner celebrating the new month' },
@@ -2848,7 +2849,7 @@ function BroadcastSection() {
               </div>
 
               <div className="flex items-start gap-3 p-3 rounded-2xl" style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA' }}>
-                <span className="text-xl flex-shrink-0 mt-0.5">📢</span>
+                <Megaphone size={20} className="flex-shrink-0 mt-0.5" />
                 <div>
                   <p className="text-xs font-black" style={{ color: '#991B1B' }}>Sends to EVERY registered user</p>
                   <p className="text-xs mt-0.5" style={{ color: '#B91C1C' }}>
@@ -2869,7 +2870,7 @@ function BroadcastSection() {
                 onClick={() => { setShowUsdtConfirm(false); sendUsdtBlast(); }}
                 className="flex-1 py-3.5 rounded-2xl text-sm font-black text-white flex items-center justify-center gap-2 transition"
                 style={{ background: 'linear-gradient(135deg,#1B4332,#2D6A4F)', boxShadow: '0 4px 14px rgba(27,67,50,0.4)' }}>
-                💵 Yes, Send Now
+                <DollarSign size={15} /> Yes, Send Now
               </button>
             </div>
           </div>
@@ -2910,7 +2911,7 @@ function BroadcastSection() {
 
               {/* Warning row */}
               <div className="flex items-start gap-3 p-3 rounded-2xl" style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA' }}>
-                <span className="text-xl flex-shrink-0 mt-0.5">📢</span>
+                <Megaphone size={20} className="flex-shrink-0 mt-0.5" />
                 <div>
                   <p className="text-xs font-black" style={{ color: '#991B1B' }}>Sends to EVERY registered user</p>
                   <p className="text-xs mt-0.5" style={{ color: '#B91C1C' }}>
@@ -2993,7 +2994,7 @@ function SuggestionsSection() {
       const updated = r.data.suggestion;
       setSugs(prev => prev.map(s => s.id === id ? updated : s));
       if (selected?.id === id) setSelected(updated);
-      toast.success('Updated ✅');
+      toast.success(<span className="inline-flex items-center gap-1">Updated <CheckCircle size={14} /></span>);
     } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
     finally { setActing(false); }
   };
@@ -3033,7 +3034,7 @@ function SuggestionsSection() {
           { label: 'Total Ideas',  value: total,           color: C.forest,   bg: '#F0FDF4' },
           { label: 'Open',         value: counts.open,     color: '#3B82F6',  bg: '#EFF6FF' },
           { label: 'In Pipeline',  value: counts.pipeline, color: '#6D28D9',  bg: '#F5F3FF' },
-          { label: 'Shipped ✅',   value: counts.done,     color: '#166534',  bg: '#F0FDF4' },
+          { label: 'Shipped',     value: counts.done,     color: '#166534',  bg: '#F0FDF4' },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-2xl border p-4 text-center" style={{ borderColor: C.g200 }}>
             <p className="text-2xl font-black" style={{ color: s.color }}>{s.value}</p>
@@ -3046,13 +3047,13 @@ function SuggestionsSection() {
       <div className="flex gap-2 flex-wrap">
         <select value={sort} onChange={e => setSort(e.target.value)}
           className="bg-white border rounded-xl px-3 py-2 text-sm font-semibold outline-none" style={{ borderColor: C.g200, color: C.g700 }}>
-          <option value="new">🕐 Newest First</option>
-          <option value="votes">🔥 Most Voted</option>
+          <option value="new">Newest First</option>
+          <option value="votes">Most Voted</option>
         </select>
         <select value={catFilter} onChange={e => setCat(e.target.value)}
           className="bg-white border rounded-xl px-3 py-2 text-sm font-semibold outline-none" style={{ borderColor: C.g200, color: C.g700 }}>
           <option value="">All Categories</option>
-          {SUGGESTION_CATS.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}
+          {SUGGESTION_CATS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
         </select>
         <select value={statusFilter} onChange={e => setStat(e.target.value)}
           className="bg-white border rounded-xl px-3 py-2 text-sm font-semibold outline-none" style={{ borderColor: C.g200, color: C.g700 }}>
@@ -3063,7 +3064,7 @@ function SuggestionsSection() {
 
       {/* Table */}
       <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
-        {loading ? <Spin /> : suggestions.length === 0 ? <Empty icon="💡" text="No suggestions yet" /> : (
+        {loading ? <Spin /> : suggestions.length === 0 ? <Empty icon={<Lightbulb size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No suggestions yet" /> : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead style={{ backgroundColor: C.g50 }}>
@@ -3089,7 +3090,7 @@ function SuggestionsSection() {
                       </td>
                       <td className="px-4 py-3" style={{ maxWidth: 300 }}>
                         <p className="font-bold text-xs mb-0.5 leading-snug" style={{ color: C.g800 }}>
-                          {s.is_pinned && <span className="mr-1">📌</span>}{s.title}
+                          {s.is_pinned && <Pin size={12} className="mr-1 inline-block" />}{s.title}
                         </p>
                         {s.body && (
                           <p className="text-xs leading-relaxed line-clamp-2" style={{ color: C.g500 }}>
@@ -3104,8 +3105,8 @@ function SuggestionsSection() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{ backgroundColor: C.g100, color: C.g600 }}>
-                          {cat.emoji} {cat.label}
+                        <span className="text-xs px-2 py-0.5 rounded-full font-bold inline-flex items-center gap-1" style={{ backgroundColor: C.g100, color: C.g600 }}>
+                          {cat.icon}{cat.label}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -3147,7 +3148,7 @@ function SuggestionsSection() {
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg"
                   style={{ backgroundColor: '#F0FDF4' }}>
-                  {(SUGGESTION_CATS.find(c => c.id === selected.category) || SUGGESTION_CATS[4]).emoji}
+                  {(SUGGESTION_CATS.find(c => c.id === selected.category) || SUGGESTION_CATS[4]).icon}
                 </div>
                 <div>
                   <p className="text-xs font-bold" style={{ color: C.g500 }}>Community Suggestion</p>
@@ -3177,7 +3178,7 @@ function SuggestionsSection() {
                   bg={(SUGGESTION_STATUS[selected.status] || SUGGESTION_STATUS.open).bg} />
                 {selected.is_pinned && (
                   <span className="text-xs px-2 py-1 rounded-xl font-bold"
-                    style={{ backgroundColor: '#FFFBEB', color: '#92400E' }}>📌 Pinned</span>
+                    style={{ backgroundColor: '#FFFBEB', color: '#92400E' }}><Pin size={11} className="mr-1 inline-block" /> Pinned</span>
                 )}
                 <span className="ml-auto text-xs font-semibold" style={{ color: C.g400 }}>
                   {selected.username || 'Anonymous'} · {fmtDate(selected.created_at)}
@@ -3225,12 +3226,12 @@ function SuggestionsSection() {
                   onChange={e => update(selected.id, { status: e.target.value })}
                   className="w-full border rounded-xl px-4 py-3 text-sm font-semibold outline-none"
                   style={{ borderColor: C.g200, color: C.g700, backgroundColor: '#fff' }}>
-                  <option value="open">🔵 Open</option>
-                  <option value="reviewing">🟡 Under Review</option>
-                  <option value="planned">🗺️ Planned</option>
-                  <option value="building">🔨 Building Now</option>
-                  <option value="done">✅ Done / Shipped</option>
-                  <option value="rejected">❌ Not Planned</option>
+                  <option value="open">Open</option>
+                  <option value="reviewing">Under Review</option>
+                  <option value="planned">Planned</option>
+                  <option value="building">Building Now</option>
+                  <option value="done">Done / Shipped</option>
+                  <option value="rejected">Not Planned</option>
                 </select>
               </div>
 
@@ -3265,7 +3266,7 @@ function SuggestionsSection() {
               <button disabled={acting} onClick={() => update(selected.id, { is_pinned: !selected.is_pinned })}
                 className="px-4 py-3 rounded-xl text-sm font-black transition hover:opacity-80"
                 style={{ backgroundColor: '#FFFBEB', color: '#92400E' }}>
-                {selected.is_pinned ? '📌 Unpin' : '📌 Pin'}
+                <span className="inline-flex items-center gap-1.5">{selected.is_pinned ? <><Pin size={12} /> Unpin</> : <><Pin size={12} /> Pin</>}</span>
               </button>
               <button onClick={() => del(selected.id)}
                 className="px-4 py-3 rounded-xl text-sm font-black flex items-center gap-1.5 transition hover:opacity-80"
@@ -3320,7 +3321,7 @@ function NewUsersSection() {
       </div>
 
       <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
-        {loading ? <Spin /> : users.length === 0 ? <Empty icon="🆕" text="No new users in the last 7 days" /> : (
+        {loading ? <Spin /> : users.length === 0 ? <Empty icon={<Sparkles size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No new users in the last 7 days" /> : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead style={{ backgroundColor: C.g50 }}>
@@ -3354,9 +3355,9 @@ function NewUsersSection() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1">
-                        <span title="Email" style={{ opacity: u.is_email_verified ? 1 : 0.25 }}>📧</span>
-                        <span title="Phone" style={{ opacity: u.is_phone_verified ? 1 : 0.25 }}>📱</span>
-                        <span title="KYC"   style={{ opacity: u.is_id_verified    ? 1 : 0.25 }}>🪪</span>
+                        <span title="Email" className="inline-flex items-center" style={{ opacity: u.is_email_verified ? 1 : 0.25 }}><Mail size={13} /></span>
+                        <span title="Phone" className="inline-flex items-center" style={{ opacity: u.is_phone_verified ? 1 : 0.25 }}><Phone size={13} /></span>
+                        <span title="KYC"   className="inline-flex items-center" style={{ opacity: u.is_id_verified    ? 1 : 0.25 }}><CreditCard size={13} /></span>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-xs" style={{ color: C.g400 }}>{fmtAge(u.created_at)}</td>
@@ -3416,7 +3417,7 @@ function ReportsSection() {
 
       {loading ? <Spin /> : !data ? <Empty text="No report data" /> : tab === 'disputes' ? (
         <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
-          {data.disputes.length === 0 ? <Empty icon="⚖️" text="No active disputes" /> : (
+          {data.disputes.length === 0 ? <Empty icon={<Scale size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No active disputes" /> : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead style={{ backgroundColor: C.g50 }}>
@@ -3446,7 +3447,7 @@ function ReportsSection() {
         </div>
       ) : (
         <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
-          {data.feedback.length === 0 ? <Empty icon="💬" text="No feedback yet" /> : (
+          {data.feedback.length === 0 ? <Empty icon={<MessageSquare size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No feedback yet" /> : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead style={{ backgroundColor: C.g50 }}>
@@ -3463,7 +3464,7 @@ function ReportsSection() {
                       <td className="px-4 py-3 text-xs font-semibold" style={{ color: C.g700 }}>{f.reviewed?.username || '—'}</td>
                       <td className="px-4 py-3">
                         <span className="text-xs font-black" style={{ color: f.rating >= 4 ? C.success : f.rating >= 3 ? C.amber : C.danger }}>
-                          {'⭐'.repeat(Math.min(f.rating || 0, 5))} {f.rating}/5
+                          {Array.from({ length: Math.min(f.rating || 0, 5) }).map((_, i) => <Star key={i} size={12} fill="currentColor" className="inline-block" />)} {f.rating}/5
                         </span>
                       </td>
                       <td className="px-4 py-3 text-xs max-w-[220px]" style={{ color: C.g600 }}>
@@ -3523,7 +3524,7 @@ function ActivitySection() {
       </div>
 
       <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
-        {loading ? <Spin /> : activity.length === 0 ? <Empty icon="📊" text="No activity data yet" /> : (
+        {loading ? <Spin /> : activity.length === 0 ? <Empty icon={<BarChart2 size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No activity data yet" /> : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead style={{ backgroundColor: C.g50 }}>
@@ -3561,7 +3562,7 @@ function ActivitySection() {
                           bg={online ? '#F0FDF4' : u.account_status === 'banned' ? '#FEF2F2' : C.g100} />
                       </td>
                       <td className="px-4 py-3 text-xs font-semibold" style={{ color: online ? C.success : C.g500 }}>
-                        {online ? '🟢 Now' : fmtAge(u.last_seen_at)}
+                        {online ? <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: '#10B981' }} /> Now</span> : fmtAge(u.last_seen_at)}
                       </td>
                       <td className="px-4 py-3 text-xs" style={{ color: C.g400 }}>{fmtAge(u.last_login)}</td>
                       <td className="px-4 py-3 text-xs font-bold" style={{ color: C.g700 }}>{u.total_trades || 0}</td>
@@ -3593,10 +3594,10 @@ function SupportTicketsSection() {
   const chatEndRef              = useRef(null);
 
   const TICKET_STATUSES = {
-    open:     { label: 'Open',     color: '#3B82F6', bg: '#EFF6FF', dot: '🔵' },
-    active:   { label: 'Active',   color: '#166534', bg: '#F0FDF4', dot: '🟢' },
-    resolved: { label: 'Resolved', color: '#6D28D9', bg: '#F5F3FF', dot: '✅' },
-    closed:   { label: 'Closed',   color: '#6B7280', bg: '#F9FAFB', dot: '🔒' },
+    open:     { label: 'Open',     color: '#3B82F6', bg: '#EFF6FF', dot: <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: '#3B82F6' }} /> },
+    active:   { label: 'Active',   color: '#166534', bg: '#F0FDF4', dot: <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: '#22C55E' }} /> },
+    resolved: { label: 'Resolved', color: '#6D28D9', bg: '#F5F3FF', dot: <CheckCircle size={12} /> },
+    closed:   { label: 'Closed',   color: '#6B7280', bg: '#F9FAFB', dot: <Lock size={12} /> },
   };
 
   function fmtAge(ts) {
@@ -3644,7 +3645,7 @@ function SupportTicketsSection() {
       setTickets(prev => prev.map(t => t.id === selected.id ? { ...t, status: 'active', updated_at: new Date().toISOString() } : t));
       setSelected(prev => prev ? { ...prev, status: 'active' } : prev);
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
-      toast.success('Reply sent ✅');
+      toast.success(<span className="inline-flex items-center gap-1">Reply sent <CheckCircle size={14} /></span>);
     } catch (e) { toast.error(e.response?.data?.error || 'Failed to send'); }
     finally { setSending(false); }
   };
@@ -3692,7 +3693,7 @@ function SupportTicketsSection() {
             <button key={s} onClick={() => setStat(s)}
               className="px-3 py-1.5 rounded-lg text-xs font-black transition"
               style={{ backgroundColor: statusFilter === s ? C.forest : C.g100, color: statusFilter === s ? '#fff' : C.g600 }}>
-              {s === '' ? 'All' : `${TICKET_STATUSES[s]?.dot} ${TICKET_STATUSES[s]?.label}`}
+              {s === '' ? 'All' : <span className="inline-flex items-center gap-1">{TICKET_STATUSES[s]?.dot}{TICKET_STATUSES[s]?.label}</span>}
             </button>
           ))}
         </div>
@@ -3731,8 +3732,8 @@ function SupportTicketsSection() {
                         <span className="text-xs capitalize font-bold" style={{ color: C.g500 }}>{t.category || 'general'}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-xs px-2 py-1 rounded-full font-black" style={{ backgroundColor: st.bg, color: st.color }}>
-                          {st.dot} {st.label}
+                        <span className="text-xs px-2 py-1 rounded-full font-black inline-flex items-center gap-1" style={{ backgroundColor: st.bg, color: st.color }}>
+                          {st.dot}{st.label}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -3775,13 +3776,13 @@ function SupportTicketsSection() {
                   </p>
                   <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                     {selected.user_email && (
-                      <span className="text-[11px]" style={{ color: C.g500 }}>✉ {selected.user_email}</span>
+                      <span className="text-[11px] inline-flex items-center gap-1" style={{ color: C.g500 }}><Mail size={11} /> {selected.user_email}</span>
                     )}
                     {selected.user_phone && (
-                      <span className="text-[11px]" style={{ color: C.g500 }}>📞 {selected.user_phone}</span>
+                      <span className="text-[11px] inline-flex items-center gap-1" style={{ color: C.g500 }}><Phone size={11} /> {selected.user_phone}</span>
                     )}
                     {selected.user_country && (
-                      <span className="text-[11px]" style={{ color: C.g500 }}>🌍 {selected.user_country}</span>
+                      <span className="text-[11px] inline-flex items-center gap-1" style={{ color: C.g500 }}><Globe size={11} /> {selected.user_country}</span>
                     )}
                     {selected.user_joined && (
                       <span className="text-[11px]" style={{ color: C.g400 }}>
@@ -3796,9 +3797,9 @@ function SupportTicketsSection() {
                 <div className="flex-1 min-w-0 pr-4">
                   <p className="font-black text-sm leading-snug" style={{ color: C.g800 }}>{selected.subject}</p>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    <span className="text-xs font-black px-2 py-0.5 rounded-full"
+                    <span className="text-xs font-black px-2 py-0.5 rounded-full inline-flex items-center gap-1"
                       style={{ backgroundColor: (TICKET_STATUSES[selected.status] || TICKET_STATUSES.open).bg, color: (TICKET_STATUSES[selected.status] || TICKET_STATUSES.open).color }}>
-                      {(TICKET_STATUSES[selected.status] || TICKET_STATUSES.open).dot} {(TICKET_STATUSES[selected.status] || TICKET_STATUSES.open).label}
+                      {(TICKET_STATUSES[selected.status] || TICKET_STATUSES.open).dot}{(TICKET_STATUSES[selected.status] || TICKET_STATUSES.open).label}
                     </span>
                     <span className="text-xs capitalize px-2 py-0.5 rounded-full" style={{ backgroundColor: C.g100, color: C.g600 }}>{selected.category}</span>
                     <span className="text-xs" style={{ color: C.g400 }}>{fmtAge(selected.updated_at)}</span>
@@ -3808,10 +3809,10 @@ function SupportTicketsSection() {
                   <select value={selected.status} onChange={e => updateStatus(selected.id, e.target.value)}
                     className="text-xs border rounded-lg px-2 py-1 outline-none"
                     style={{ borderColor: C.g200, color: C.g700, backgroundColor: '#fff' }}>
-                    <option value="open">🔵 Open</option>
-                    <option value="active">🟢 Active</option>
-                    <option value="resolved">✅ Resolved</option>
-                    <option value="closed">🔒 Closed</option>
+                    <option value="open">Open</option>
+                    <option value="active">Active</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="closed">Closed</option>
                   </select>
                   <button onClick={() => { setSelected(null); setMessages([]); }}
                     className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 transition">

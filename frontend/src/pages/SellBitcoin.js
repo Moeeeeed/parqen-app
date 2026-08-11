@@ -10,7 +10,11 @@ import {
   Filter, Home, Wallet, User, Gift, Shield,
   ChevronDown, ThumbsUp, ThumbsDown, Repeat2,
   Phone, Mail, Ban, ArrowUp, ArrowDown, Trophy, Zap,
-Flame,
+  Flame,
+  Globe, CreditCard, Waves, Circle, Banknote, Apple,
+  MessageCircle, Diamond, Send, Building2, Landmark, Link2,
+  Palmtree, Sparkles, Moon, Star, FileText, ClipboardList,
+  BarChart3, WifiOff, Search, Loader2, Smartphone,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
@@ -101,7 +105,7 @@ const COUNTRY_REGIONS = {
 };
 
 const COUNTRIES = [
-  {code:'ALL', name:'All Countries',  flag:'🌍', currency:'USD', symbol:'$',    region:null},
+  {code:'ALL', name:'All Countries',  flag:<Globe size={14} className="inline-block" style={{color:C.g400}}/>, currency:'USD', symbol:'$',    region:null},
   // Africa
   {code:'GH',  name:'Ghana',          flag:'🇬🇭', currency:'GHS', symbol:'₵',    region:'Africa'},
   {code:'NG',  name:'Nigeria',        flag:'🇳🇬', currency:'NGN', symbol:'₦',    region:'Africa'},
@@ -152,65 +156,65 @@ const COUNTRIES = [
 ];
 
 const PAYMENT_OPTIONS = [
-  {value:'all',            label:'All Methods',                   icon:'💳', cat:null},
+  {value:'all',            label:'All Methods',                   icon:<CreditCard size={14} className="inline-block"/>, cat:null},
   // Mobile Money
-  {value:'mtn',            label:'MTN Mobile Money',              icon:'📱', cat:'Mobile Money'},
-  {value:'vodafone',       label:'Vodafone Cash',                 icon:'📱', cat:'Mobile Money'},
-  {value:'airteltigo',     label:'AirtelTigo Money',              icon:'📱', cat:'Mobile Money'},
-  {value:'mpesa',          label:'M-Pesa',                        icon:'📱', cat:'Mobile Money'},
-  {value:'airtel money',   label:'Airtel Money',                  icon:'📱', cat:'Mobile Money'},
-  {value:'orange money',   label:'Orange Money',                  icon:'📱', cat:'Mobile Money'},
-  {value:'wave',           label:'Wave',                          icon:'🌊', cat:'Mobile Money'},
-  {value:'chipper',        label:'Chipper Cash',                  icon:'💚', cat:'Mobile Money'},
-  {value:'ecocash',        label:'EcoCash',                       icon:'📱', cat:'Mobile Money'},
-  {value:'tigo pesa',      label:'Tigo Pesa / Mixx',              icon:'📱', cat:'Mobile Money'},
-  {value:'moov money',     label:'Moov Money',                    icon:'📱', cat:'Mobile Money'},
-  {value:'africell',       label:'Africell Money',                icon:'📱', cat:'Mobile Money'},
-  {value:'paga',           label:'Paga',                          icon:'🟢', cat:'Mobile Money'},
+  {value:'mtn',            label:'MTN Mobile Money',              icon:<Smartphone size={14} className="inline-block"/>, cat:'Mobile Money'},
+  {value:'vodafone',       label:'Vodafone Cash',                 icon:<Smartphone size={14} className="inline-block"/>, cat:'Mobile Money'},
+  {value:'airteltigo',     label:'AirtelTigo Money',              icon:<Smartphone size={14} className="inline-block"/>, cat:'Mobile Money'},
+  {value:'mpesa',          label:'M-Pesa',                        icon:<Smartphone size={14} className="inline-block"/>, cat:'Mobile Money'},
+  {value:'airtel money',   label:'Airtel Money',                  icon:<Smartphone size={14} className="inline-block"/>, cat:'Mobile Money'},
+  {value:'orange money',   label:'Orange Money',                  icon:<Smartphone size={14} className="inline-block"/>, cat:'Mobile Money'},
+  {value:'wave',           label:'Wave',                          icon:<Waves size={14} className="inline-block"/>, cat:'Mobile Money'},
+  {value:'chipper',        label:'Chipper Cash',                  icon:<Heart size={14} className="inline-block" style={{color:'#22C55E'}}/>, cat:'Mobile Money'},
+  {value:'ecocash',        label:'EcoCash',                       icon:<Smartphone size={14} className="inline-block"/>, cat:'Mobile Money'},
+  {value:'tigo pesa',      label:'Tigo Pesa / Mixx',              icon:<Smartphone size={14} className="inline-block"/>, cat:'Mobile Money'},
+  {value:'moov money',     label:'Moov Money',                    icon:<Smartphone size={14} className="inline-block"/>, cat:'Mobile Money'},
+  {value:'africell',       label:'Africell Money',                icon:<Smartphone size={14} className="inline-block"/>, cat:'Mobile Money'},
+  {value:'paga',           label:'Paga',                          icon:<Circle size={14} className="inline-block" style={{color:'#22C55E', fill:'#22C55E'}}/>, cat:'Mobile Money'},
   // Digital Wallet
-  {value:'paypal',         label:'PayPal',                        icon:'💰', cat:'Digital Wallet'},
-  {value:'cash app',       label:'Cash App',                      icon:'💸', cat:'Digital Wallet'},
-  {value:'apple pay',      label:'Apple Pay',                     icon:'🍎', cat:'Digital Wallet'},
-  {value:'alipay',         label:'Alipay',                        icon:'💙', cat:'Digital Wallet'},
-  {value:'wechat',         label:'WeChat Pay',                    icon:'💬', cat:'Digital Wallet'},
-  {value:'venmo',          label:'Venmo',                         icon:'🔵', cat:'Digital Wallet'},
-  {value:'zelle',          label:'Zelle',                         icon:'💜', cat:'Digital Wallet'},
-  {value:'revolut',        label:'Revolut',                       icon:'🔷', cat:'Digital Wallet'},
-  {value:'skrill',         label:'Skrill',                        icon:'💳', cat:'Digital Wallet'},
-  {value:'neteller',       label:'Neteller',                      icon:'💳', cat:'Digital Wallet'},
-  {value:'payeer',         label:'Payeer',                        icon:'💳', cat:'Digital Wallet'},
-  {value:'perfect money',  label:'Perfect Money',                 icon:'💳', cat:'Digital Wallet'},
+  {value:'paypal',         label:'PayPal',                        icon:<Wallet size={14} className="inline-block"/>, cat:'Digital Wallet'},
+  {value:'cash app',       label:'Cash App',                      icon:<Banknote size={14} className="inline-block"/>, cat:'Digital Wallet'},
+  {value:'apple pay',      label:'Apple Pay',                     icon:<Apple size={14} className="inline-block"/>, cat:'Digital Wallet'},
+  {value:'alipay',         label:'Alipay',                        icon:<Circle size={14} className="inline-block" style={{color:'#3B82F6', fill:'#3B82F6'}}/>, cat:'Digital Wallet'},
+  {value:'wechat',         label:'WeChat Pay',                    icon:<MessageCircle size={14} className="inline-block"/>, cat:'Digital Wallet'},
+  {value:'venmo',          label:'Venmo',                         icon:<Circle size={14} className="inline-block" style={{color:'#60A5FA', fill:'#60A5FA'}}/>, cat:'Digital Wallet'},
+  {value:'zelle',          label:'Zelle',                         icon:<Circle size={14} className="inline-block" style={{color:'#A855F7', fill:'#A855F7'}}/>, cat:'Digital Wallet'},
+  {value:'revolut',        label:'Revolut',                       icon:<Diamond size={14} className="inline-block" style={{color:'#3B82F6', fill:'#3B82F6'}}/>, cat:'Digital Wallet'},
+  {value:'skrill',         label:'Skrill',                        icon:<CreditCard size={14} className="inline-block"/>, cat:'Digital Wallet'},
+  {value:'neteller',       label:'Neteller',                      icon:<CreditCard size={14} className="inline-block"/>, cat:'Digital Wallet'},
+  {value:'payeer',         label:'Payeer',                        icon:<CreditCard size={14} className="inline-block"/>, cat:'Digital Wallet'},
+  {value:'perfect money',  label:'Perfect Money',                 icon:<CreditCard size={14} className="inline-block"/>, cat:'Digital Wallet'},
   // Remittance
-  {value:'wise',           label:'Wise',                          icon:'🌍', cat:'Remittance'},
-  {value:'worldremit',     label:'WorldRemit',                    icon:'🌐', cat:'Remittance'},
-  {value:'remitly',        label:'Remitly',                       icon:'🚀', cat:'Remittance'},
-  {value:'western union',  label:'Western Union',                 icon:'🏢', cat:'Remittance'},
-  {value:'moneygram',      label:'MoneyGram',                     icon:'🏢', cat:'Remittance'},
+  {value:'wise',           label:'Wise',                          icon:<Globe size={14} className="inline-block"/>, cat:'Remittance'},
+  {value:'worldremit',     label:'WorldRemit',                    icon:<Globe size={14} className="inline-block"/>, cat:'Remittance'},
+  {value:'remitly',        label:'Remitly',                       icon:<Send size={14} className="inline-block" style={{color:'#0EA5E9'}}/>, cat:'Remittance'},
+  {value:'western union',  label:'Western Union',                 icon:<Building2 size={14} className="inline-block"/>, cat:'Remittance'},
+  {value:'moneygram',      label:'MoneyGram',                     icon:<Building2 size={14} className="inline-block"/>, cat:'Remittance'},
   // Bank
-  {value:'bank transfer',  label:'Bank Transfer',                 icon:'🏦', cat:'Bank'},
-  {value:'wire transfer',  label:'Wire Transfer',                 icon:'🔗', cat:'Bank'},
-  {value:'mobile banking', label:'Mobile Banking App',            icon:'📲', cat:'Bank'},
-  {value:'interbank',      label:'Interbank (GhIPSS/NIBSS/EFT)',  icon:'🏦', cat:'Bank'},
-  {value:'ussd',           label:'USSD Bank Transfer',            icon:'📞', cat:'Bank'},
-  {value:'instant eft',    label:'Instant EFT (South Africa)',    icon:'🏦', cat:'Bank'},
-  {value:'cash deposit',   label:'Cash Deposit (Bank Counter)',   icon:'🏦', cat:'Bank'},
+  {value:'bank transfer',  label:'Bank Transfer',                 icon:<Landmark size={14} className="inline-block"/>, cat:'Bank'},
+  {value:'wire transfer',  label:'Wire Transfer',                 icon:<Link2 size={14} className="inline-block"/>, cat:'Bank'},
+  {value:'mobile banking', label:'Mobile Banking App',            icon:<Smartphone size={14} className="inline-block"/>, cat:'Bank'},
+  {value:'interbank',      label:'Interbank (GhIPSS/NIBSS/EFT)',  icon:<Landmark size={14} className="inline-block"/>, cat:'Bank'},
+  {value:'ussd',           label:'USSD Bank Transfer',            icon:<Phone size={14} className="inline-block"/>, cat:'Bank'},
+  {value:'instant eft',    label:'Instant EFT (South Africa)',    icon:<Landmark size={14} className="inline-block"/>, cat:'Bank'},
+  {value:'cash deposit',   label:'Cash Deposit (Bank Counter)',   icon:<Landmark size={14} className="inline-block"/>, cat:'Bank'},
   // FinTech
-  {value:'opay',           label:'OPay',                          icon:'🟢', cat:'FinTech'},
-  {value:'palmpay',        label:'PalmPay',                       icon:'🌴', cat:'FinTech'},
-  {value:'kuda',           label:'Kuda Bank',                     icon:'🏦', cat:'FinTech'},
-  {value:'moniepoint',     label:'Moniepoint',                    icon:'🏦', cat:'FinTech'},
-  {value:'paystack',       label:'Paystack',                      icon:'💚', cat:'FinTech'},
-  {value:'flutterwave',    label:'Flutterwave (Barter)',           icon:'🦋', cat:'FinTech'},
+  {value:'opay',           label:'OPay',                          icon:<Circle size={14} className="inline-block" style={{color:'#22C55E', fill:'#22C55E'}}/>, cat:'FinTech'},
+  {value:'palmpay',        label:'PalmPay',                       icon:<Palmtree size={14} className="inline-block"/>, cat:'FinTech'},
+  {value:'kuda',           label:'Kuda Bank',                     icon:<Landmark size={14} className="inline-block"/>, cat:'FinTech'},
+  {value:'moniepoint',     label:'Moniepoint',                    icon:<Landmark size={14} className="inline-block"/>, cat:'FinTech'},
+  {value:'paystack',       label:'Paystack',                      icon:<Heart size={14} className="inline-block" style={{color:'#22C55E'}}/>, cat:'FinTech'},
+  {value:'flutterwave',    label:'Flutterwave (Barter)',           icon:<Sparkles size={14} className="inline-block"/>, cat:'FinTech'},
   // Cash
-  {value:'cash in person', label:'Cash in Person (Face-to-Face)', icon:'💵', cat:'Cash'},
-  {value:'cash out',       label:'Cash Out',                      icon:'💵', cat:'Cash'},
+  {value:'cash in person', label:'Cash in Person (Face-to-Face)', icon:<Banknote size={14} className="inline-block"/>, cat:'Cash'},
+  {value:'cash out',       label:'Cash Out',                      icon:<Banknote size={14} className="inline-block"/>, cat:'Cash'},
   // Crypto
-  {value:'usdt',           label:'USDT (Tether – TRC20)',          icon:'💵', cat:'Crypto'},
-  {value:'binance pay',    label:'Binance Pay',                   icon:'🟡', cat:'Crypto'},
+  {value:'usdt',           label:'USDT (Tether – TRC20)',          icon:<Banknote size={14} className="inline-block"/>, cat:'Crypto'},
+  {value:'binance pay',    label:'Binance Pay',                   icon:<Circle size={14} className="inline-block" style={{color:'#F0B90B', fill:'#F0B90B'}}/>, cat:'Crypto'},
   {value:'bitcoin',        label:'Bitcoin (BTC)',                  icon:'₿',  cat:'Crypto'},
   {value:'ethereum',       label:'Ethereum (ETH)',                icon:'⬡',  cat:'Crypto'},
-  {value:'luno',           label:'Luno Wallet',                   icon:'🌙', cat:'Crypto'},
-  {value:'yellow card',    label:'Yellow Card Wallet',            icon:'💛', cat:'Crypto'},
+  {value:'luno',           label:'Luno Wallet',                   icon:<Moon size={14} className="inline-block"/>, cat:'Crypto'},
+  {value:'yellow card',    label:'Yellow Card Wallet',            icon:<Circle size={14} className="inline-block" style={{color:'#EAB308', fill:'#EAB308'}}/>, cat:'Crypto'},
 ];
 
 const PM_CAT_COLORS = {
@@ -596,10 +600,10 @@ function BuyerModal({buyer, listing, onClose, onTrade, btcPriceUSD}) {
   if (!buyer) return null;
 
   const TABS = [
-    { id:'overview', label:'👤 Profile'           },
-    { id:'feedback', label:`💬 Reviews (${total})`},
-    { id:'rules',    label:'📋 Rules'              },
-    { id:'offer',    label:'📊 Offer'              },
+    { id:'overview', label:<span className="inline-flex items-center gap-1"><User size={12} className="inline-block"/>Profile</span>},
+    { id:'feedback', label:<span className="inline-flex items-center gap-1"><MessageCircle size={12} className="inline-block"/>Reviews ({total})</span>},
+    { id:'rules',    label:<span className="inline-flex items-center gap-1"><ClipboardList size={12} className="inline-block"/>Rules</span>},
+    { id:'offer',    label:<span className="inline-flex items-center gap-1"><BarChart3 size={12} className="inline-block"/>Offer</span>},
   ];
 
   return (
@@ -647,7 +651,7 @@ function BuyerModal({buyer, listing, onClose, onTrade, btcPriceUSD}) {
                   <span className="text-white/80 text-xs font-bold">{u.country_name || u.country}</span>
                 )}
                 <span className="text-white/40 text-xs">·</span>
-                <span className="text-white/60 text-xs">{seen.online ? '🟢 Active now' : seen.label}</span>
+                <span className="text-white/60 text-xs inline-flex items-center gap-1.5">{seen.online ? <><span className="w-1.5 h-1.5 rounded-full inline-block" style={{backgroundColor:'#4ADE80'}}/>Active now</> : seen.label}</span>
               </div>
               <BadgeChip user={u} size="sm" />
             </div>
@@ -732,7 +736,7 @@ function BuyerModal({buyer, listing, onClose, onTrade, btcPriceUSD}) {
               <div className="grid grid-cols-3 gap-2">
                 {[
                   {label:'Trades',     value:fmt(trades),               sub:'completed'},
-                  {label:'Rating',     value:`⭐ ${rating.toFixed(1)}`, sub:'of 5.0'},
+                  {label:'Rating',     value:<span className="inline-flex items-center gap-1"><Star size={12} className="inline-block fill-yellow-400 text-yellow-400"/>{rating.toFixed(1)}</span>, sub:'of 5.0'},
                   {label:'Completion', value:`${compRate.toFixed(0)}%`, sub:'rate'},
                 ].map(({label,value,sub}) => (
                   <div key={label} className="rounded-xl p-3 text-center"
@@ -765,9 +769,9 @@ function BuyerModal({buyer, listing, onClose, onTrade, btcPriceUSD}) {
                 <p className="text-xs font-black px-3 py-2 uppercase tracking-wider"
                   style={{color:C.g500, backgroundColor:C.g50}}>Verification</p>
                 {[
-                  {label:'Phone Number', ok:phoneOk, icon:'📱'},
-                  {label:'Email Address',ok:emailOk, icon:'📧'},
-                  {label:'ID / KYC',     ok:kycOk,   icon:'🪪'},
+                  {label:'Phone Number', ok:phoneOk, icon:<Smartphone size={14} className="inline-block"/>},
+                  {label:'Email Address',ok:emailOk, icon:<Mail size={14} className="inline-block"/>},
+                  {label:'ID / KYC',     ok:kycOk,   icon:<FileText size={14} className="inline-block"/>},
                 ].map(({label,ok,icon}) => (
                   <div key={label} className="flex items-center justify-between px-3 py-2.5 border-t"
                     style={{borderColor:C.g100}}>
@@ -823,11 +827,11 @@ function BuyerModal({buyer, listing, onClose, onTrade, btcPriceUSD}) {
                 <div className="flex-1 flex items-center gap-3 px-2">
                   <div className="text-center flex-1">
                     <p className="font-black text-sm" style={{color:'#16A34A'}}>{fmt(pos)}</p>
-                    <p className="text-xs" style={{color:C.g400}}>👍 Positive</p>
+                    <p className="text-xs inline-flex items-center gap-1 justify-center" style={{color:C.g400}}><ThumbsUp size={11} className="inline-block"/>Positive</p>
                   </div>
                   <div className="text-center flex-1">
                     <p className="font-black text-sm" style={{color:'#DC2626'}}>{fmt(neg)}</p>
-                    <p className="text-xs" style={{color:C.g400}}>👎 Negative</p>
+                    <p className="text-xs inline-flex items-center gap-1 justify-center" style={{color:C.g400}}><ThumbsDown size={11} className="inline-block"/>Negative</p>
                   </div>
                   <div className="text-center flex-1">
                     <p className="font-black text-sm" style={{color:C.forest}}>{trust}%</p>
@@ -852,7 +856,7 @@ function BuyerModal({buyer, listing, onClose, onTrade, btcPriceUSD}) {
                 </div>
               ) : reviews.length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="text-3xl mb-2">💬</p>
+                  <p className="text-3xl mb-2 flex justify-center"><MessageCircle size={36} style={{color:C.g300}}/></p>
                   <p className="font-bold text-sm" style={{color:C.g700}}>No reviews yet</p>
                   <p className="text-xs mt-1" style={{color:C.g400}}>Be the first to trade with this buyer</p>
                 </div>
@@ -872,7 +876,7 @@ function BuyerModal({buyer, listing, onClose, onTrade, btcPriceUSD}) {
                         <div className="flex items-center gap-2">
                           <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0"
                             style={{backgroundColor: isPos ? '#16A34A' : '#DC2626'}}>
-                            {isPos ? '👍' : '👎'}
+                            {isPos ? <ThumbsUp size={14} className="inline-block"/> : <ThumbsDown size={14} className="inline-block"/>}
                           </div>
                           <span className="text-xs font-black" style={{color: isPos ? '#166534' : '#991B1B'}}>
                             {rv.reviewer?.username || 'Anonymous'}
@@ -1383,7 +1387,7 @@ export default function SellBitcoin({user}) {
                 <div className="absolute top-full right-0 mt-1.5 bg-white rounded-2xl shadow-2xl z-50 border overflow-hidden"
                   style={{borderColor:C.g100,minWidth:'220px',maxWidth:'calc(100vw - 24px)'}}>
                   <div className="p-2 border-b sticky top-0 bg-white" style={{borderColor:C.g100}}>
-                    <input type="text" placeholder="🔍  Search currency…"
+                    <input type="text" placeholder="Search currency…"
                       value={currencySearch} onChange={e=>setCurrencySearch(e.target.value)}
                       autoFocus
                       className="w-full px-3 py-1.5 font-semibold rounded-xl border focus:outline-none"
@@ -1418,7 +1422,7 @@ export default function SellBitcoin({user}) {
                   color:           selPayment!=='all' ? C.sell : C.g600,
                   backgroundColor: selPayment!=='all' ? `${C.sell}08` : 'transparent',
                 }}>
-                <span className="text-sm leading-none flex-shrink-0">{PAYMENT_OPTIONS.find(p=>p.value===selPayment)?.icon||'💳'}</span>
+                <span className="text-sm leading-none flex-shrink-0">{PAYMENT_OPTIONS.find(p=>p.value===selPayment)?.icon||<CreditCard size={14} className="inline-block"/>}</span>
                 <span className="text-xs font-black truncate flex-1 text-left">
                   {PAYMENT_OPTIONS.find(p=>p.value===selPayment)?.label||'All Methods'}
                 </span>
@@ -1429,7 +1433,7 @@ export default function SellBitcoin({user}) {
                 <div className="absolute top-full left-0 mt-1.5 bg-white rounded-2xl shadow-2xl z-50 border overflow-hidden"
                   style={{borderColor:C.g100,minWidth:'220px',maxWidth:'calc(100vw - 24px)'}}>
                   <div className="p-2 border-b sticky top-0 bg-white" style={{borderColor:C.g100}}>
-                    <input type="text" placeholder="🔍  Search payment…"
+                    <input type="text" placeholder="Search payment…"
                       value={paymentSearch} onChange={e=>setPaymentSearch(e.target.value)}
                       autoFocus
                       className="w-full px-3 py-1.5 font-semibold rounded-xl border focus:outline-none"
@@ -1481,7 +1485,7 @@ export default function SellBitcoin({user}) {
                 <div className="absolute top-full right-0 mt-1.5 bg-white rounded-2xl shadow-2xl z-50 border overflow-hidden"
                   style={{borderColor:C.g100,minWidth:'240px',maxWidth:'calc(100vw - 24px)'}}>
                   <div className="p-2 border-b sticky top-0 bg-white" style={{borderColor:C.g100}}>
-                    <input type="text" placeholder="🔍  Search country…"
+                    <input type="text" placeholder="Search country…"
                       value={countrySearch} onChange={e=>setCountrySearch(e.target.value)}
                       autoFocus
                       className="w-full px-3 py-1.5 font-semibold rounded-xl border focus:outline-none"
@@ -1568,7 +1572,7 @@ export default function SellBitcoin({user}) {
               <button onClick={()=>{setSellAmt('');setSelPayment('all');setSelCountry(COUNTRIES[0]);setSelCurrency(CURRENCIES[0]);setSortBy('rate_high');setPaymentSearch('');setTraderSearch('');setCurrencySearch('');setCountrySearch('');}}
                 className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl text-xs font-black border-2 transition"
                 style={{borderColor:C.danger, color:C.danger, backgroundColor:'#FEF2F2'}}>
-                ✕
+                <X size={14}/>
               </button>
             )}
           </div>
@@ -1621,7 +1625,7 @@ export default function SellBitcoin({user}) {
 
         {(loading && !offers.length) || retrying ? (
           <div className="bg-white rounded-2xl border p-8 text-center" style={{borderColor:C.g200}}>
-            <p className="text-5xl mb-3">⏳</p>
+            <p className="text-5xl mb-3 flex justify-center"><Loader2 size={44} className="animate-spin" style={{color:C.sell}}/></p>
             <p className="font-black text-base mb-1" style={{color:C.g800}}>
               {retrying ? 'Waking up server…' : 'Loading offers…'}
             </p>
@@ -1634,7 +1638,7 @@ export default function SellBitcoin({user}) {
           </div>
         ) : loadError && !offers.length ? (
           <div className="bg-white rounded-2xl border p-8 text-center" style={{borderColor:C.g200}}>
-            <p className="text-5xl mb-3">📡</p>
+            <p className="text-5xl mb-3 flex justify-center"><WifiOff size={44} style={{color:C.g300}}/></p>
             <p className="font-black text-base mb-1" style={{color:C.g800}}>Couldn't load offers</p>
             <p className="text-sm mb-4" style={{color:C.g400}}>Server may be busy. Please try again.</p>
             <button onClick={()=>{ setLoading(true); loadOffers(1, true); }}
@@ -1645,7 +1649,7 @@ export default function SellBitcoin({user}) {
           </div>
         ) : filtered.length===0 ? (
           <div className="bg-white rounded-2xl border p-6 sm:p-10 text-center" style={{borderColor:C.g200}}>
-            <p className="text-5xl mb-4">🔍</p>
+            <p className="text-5xl mb-4 flex justify-center"><Search size={44} style={{color:C.g300}}/></p>
             <p className="font-black text-base mb-1" style={{color:C.g800}}>No buyers found</p>
             <p className="text-sm" style={{color:C.g400}}>Adjust your filters or post the first buy offer</p>
             <button onClick={()=>navigate('/create-offer')}

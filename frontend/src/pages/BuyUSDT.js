@@ -12,6 +12,11 @@ import {
   ChevronDown, TrendingUp, BarChart2, ThumbsUp, ThumbsDown, Repeat2,
 Phone, Mail, Ban, ArrowUp, ArrowDown, Trophy, Crown, Zap, Flame,
 } from 'lucide-react';
+import {
+  CreditCard, Smartphone, Waves, Banknote, Apple, MessageSquare, Gem, Globe,
+  Rocket, Building2, Link2, Landmark, Palmtree, Coins, Moon, Star, List,
+  Clock, Satellite, Search,
+} from 'lucide-react';
 import { toast } from 'react-toastify';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
 import { BadgeChip, BADGE_COLORS } from '../lib/badge';
@@ -80,7 +85,7 @@ const COUNTRY_REGIONS = {
 };
 
 const COUNTRIES = [
-  {code:'ALL', name:'All Countries',  flag:'🌍', currency:'USD', symbol:'$',    region:null},
+  {code:'ALL', name:'All Countries',  flag:<Globe size={14} className="inline-block" />, currency:'USD', symbol:'$',    region:null},
   {code:'GH',  name:'Ghana',          flag:'🇬🇭', currency:'GHS', symbol:'₵',    region:'Africa'},
   {code:'NG',  name:'Nigeria',        flag:'🇳🇬', currency:'NGN', symbol:'₦',    region:'Africa'},
   {code:'KE',  name:'Kenya',          flag:'🇰🇪', currency:'KES', symbol:'KSh',  region:'Africa'},
@@ -126,58 +131,58 @@ const COUNTRIES = [
 ];
 
 const PAYMENT_OPTIONS = [
-  {value:'all',            label:'All Methods',                   icon:'💳', cat:null},
-  {value:'mtn',            label:'MTN Mobile Money',              icon:'📱', cat:'Mobile Money'},
-  {value:'vodafone',       label:'Vodafone Cash',                 icon:'📱', cat:'Mobile Money'},
-  {value:'airteltigo',     label:'AirtelTigo Money',              icon:'📱', cat:'Mobile Money'},
-  {value:'mpesa',          label:'M-Pesa',                        icon:'📱', cat:'Mobile Money'},
-  {value:'airtel money',   label:'Airtel Money',                  icon:'📱', cat:'Mobile Money'},
-  {value:'orange money',   label:'Orange Money',                  icon:'📱', cat:'Mobile Money'},
-  {value:'wave',           label:'Wave',                          icon:'🌊', cat:'Mobile Money'},
-  {value:'chipper',        label:'Chipper Cash',                  icon:'💚', cat:'Mobile Money'},
-  {value:'ecocash',        label:'EcoCash',                       icon:'📱', cat:'Mobile Money'},
-  {value:'tigo pesa',      label:'Tigo Pesa / Mixx',              icon:'📱', cat:'Mobile Money'},
-  {value:'moov money',     label:'Moov Money',                    icon:'📱', cat:'Mobile Money'},
-  {value:'africell',       label:'Africell Money',                icon:'📱', cat:'Mobile Money'},
-  {value:'paga',           label:'Paga',                          icon:'🟢', cat:'Mobile Money'},
-  {value:'paypal',         label:'PayPal',                        icon:'💰', cat:'Digital Wallet'},
-  {value:'cash app',       label:'Cash App',                      icon:'💸', cat:'Digital Wallet'},
-  {value:'apple pay',      label:'Apple Pay',                     icon:'🍎', cat:'Digital Wallet'},
-  {value:'alipay',         label:'Alipay',                        icon:'💙', cat:'Digital Wallet'},
-  {value:'wechat',         label:'WeChat Pay',                    icon:'💬', cat:'Digital Wallet'},
-  {value:'venmo',          label:'Venmo',                         icon:'🔵', cat:'Digital Wallet'},
-  {value:'zelle',          label:'Zelle',                         icon:'💜', cat:'Digital Wallet'},
-  {value:'revolut',        label:'Revolut',                       icon:'🔷', cat:'Digital Wallet'},
-  {value:'skrill',         label:'Skrill',                        icon:'💳', cat:'Digital Wallet'},
-  {value:'neteller',       label:'Neteller',                      icon:'💳', cat:'Digital Wallet'},
-  {value:'payeer',         label:'Payeer',                        icon:'💳', cat:'Digital Wallet'},
-  {value:'perfect money',  label:'Perfect Money',                 icon:'💳', cat:'Digital Wallet'},
-  {value:'wise',           label:'Wise',                          icon:'🌍', cat:'Remittance'},
-  {value:'worldremit',     label:'WorldRemit',                    icon:'🌐', cat:'Remittance'},
-  {value:'remitly',        label:'Remitly',                       icon:'🚀', cat:'Remittance'},
-  {value:'western union',  label:'Western Union',                 icon:'🏢', cat:'Remittance'},
-  {value:'moneygram',      label:'MoneyGram',                     icon:'🏢', cat:'Remittance'},
-  {value:'bank transfer',  label:'Bank Transfer',                 icon:'🏦', cat:'Bank'},
-  {value:'wire transfer',  label:'Wire Transfer',                 icon:'🔗', cat:'Bank'},
-  {value:'mobile banking', label:'Mobile Banking App',            icon:'📲', cat:'Bank'},
-  {value:'interbank',      label:'Interbank (GhIPSS/NIBSS/EFT)',  icon:'🏦', cat:'Bank'},
-  {value:'ussd',           label:'USSD Bank Transfer',            icon:'📞', cat:'Bank'},
-  {value:'instant eft',    label:'Instant EFT (South Africa)',    icon:'🏦', cat:'Bank'},
-  {value:'cash deposit',   label:'Cash Deposit (Bank Counter)',   icon:'🏦', cat:'Bank'},
-  {value:'opay',           label:'OPay',                          icon:'🟢', cat:'FinTech'},
-  {value:'palmpay',        label:'PalmPay',                       icon:'🌴', cat:'FinTech'},
-  {value:'kuda',           label:'Kuda Bank',                     icon:'🏦', cat:'FinTech'},
-  {value:'moniepoint',     label:'Moniepoint',                    icon:'🏦', cat:'FinTech'},
-  {value:'paystack',       label:'Paystack',                      icon:'💚', cat:'FinTech'},
-  {value:'flutterwave',    label:'Flutterwave (Barter)',           icon:'🦋', cat:'FinTech'},
-  {value:'cash in person', label:'Cash in Person (Face-to-Face)', icon:'💵', cat:'Cash'},
-  {value:'cash out',       label:'Cash Out',                      icon:'💵', cat:'Cash'},
-  {value:'usdt',           label:'USDT (Tether – TRC20)',          icon:'💵', cat:'Crypto'},
-  {value:'binance pay',    label:'Binance Pay',                   icon:'🟡', cat:'Crypto'},
+  {value:'all',            label:'All Methods',                   icon:<CreditCard size={14} className="inline-block" />, cat:null},
+  {value:'mtn',            label:'MTN Mobile Money',              icon:<Smartphone size={14} className="inline-block" />, cat:'Mobile Money'},
+  {value:'vodafone',       label:'Vodafone Cash',                 icon:<Smartphone size={14} className="inline-block" />, cat:'Mobile Money'},
+  {value:'airteltigo',     label:'AirtelTigo Money',              icon:<Smartphone size={14} className="inline-block" />, cat:'Mobile Money'},
+  {value:'mpesa',          label:'M-Pesa',                        icon:<Smartphone size={14} className="inline-block" />, cat:'Mobile Money'},
+  {value:'airtel money',   label:'Airtel Money',                  icon:<Smartphone size={14} className="inline-block" />, cat:'Mobile Money'},
+  {value:'orange money',   label:'Orange Money',                  icon:<Smartphone size={14} className="inline-block" />, cat:'Mobile Money'},
+  {value:'wave',           label:'Wave',                          icon:<Waves size={14} className="inline-block" />, cat:'Mobile Money'},
+  {value:'chipper',        label:'Chipper Cash',                  icon:<Wallet size={14} className="inline-block" />, cat:'Mobile Money'},
+  {value:'ecocash',        label:'EcoCash',                       icon:<Smartphone size={14} className="inline-block" />, cat:'Mobile Money'},
+  {value:'tigo pesa',      label:'Tigo Pesa / Mixx',              icon:<Smartphone size={14} className="inline-block" />, cat:'Mobile Money'},
+  {value:'moov money',     label:'Moov Money',                    icon:<Smartphone size={14} className="inline-block" />, cat:'Mobile Money'},
+  {value:'africell',       label:'Africell Money',                icon:<Smartphone size={14} className="inline-block" />, cat:'Mobile Money'},
+  {value:'paga',           label:'Paga',                          icon:<Wallet size={14} className="inline-block" />, cat:'Mobile Money'},
+  {value:'paypal',         label:'PayPal',                        icon:<Wallet size={14} className="inline-block" />, cat:'Digital Wallet'},
+  {value:'cash app',       label:'Cash App',                      icon:<Banknote size={14} className="inline-block" />, cat:'Digital Wallet'},
+  {value:'apple pay',      label:'Apple Pay',                     icon:<Apple size={14} className="inline-block" />, cat:'Digital Wallet'},
+  {value:'alipay',         label:'Alipay',                        icon:<Smartphone size={14} className="inline-block" />, cat:'Digital Wallet'},
+  {value:'wechat',         label:'WeChat Pay',                    icon:<MessageSquare size={14} className="inline-block" />, cat:'Digital Wallet'},
+  {value:'venmo',          label:'Venmo',                         icon:<Wallet size={14} className="inline-block" />, cat:'Digital Wallet'},
+  {value:'zelle',          label:'Zelle',                         icon:<Banknote size={14} className="inline-block" />, cat:'Digital Wallet'},
+  {value:'revolut',        label:'Revolut',                       icon:<Gem size={14} className="inline-block" />, cat:'Digital Wallet'},
+  {value:'skrill',         label:'Skrill',                        icon:<CreditCard size={14} className="inline-block" />, cat:'Digital Wallet'},
+  {value:'neteller',       label:'Neteller',                      icon:<CreditCard size={14} className="inline-block" />, cat:'Digital Wallet'},
+  {value:'payeer',         label:'Payeer',                        icon:<CreditCard size={14} className="inline-block" />, cat:'Digital Wallet'},
+  {value:'perfect money',  label:'Perfect Money',                 icon:<CreditCard size={14} className="inline-block" />, cat:'Digital Wallet'},
+  {value:'wise',           label:'Wise',                          icon:<Globe size={14} className="inline-block" />, cat:'Remittance'},
+  {value:'worldremit',     label:'WorldRemit',                    icon:<Globe size={14} className="inline-block" />, cat:'Remittance'},
+  {value:'remitly',        label:'Remitly',                       icon:<Rocket size={14} className="inline-block" />, cat:'Remittance'},
+  {value:'western union',  label:'Western Union',                 icon:<Building2 size={14} className="inline-block" />, cat:'Remittance'},
+  {value:'moneygram',      label:'MoneyGram',                     icon:<Building2 size={14} className="inline-block" />, cat:'Remittance'},
+  {value:'bank transfer',  label:'Bank Transfer',                 icon:<Landmark size={14} className="inline-block" />, cat:'Bank'},
+  {value:'wire transfer',  label:'Wire Transfer',                 icon:<Link2 size={14} className="inline-block" />, cat:'Bank'},
+  {value:'mobile banking', label:'Mobile Banking App',            icon:<Smartphone size={14} className="inline-block" />, cat:'Bank'},
+  {value:'interbank',      label:'Interbank (GhIPSS/NIBSS/EFT)',  icon:<Landmark size={14} className="inline-block" />, cat:'Bank'},
+  {value:'ussd',           label:'USSD Bank Transfer',            icon:<Phone size={14} className="inline-block" />, cat:'Bank'},
+  {value:'instant eft',    label:'Instant EFT (South Africa)',    icon:<Landmark size={14} className="inline-block" />, cat:'Bank'},
+  {value:'cash deposit',   label:'Cash Deposit (Bank Counter)',   icon:<Landmark size={14} className="inline-block" />, cat:'Bank'},
+  {value:'opay',           label:'OPay',                          icon:<Wallet size={14} className="inline-block" />, cat:'FinTech'},
+  {value:'palmpay',        label:'PalmPay',                       icon:<Palmtree size={14} className="inline-block" />, cat:'FinTech'},
+  {value:'kuda',           label:'Kuda Bank',                     icon:<Landmark size={14} className="inline-block" />, cat:'FinTech'},
+  {value:'moniepoint',     label:'Moniepoint',                    icon:<Landmark size={14} className="inline-block" />, cat:'FinTech'},
+  {value:'paystack',       label:'Paystack',                      icon:<Landmark size={14} className="inline-block" />, cat:'FinTech'},
+  {value:'flutterwave',    label:'Flutterwave (Barter)',           icon:<CreditCard size={14} className="inline-block" />, cat:'FinTech'},
+  {value:'cash in person', label:'Cash in Person (Face-to-Face)', icon:<Banknote size={14} className="inline-block" />, cat:'Cash'},
+  {value:'cash out',       label:'Cash Out',                      icon:<Banknote size={14} className="inline-block" />, cat:'Cash'},
+  {value:'usdt',           label:'USDT (Tether – TRC20)',          icon:<Banknote size={14} className="inline-block" />, cat:'Crypto'},
+  {value:'binance pay',    label:'Binance Pay',                   icon:<Coins size={14} className="inline-block" />, cat:'Crypto'},
   {value:'bitcoin',        label:'Bitcoin (BTC)',                  icon:'₿',  cat:'Crypto'},
   {value:'ethereum',       label:'Ethereum (ETH)',                icon:'⬡',  cat:'Crypto'},
-  {value:'luno',           label:'Luno Wallet',                   icon:'🌙', cat:'Crypto'},
-  {value:'yellow card',    label:'Yellow Card Wallet',            icon:'💛', cat:'Crypto'},
+  {value:'luno',           label:'Luno Wallet',                   icon:<Moon size={14} className="inline-block" />, cat:'Crypto'},
+  {value:'yellow card',    label:'Yellow Card Wallet',            icon:<Wallet size={14} className="inline-block" />, cat:'Crypto'},
 ];
 
 const PM_CAT_COLORS = {
@@ -616,10 +621,10 @@ function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
   if (!seller) return null;
 
   const TABS = [
-    { id:'overview',  label:'👤 Profile'    },
-    { id:'feedback',  label:`💬 Reviews (${total})`},
-    { id:'rules',     label:'📋 Rules'      },
-    { id:'offer',     label:'📊 Offer'      },
+    { id:'overview',  label:<span className="inline-flex items-center gap-1.5"><User size={14}/>Profile</span> },
+    { id:'feedback',  label:<span className="inline-flex items-center gap-1.5"><MessageSquare size={14}/>Reviews ({total})</span>},
+    { id:'rules',     label:<span className="inline-flex items-center gap-1.5"><List size={14}/>Rules</span> },
+    { id:'offer',     label:<span className="inline-flex items-center gap-1.5"><BarChart2 size={14}/>Offer</span> },
   ];
 
   return (
@@ -673,7 +678,11 @@ function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
                   <span className="text-white/80 text-xs font-bold">{u.country_name || u.country}</span>
                 )}
                 <span className="text-white/40 text-xs">·</span>
-                <span className="text-white/60 text-xs">{seen.online ? '🟢 Active now' : seen.label}</span>
+                <span className="text-white/60 text-xs">{seen.online ? (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{backgroundColor:'#4ADE80'}}/>Active now
+                  </span>
+                ) : seen.label}</span>
               </div>
               <BadgeChip user={u} size="sm" />
             </div>
@@ -760,7 +769,7 @@ function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
               <div className="grid grid-cols-3 gap-2">
                 {[
                   {label:'Trades',      value:fmt(trades),           sub:'completed'},
-                  {label:'Rating',      value:`⭐ ${rating.toFixed(1)}`, sub:`of 5.0`},
+                  {label:'Rating',      value:<span className="inline-flex items-center gap-1"><Star size={13} fill="currentColor" className="text-amber-400"/>{rating.toFixed(1)}</span>, sub:`of 5.0`},
                   {label:'Completion',  value:`${compRate.toFixed(0)}%`, sub:'rate'},
                 ].map(({label,value,sub}) => (
                   <div key={label} className="rounded-xl p-3 text-center"
@@ -796,9 +805,9 @@ function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
                 <p className="text-xs font-black px-3 py-2 uppercase tracking-wider"
                   style={{color:C.g500, backgroundColor:C.g50}}>Verification</p>
                 {[
-                  {label:'Phone Number', ok:phoneOk,  icon:'📱'},
-                  {label:'Email Address',ok:emailOk,  icon:'📧'},
-                  {label:'ID / KYC',     ok:kycOk,    icon:'🪪'},
+                  {label:'Phone Number', ok:phoneOk,  icon:<Smartphone size={14}/>},
+                  {label:'Email Address',ok:emailOk,  icon:<Mail size={14}/>},
+                  {label:'ID / KYC',     ok:kycOk,    icon:<CreditCard size={14}/>},
                 ].map(({label,ok,icon}) => (
                   <div key={label} className="flex items-center justify-between px-3 py-2.5 border-t"
                     style={{borderColor:C.g100}}>
@@ -860,11 +869,11 @@ function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
                 <div className="flex-1 flex items-center gap-3 px-2">
                   <div className="text-center flex-1">
                     <p className="font-black text-sm" style={{color:'#16A34A'}}>{fmt(pos)}</p>
-                    <p className="text-xs" style={{color:C.g400}}>👍 Positive</p>
+                    <p className="text-xs inline-flex items-center justify-center gap-1" style={{color:C.g400}}><ThumbsUp size={12}/>Positive</p>
                   </div>
                   <div className="text-center flex-1">
                     <p className="font-black text-sm" style={{color:'#DC2626'}}>{fmt(neg)}</p>
-                    <p className="text-xs" style={{color:C.g400}}>👎 Negative</p>
+                    <p className="text-xs inline-flex items-center justify-center gap-1" style={{color:C.g400}}><ThumbsDown size={12}/>Negative</p>
                   </div>
                   <div className="text-center flex-1">
                     <p className="font-black text-sm" style={{color:C.forest}}>{trust}%</p>
@@ -890,7 +899,7 @@ function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
                 </div>
               ) : reviews.length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="text-3xl mb-2">💬</p>
+                  <MessageSquare size={32} strokeWidth={1.5} className="mx-auto mb-2" style={{color:C.g300}}/>
                   <p className="font-bold text-sm" style={{color:C.g700}}>No reviews yet</p>
                   <p className="text-xs mt-1" style={{color:C.g400}}>Be the first to trade with this seller</p>
                 </div>
@@ -913,7 +922,7 @@ function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
                         <div className="flex items-center gap-2">
                           <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0"
                             style={{backgroundColor: isPos ? '#16A34A' : '#DC2626'}}>
-                            {isPos ? '👍' : '👎'}
+                            {isPos ? <ThumbsUp size={12}/> : <ThumbsDown size={12}/>}
                           </div>
                           <span className="text-xs font-black" style={{color: isPos ? '#166534' : '#991B1B'}}>
                             {rv.reviewer?.username || 'Anonymous'}
@@ -1455,7 +1464,7 @@ export default function BuyUSDT({user}) {
                 <div className="absolute top-full right-0 mt-1.5 bg-white rounded-2xl shadow-2xl z-50 border overflow-hidden"
                   style={{borderColor:C.g100,minWidth:'220px',maxWidth:'calc(100vw - 24px)'}}>
                   <div className="p-2 border-b sticky top-0 bg-white" style={{borderColor:C.g100}}>
-                    <input type="text" placeholder="🔍  Search currency…"
+                    <input type="text" placeholder="Search currency…"
                       value={currencySearch} onChange={e=>setCurrencySearch(e.target.value)}
                       autoFocus
                       className="w-full px-3 py-1.5 font-semibold rounded-xl border focus:outline-none"
@@ -1489,7 +1498,7 @@ export default function BuyUSDT({user}) {
                   color:           selPayment!=='all' ? C.forest : C.g600,
                   backgroundColor: selPayment!=='all' ? `${C.forest}08` : 'transparent',
                 }}>
-                <span className="text-sm leading-none flex-shrink-0">{selPmInfo?.icon||'💳'}</span>
+                <span className="text-sm leading-none flex-shrink-0">{selPmInfo?.icon || <CreditCard size={15} className="inline-block" />}</span>
                 <span className="text-xs font-black truncate flex-1 text-left">
                   {selPayment==='all' ? 'All Methods' : (selPmInfo?.label||'All Methods')}
                 </span>
@@ -1500,7 +1509,7 @@ export default function BuyUSDT({user}) {
                 <div className="absolute top-full left-0 mt-1.5 bg-white rounded-2xl shadow-2xl z-50 border overflow-hidden"
                   style={{borderColor:C.g100,minWidth:'220px',maxWidth:'calc(100vw - 24px)'}}>
                   <div className="p-2 border-b sticky top-0 bg-white" style={{borderColor:C.g100}}>
-                    <input type="text" placeholder="🔍  Search payment…"
+                    <input type="text" placeholder="Search payment…"
                       value={paymentSearch} onChange={e=>setPaymentSearch(e.target.value)}
                       autoFocus
                       className="w-full px-3 py-1.5 font-semibold rounded-xl border focus:outline-none"
@@ -1551,7 +1560,7 @@ export default function BuyUSDT({user}) {
                 <div className="absolute top-full right-0 mt-1.5 bg-white rounded-2xl shadow-2xl z-50 border overflow-hidden"
                   style={{borderColor:C.g100,minWidth:'240px',maxWidth:'calc(100vw - 24px)'}}>
                   <div className="p-2 border-b sticky top-0 bg-white" style={{borderColor:C.g100}}>
-                    <input type="text" placeholder="🔍  Search country…"
+                    <input type="text" placeholder="Search country…"
                       value={countrySearch} onChange={e=>setCountrySearch(e.target.value)}
                       autoFocus
                       className="w-full px-3 py-1.5 font-semibold rounded-xl border focus:outline-none"
@@ -1690,7 +1699,7 @@ export default function BuyUSDT({user}) {
         {/* Loading */}
         {(loading && !listings.length) || retrying ? (
           <div className="bg-white rounded-2xl border p-8 text-center" style={{borderColor:C.g200}}>
-            <p className="text-5xl mb-3">⏳</p>
+            <Clock size={48} strokeWidth={1.5} className="mx-auto mb-3" style={{color:C.g400}}/>
             <p className="font-black text-base mb-1" style={{color:C.g800}}>
               {retrying ? 'Waking up server…' : 'Loading offers…'}
             </p>
@@ -1703,7 +1712,7 @@ export default function BuyUSDT({user}) {
           </div>
         ) : loadError && !listings.length ? (
           <div className="bg-white rounded-2xl border p-8 text-center" style={{borderColor:C.g200}}>
-            <p className="text-5xl mb-3">📡</p>
+            <Satellite size={48} strokeWidth={1.5} className="mx-auto mb-3" style={{color:C.g400}}/>
             <p className="font-black text-base mb-1" style={{color:C.g800}}>Couldn't load offers</p>
             <p className="text-sm mb-4" style={{color:C.g400}}>Server may be busy. Please try again.</p>
             <button onClick={()=>{ setLoading(true); loadListings(1, true); }}
@@ -1714,7 +1723,7 @@ export default function BuyUSDT({user}) {
           </div>
         ) : sorted.length === 0 ? (
           <div className="bg-white rounded-2xl border p-6 sm:p-10 text-center" style={{borderColor:C.g200}}>
-            <p className="text-5xl mb-4">🔍</p>
+            <Search size={48} strokeWidth={1.5} className="mx-auto mb-4" style={{color:C.g400}}/>
             <p className="font-black text-base mb-1" style={{color:C.g800}}>No USDT offers found</p>
             <p className="text-sm" style={{color:C.g400}}>No USDT listings yet. Create the first offer or adjust your filters.</p>
             <button onClick={()=>handleCreateOffer()}

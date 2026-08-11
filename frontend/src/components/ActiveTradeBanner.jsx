@@ -2,7 +2,8 @@
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../App';
-import { Timer, ArrowRight, Bell, X, Zap, Shield } from 'lucide-react';
+import { Timer, ArrowRight, Bell, X, Zap, Shield,
+  User, Banknote, CreditCard, BarChart3, Unlock, ShoppingCart, Wallet, CheckCircle, Clock } from 'lucide-react';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const C = {
@@ -110,11 +111,11 @@ function TradeCard({ trade, user, onClose }) {
 
   const actionMsg = isBuyer
     ? isPaid
-        ? `✅ Payment sent — awaiting release from ${cpName}`
-        : `💸 Send ${payDisp} via ${trade.payment_method || '—'} to ${cpName}`
+        ? <><CheckCircle size={13} className="inline-block mr-1" style={{ color: C.success }} />Payment sent — awaiting release from {cpName}</>
+        : <><Banknote size={13} className="inline-block mr-1" />Send {payDisp} via {trade.payment_method || '—'} to {cpName}</>
     : isPaid
-        ? `🔓 ${cpName} paid! Check ${trade.payment_method || '—'} and RELEASE BITCOIN`
-        : `⏳ Waiting for ${cpName} to send payment…`;
+        ? <><Unlock size={13} className="inline-block mr-1" />{cpName} paid! Check {trade.payment_method || '—'} and RELEASE BITCOIN</>
+        : <><Clock size={13} className="inline-block mr-1" />Waiting for {cpName} to send payment…</>;
 
   return (
     <div className="rounded-2xl border-2 overflow-hidden" style={{ borderColor }}>
@@ -124,7 +125,7 @@ function TradeCard({ trade, user, onClose }) {
         style={{ backgroundColor: isUrgent ? `${C.danger}12` : `${st.color}12` }}>
         <span className="font-black text-xs px-3 py-1 rounded-full"
           style={{ backgroundColor: roleColor, color: '#fff' }}>
-          {isBuyer ? '🛒 YOU ARE BUYING' : '💰 YOU ARE SELLING'}
+          {isBuyer ? <><ShoppingCart size={11} className="inline-block mr-1" />YOU ARE BUYING</> : <><Wallet size={11} className="inline-block mr-1" />YOU ARE SELLING</>}
         </span>
         <div className="flex items-center gap-2">
           {timeLeft && timeLeft !== 'Expired' && (
@@ -147,11 +148,11 @@ function TradeCard({ trade, user, onClose }) {
       {/* Details */}
       <div className="px-4 py-3 space-y-2 bg-white">
         {[
-          [`👤 ${isBuyer ? 'Seller' : 'Buyer'}:`,  cpName,  C.forest],
-          ['💳 Payment:',                           trade.payment_method || '—', null],
-          [`💵 You ${isBuyer ? 'Pay' : 'Get'}:`,   payDisp, C.forest],
-        ].map(([label, val, color]) => (
-          <div key={label} className="flex justify-between text-xs">
+          { key: 'buyer',   label: <span className="inline-flex items-center gap-1"><User size={11} className="inline-block" /> {isBuyer ? 'Seller' : 'Buyer'}:</span>, val: cpName, color: C.forest },
+          { key: 'payment', label: <span className="inline-flex items-center gap-1"><CreditCard size={11} className="inline-block" /> Payment:</span>, val: trade.payment_method || '—', color: null },
+          { key: 'amount',  label: <span className="inline-flex items-center gap-1"><Banknote size={11} className="inline-block" /> You {isBuyer ? 'Pay' : 'Get'}:</span>, val: payDisp, color: C.forest },
+        ].map(({ key, label, val, color }) => (
+          <div key={key} className="flex justify-between text-xs">
             <span style={{ color: C.g500 }}>{label}</span>
             <span className="font-bold" style={color ? { color } : {}}>{val}</span>
           </div>
@@ -166,7 +167,7 @@ function TradeCard({ trade, user, onClose }) {
           </div>
         </div>
         <div className="flex justify-between text-xs">
-          <span style={{ color: C.g500 }}>📊 Status:</span>
+          <span className="inline-flex items-center gap-1" style={{ color: C.g500 }}><BarChart3 size={11} className="inline-block" /> Status:</span>
           <span className="font-bold px-2 py-0.5 rounded-full text-xs"
             style={{ backgroundColor: st.bg, color: st.color }}>{st.label}</span>
         </div>
@@ -241,7 +242,7 @@ export default function ActiveTradeBanner({ user, currentPage }) {
             style={{ backgroundColor: C.online }} />
           <Bell size={16} className="text-white flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-white font-black text-sm">⚡ You Have an Active Trade</p>
+            <p className="text-white font-black text-sm inline-flex items-center"><Zap size={14} className="inline-block mr-1" />You Have an Active Trade</p>
             <p className="text-xs" style={{ color: 'rgba(255,255,255,0.7)' }}>
               Action required — don't miss your trade window
             </p>

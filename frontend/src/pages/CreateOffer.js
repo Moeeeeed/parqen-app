@@ -10,6 +10,7 @@ import {
   BarChart2, Settings2, FileText, ArrowUpRight, ArrowDownRight,
   Gift, Search, ChevronDown, X,
   Smartphone, Banknote, Zap, Star, Wallet, CheckCircle,
+  Briefcase, Lightbulb, Megaphone,
   CreditCard, Globe, Gamepad2, Landmark, Heart, Circle,
   Waves, Rocket, Building2, Link, Phone, Monitor,
   Package, Apple, Music, Clapperboard, Home, ShoppingBag,
@@ -300,7 +301,7 @@ const GC_CURRENCIES = [
   { region: 'Steam USA', currency: 'USD', symbol: '$', flag: '🇺🇸' },
   { region: 'Steam Europe', currency: 'EUR', symbol: '€', flag: '🇪🇺' },
   { region: 'Steam UK', currency: 'GBP', symbol: '£', flag: '🇬🇧' },
-  { region: 'Razer Gold Global', currency: 'USD', symbol: '$', flag: '🌍' },
+  { region: 'Razer Gold Global', currency: 'USD', symbol: '$', flag: <Globe size={14} className="inline-block" /> },
   { region: 'Vanilla Visa USA', currency: 'USD', symbol: '$', flag: '🇺🇸' },
   { region: 'Vanilla Visa Europe', currency: 'EUR', symbol: '€', flag: '🇪🇺' },
 ];
@@ -1560,7 +1561,7 @@ export default function CreateOffer() {
                   }}>
                   <div className="p-3 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm">💼</span>
+                      <span className="text-sm flex items-center"><Briefcase size={16} /></span>
                       <div>
                         <p className="text-xs font-bold uppercase tracking-wide"
                           style={{ color: walletCapacityLocal > 0 ? C.forest : '#92400E' }}>
@@ -1593,7 +1594,7 @@ export default function CreateOffer() {
               ) : (
                 <div className="rounded-xl border p-3 flex items-start gap-2.5"
                   style={{ backgroundColor: '#F0FDF4', borderColor: '#A7F3D0' }}>
-                  <span className="text-sm flex-shrink-0">💡</span>
+                  <span className="text-sm flex-shrink-0 flex items-center"><Lightbulb size={16} /></span>
                   <p className="text-xs font-semibold" style={{ color: C.forest }}>
                     No wallet balance needed. You're setting how much {assetLabel} you want to buy — sellers will fill your order. Set any limits you like.
                   </p>
@@ -1680,7 +1681,7 @@ export default function CreateOffer() {
                 )}
                 {maxExceedsWallet && (
                   <div className="flex items-start gap-2 p-2.5 rounded-xl" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
-                    <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>💡</span>
+                    <span className="flex items-center" style={{ flexShrink: 0, marginTop: 1 }}><Lightbulb size={16} style={{ color: '#F59E0B' }} /></span>
                     <p className="text-xs font-semibold" style={{ color: '#92400E' }}>
                       Your limit exceeds your current wallet balance — that's OK! You can create the offer now and your BTC will be locked only when a buyer opens a trade.
                     </p>
@@ -1689,7 +1690,9 @@ export default function CreateOffer() {
 
                 {minLimit && maxLimit && curr && parseFloat(maxLimit) >= parseFloat(minLimit) && (
                   <div className="p-3 rounded-xl space-y-1.5" style={{ backgroundColor: C.mist, width: '100%', boxSizing: 'border-box' }}>
-                    <p className="text-xs font-bold mb-1" style={{ color: C.forest }}>📣 Offer card preview:</p>
+                    <p className="text-xs font-bold mb-1 flex items-center gap-1.5" style={{ color: C.forest }}>
+                      <Megaphone size={13} /> Offer card preview:
+                    </p>
                     {[
                       { label: 'Range', val: `${sym}${fmt(parseFloat(minLimit))} – ${sym}${fmt(parseFloat(maxLimit))} ${cur}` },
                       { label: 'USD', val: `$${fmt(parseFloat(minLimit) / localRate, 0)} – $${fmt(parseFloat(maxLimit) / localRate, 0)}` },

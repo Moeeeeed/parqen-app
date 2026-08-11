@@ -14,7 +14,9 @@ import {
   AlertCircle, Smartphone, LogOut, ChevronRight,
   Camera, BadgeCheck, Clock, Upload, RefreshCw,
   FileText, DollarSign, Languages, MapPin, X,
-  ToggleLeft, ToggleRight
+  ToggleLeft, ToggleRight,
+  Ban, WifiOff, MessageCircle, Car, Plane, Zap,
+  AlertTriangle, Circle
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -115,7 +117,7 @@ function PushEnableCard() {
   if (permission === "unsupported") {
     return (
         <div className="rounded-2xl border p-4 flex items-start gap-3" style={{ borderColor: '#FED7AA', backgroundColor: '#FFF7ED' }}>
-          <span className="text-xl flex-shrink-0">📵</span>
+          <WifiOff size={20} className="flex-shrink-0" style={{color:'#B45309'}}/>
           <div>
             <p className="text-sm font-black" style={{ color: '#92400E' }}>Push not supported</p>
             <p className="text-xs mt-0.5" style={{ color: '#B45309' }}>Your browser doesn't support push notifications. Use Chrome or Safari for the best experience.</p>
@@ -127,7 +129,7 @@ function PushEnableCard() {
   if (permission === "granted") {
     return (
         <div className="rounded-2xl border p-4 flex items-center gap-3" style={{ borderColor: '#A7F3D0', backgroundColor: '#ECFDF5' }}>
-          <span className="text-xl">🔔</span>
+          <Bell size={20} className="flex-shrink-0" style={{color:'#059669'}}/>
           <div className="flex-1">
             <p className="text-sm font-black" style={{ color: '#065F46' }}>Push notifications are ON</p>
             <p className="text-xs mt-0.5" style={{ color: '#059669' }}>You'll get instant alerts for trades, payments and messages — even when the browser is closed.</p>
@@ -140,12 +142,12 @@ function PushEnableCard() {
   if (permission === "denied") {
     return (
         <div className="rounded-2xl border p-4 flex items-start gap-3" style={{ borderColor: '#FECACA', backgroundColor: '#FEF2F2' }}>
-          <span className="text-xl flex-shrink-0">🚫</span>
+          <Ban size={20} className="flex-shrink-0" style={{color:'#B91C1C'}}/>
           <div>
             <p className="text-sm font-black" style={{ color: '#991B1B' }}>Notifications blocked</p>
             <p className="text-xs mt-1" style={{ color: '#B91C1C' }}>
               You've blocked notifications for this site. To re-enable:
-              click the 🔒 lock icon in your browser address bar → Site settings → Notifications → Allow.
+              click the lock icon in your browser address bar → Site settings → Notifications → Allow.
             </p>
           </div>
         </div>
@@ -155,7 +157,7 @@ function PushEnableCard() {
   return (
       <div className="rounded-2xl border p-4" style={{ borderColor: '#A5F3FC', backgroundColor: '#ECFEFF' }}>
         <div className="flex items-start gap-3 mb-3">
-          <span className="text-2xl flex-shrink-0">🔔</span>
+          <Bell size={24} className="flex-shrink-0" style={{color:'#0891B2'}}/>
           <div>
             <p className="text-sm font-black" style={{ color: '#164E63' }}>Enable Instant Trade Alerts</p>
             <p className="text-xs mt-0.5" style={{ color: '#0891B2' }}>
@@ -174,7 +176,7 @@ function PushEnableCard() {
               setPermission(granted ? "granted" : "denied");
               setRequesting(false);
               if (granted)
-                toast.success("🔔 Trade alerts enabled! You'll never miss a trade.");
+                toast.success("Trade alerts enabled! You'll never miss a trade.");
               else
                 toast.info("Notifications not enabled. You can turn them on later.");
             }}
@@ -182,7 +184,7 @@ function PushEnableCard() {
             style={{ backgroundColor: "#0E7490", color: "#fff" }}
         >
           <Bell size={15} />
-          {requesting ? "Requesting permission…" : "🔔 Enable Instant Trade Alerts"}
+          {requesting ? "Requesting permission…" : "Enable Instant Trade Alerts"}
         </button>
       </div>
   );
@@ -218,8 +220,8 @@ const CURRENCIES = [
   { code: "TZS", label: "Tanzanian Shilling", symbol: "TSh", flag: "🇹🇿" },
   { code: "RWF", label: "Rwandan Franc", symbol: "Fr", flag: "🇷🇼" },
   { code: "ETB", label: "Ethiopian Birr", symbol: "Br", flag: "🇪🇹" },
-  { code: "XOF", label: "CFA Franc (UEMOA)", symbol: "CFA", flag: "🌍" },
-  { code: "XAF", label: "CFA Franc (CEMAC)", symbol: "CFA", flag: "🌍" },
+  { code: "XOF", label: "CFA Franc (UEMOA)", symbol: "CFA", flag: <Globe size={14} className="inline-block" /> },
+  { code: "XAF", label: "CFA Franc (CEMAC)", symbol: "CFA", flag: <Globe size={14} className="inline-block" /> },
   { code: "MAD", label: "Moroccan Dirham", symbol: "DH", flag: "🇲🇦" },
   { code: "EGP", label: "Egyptian Pound", symbol: "£", flag: "🇪🇬" },
   { code: "ZMW", label: "Zambian Kwacha", symbol: "ZK", flag: "🇿🇲" },
@@ -291,7 +293,7 @@ const LANGUAGES = [
 
 // ── Timezones grouped by region ──────────────────────────────────────────────
 const TIMEZONE_GROUPS = {
-  "🌍 Africa": [
+  "Africa": [
     { tz: "Africa/Accra", label: "Accra, Abidjan, Dakar — Ghana · Côte d'Ivoire · Senegal (GMT+0)" },
     { tz: "Africa/Lagos", label: "Lagos — Nigeria · Benin · Cameroon (GMT+1)" },
     { tz: "Africa/Nairobi", label: "Nairobi — Kenya · Tanzania · Uganda · Somalia (GMT+3)" },
@@ -313,7 +315,7 @@ const TIMEZONE_GROUPS = {
     { tz: "Africa/Conakry", label: "Conakry — Guinea (GMT+0)" },
     { tz: "Africa/Freetown", label: "Freetown — Sierra Leone (GMT+0)" },
   ],
-  "🌏 Asia & Middle East": [
+  "Asia & Middle East": [
     { tz: "Asia/Dubai", label: "Dubai — UAE (GMT+4)" },
     { tz: "Asia/Riyadh", label: "Riyadh — Saudi Arabia (GMT+3)" },
     { tz: "Asia/Qatar", label: "Doha — Qatar (GMT+3)" },
@@ -336,7 +338,7 @@ const TIMEZONE_GROUPS = {
     { tz: "Asia/Bangkok", label: "Bangkok — Thailand (GMT+7)" },
     { tz: "Asia/Ho_Chi_Minh", label: "Ho Chi Minh City — Vietnam (GMT+7)" },
   ],
-  "🌍 Europe": [
+  "Europe": [
     { tz: "Europe/London", label: "London — UK · Ireland (GMT+0/+1)" },
     { tz: "Europe/Paris", label: "Paris — France · Belgium · Netherlands (GMT+1/+2)" },
     { tz: "Europe/Berlin", label: "Berlin — Germany · Austria (GMT+1/+2)" },
@@ -355,7 +357,7 @@ const TIMEZONE_GROUPS = {
     { tz: "Europe/Athens", label: "Athens — Greece (GMT+2/+3)" },
     { tz: "Europe/Bucharest", label: "Bucharest — Romania (GMT+2/+3)" },
   ],
-  "🌎 Americas": [
+  "Americas": [
     { tz: "America/New_York", label: "New York — USA Eastern (GMT-5/-4)" },
     { tz: "America/Chicago", label: "Chicago — USA Central (GMT-6/-5)" },
     { tz: "America/Denver", label: "Denver — USA Mountain (GMT-7/-6)" },
@@ -369,14 +371,14 @@ const TIMEZONE_GROUPS = {
     { tz: "America/Buenos_Aires", label: "Buenos Aires — Argentina (GMT-3)" },
     { tz: "America/Santiago", label: "Santiago — Chile (GMT-4/-3)" },
   ],
-  "🌏 Pacific & Oceania": [
+  "Pacific & Oceania": [
     { tz: "Australia/Sydney", label: "Sydney — Australia Eastern (GMT+10/+11)" },
     { tz: "Australia/Melbourne", label: "Melbourne — Australia Eastern (GMT+10/+11)" },
     { tz: "Australia/Perth", label: "Perth — Australia Western (GMT+8)" },
     { tz: "Pacific/Auckland", label: "Auckland — New Zealand (GMT+12/+13)" },
     { tz: "Pacific/Fiji", label: "Fiji (GMT+12)" },
   ],
-  "🕐 UTC": [{ tz: "UTC", label: "UTC — Coordinated Universal Time (GMT+0)" }],
+  "UTC": [{ tz: "UTC", label: "UTC — Coordinated Universal Time (GMT+0)" }],
 };
 
 // ─── Main Settings Component ────────────────────────────────────────────────────
@@ -553,11 +555,11 @@ export default function Settings({ user, setUser }) {
   const [kycRejectedReason, setKycRejectedReason] = useState(user?.kyc_rejection_reason || null);
 
   const KYC_ID_TYPES = [
-    { value: "ghana_card", label: "🪪 Ghana Card" },
-    { value: "drivers_license", label: "🚗 Driver's Licence" },
-    { value: "passport", label: "🛂 Passport" },
-    { value: "id_card", label: "💳 ID Card" },
-    { value: "order_id", label: "📄 Order ID Under Your Name" },
+    { value: "ghana_card", label: <span className="inline-flex items-center gap-1.5"><FileText size={13} className="inline-block" />Ghana Card</span> },
+    { value: "drivers_license", label: <span className="inline-flex items-center gap-1.5"><Car size={13} className="inline-block" />Driver's Licence</span> },
+    { value: "passport", label: <span className="inline-flex items-center gap-1.5"><Plane size={13} className="inline-block" />Passport</span> },
+    { value: "id_card", label: <span className="inline-flex items-center gap-1.5"><CreditCard size={13} className="inline-block" />ID Card</span> },
+    { value: "order_id", label: <span className="inline-flex items-center gap-1.5"><FileText size={13} className="inline-block" />Order ID Under Your Name</span> },
   ];
 
   const [emailResendCount, setEmailResendCount] = useState(() => parseInt(localStorage.getItem("prq_email_resend") || "0"));
@@ -864,7 +866,7 @@ export default function Settings({ user, setUser }) {
     setPhoneStep("verifying");
     try {
       await axios.post(`${API_URL}/users/verify-phone-otp`, { phone: accountForm.phone, otp: phoneOtpCode }, { headers: authH() });
-      toast.success("Phone number verified! ✅");
+      toast.success("Phone number verified!");
       markPhoneVerifiedLocally(accountForm.phone);
     } catch (e) {
       toast.error(e?.response?.data?.error || "Invalid or expired code. Tap Resend to get a new one.");
@@ -883,7 +885,7 @@ export default function Settings({ user, setUser }) {
       localStorage.setItem("prq_email_resend", String(nc));
       if (r.data?.devCode) {
         setEmailCode(r.data.devCode);
-        toast.info(`🛠 Dev: code auto-filled (${r.data.devCode})`, { autoClose: 8000 });
+        toast.info(`Dev: code auto-filled (${r.data.devCode})`, { autoClose: 8000 });
       }
     } catch (e) {
       const errData = e?.response?.data;
@@ -907,7 +909,7 @@ export default function Settings({ user, setUser }) {
     setEmailVerifyStep("verifying");
     try {
       await axios.post(`${API_URL}/users/verify-email-code`, { code: emailCode }, { headers: authH() });
-      toast.success("Email verified! ✅");
+      toast.success("Email verified!");
       setEmailVerified(true);
       if (setUser) setUser((u) => ({ ...u, is_email_verified: true, email_verified: true }));
       const stored = JSON.parse(localStorage.getItem("user") || "{}");
@@ -948,7 +950,7 @@ export default function Settings({ user, setUser }) {
       await axios.patch(`${API_URL}/users/toggle-2fa`,
         { two_factor_enabled: true, two_factor_method: "email", actionCode: twoFACode },
         { headers: authH() });
-      toast.success("Two-factor authentication enabled! ✅");
+      toast.success("Two-factor authentication enabled!");
       setTwoFAEnabled(true);
       setTwoFAStep("idle");
       setTwoFACode("");
@@ -998,7 +1000,7 @@ export default function Settings({ user, setUser }) {
       localStorage.setItem("hide_full_name", mode === "hide" ? "true" : "false");
       localStorage.setItem("praqen_name_display", mode);
       if (setUser) setUser((u) => ({ ...u, name_display: mode, hide_full_name: mode === "hide" }));
-      toast.success("Name display saved ✅");
+      toast.success("Name display saved");
       setNameDisplaySaved(true);
       setTimeout(() => setNameDisplaySaved(false), 3000);
     } catch (e) {
@@ -1053,7 +1055,7 @@ export default function Settings({ user, setUser }) {
         compressImage(kycFiles.back),
       ]);
       await axios.post(`${API_URL}/kyc/upload`, { idImage, idImageBack, idType: kycIdType }, { headers: authH() });
-      toast.success("Documents received! We'll review within 24 hours. ✅");
+      toast.success("Documents received! We'll review within 24 hours.");
       const submittedAt = new Date().toISOString();
       setKycSubmitted(true);
       setKycStatus("pending");
@@ -1133,10 +1135,10 @@ export default function Settings({ user, setUser }) {
       });
 
       localStorage.setItem('praqen_notifications', JSON.stringify(notifs));
-      toast.success('✅ Notification preferences saved successfully!');
+      toast.success('Notification preferences saved successfully!');
     } catch (error) {
       console.error('Save error:', error);
-      toast.error(error?.response?.data?.error || '❌ Failed to save preferences');
+      toast.error(error?.response?.data?.error || 'Failed to save preferences');
     } finally {
       setLoading(false);
     }
@@ -1249,7 +1251,7 @@ export default function Settings({ user, setUser }) {
                             )}
                             {user?.username_changed ?
                                 <p className="text-xs mt-1 flex items-center gap-1" style={{ color: C.g400 }}><Lock size={9} />Username is permanently locked.</p> :
-                                <p className="text-xs mt-1 flex items-center gap-1" style={{ color: '#D97706' }}>⚠ You can only change your username once. Choose carefully.</p>
+                                <p className="text-xs mt-1 flex items-center gap-1" style={{ color: '#D97706' }}><AlertTriangle size={12} className="inline-block" />You can only change your username once. Choose carefully.</p>
                             }
                           </div>
                           <div>
@@ -1280,7 +1282,7 @@ export default function Settings({ user, setUser }) {
                               Email Address
                               {emailVerified ?
                                   <span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: '#ECFDF5', color: C.success }}>✓ Verified</span> :
-                                  <span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: '#FFF7ED', color: C.warn }}>⚠ Unverified</span>}
+                                  <span className="text-xs font-black px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ backgroundColor: '#FFF7ED', color: C.warn }}><AlertTriangle size={11} className="inline-block" />Unverified</span>}
                             </label>
                             <div className="px-4 py-2.5 border-2 rounded-xl text-sm font-medium flex items-center justify-between"
                                  style={{ borderColor: emailVerified ? '#DCFCE7' : '#FDE68A', backgroundColor: C.g50, color: C.g700 }}>
@@ -1330,7 +1332,7 @@ export default function Settings({ user, setUser }) {
                               {phoneVerified || phoneStep === 'done' ?
                                   <span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: '#ECFDF5', color: C.success }}>✓ Verified</span> :
                                   accountForm.phone ?
-                                      <span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: '#FFF7ED', color: C.warn }}>⚠ Unverified</span> : null}
+                                      <span className="text-xs font-black px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ backgroundColor: '#FFF7ED', color: C.warn }}><AlertTriangle size={11} className="inline-block" />Unverified</span> : null}
                             </label>
                             {phoneVerified || phoneStep === 'done' ? (
                                 <div className="px-4 py-2.5 border-2 rounded-xl text-sm font-medium flex items-center justify-between"
@@ -1477,10 +1479,10 @@ export default function Settings({ user, setUser }) {
                           <div>
                             <p className="text-white font-black text-lg">Verification Level {verLevel}/3</p>
                             <p className="text-white/70 text-xs">
-                              {verLevel === 3 ? '✅ Fully verified — maximum trade limits' :
-                                  verLevel === 2 ? '⚡ KYC required for higher limits' :
-                                      verLevel === 1 ? '⚠️ Add phone to unlock more features' :
-                                          '🔴 Start verification to begin trading'}
+                              {verLevel === 3 ? <><CheckCircle size={13} className="inline-block mr-1" />Fully verified — maximum trade limits</> :
+                                  verLevel === 2 ? <><Zap size={13} className="inline-block mr-1" />KYC required for higher limits</> :
+                                      verLevel === 1 ? <><AlertTriangle size={13} className="inline-block mr-1" />Add phone to unlock more features</> :
+                                          <><Circle size={10} fill="#EF4444" strokeWidth={0} className="inline-block mr-1" />Start verification to begin trading</>}
                             </p>
                           </div>
                           <div className="ml-auto text-right">
@@ -1508,7 +1510,7 @@ export default function Settings({ user, setUser }) {
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <p className={`font-bold text-sm ${emailVerified ? 'text-green-800' : underReview ? 'text-amber-800' : 'text-blue-800'}`}>Email Verification</p>
                                       <span className={`text-xs font-black px-2 py-0.5 rounded-full ${emailVerified ? 'bg-green-200 text-green-800' : underReview ? 'bg-amber-200 text-amber-800' : 'bg-blue-200 text-blue-800'}`}>
-                                  {emailVerified ? '✓ Verified' : underReview ? '⏳ Under Review' : 'Basic'}
+                                  {emailVerified ? '✓ Verified' : underReview ? <><Clock size={11} className="inline-block mr-1" />Under Review</> : 'Basic'}
                                 </span>
                                     </div>
                                     <p className={`text-xs mt-0.5 ${emailVerified ? 'text-green-600' : underReview ? 'text-amber-700' : 'text-blue-600'}`}>
@@ -1610,15 +1612,15 @@ export default function Settings({ user, setUser }) {
                                                 <div className="flex gap-2">
                                                   <button onClick={() => setPhoneOtpMethod('email')}
                                                           className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border-2 text-xs font-black transition ${phoneOtpMethod === 'email' ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-gray-200 bg-white text-gray-500'}`}>
-                                                    <Mail size={12} /> 📧 Email
+                                                    <Mail size={12} /> Email
                                                   </button>
                                                   <button onClick={() => setPhoneOtpMethod('sms')}
                                                           className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border-2 text-xs font-black transition ${phoneOtpMethod === 'sms' ? 'border-orange-500 bg-orange-50 text-orange-800' : 'border-gray-200 bg-white text-gray-500'}`}>
-                                                    📱 SMS
+                                                    <Smartphone size={12} /> SMS
                                                   </button>
                                                   <button onClick={() => setPhoneOtpMethod('whatsapp')}
                                                           className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border-2 text-xs font-black transition ${phoneOtpMethod === 'whatsapp' ? 'border-green-500 bg-green-50 text-green-800' : 'border-gray-200 bg-white text-gray-500'}`}>
-                                                    💬 WhatsApp
+                                                    <MessageCircle size={12} /> WhatsApp
                                                   </button>
                                                 </div>
                                                 <button onClick={handleSendPhoneOtp} disabled={!accountForm.phone}
@@ -1694,7 +1696,7 @@ export default function Settings({ user, setUser }) {
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <p className={`font-bold text-sm ${kycVerified ? 'text-green-800' : kycRejected ? 'text-red-800' : kycPending ? 'text-amber-800' : phoneVerified ? 'text-blue-800' : 'text-gray-600'}`}>Identity (KYC)</p>
                                       <span className={`text-xs font-black px-2 py-0.5 rounded-full ${kycVerified ? 'bg-green-200 text-green-800' : kycRejected ? 'bg-red-200 text-red-800' : kycPending ? 'bg-amber-200 text-amber-800' : 'bg-gray-200 text-gray-600'}`}>
-                                  {kycVerified ? '✓ Verified' : kycRejected ? '✗ Rejected' : kycPending ? '⏳ Under Review' : 'Advanced'}
+                                  {kycVerified ? '✓ Verified' : kycRejected ? '✗ Rejected' : kycPending ? <><Clock size={11} className="inline-block mr-1" />Under Review</> : 'Advanced'}
                                 </span>
                                     </div>
                                     <p className={`text-xs mt-0.5 ${kycVerified ? 'text-green-600' : kycRejected ? 'text-red-600' : kycPending ? 'text-amber-700' : phoneVerified ? 'text-blue-600' : 'text-gray-400'}`}>
@@ -1709,7 +1711,7 @@ export default function Settings({ user, setUser }) {
                                           <div className="px-4 py-2.5 flex items-center gap-2" style={{ backgroundColor: '#FEF3C7', borderBottom: '1px solid #FDE68A' }}>
                                             <Clock size={13} style={{ color: '#D97706', flexShrink: 0 }} />
                                             <p className="text-xs font-black" style={{ color: '#92400E' }}>Documents Under Review</p>
-                                            <span className="ml-auto text-xs font-black px-2 py-0.5 rounded-full animate-pulse" style={{ backgroundColor: '#FCD34D', color: '#78350F' }}>⏳ Pending</span>
+                                            <span className="ml-auto text-xs font-black px-2 py-0.5 rounded-full animate-pulse inline-flex items-center gap-1" style={{ backgroundColor: '#FCD34D', color: '#78350F' }}><Clock size={10} className="inline-block" />Pending</span>
                                           </div>
                                           <div className="px-4 py-3 space-y-2" style={{ backgroundColor: '#FFFBEB' }}>
                                             {displayType && (
@@ -1745,7 +1747,7 @@ export default function Settings({ user, setUser }) {
                                     {kycRejected && (
                                         <div className="mt-3 rounded-xl border overflow-hidden" style={{ borderColor: '#FCA5A5' }}>
                                           <div className="px-4 py-2.5 flex items-center gap-2" style={{ backgroundColor: '#FEF2F2', borderBottom: '1px solid #FCA5A5' }}>
-                                            <span className="text-xs">❌</span>
+                                            <X size={14} style={{ color: '#991B1B' }} />
                                             <p className="text-xs font-black" style={{ color: '#991B1B' }}>KYC Not Approved</p>
                                             <span className="ml-auto text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: '#FCA5A5', color: '#7F1D1D' }}>Rejected</span>
                                           </div>
@@ -1793,7 +1795,7 @@ export default function Settings({ user, setUser }) {
                                                   </div>
                                                 </div>
                                                 <div className="mb-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
-                                                  ✅ Make sure the <strong>entire card is visible</strong>, all text is readable, and there is <strong>no glare or blur</strong>
+                                                  <CheckCircle size={12} className="inline-block mr-1" />Make sure the <strong>entire card is visible</strong>, all text is readable, and there is <strong>no glare or blur</strong>
                                                 </div>
                                                 <label className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed cursor-pointer hover:border-blue-400 transition bg-white"
                                                        style={{ borderColor: kycFiles.front ? C.success : '#93C5FD' }}>
@@ -1826,7 +1828,7 @@ export default function Settings({ user, setUser }) {
                                                   </div>
                                                 </div>
                                                 <div className="mb-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#FFF7ED', color: '#C2410C', border: '1px solid #FED7AA' }}>
-                                                  ✅ Flip your ID and photograph the <strong>back side</strong> — all details must be <strong>clear and unobstructed</strong>
+                                                  <CheckCircle size={12} className="inline-block mr-1" />Flip your ID and photograph the <strong>back side</strong> — all details must be <strong>clear and unobstructed</strong>
                                                 </div>
                                                 <label className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed cursor-pointer hover:border-orange-400 transition bg-white"
                                                        style={{ borderColor: kycFiles.back ? C.success : '#FDBA74' }}>
@@ -2244,7 +2246,7 @@ export default function Settings({ user, setUser }) {
                           </select>
                           {prefs.timezone && (
                               <div className="mt-2 flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold" style={{ backgroundColor: C.g50, color: C.g600 }}>
-                                <span>🕐</span>
+                                <Clock size={14} className="inline-block" style={{ color: C.g600 }} />
                                 <span>{prefs.timezone.replace(/_/g, ' ')}</span>
                                 <span className="ml-auto font-black" style={{ color: C.green }}>
                             {(() => { try { return new Intl.DateTimeFormat('en', { timeZone: prefs.timezone, timeZoneName: 'short' }).formatToParts(new Date()).find(p => p.type === 'timeZoneName')?.value || ''; } catch { return ''; } })()}
@@ -2322,18 +2324,18 @@ export default function Settings({ user, setUser }) {
                       <PushEnableCard />
 
                       {[
-                        { section: '📧 Email Notifications', items: [
+                        { grpKey: 'email', section: <span className="inline-flex items-center gap-1.5"><Mail size={14} className="inline-block" />Email Notifications</span>, items: [
                             { key: 'email_trades', label: 'Trade Updates', desc: 'New trades, payments, releases' },
                             { key: 'email_security', label: 'Security Alerts', desc: 'Login attempts, password changes' },
                             { key: 'email_marketing', label: 'News & Promotions', desc: 'Platform updates and offers' },
                           ] },
-                        { section: '🔔 Push Notification Types', items: [
+                        { grpKey: 'push', section: <span className="inline-flex items-center gap-1.5"><Bell size={14} className="inline-block" />Push Notification Types</span>, items: [
                             { key: 'push_trades', label: 'Trade Alerts', desc: 'New trades, payments, BTC releases' },
                             { key: 'push_messages', label: 'Chat Messages', desc: 'New messages in trade chat' },
                             { key: 'push_disputes', label: 'Dispute Alerts', desc: 'Dispute opened or resolved' },
                           ] },
-                      ].map(({ section, items }) => (
-                          <div key={section}>
+                      ].map(({ section, items, grpKey }) => (
+                          <div key={grpKey}>
                             <p className="text-sm font-black text-gray-700 mb-2">{section}</p>
                             <div className="space-y-2">
                               {items.map(({ key, label, desc }) => (

@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { requestNotificationPermission } from '../utils/notifications';
+import { Bell, Zap, DollarSign, CheckCircle, Share, Plus, Smartphone } from 'lucide-react';
 
 const C = {
   forest:  '#1B4332',
@@ -83,8 +84,8 @@ export function NotificationPrompt({ userId }) {
             width: 60, height: 60, borderRadius: 18, margin: '0 auto 14px',
             backgroundColor: 'rgba(255,255,255,0.15)',
             display: 'flex', alignItems: 'center',
-            justifyContent: 'center', fontSize: 30,
-          }}>🔔</div>
+            justifyContent: 'center',
+          }}><Bell size={30} color="rgba(255,255,255,0.92)" /></div>
           <p style={{
             color: '#fff', fontWeight: 900, fontSize: 18,
             margin: 0, lineHeight: 1.3,
@@ -102,9 +103,9 @@ export function NotificationPrompt({ userId }) {
         {/* Benefits */}
         <div style={{ padding: '20px 20px 8px' }}>
           {[
-            { icon: '⚡', text: 'New trade request — respond before it expires' },
-            { icon: '💵', text: 'Payment received — release Bitcoin on time'    },
-            { icon: '✅', text: 'Bitcoin released — confirm funds arrived'       },
+            { icon: <Zap size={17} color={C.green} />, text: 'New trade request — respond before it expires' },
+            { icon: <DollarSign size={17} color={C.green} />, text: 'Payment received — release Bitcoin on time'    },
+            { icon: <CheckCircle size={17} color={C.green} />, text: 'Bitcoin released — confirm funds arrived'       },
           ].map(({ icon, text }) => (
             <div key={text} style={{
               display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12,
@@ -113,7 +114,7 @@ export function NotificationPrompt({ userId }) {
                 width: 38, height: 38, borderRadius: 11, flexShrink: 0,
                 backgroundColor: `${C.success}18`,
                 display: 'flex', alignItems: 'center',
-                justifyContent: 'center', fontSize: 17,
+                justifyContent: 'center',
               }}>{icon}</div>
               <p style={{
                 fontSize: 13, fontWeight: 600,
@@ -135,7 +136,7 @@ export function NotificationPrompt({ userId }) {
               transition: 'opacity .15s',
             }}
           >
-            🔔 Turn On Notifications
+            <Bell size={15} style={{ display: 'inline', marginRight: 5, verticalAlign: 'middle' }} /> Turn On Notifications
           </button>
           <button
             onClick={dismiss}
@@ -340,7 +341,7 @@ export function IOSInstallGuide() {
 
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: 22 }}>
-          <div style={{ fontSize: 38, marginBottom: 10 }}>📲</div>
+          <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'center' }}><Smartphone size={38} color={C.g800} /></div>
           <p style={{
             fontWeight: 900, fontSize: 18,
             color: C.g800, margin: 0, lineHeight: 1.3,
@@ -359,19 +360,19 @@ export function IOSInstallGuide() {
         {[
           {
             n: '1',
-            icon: '⬆️',
+            icon: <Share size={15} color={C.g800} />,
             title: 'Tap the Share button',
             sub: 'It is the box with an arrow — at the bottom of Safari',
           },
           {
             n: '2',
-            icon: '➕',
+            icon: <Plus size={15} color={C.g800} />,
             title: 'Tap "Add to Home Screen"',
             sub: 'Scroll down in the share sheet until you see it',
           },
           {
             n: '3',
-            icon: '✅',
+            icon: <CheckCircle size={15} color={C.g800} />,
             title: 'Tap "Add" to confirm',
             sub: 'Open PRAQEN from your home screen and you are done!',
           },
