@@ -501,10 +501,12 @@ function tradeEmailTemplate(subject, title, message, tradeRef, amount, actionUrl
           <!-- HEADER -->
           <tr>
             <td style="background:linear-gradient(135deg,#1B4332 0%,#2D6A4F 60%,#40916C 100%);padding:36px 32px 28px;text-align:center;">
-              <div style="display:inline-block;background:#F4A422;border-radius:18px;width:60px;height:60px;line-height:60px;text-align:center;margin-bottom:14px;">
-                <span style="font-size:32px;font-weight:900;color:#1B4332;font-family:Georgia,serif;line-height:60px;">P</span>
-              </div>
-              <h1 style="color:#FFFFFF;font-size:26px;font-weight:900;margin:0 0 4px 0;letter-spacing:-0.5px;">PRAQEN</h1>
+              <a href="https://praqen.com" style="text-decoration:none;">
+                <div style="display:inline-block;background:#fff;border-radius:18px;width:60px;height:60px;line-height:60px;text-align:center;margin-bottom:14px;">
+                  <img src="https://praqen.com/logo512.png" width="44" height="44" alt="PRAQEN" style="vertical-align:middle;border-radius:10px;">
+                </div>
+                <h1 style="color:#FFFFFF;font-size:26px;font-weight:900;margin:0 0 4px 0;letter-spacing:-0.5px;">PRAQEN</h1>
+              </a>
               <p style="color:#95C4AE;font-size:12px;margin:0;letter-spacing:1px;text-transform:uppercase;">The Global P2P Bitcoin Platform</p>
             </td>
           </tr>
@@ -562,7 +564,12 @@ function tradeEmailTemplate(subject, title, message, tradeRef, amount, actionUrl
 
           <!-- FOOTER -->
           <tr>
-            <td style="background:#F0F4F1;padding:18px 32px;text-align:center;">
+            <td style="background:#F0F4F1;padding:20px 32px;text-align:center;">
+              <p style="margin:0 0 10px;">
+                <a href="https://x.com/praqenapp?s=21" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">X / Twitter</a>
+                <a href="https://www.instagram.com/praqen?igsh=MTRkZWg2amp5YnJlYQ%3D%3D&amp;utm_source=qr" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">Instagram</a>
+                <a href="https://www.linkedin.com/in/pra-qen-045373402/" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">LinkedIn</a>
+              </p>
               <p style="color:#64748B;font-size:11px;font-weight:700;margin:0 0 4px 0;letter-spacing:0.5px;">PRAQEN — SECURE P2P BITCOIN TRADING</p>
               <p style="color:#94A3B8;font-size:10px;margin:0;">Escrow Protected · 0.5% Fee · Trusted by traders worldwide</p>
               <p style="color:#CBD5E1;font-size:10px;margin:8px 0 0 0;">© ${year} PRAQEN. All rights reserved. Do not reply to this email.</p>
@@ -606,8 +613,12 @@ function buildVerificationEmailHtml(code) {
       <table width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(27,67,50,0.10);">
         <!-- Header -->
         <tr><td style="background:linear-gradient(135deg,#1B4332 0%,#2D6A4F 100%);padding:32px 40px;text-align:center;">
-          <div style="display:inline-block;width:56px;height:56px;background:#F4A422;border-radius:14px;line-height:56px;font-size:28px;font-weight:900;color:#1B4332;font-family:Georgia,serif;text-align:center;">P</div>
-          <p style="margin:12px 0 0;color:#ffffff;font-size:20px;font-weight:800;letter-spacing:3px;font-family:Georgia,serif;">PRAQEN</p>
+          <a href="https://praqen.com" style="text-decoration:none;">
+            <div style="display:inline-block;width:56px;height:56px;background:#fff;border-radius:14px;line-height:56px;text-align:center;">
+              <img src="https://praqen.com/logo512.png" width="40" height="40" alt="PRAQEN" style="vertical-align:middle;border-radius:8px;">
+            </div>
+            <p style="margin:12px 0 0;color:#ffffff;font-size:20px;font-weight:800;letter-spacing:3px;">PRAQEN</p>
+          </a>
           <p style="margin:4px 0 0;color:rgba(255,255,255,0.65);font-size:12px;letter-spacing:1px;">The World's Most Trusted Bitcoin Marketplace</p>
         </td></tr>
         <!-- Body -->
@@ -628,9 +639,14 @@ function buildVerificationEmailHtml(code) {
           </div>
         </td></tr>
         <!-- Footer -->
-        <tr><td style="background:#F8FAFC;padding:20px 40px;text-align:center;border-top:1px solid #E2E8F0;">
-          <p style="margin:0 0 4px;font-size:12px;color:#94A3B8;">Need help? Contact us at <a href="mailto:support@praqen.com" style="color:#2D6A4F;font-weight:700;">support@praqen.com</a></p>
-          <p style="margin:0;font-size:11px;color:#CBD5E1;">© 2025 PRAQEN · The World's Most Trusted P2P Bitcoin Marketplace</p>
+        <tr><td style="background:#F8FAFC;padding:24px 40px;text-align:center;border-top:1px solid #E2E8F0;">
+          <p style="margin:0 0 12px;">
+            <a href="https://x.com/praqenapp?s=21" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">X / Twitter</a>
+            <a href="https://www.instagram.com/praqen?igsh=MTRkZWg2amp5YnJlYQ%3D%3D&amp;utm_source=qr" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">Instagram</a>
+            <a href="https://www.linkedin.com/in/pra-qen-045373402/" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">LinkedIn</a>
+          </p>
+          <p style="margin:0 0 4px;font-size:12px;color:#94A3B8;">Need help? Contact us at <a href="mailto:support@praqen.com" style="color:#2D6A4F;font-weight:700;">support@praqen.com</a> · <a href="https://praqen.com" style="color:#2D6A4F;font-weight:700;">praqen.com</a></p>
+          <p style="margin:0;font-size:11px;color:#CBD5E1;">© ${new Date().getFullYear()} PRAQEN · The World's Most Trusted P2P Bitcoin Marketplace</p>
         </td></tr>
       </table>
     </td></tr>
@@ -650,8 +666,12 @@ function buildWelcomeEmailHtml(username) {
       <table width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(27,67,50,0.10);">
         <!-- Header -->
         <tr><td style="background:linear-gradient(135deg,#1B4332 0%,#2D6A4F 100%);padding:40px 40px 32px;text-align:center;">
-          <div style="display:inline-block;width:64px;height:64px;background:#F4A422;border-radius:16px;line-height:64px;font-size:32px;font-weight:900;color:#1B4332;font-family:Georgia,serif;text-align:center;">P</div>
-          <p style="margin:14px 0 4px;color:#ffffff;font-size:22px;font-weight:900;letter-spacing:3px;font-family:Georgia,serif;">PRAQEN</p>
+          <a href="https://praqen.com" style="text-decoration:none;">
+            <div style="display:inline-block;width:64px;height:64px;background:#fff;border-radius:16px;line-height:64px;text-align:center;">
+              <img src="https://praqen.com/logo512.png" width="46" height="46" alt="PRAQEN" style="vertical-align:middle;border-radius:10px;">
+            </div>
+            <p style="margin:14px 0 4px;color:#ffffff;font-size:22px;font-weight:900;letter-spacing:3px;">PRAQEN</p>
+          </a>
           <p style="margin:0;color:rgba(255,255,255,0.70);font-size:13px;letter-spacing:1px;">The World's Most Trusted Bitcoin Marketplace</p>
         </td></tr>
         <!-- Welcome headline -->
@@ -713,9 +733,14 @@ function buildWelcomeEmailHtml(username) {
           </div>
         </td></tr>
         <!-- Footer -->
-        <tr><td style="background:#F8FAFC;padding:20px 40px;text-align:center;border-top:1px solid #E2E8F0;">
-          <p style="margin:0 0 4px;font-size:12px;color:#94A3B8;">Questions? Reach us at <a href="mailto:support@praqen.com" style="color:#2D6A4F;font-weight:700;">support@praqen.com</a></p>
-          <p style="margin:0;font-size:11px;color:#CBD5E1;">© 2025 PRAQEN · The World's Most Trusted P2P Bitcoin Marketplace</p>
+        <tr><td style="background:#F8FAFC;padding:24px 40px;text-align:center;border-top:1px solid #E2E8F0;">
+          <p style="margin:0 0 12px;">
+            <a href="https://x.com/praqenapp?s=21" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">X / Twitter</a>
+            <a href="https://www.instagram.com/praqen?igsh=MTRkZWg2amp5YnJlYQ%3D%3D&amp;utm_source=qr" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">Instagram</a>
+            <a href="https://www.linkedin.com/in/pra-qen-045373402/" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">LinkedIn</a>
+          </p>
+          <p style="margin:0 0 4px;font-size:12px;color:#94A3B8;">Questions? Reach us at <a href="mailto:support@praqen.com" style="color:#2D6A4F;font-weight:700;">support@praqen.com</a> · <a href="https://praqen.com" style="color:#2D6A4F;font-weight:700;">praqen.com</a></p>
+          <p style="margin:0;font-size:11px;color:#CBD5E1;">© ${new Date().getFullYear()} PRAQEN · The World's Most Trusted P2P Bitcoin Marketplace</p>
         </td></tr>
       </table>
     </td></tr>

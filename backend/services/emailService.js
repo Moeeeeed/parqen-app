@@ -108,15 +108,24 @@ function base(title, body) {
       <table width="540" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(16,185,129,0.10);">
         <!-- HEADER -->
         <tr><td style="background:linear-gradient(135deg,#10b981 0%,#059669 100%);padding:32px 40px;text-align:center;">
-          <div style="display:inline-block;width:56px;height:56px;background:#fff;border-radius:14px;line-height:56px;font-size:28px;font-weight:900;color:#10b981;text-align:center;">P</div>
-          <p style="margin:12px 0 0;color:#fff;font-size:22px;font-weight:900;letter-spacing:3px;">PRAQEN</p>
+          <a href="https://praqen.com" style="text-decoration:none;">
+            <div style="display:inline-block;width:56px;height:56px;background:#fff;border-radius:14px;line-height:56px;text-align:center;">
+              <img src="https://praqen.com/logo512.png" width="40" height="40" alt="PRAQEN" style="vertical-align:middle;border-radius:8px;">
+            </div>
+            <p style="margin:12px 0 0;color:#fff;font-size:22px;font-weight:900;letter-spacing:3px;">PRAQEN</p>
+          </a>
           <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:12px;letter-spacing:1px;">The World's Most Trusted Bitcoin Marketplace</p>
         </td></tr>
         <!-- BODY -->
         <tr><td style="padding:36px 40px 28px;">${body}</td></tr>
         <!-- FOOTER -->
-        <tr><td style="background:#F8FAFC;padding:20px 40px;text-align:center;border-top:1px solid #E2E8F0;">
-          <p style="margin:0 0 4px;font-size:12px;color:#94A3B8;">Need help? <a href="mailto:support@praqen.com" style="color:#10b981;font-weight:700;">support@praqen.com</a></p>
+        <tr><td style="background:#F8FAFC;padding:24px 40px;text-align:center;border-top:1px solid #E2E8F0;">
+          <p style="margin:0 0 12px;">
+            <a href="https://x.com/praqenapp?s=21" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">X / Twitter</a>
+            <a href="https://www.instagram.com/praqen?igsh=MTRkZWg2amp5YnJlYQ%3D%3D&amp;utm_source=qr" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">Instagram</a>
+            <a href="https://www.linkedin.com/in/pra-qen-045373402/" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">LinkedIn</a>
+          </p>
+          <p style="margin:0 0 4px;font-size:12px;color:#94A3B8;">Need help? <a href="mailto:support@praqen.com" style="color:#10b981;font-weight:700;">support@praqen.com</a> · <a href="https://praqen.com" style="color:#10b981;font-weight:700;">praqen.com</a></p>
           <p style="margin:0;font-size:11px;color:#CBD5E1;">© ${yr} PRAQEN · The World's Most Trusted P2P Bitcoin Marketplace</p>
         </td></tr>
       </table>
@@ -475,8 +484,11 @@ function txReceiptHtml(name, tx) {
 
   <!-- ═══ GREEN HEADER ═══ -->
   <tr><td style="background:linear-gradient(135deg,#1B4332 0%,#2D6A4F 60%,#40916C 100%);padding:32px 32px 40px;text-align:center;">
-    <p style="margin:0 0 2px;font-size:10px;font-weight:800;color:rgba(255,255,255,0.5);letter-spacing:3px;text-transform:uppercase;">PRAQEN</p>
-    <p style="margin:0 0 20px;font-size:16px;font-weight:900;color:#ffffff;">Transaction Receipt</p>
+    <a href="https://praqen.com" style="text-decoration:none;">
+      <img src="https://praqen.com/logo512.png" width="32" height="32" alt="PRAQEN" style="border-radius:8px;vertical-align:middle;margin-right:8px;">
+      <span style="font-size:10px;font-weight:800;color:rgba(255,255,255,0.6);letter-spacing:3px;text-transform:uppercase;vertical-align:middle;">PRAQEN</span>
+    </a>
+    <p style="margin:12px 0 20px;font-size:16px;font-weight:900;color:#ffffff;">Transaction Receipt</p>
     <!-- Amount circle -->
     <div style="display:inline-block;width:72px;height:72px;border-radius:50%;background:${isPending ? 'rgba(245,158,11,0.25)' : isSend ? 'rgba(239,68,68,0.25)' : 'rgba(16,185,129,0.25)'};border:2px solid ${isPending ? 'rgba(245,158,11,0.5)' : isSend ? 'rgba(239,68,68,0.5)' : 'rgba(16,185,129,0.5)'};line-height:72px;text-align:center;font-size:28px;">
       ${isPending ? '⏳' : isSend ? '↑' : '↓'}
@@ -516,8 +528,13 @@ function txReceiptHtml(name, tx) {
   </td></tr>
 
   <!-- ═══ FOOTER ═══ -->
-  <tr><td style="background:#F8FAFC;padding:18px 28px;text-align:center;border-top:1px solid #E2E8F0;">
-    <p style="margin:0 0 3px;font-size:12px;color:#94A3B8;">Need help? <a href="mailto:support@praqen.com" style="color:#10b981;font-weight:700;">support@praqen.com</a></p>
+  <tr><td style="background:#F8FAFC;padding:22px 28px;text-align:center;border-top:1px solid #E2E8F0;">
+    <p style="margin:0 0 10px;">
+      <a href="https://x.com/praqenapp?s=21" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">X / Twitter</a>
+      <a href="https://www.instagram.com/praqen?igsh=MTRkZWg2amp5YnJlYQ%3D%3D&amp;utm_source=qr" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">Instagram</a>
+      <a href="https://www.linkedin.com/in/pra-qen-045373402/" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">LinkedIn</a>
+    </p>
+    <p style="margin:0 0 3px;font-size:12px;color:#94A3B8;">Need help? <a href="mailto:support@praqen.com" style="color:#10b981;font-weight:700;">support@praqen.com</a> · <a href="https://praqen.com" style="color:#10b981;font-weight:700;">praqen.com</a></p>
     <p style="margin:0;font-size:11px;color:#CBD5E1;">© ${yr} PRAQEN · The World's Most Trusted P2P Bitcoin Marketplace</p>
   </td></tr>
 
