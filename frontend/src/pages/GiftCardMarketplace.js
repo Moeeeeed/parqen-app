@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRates } from '../contexts/RatesContext';
 import { useNavigate, Link } from 'react-router-dom';
 import SEO from '../components/SEO';
@@ -597,14 +597,16 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
           }}>
           <Info size={14} style={{ color: ft ? ft.border : C.g400 }} />
         </button>
-        <button onClick={onTrade}
-          className="flex-1 h-9 rounded-xl text-white font-black text-sm flex items-center justify-center gap-1.5 hover:opacity-90 active:scale-[0.98] transition"
-          style={{
-            background: ft ? ft.btnGradient : C.forest,
-            boxShadow: ft ? ft.btnShadow : undefined,
-          }}>
-          TRADE <ArrowRight size={14} />
-        </button>
+        <div style={{ position: 'relative', flex: 1 }}>
+          <button onClick={onTrade}
+            className="w-full h-9 rounded-xl text-white font-black text-sm flex items-center justify-center gap-1.5 hover:opacity-90 active:scale-[0.98] transition"
+            style={{
+              background: ft ? ft.btnGradient : C.forest,
+              boxShadow: ft ? ft.btnShadow : undefined,
+            }}>
+            TRADE <ArrowRight size={14} />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1101,6 +1103,66 @@ export default function GiftCards({ user }) {
   const currencyRef = useRef(null);
   const brandRef = useRef(null);
   const countryRef = useRef(null);
+  const [activeGuide, setActiveGuide] = useState(null);
+  const guideTimer = useRef(null);
+
+  function handleGuideEnter(id) { clearTimeout(guideTimer.current); setActiveGuide(id); }
+  function handleGuideLeave() { guideTimer.current = setTimeout(() => setActiveGuide(null), 140); }
+
+  const GUIDE_TOTAL = 4;
+  function MarketGuide({ id, icon: Icon = Info, title, body, example, guideStep }) {
+    if (activeGuide !== id) return null;
+    const isTab = id.startsWith('tab_');
+    const isRightTab = id.includes('giftcards') || id.includes('crypto');
+
+    const posStyle = isTab
+      ? {
+          top: 'calc(100% + 8px)',
+          ...(isRightTab ? { right: 0, left: 'auto' } : { left: 0 }),
+        }
+      : { bottom: 'calc(100% + 8px)', left: 0 };
+
+    return (
+      <div style={{
+        position: 'absolute',
+        ...posStyle,
+        zIndex: 10000,
+        width: 'min(300px, calc(100vw - 32px))',
+        background: 'linear-gradient(135deg,#1E40AF 0%,#2563EB 100%)',
+        borderRadius: 14, padding: '11px 13px',
+        boxShadow: '0 10px 36px rgba(37,99,235,0.30),0 2px 8px rgba(0,0,0,0.08)',
+        animation: isTab ? 'gcGuideFadeDown 0.2s ease both' : 'gcGuideFadeUp 0.2s ease both',
+        pointerEvents: 'none',
+        boxSizing: 'border-box', color: '#fff',
+      }}>
+        <style>{`
+          @keyframes gcGuideFadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+          @keyframes gcGuideFadeDown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+        `}</style>
+        {guideStep && (
+          <div style={{ marginBottom: 7 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+              <span style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 20, padding: '1px 8px', fontSize: 10, fontWeight: 800, color: '#fff', letterSpacing: 0.5, textTransform: 'uppercase' }}>Step {guideStep} of {GUIDE_TOTAL}</span>
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>{Math.round((guideStep / GUIDE_TOTAL) * 100)}%</span>
+            </div>
+            <div style={{ height: 3, background: 'rgba(255,255,255,0.18)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ width: `${(guideStep / GUIDE_TOTAL) * 100}%`, height: '100%', background: 'rgba(255,255,255,0.75)', borderRadius: 2 }} />
+            </div>
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+          <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            {guideStep ? <span style={{ fontWeight: 900, fontSize: 11, color: '#fff' }}>{guideStep}</span> : <Icon size={12} style={{ color: '#fff' }} />}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: '0 0 3px', fontWeight: 800, fontSize: 12, color: '#fff', lineHeight: 1.3 }}>{title}</p>
+            <p style={{ margin: '0 0 5px', fontSize: 11, color: 'rgba(255,255,255,0.9)', lineHeight: 1.45 }}>{body}</p>
+            {example && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.68)', fontStyle: 'italic', background: 'rgba(255,255,255,0.12)', borderRadius: 6, padding: '2px 8px', display: 'inline-block' }}>💡 {example}</div>}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => { if (contextBtcUsd > 0) setBtcPrice(contextBtcUsd); }, [contextBtcUsd]);
   useEffect(() => {
@@ -1309,7 +1371,12 @@ export default function GiftCards({ user }) {
       <div className="bg-white border-b sticky z-30 flex-shrink-0" style={{ top: 'var(--navbar-h)', borderColor: C.g200 }}>
         {/* 3 equal tabs — always fits any phone */}
         <div className="flex w-full">
-          <div className="flex-1 relative">
+          <div className="flex-1 relative"
+            onMouseEnter={() => handleGuideEnter('tab_buy_crypto')} onMouseLeave={handleGuideLeave}>
+            <MarketGuide id="tab_buy_crypto" icon={Bitcoin} guideStep={null}
+              title="Buy Crypto"
+              body="Switch to the Buy market for Bitcoin (BTC) or Tether (USDT) to buy crypto using bank transfer, mobile money or e-wallets."
+              example="Browse live BTC & USDT buy offers" />
             <button onClick={() => setShowAssetMenu(v => !v)}
               className="w-full text-center py-3 text-xs font-bold border-b-2 border-transparent transition-all flex items-center justify-center gap-1"
               style={{ color: C.g400 }}>
@@ -1349,7 +1416,12 @@ export default function GiftCards({ user }) {
               </>
             )}
           </div>
-          <div className="flex-1 relative">
+          <div className="flex-1 relative"
+            onMouseEnter={() => handleGuideEnter('tab_sell_crypto')} onMouseLeave={handleGuideLeave}>
+            <MarketGuide id="tab_sell_crypto" icon={TrendingUp} guideStep={null}
+              title="Sell Crypto"
+              body="Switch to the Sell market for Bitcoin (BTC) or Tether (USDT) to cash out crypto directly into your bank or mobile money account."
+              example="Sell BTC or USDT for GHS, NGN, KES & more" />
             <button onClick={() => setShowSellAssetMenu(v => !v)}
               className="w-full text-center py-3 text-xs font-bold border-b-2 border-transparent transition-all flex items-center justify-center gap-1"
               style={{ color: C.g400 }}>
@@ -1392,15 +1464,22 @@ export default function GiftCards({ user }) {
           {[
             { label: 'Gift Cards', path: '/gift-cards', active: true, color: '#0D9488' },
           ].map(tab => (
-            <Link key={tab.path} to={tab.path}
-              className="flex-1 text-center py-3 text-xs font-bold border-b-2 transition-all"
-              style={{
-                borderColor: tab.active ? tab.color : 'transparent',
-                color: tab.active ? tab.color : C.g400,
-                backgroundColor: tab.active ? tab.color + '18' : 'transparent',
-              }}>
-              {tab.label}
-            </Link>
+            <div key={tab.path} className="flex-1 relative"
+              onMouseEnter={() => handleGuideEnter('tab_giftcards')} onMouseLeave={handleGuideLeave}>
+              <MarketGuide id="tab_giftcards" icon={Gift} guideStep={null}
+                title="Gift Cards Marketplace"
+                body="Trade 100+ gift card brands for Bitcoin or cash. Pick Amazon, iTunes, Google Play, Steam, Walmart and more."
+                example="Buy & Sell gift cards with instant escrow protection" />
+              <Link to={tab.path}
+                className="w-full block text-center py-3 text-xs font-bold border-b-2 transition-all"
+                style={{
+                  borderColor: tab.active ? tab.color : 'transparent',
+                  color: tab.active ? tab.color : C.g400,
+                  backgroundColor: tab.active ? tab.color + '18' : 'transparent',
+                }}>
+                {tab.label}
+              </Link>
+            </div>
           ))}
         </div>
       </div>
@@ -1440,7 +1519,12 @@ export default function GiftCards({ user }) {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
 
             {/* ── AMOUNT ── */}
-            <div>
+            <div style={{ position: 'relative' }}
+              onMouseEnter={() => handleGuideEnter('gc_amount')} onMouseLeave={handleGuideLeave}>
+              <MarketGuide id="gc_amount" icon={Gift} guideStep={1}
+                title="Card Value / Amount"
+                body="Enter the card amount in USD or local currency. The list will automatically filter to show vendors who trade cards within this value range."
+                example="Type 50 to find vendors accepting $50 gift cards" />
               <p className="text-xs font-bold mb-1 tracking-wide" style={{ color: C.g500 }}>AMOUNT</p>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold pointer-events-none select-none"
@@ -1468,7 +1552,12 @@ export default function GiftCards({ user }) {
             </div>
 
             {/* ── CURRENCY ── */}
-            <div>
+            <div style={{ position: 'relative' }}
+              onMouseEnter={() => handleGuideEnter('gc_currency')} onMouseLeave={handleGuideLeave}>
+              <MarketGuide id="gc_currency" icon={CreditCard} guideStep={2}
+                title="Currency"
+                body="Filter by the currency of the gift card or payment currency. All card values will update to show amounts in your chosen currency."
+                example="USD for US Cards · EUR for European Cards · GHS for Ghana" />
               <p className="text-xs font-bold mb-1 tracking-wide" style={{ color: C.g500 }}>CURRENCY</p>
               <div className="relative" ref={currencyRef}>
                 <button onClick={() => { setShowCurrency(!showCurrency); setCurrencySearch(''); setShowBrand(false); setShowCountry(false); }}
@@ -1526,7 +1615,12 @@ export default function GiftCards({ user }) {
             </div>
 
             {/* ── PAYMENT (Gift Card Brand) ── */}
-            <div>
+            <div style={{ position: 'relative' }}
+              onMouseEnter={() => handleGuideEnter('gc_brand')} onMouseLeave={handleGuideLeave}>
+              <MarketGuide id="gc_brand" icon={Gift} guideStep={3}
+                title="Gift Card Brand"
+                body="Filter by the specific gift card brand you want to buy or sell. Pick Amazon, iTunes, Google Play, Steam, Razer Gold and more."
+                example="Amazon · Apple iTunes · Google Play · Steam · Razer Gold" />
               <p className="text-xs font-bold mb-1 tracking-wide" style={{ color: C.g500 }}>PAYMENT</p>
               <div className="relative" ref={brandRef}>
                 <button onClick={() => { setShowBrand(!showBrand); setBrandSearch(''); setShowCurrency(false); setShowCountry(false); }}
@@ -1587,7 +1681,12 @@ export default function GiftCards({ user }) {
             </div>
 
             {/* ── COUNTRY ── */}
-            <div>
+            <div style={{ position: 'relative' }}
+              onMouseEnter={() => handleGuideEnter('gc_country')} onMouseLeave={handleGuideLeave}>
+              <MarketGuide id="gc_country" icon={Globe} guideStep={4}
+                title="Country / Region"
+                body="Filter vendors by country. Local vendors can complete trade verification and payouts faster in your country."
+                example="Ghana · Nigeria · Kenya · USA · All Countries" />
               <p className="text-xs font-bold mb-1 tracking-wide" style={{ color: C.g500 }}>COUNTRY</p>
               <div className="relative" ref={countryRef}>
                 <button onClick={() => { setShowCountry(!showCountry); setShowCurrency(false); setShowBrand(false); }}

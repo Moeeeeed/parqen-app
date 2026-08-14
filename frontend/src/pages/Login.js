@@ -100,6 +100,58 @@ function OtpBoxes({ value, onChange }) {
   );
 }
 
+
+const FIELD_GUIDES = [
+  {
+    field: 'email',
+    Icon: Mail,
+    title: 'Email Address',
+    body: 'Enter your registered email address. We will send a login confirmation or OTP code if required.',
+    example: 'e.g. you@example.com'
+  },
+  {
+    field: 'password',
+    Icon: Lock,
+    title: 'Your Password',
+    body: 'Enter your secure account password. Make sure Caps Lock is off.',
+    example: 'e.g. MyP@ss2024'
+  },
+  {
+    field: 'submit',
+    Icon: ArrowRight,
+    title: 'Sign In',
+    body: 'Click to verify your credentials and sign into your account safely.',
+    example: 'Keep remember me checked for faster logins!'
+  }
+];
+
+function FieldTooltip({ guide }) {
+  if (!guide) return null;
+  const IconComponent = guide.Icon || Mail;
+  return (
+    <div className="field-tooltip">
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <IconComponent size={18} style={{ color: '#fff', flexShrink: 0, marginTop: 2 }} />
+        <div style={{ flex: 1, textAlign: 'left' }}>
+          <p style={{ margin: '0 0 4px', fontWeight: 800, fontSize: 12, color: '#fff', lineHeight: 1.3 }}>
+            {guide.title}
+          </p>
+          <p style={{ margin: '0 0 6px', fontSize: 11, color: 'rgba(255,255,255,0.88)', lineHeight: 1.5 }}>
+            {guide.body}
+          </p>
+          <div style={{
+            fontSize: 10, color: 'rgba(255,255,255,0.65)',
+            fontStyle: 'italic', background: 'rgba(255,255,255,0.12)',
+            borderRadius: 6, padding: '3px 8px', display: 'inline-block',
+          }}>
+            💡 {guide.example}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Login({ onLogin }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -127,6 +179,7 @@ export default function Login({ onLogin }) {
   const [twoFAMethod, setTwoFAMethod] = useState('email');
   const [twoFACode, setTwoFACode] = useState('');
   const [twoFALoading, setTwoFALoading] = useState(false);
+  const [hoveredField, setHoveredField] = useState(null);
 
   const fullPhone = `${country.code}${phone.replace(/^0+/, '')}`;
 
@@ -898,11 +951,14 @@ export default function Login({ onLogin }) {
                       <span style={{ fontSize: 12, fontWeight: 700, color: '#2D6A4F' }}>Email Sign In</span>
                     </div>
 
-                    <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    <div style={{ position: 'relative' }}
+                         onMouseEnter={() => setHoveredField('email')}
+                         onMouseLeave={() => setHoveredField(null)}>
+                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', cursor: 'pointer' }}>
                         Email Address
                       </label>
                       <div style={{ position: 'relative' }}>
+                        {hoveredField === 'email' && <FieldTooltip guide={FIELD_GUIDES.find(g => g.field === 'email')} />}
                         <Mail size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
                         <input type="email" value={email}
                           onChange={e => { setEmail(e.target.value); setError(''); }}
@@ -913,9 +969,11 @@ export default function Login({ onLogin }) {
                       </div>
                     </div>
 
-                    <div>
+                    <div style={{ position: 'relative' }}
+                         onMouseEnter={() => setHoveredField('password')}
+                         onMouseLeave={() => setHoveredField(null)}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                        <label style={{ fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        <label style={{ fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', cursor: 'pointer' }}>
                           Password
                         </label>
                         <Link to="/forgot-password" style={{ fontSize: 12, fontWeight: 600, color: '#2D6A4F', textDecoration: 'none' }}>
@@ -923,6 +981,7 @@ export default function Login({ onLogin }) {
                         </Link>
                       </div>
                       <div style={{ position: 'relative' }}>
+                        {hoveredField === 'password' && <FieldTooltip guide={FIELD_GUIDES.find(g => g.field === 'password')} />}
                         <Lock size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
                         <input type={showPw ? 'text' : 'password'} value={password}
                           onChange={e => { setPassword(e.target.value); setError(''); }}
@@ -960,19 +1019,25 @@ export default function Login({ onLogin }) {
                       <span style={{ fontSize: 13, color: '#64748B', userSelect: 'none' }}>Remember me on this device</span>
                     </div>
 
-                    <button onClick={handleEmailLogin} disabled={loading}
-                      className="submit-btn"
-                      style={{
-                        background: 'linear-gradient(135deg, #2D6A4F, #40916C)',
-                        color: 'white',
-                        boxShadow: '0 6px 20px rgba(45, 106, 79, 0.25)'
-                      }}>
+                    <div style={{ position: 'relative' }}
+                         onMouseEnter={() => setHoveredField('submit')}
+                         onMouseLeave={() => setHoveredField(null)}>
+                      {hoveredField === 'submit' && <FieldTooltip guide={FIELD_GUIDES.find(g => g.field === 'submit')} />}
+                      <button onClick={handleEmailLogin} disabled={loading}
+                        className="submit-btn"
+                        style={{
+                          background: 'linear-gradient(135deg, #2D6A4F, #40916C)',
+                          color: 'white',
+                          boxShadow: '0 6px 20px rgba(45, 106, 79, 0.25)',
+                          width: '100%'
+                        }}>
                       {loading ? (
                         <><RefreshCw size={16} className="animate-spin" />Signing in…</>
                       ) : (
                         <>Sign In <ArrowRight size={16} /></>
                       )}
                     </button>
+                    </div>
                   </div>
                 )}
 

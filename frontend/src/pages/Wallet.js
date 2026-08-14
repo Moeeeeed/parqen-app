@@ -9,11 +9,12 @@ import {
   Clock, Eye, EyeOff, Zap, Download, Send, ArrowLeftRight,
   ChevronRight, ChevronDown, X, Wallet, Users, Search,
   Link2, DollarSign, Ban, Lock, Mail, Check, Gift,
-  Flame, Smartphone, Landmark,
+  Flame, Smartphone, Landmark, HelpCircle, Lightbulb, Sparkles,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { QRCodeSVG } from 'qrcode.react';
 import { copyToClipboard } from '../utils/clipboard';
+import UserGuideTooltip from '../components/UserGuideTooltip';
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 const C = {
@@ -2548,6 +2549,79 @@ export default function WalletPage({ user }) {
   const [scanCooldown,  setScanCooldown]  = useState(0); // seconds remaining
   const [loadingUsdt,   setLoadingUsdt]   = useState(false);
 
+  // ── User Guide State ──────────────────────────────────────────────────────────
+  const [showUserGuide, setShowUserGuide] = useState(() => {
+    return !localStorage.getItem('praqen_wallet_guide_dismissed');
+  });
+  const [activeGuideStep, setActiveGuideStep] = useState(null); // 1..5 for guided tour
+  const [hoverGuideId, setHoverGuideId] = useState(null);
+  const guideTimerRef = useRef(null);
+
+  const handleGuideEnter = (id) => {
+    clearTimeout(guideTimerRef.current);
+    setHoverGuideId(id);
+  };
+
+  const handleGuideLeave = () => {
+    guideTimerRef.current = setTimeout(() => setHoverGuideId(null), 150);
+  };
+
+  const toggleUserGuide = () => {
+    setShowUserGuide(prev => {
+      const next = !prev;
+      if (next) {
+        localStorage.removeItem('praqen_wallet_guide_dismissed');
+      } else {
+        localStorage.setItem('praqen_wallet_guide_dismissed', '1');
+        setActiveGuideStep(null);
+      }
+      return next;
+    });
+  };
+
+  const WALLET_GUIDE_STEPS = [
+    {
+      id: 'guide_hero',
+      step: 1,
+      icon: Wallet,
+      title: 'Portfolio Value & Escrow Balance',
+      body: 'Your total portfolio combines live USD value of Bitcoin (BTC) and Tether (USDT). Available funds are ready to spend or withdraw. Funds in Escrow are temporarily locked during active P2P trades for buyer & seller protection.',
+      example: 'Available: $150.00 • In Escrow: $50.00',
+    },
+    {
+      id: 'guide_actions',
+      step: 2,
+      icon: Send,
+      title: 'Quick Wallet Actions',
+      body: 'Send crypto to external wallets, Receive deposits via address/QR code, Transfer funds instantly with $0 fees to PRAQEN users, or Swap BTC ↔ USDT in 1 click.',
+      example: 'Tap Transfer to send funds to a user by username with zero gas fees!',
+    },
+    {
+      id: 'guide_assets',
+      step: 3,
+      icon: Bitcoin,
+      title: 'Multi-Asset Support (BTC & USDT)',
+      body: 'Manage both Bitcoin (BTC) and Tether USD (USDT TRC-20) in a single unified portfolio. Tap any asset row to quickly access deposits, withdrawals, or locked trade balance details.',
+      example: 'Tap Tether USD to inspect your TRC-20 deposit address.',
+    },
+    {
+      id: 'guide_activity',
+      step: 4,
+      icon: Clock,
+      title: 'Real-Time Transaction Activity',
+      body: 'View complete transaction history including deposits, external withdrawals, off-chain internal transfers, and instant swaps with live blockchain status updates.',
+      example: 'Click any record to copy the transaction hash or view explorer status.',
+    },
+    {
+      id: 'guide_security',
+      step: 5,
+      icon: Shield,
+      title: 'P2P Escrow & Security System',
+      body: 'All P2P marketplace trades utilize automated smart escrow to ensure funds are safely locked until payment is verified. Outgoing external withdrawals require email 2FA confirmation.',
+      example: 'Your funds are always protected during active marketplace trades.',
+    },
+  ];
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) return;
@@ -2930,6 +3004,20 @@ export default function WalletPage({ user }) {
             </h1>
           </div>
           <div className="flex gap-2 flex-shrink-0">
+            <button
+              onClick={toggleUserGuide}
+              className="h-9 px-3 rounded-xl flex items-center gap-1.5 border transition hover:shadow-sm text-xs font-bold"
+              style={{
+                borderColor: showUserGuide ? C.mint : C.g200,
+                backgroundColor: showUserGuide ? C.mist : '#fff',
+                color: showUserGuide ? C.forest : C.g600,
+              }}
+              title="Wallet User Guide"
+            >
+              <HelpCircle size={14} style={{ color: showUserGuide ? C.forest : C.g600 }} />
+              <span className="hidden sm:inline">User Guide</span>
+              {showUserGuide && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+            </button>
             <button onClick={() => setShowBal(!showBal)}
               className="w-9 h-9 rounded-xl flex items-center justify-center border transition hover:shadow-sm"
               style={{ borderColor: C.g200, backgroundColor: '#fff' }}>
@@ -2942,6 +3030,93 @@ export default function WalletPage({ user }) {
             </button>
           </div>
         </div>
+
+        {/* ── WALLET USER GUIDE & GETTING STARTED BANNER ── */}
+        {showUserGuide && (
+          <div className="rounded-3xl p-4 sm:p-6 text-white shadow-xl relative overflow-visible border transition-all duration-300"
+            style={{
+              background: 'linear-gradient(135deg, #064E3B 0%, #1B4332 50%, #0F5132 100%)',
+              borderColor: 'rgba(82, 183, 136, 0.35)',
+            }}>
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-white/15 flex items-center justify-center backdrop-blur-md border border-white/20">
+                  <Lightbulb size={19} className="text-amber-300" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-black tracking-widest uppercase text-emerald-300">PRAQEN Wallet User Guide</span>
+                  <h3 className="text-base sm:text-lg font-extrabold text-white" style={{ fontFamily: "'Syne', sans-serif" }}>
+                    Master Your Wallet & P2P Escrow Features
+                  </h3>
+                </div>
+              </div>
+              <button
+                onClick={toggleUserGuide}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition text-white/80 hover:text-white flex-shrink-0"
+                title="Hide Guide"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed mb-4">
+              Welcome to your unified crypto portfolio! Learn how to deposit, transfer with $0 fees, swap instantly, and use automated P2P escrow protection below:
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 mb-4">
+              {WALLET_GUIDE_STEPS.map((s) => {
+                const StepIcon = s.icon;
+                const isActiveStep = activeGuideStep === s.step;
+                return (
+                  <div
+                    key={s.id}
+                    onClick={() => setActiveGuideStep(s.step)}
+                    onMouseEnter={() => handleGuideEnter(s.id)}
+                    onMouseLeave={handleGuideLeave}
+                    className={`cursor-pointer rounded-2xl p-3 transition-all duration-200 border ${
+                      isActiveStep
+                        ? 'bg-white text-slate-900 border-amber-400 shadow-lg scale-[1.02]'
+                        : 'bg-white/10 text-white border-white/15 hover:bg-white/20'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                        isActiveStep ? 'bg-amber-400 text-slate-900' : 'bg-white/20 text-white'
+                      }`}>
+                        Step {s.step}
+                      </span>
+                      <StepIcon size={16} className={isActiveStep ? 'text-emerald-700' : 'text-emerald-300'} />
+                    </div>
+                    <p className={`text-xs font-bold leading-tight ${isActiveStep ? 'text-slate-900' : 'text-white'}`}>
+                      {s.title}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-white/15 text-xs">
+              <div className="flex items-center gap-2 text-emerald-200">
+                <Sparkles size={14} className="text-amber-300 flex-shrink-0" />
+                <span>Hover step cards or click <strong>Start Guided Tour</strong> to highlight features on the page</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setActiveGuideStep(1)}
+                  className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-900 font-extrabold text-xs shadow-md transition active:scale-95"
+                >
+                  🚀 Start Guided Tour
+                </button>
+                <button
+                  onClick={toggleUserGuide}
+                  className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition"
+                >
+                  Dismiss Guide
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── FUND-WALLET ALERT — always up top, above the fold, for anyone under the $10 threshold ── */}
         {portfolioUsd < 10 && (
@@ -2974,11 +3149,29 @@ export default function WalletPage({ user }) {
           </div>
         )}
 
-        {/* ── HERO: TOTAL PORTFOLIO VALUE ──
-             White elevated card instead of a full-bleed green block — the color now accents
-             (badge, glow, icon tints) rather than dominating the whole card. */}
-        <div className="rounded-3xl bg-white shadow-xl border p-5 sm:p-7 relative overflow-hidden" style={{ borderColor: C.g100 }}>
-          <div className="absolute -top-20 -right-20 w-64 h-64 rounded-full pointer-events-none"
+        {/* ── HERO: TOTAL PORTFOLIO VALUE ── */}
+        <div
+          onMouseEnter={() => handleGuideEnter('guide_hero')}
+          onMouseLeave={handleGuideLeave}
+          className="rounded-3xl bg-white shadow-xl border p-5 sm:p-7 relative overflow-visible"
+          style={{ borderColor: C.g100 }}
+        >
+          {(hoverGuideId === 'guide_hero' || activeGuideStep === 1) && (
+            <UserGuideTooltip
+              title={WALLET_GUIDE_STEPS[0].title}
+              body={WALLET_GUIDE_STEPS[0].body}
+              example={WALLET_GUIDE_STEPS[0].example}
+              icon={Wallet}
+              step={1}
+              totalSteps={5}
+              position="top"
+              onNext={() => setActiveGuideStep(2)}
+              onDismiss={() => { setActiveGuideStep(null); setHoverGuideId(null); }}
+              style={{ position: 'absolute', bottom: 'calc(100% + 10px)', left: 0, right: 0, zIndex: 1000 }}
+            />
+          )}
+
+          <div className="absolute -top-20 -right-20 w-64 h-64 rounded-full pointer-events-none overflow-hidden"
             style={{ background: `radial-gradient(circle, ${C.mint} 0%, transparent 70%)`, opacity: 0.08 }} />
 
           <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
@@ -3035,32 +3228,71 @@ export default function WalletPage({ user }) {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5">
         <div className="lg:col-span-2 space-y-4 sm:space-y-5">
 
-        {/* ── QUICK ACTIONS ──
-             Asset-agnostic — each opens the existing AssetPickerSheet, which already resolves
-             to the correct BTC/USDT modal. No new logic; just a single unified entry point. */}
-        <div className="grid grid-cols-4 gap-2 sm:gap-3">
-          {[
-            { label: 'Send',     icon: Send,           action: () => setAssetPicker({ type: 'send' }) },
-            { label: 'Receive',  icon: Download,       action: () => setAssetPicker({ type: 'receive' }) },
-            { label: 'Transfer', icon: ArrowUpRight,   action: () => setAssetPicker({ type: 'transfer' }) },
-            { label: 'Swap',     icon: ArrowLeftRight, action: () => setActiveCoin('SWAP') },
-          ].map(({ label, icon: Icon, action }) => (
-            <button key={label} onClick={action}
-              className="bg-white rounded-2xl border shadow-sm p-3 sm:p-4 flex flex-col items-center gap-2 transition hover:shadow-md hover:-translate-y-0.5"
-              style={{ borderColor: C.g100 }}>
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: C.mist }}>
-                <Icon size={16} style={{ color: C.green }} />
-              </div>
-              <span className="text-xs font-bold" style={{ color: C.g700 }}>{label}</span>
-            </button>
-          ))}
+        {/* ── QUICK ACTIONS ── */}
+        <div
+          onMouseEnter={() => handleGuideEnter('guide_actions')}
+          onMouseLeave={handleGuideLeave}
+          className="relative"
+        >
+          {(hoverGuideId === 'guide_actions' || activeGuideStep === 2) && (
+            <UserGuideTooltip
+              title={WALLET_GUIDE_STEPS[1].title}
+              body={WALLET_GUIDE_STEPS[1].body}
+              example={WALLET_GUIDE_STEPS[1].example}
+              icon={Send}
+              step={2}
+              totalSteps={5}
+              position="top"
+              onPrev={() => setActiveGuideStep(1)}
+              onNext={() => setActiveGuideStep(3)}
+              onDismiss={() => { setActiveGuideStep(null); setHoverGuideId(null); }}
+              style={{ position: 'absolute', bottom: 'calc(100% + 10px)', left: 0, right: 0, zIndex: 1000 }}
+            />
+          )}
+
+          <div className="grid grid-cols-4 gap-2 sm:gap-3">
+            {[
+              { label: 'Send',     icon: Send,           action: () => setAssetPicker({ type: 'send' }) },
+              { label: 'Receive',  icon: Download,       action: () => setAssetPicker({ type: 'receive' }) },
+              { label: 'Transfer', icon: ArrowUpRight,   action: () => setAssetPicker({ type: 'transfer' }) },
+              { label: 'Swap',     icon: ArrowLeftRight, action: () => setActiveCoin('SWAP') },
+            ].map(({ label, icon: Icon, action }) => (
+              <button key={label} onClick={action}
+                className="bg-white rounded-2xl border shadow-sm p-3 sm:p-4 flex flex-col items-center gap-2 transition hover:shadow-md hover:-translate-y-0.5"
+                style={{ borderColor: C.g100 }}>
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: C.mist }}>
+                  <Icon size={16} style={{ color: C.green }} />
+                </div>
+                <span className="text-xs font-bold" style={{ color: C.g700 }}>{label}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
 
-        {/* ── ASSETS ──
-             Both balances side by side instead of two near-identical full-page views —
-             this is the real fix for the "giant green container × 2" duplication. */}
-        <div className="bg-white rounded-2xl border shadow-sm overflow-hidden" style={{ borderColor: C.g100 }}>
+        {/* ── ASSETS ── */}
+        <div
+          onMouseEnter={() => handleGuideEnter('guide_assets')}
+          onMouseLeave={handleGuideLeave}
+          className="bg-white rounded-2xl border shadow-sm relative overflow-visible"
+          style={{ borderColor: C.g100 }}
+        >
+          {(hoverGuideId === 'guide_assets' || activeGuideStep === 3) && (
+            <UserGuideTooltip
+              title={WALLET_GUIDE_STEPS[2].title}
+              body={WALLET_GUIDE_STEPS[2].body}
+              example={WALLET_GUIDE_STEPS[2].example}
+              icon={Bitcoin}
+              step={3}
+              totalSteps={5}
+              position="top"
+              onPrev={() => setActiveGuideStep(2)}
+              onNext={() => setActiveGuideStep(4)}
+              onDismiss={() => { setActiveGuideStep(null); setHoverGuideId(null); }}
+              style={{ position: 'absolute', bottom: 'calc(100% + 10px)', left: 0, right: 0, zIndex: 1000 }}
+            />
+          )}
+
           <div className="px-5 py-4 border-b" style={{ borderColor: C.g100 }}>
             <p className="font-black text-sm" style={{ color: C.g800 }}>Assets</p>
           </div>
@@ -3099,7 +3331,28 @@ export default function WalletPage({ user }) {
         </div>
 
         {/* ── RECENT ACTIVITY (BTC transaction history) ──────────────── */}
-        <div className="bg-white rounded-2xl border shadow-sm overflow-hidden" style={{ borderColor: C.g100 }}>
+        <div
+          onMouseEnter={() => handleGuideEnter('guide_activity')}
+          onMouseLeave={handleGuideLeave}
+          className="bg-white rounded-2xl border shadow-sm relative overflow-visible"
+          style={{ borderColor: C.g100 }}
+        >
+          {(hoverGuideId === 'guide_activity' || activeGuideStep === 4) && (
+            <UserGuideTooltip
+              title={WALLET_GUIDE_STEPS[3].title}
+              body={WALLET_GUIDE_STEPS[3].body}
+              example={WALLET_GUIDE_STEPS[3].example}
+              icon={Clock}
+              step={4}
+              totalSteps={5}
+              position="top"
+              onPrev={() => setActiveGuideStep(3)}
+              onNext={() => setActiveGuideStep(5)}
+              onDismiss={() => { setActiveGuideStep(null); setHoverGuideId(null); }}
+              style={{ position: 'absolute', bottom: 'calc(100% + 10px)', left: 0, right: 0, zIndex: 1000 }}
+            />
+          )}
+
           <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: C.g100 }}>
             <p className="font-black text-sm" style={{ color: C.g800 }}>Recent Activity</p>
             <span className="text-xs font-black px-2 py-0.5 rounded-full"
@@ -3176,7 +3429,31 @@ export default function WalletPage({ user }) {
         <P2PPromoBanner navigate={navigate} />
 
         {/* ── SECURITY INFO ────────────────────────────────────────── */}
-        <div className="bg-white rounded-2xl border shadow-sm p-4" style={{ borderColor: C.g100 }}>
+        <div
+          onMouseEnter={() => handleGuideEnter('guide_security')}
+          onMouseLeave={handleGuideLeave}
+          className="bg-white rounded-2xl border shadow-sm p-4 relative overflow-visible"
+          style={{ borderColor: C.g100 }}
+        >
+          {(hoverGuideId === 'guide_security' || activeGuideStep === 5) && (
+            <UserGuideTooltip
+              title={WALLET_GUIDE_STEPS[4].title}
+              body={WALLET_GUIDE_STEPS[4].body}
+              example={WALLET_GUIDE_STEPS[4].example}
+              icon={Shield}
+              step={5}
+              totalSteps={5}
+              position="top"
+              onPrev={() => setActiveGuideStep(4)}
+              onNext={() => {
+                setActiveGuideStep(null);
+                toast.success('🎉 Tour completed! You master your wallet features.', { autoClose: 5000 });
+              }}
+              onDismiss={() => { setActiveGuideStep(null); setHoverGuideId(null); }}
+              style={{ position: 'absolute', bottom: 'calc(100% + 10px)', left: 0, right: 0, zIndex: 1000 }}
+            />
+          )}
+
           <div className="flex items-center gap-2 mb-3">
             <Shield size={14} style={{ color: C.green }} />
             <p className="font-black text-sm" style={{ color: C.g800 }}>Wallet Security</p>

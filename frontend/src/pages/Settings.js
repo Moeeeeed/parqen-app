@@ -1,4 +1,4 @@
-﻿// src/pages/Settings.js - COMPLETE CLEAN FILE
+// src/pages/Settings.js - COMPLETE CLEAN FILE
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -13,7 +13,7 @@ import {
   Shield, Globe, Save, Eye, EyeOff, CheckCircle,
   AlertCircle, Smartphone, LogOut, ChevronRight,
   Camera, BadgeCheck, Clock, Upload, RefreshCw,
-  FileText, DollarSign, Languages, MapPin, X,
+  FileText, DollarSign, Languages, MapPin, X, Info,
   ToggleLeft, ToggleRight,
   Ban, WifiOff, MessageCircle, Car, Plane, Zap,
   AlertTriangle, Circle
@@ -385,6 +385,99 @@ const TIMEZONE_GROUPS = {
 export default function Settings({ user, setUser }) {
   const navigate = useNavigate();
   const location = useLocation();
+
+  // ── User Guide Tooltip State ────────────────────────────────────────────────
+  const [activeGuide, setActiveGuide] = useState(null);
+  const [sidebarGuide, setSidebarGuide] = useState(null);
+  const guideLeaveTimer = React.useRef(null);
+
+  const SIDEBAR_GUIDES = {
+    account:       { icon: User,       title: 'Account',              body: 'Update your username, full name, email, phone number, location and bio. Your profile info is shown on your trade listings and public profile.' },
+    verification:  { icon: Shield,     title: 'Verification',         body: 'Complete Email, Phone, and ID (KYC) verification to unlock higher trade limits and earn the Verified Trader badge.' },
+    security:      { icon: Lock,       title: 'Security',             body: 'Change your login password and manage Two-Factor Authentication (2FA) to keep your account secure.' },
+    preferences:   { icon: Globe,      title: 'Preferences',          body: 'Set your preferred currency, display language, and timezone. These affect prices, dates and countdowns across the app.' },
+    payment:       { icon: CreditCard, title: 'Payment Methods',      body: 'Add your bank account and mobile money wallet details. These are shared automatically with your trade partner during an active trade.' },
+    notifications: { icon: Bell,       title: 'Notifications',        body: 'Choose which trade alerts, security notices, and push notifications you want to receive by email or browser push.' },
+    logout:        { icon: LogOut,     title: 'Log Out',              body: 'Sign out of your PRAQEN account on this device. Your trades and wallet remain safe — you can log back in anytime.' },
+  };
+
+  function handleGuideEnter(id) {
+    clearTimeout(guideLeaveTimer.current);
+    setActiveGuide(id);
+  }
+  function handleGuideLeave() {
+    guideLeaveTimer.current = setTimeout(() => setActiveGuide(null), 120);
+  }
+  function handleSidebarEnter(id) {
+    clearTimeout(guideLeaveTimer.current);
+    setSidebarGuide(id);
+  }
+  function handleSidebarLeave() {
+    guideLeaveTimer.current = setTimeout(() => setSidebarGuide(null), 150);
+  }
+
+  // Inline blue guide tooltip — shows on hover, never overlaps inputs
+  const GUIDE_TOTAL = 24; // total guide steps across all tabs
+  function GuideTooltip({ id, icon: Icon = Info, title, body, example, step }) {
+    if (activeGuide !== id) return null;
+    return (
+      <div className="prq-guide-popup prq-guide-top animate-guideFadeIn" role="status" aria-live="polite"
+        onMouseEnter={() => clearTimeout(guideLeaveTimer.current)}
+        onMouseLeave={handleGuideLeave}
+        style={{
+          position: 'absolute',
+          bottom: 'calc(100% + 8px)',
+          left: 0,
+          right: 0,
+          width: 'auto',
+          zIndex: 100,
+        }}>
+        {/* Step badge + progress bar */}
+        {step && (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+              <span style={{
+                background: 'rgba(255,255,255,0.25)', borderRadius: 20, padding: '2px 10px',
+                fontSize: 10, fontWeight: 800, color: '#fff', letterSpacing: 0.5, textTransform: 'uppercase',
+              }}>Step {step} of {GUIDE_TOTAL}</span>
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
+                {Math.round((step / GUIDE_TOTAL) * 100)}% complete
+              </span>
+            </div>
+            <div style={{ height: 3, background: 'rgba(255,255,255,0.18)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{
+                width: `${(step / GUIDE_TOTAL) * 100}%`, height: '100%',
+                background: 'rgba(255,255,255,0.75)', borderRadius: 2,
+                transition: 'width 0.3s ease',
+              }} />
+            </div>
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: '50%',
+            background: 'rgba(255,255,255,0.2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            {step
+              ? <span style={{ fontWeight: 900, fontSize: 12, color: '#fff' }}>{step}</span>
+              : <Icon size={14} style={{ color: '#fff' }} />}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: '0 0 4px', fontWeight: 800, fontSize: 12.5, color: '#fff', lineHeight: 1.3 }}>{title}</p>
+            <p style={{ margin: '0 0 6px', fontSize: 11.5, color: 'rgba(255,255,255,0.9)', lineHeight: 1.45 }}>{body}</p>
+            {example && (
+              <div style={{
+                fontSize: 11, color: 'rgba(255,255,255,0.72)', fontStyle: 'italic',
+                background: 'rgba(255,255,255,0.12)', borderRadius: 6, padding: '3px 8px',
+                display: 'inline-block', marginTop: 2,
+              }}>💡 {example}</div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
   const [activeTab, setActiveTab] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get('tab');
@@ -1177,12 +1270,62 @@ export default function Settings({ user, setUser }) {
           </div>
 
           <div className="flex flex-col md:flex-row gap-4 md:gap-6">
-            {/* Sidebar tabs */}
-            <div className="md:w-52 flex-shrink-0">
+                        {/* Sidebar tabs */}
+            <div className="md:w-52 flex-shrink-0" style={{ position: 'relative' }}>
+
+              {/* Sidebar hover guide (desktop only) — floats to the right of sidebar */}
+              {sidebarGuide && SIDEBAR_GUIDES[sidebarGuide] && (() => {
+                const g = SIDEBAR_GUIDES[sidebarGuide];
+                const GIcon = g.icon;
+                return (
+                  <div className="hidden md:block prq-guide-popup"
+                    onMouseEnter={() => clearTimeout(guideLeaveTimer.current)}
+                    onMouseLeave={handleSidebarLeave}
+                    style={{
+                      position: 'absolute', left: 'calc(100% + 14px)', top: 0, width: 230, zIndex: 120,
+                    }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+                      <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <GIcon size={13} style={{ color: '#fff' }} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: '0 0 3px', fontWeight: 800, fontSize: 12, color: '#fff', lineHeight: 1.3 }}>{g.title}</p>
+                        <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.88)', lineHeight: 1.45 }}>{g.body}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Mobile sidebar hover guide — appears below active pill */}
+              {sidebarGuide && SIDEBAR_GUIDES[sidebarGuide] && (() => {
+                const g = SIDEBAR_GUIDES[sidebarGuide];
+                const GIcon = g.icon;
+                return (
+                  <div className="md:hidden prq-guide-popup prq-guide-inline mt-2"
+                    onMouseEnter={() => clearTimeout(guideLeaveTimer.current)}
+                    onMouseLeave={handleSidebarLeave}
+                    style={{ zIndex: 120 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+                      <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <GIcon size={12} style={{ color: '#fff' }} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: '0 0 3px', fontWeight: 800, fontSize: 11.5, color: '#fff', lineHeight: 1.3 }}>{g.title}</p>
+                        <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.88)', lineHeight: 1.45 }}>{g.body}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Mobile: horizontal scrollable pill tab bar */}
               <div className="md:hidden flex gap-2 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
                 {TABS.map(({ id, icon: Icon, label }) => (
-                    <button key={id} onClick={() => setActiveTab(id)}
+                    <button key={id}
+                            onClick={() => setActiveTab(id)}
+                            onMouseEnter={() => handleSidebarEnter(id)}
+                            onMouseLeave={handleSidebarLeave}
                             className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold whitespace-nowrap transition"
                             style={{
                               backgroundColor: activeTab === id ? C.green : C.white,
@@ -1194,6 +1337,8 @@ export default function Settings({ user, setUser }) {
                     </button>
                 ))}
                 <button onClick={handleLogout}
+                        onMouseEnter={() => handleSidebarEnter('logout')}
+                        onMouseLeave={handleSidebarLeave}
                         className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold whitespace-nowrap"
                         style={{ backgroundColor: '#FEF2F2', color: '#EF4444', border: '1.5px solid #FECACA' }}>
                   <LogOut size={13} style={{ flexShrink: 0 }} />
@@ -1204,7 +1349,10 @@ export default function Settings({ user, setUser }) {
               {/* Desktop: vertical sidebar */}
               <div className="hidden md:block bg-white rounded-2xl shadow-sm border overflow-hidden" style={{ borderColor: C.g200 }}>
                 {TABS.map(({ id, icon: Icon, label }) => (
-                    <button key={id} onClick={() => setActiveTab(id)}
+                    <button key={id}
+                            onClick={() => setActiveTab(id)}
+                            onMouseEnter={() => handleSidebarEnter(id)}
+                            onMouseLeave={handleSidebarLeave}
                             className="w-full flex items-center gap-3 px-4 py-3 text-left transition border-b last:border-0 hover:bg-gray-50"
                             style={{
                               borderColor: C.g100,
@@ -1216,6 +1364,8 @@ export default function Settings({ user, setUser }) {
                     </button>
                 ))}
                 <button onClick={handleLogout}
+                        onMouseEnter={() => handleSidebarEnter('logout')}
+                        onMouseLeave={handleSidebarLeave}
                         className="w-full flex items-center gap-3 px-4 py-3 text-left transition hover:bg-red-50"
                         style={{ borderTop: `1px solid ${C.g100}` }}>
                   <LogOut size={16} className="text-red-400" />
@@ -1234,12 +1384,18 @@ export default function Settings({ user, setUser }) {
                       <h2 className="text-lg font-black mb-5" style={{ color: C.forest }}>Account Information</h2>
                       <form onSubmit={handleAccountUpdate} className="space-y-4">
                         <div className="grid md:grid-cols-2 gap-4">
-                          <div>
-                            <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <div className="relative">
+                            <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+                              onMouseEnter={() => handleGuideEnter('acc_username')} onMouseLeave={handleGuideLeave}>
                               Username {user?.username_changed && <Lock size={12} style={{ color: C.g400 }} />}
                             </label>
+                            <GuideTooltip id="acc_username" icon={User} step={1}
+                              title="Username"
+                              body="Your public display name on trades and the marketplace. You can only change it once, so choose carefully!"
+                              example="e.g. trader_samuel, ghana_btc" />
                             {user?.username_changed ? (
                                 <div className="px-4 py-2.5 border-2 rounded-xl text-sm font-medium flex items-center justify-between"
+                                     onMouseEnter={() => handleGuideEnter('acc_username')} onMouseLeave={handleGuideLeave}
                                      style={{ borderColor: C.g200, backgroundColor: C.g100, color: C.g500 }}>
                                   <span>{accountForm.username}</span>
                                   <Lock size={13} style={{ color: C.g400 }} />
@@ -1247,19 +1403,26 @@ export default function Settings({ user, setUser }) {
                             ) : (
                                 <input type="text" value={accountForm.username}
                                        onChange={e => setAccountForm({ ...accountForm, username: e.target.value })}
+                                       onMouseEnter={() => handleGuideEnter('acc_username')} onMouseLeave={handleGuideLeave}
                                        className={inputCls} required style={inputStyle(accountForm.username)} />
                             )}
                             {user?.username_changed ?
-                                <p className="text-xs mt-1 flex items-center gap-1" style={{ color: C.g400 }}><Lock size={9} />Username is permanently locked.</p> :
-                                <p className="text-xs mt-1 flex items-center gap-1" style={{ color: '#D97706' }}><AlertTriangle size={12} className="inline-block" />You can only change your username once. Choose carefully.</p>
+                                <p className="text-xs mt-1 flex items-center gap-1" onMouseEnter={() => handleGuideEnter('acc_username')} onMouseLeave={handleGuideLeave} style={{ color: C.g400 }}><Lock size={9} />Username is permanently locked.</p> :
+                                <p className="text-xs mt-1 flex items-center gap-1" onMouseEnter={() => handleGuideEnter('acc_username')} onMouseLeave={handleGuideLeave} style={{ color: '#D97706' }}><AlertTriangle size={12} className="inline-block" />You can only change your username once. Choose carefully.</p>
                             }
                           </div>
-                          <div>
-                            <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <div className="relative">
+                            <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+                              onMouseEnter={() => handleGuideEnter('acc_fullname')} onMouseLeave={handleGuideLeave}>
                               Full Name {kycVerified && <Lock size={12} style={{ color: C.g400 }} />}
                             </label>
+                            <GuideTooltip id="acc_fullname" icon={User} step={2}
+                              title="Full Name"
+                              body="Your real name used for KYC identity verification. It will be locked after your ID is verified."
+                              example="e.g. Samuel Kwame Asante" />
                             {kycVerified ? (
                                 <div className="px-4 py-2.5 border-2 rounded-xl text-sm font-medium flex items-center justify-between"
+                                     onMouseEnter={() => handleGuideEnter('acc_fullname')} onMouseLeave={handleGuideLeave}
                                      style={{ borderColor: C.g200, backgroundColor: C.g100, color: C.g500 }}>
                                   <span>{accountForm.fullName}</span>
                                   <Lock size={13} style={{ color: C.g400 }} />
@@ -1267,24 +1430,31 @@ export default function Settings({ user, setUser }) {
                             ) : (
                                 <input type="text" value={accountForm.fullName}
                                        onChange={e => setAccountForm({ ...accountForm, fullName: e.target.value })}
+                                       onMouseEnter={() => handleGuideEnter('acc_fullname')} onMouseLeave={handleGuideLeave}
                                        className={inputCls} style={inputStyle(accountForm.fullName)} />
                             )}
                             {kycVerified ?
-                                <p className="text-xs mt-1 flex items-center gap-1" style={{ color: C.g400 }}><Lock size={9} />Locked after ID verification.</p> :
-                                <p className="text-xs mt-1" style={{ color: C.g500 }}>ℹ Full name cannot be changed after ID verification.</p>
+                                <p className="text-xs mt-1 flex items-center gap-1" onMouseEnter={() => handleGuideEnter('acc_fullname')} onMouseLeave={handleGuideLeave} style={{ color: C.g400 }}><Lock size={9} />Locked after ID verification.</p> :
+                                <p className="text-xs mt-1" onMouseEnter={() => handleGuideEnter('acc_fullname')} onMouseLeave={handleGuideLeave} style={{ color: C.g500 }}>ℹ Full name cannot be changed after ID verification.</p>
                             }
                           </div>
                         </div>
 
                         <div className="grid md:grid-cols-2 gap-4">
-                          <div>
-                            <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div className="relative">
+                            <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+                              onMouseEnter={() => handleGuideEnter('acc_email')} onMouseLeave={handleGuideLeave}>
                               Email Address
                               {emailVerified ?
                                   <span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: '#ECFDF5', color: C.success }}>✓ Verified</span> :
                                   <span className="text-xs font-black px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ backgroundColor: '#FFF7ED', color: C.warn }}><AlertTriangle size={11} className="inline-block" />Unverified</span>}
                             </label>
+                            <GuideTooltip id="acc_email" icon={Mail} step={3}
+                              title="Email Address"
+                              body="Your registered email address. This is used for security, notifications, and logging in. It cannot be changed."
+                              example="If you need to change it, contact hello@praqen.com" />
                             <div className="px-4 py-2.5 border-2 rounded-xl text-sm font-medium flex items-center justify-between"
+                                 onMouseEnter={() => handleGuideEnter('acc_email')} onMouseLeave={handleGuideLeave}
                                  style={{ borderColor: emailVerified ? '#DCFCE7' : '#FDE68A', backgroundColor: C.g50, color: C.g700 }}>
                               <span className="truncate">{maskEmail(accountForm.email)}</span>
                               {emailVerified ?
@@ -1326,16 +1496,20 @@ export default function Settings({ user, setUser }) {
                             )}
                           </div>
 
-                          <div>
-                            <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div className="relative">
+                            <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+                              onMouseEnter={() => handleGuideEnter('acc_phone')} onMouseLeave={handleGuideLeave}>
                               Phone Number
-                              {phoneVerified || phoneStep === 'done' ?
-                                  <span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: '#ECFDF5', color: C.success }}>✓ Verified</span> :
-                                  accountForm.phone ?
-                                      <span className="text-xs font-black px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ backgroundColor: '#FFF7ED', color: C.warn }}><AlertTriangle size={11} className="inline-block" />Unverified</span> : null}
+                              {(phoneVerified || phoneStep === 'done') && <span className="text-xs font-black px-2 py-0.5 rounded-full ml-1" style={{ backgroundColor: '#ECFDF5', color: C.success }}>✓ Verified</span>}
+                              {(!phoneVerified && phoneStep !== 'done') && accountForm.phone && <span className="text-xs font-black px-2 py-0.5 rounded-full ml-1 inline-flex items-center gap-1" style={{ backgroundColor: '#FFF7ED', color: C.warn }}><AlertTriangle size={11} className="inline-block" />Unverified</span>}
                             </label>
+                            <GuideTooltip id="acc_phone" icon={Smartphone} step={4}
+                              title="Phone Number"
+                              body="Required for phone verification and 2FA security. Enter your number with your country code."
+                              example="e.g. +233 XXX XXX XXXX or +234 XXX XXX XXXX" />
                             {phoneVerified || phoneStep === 'done' ? (
                                 <div className="px-4 py-2.5 border-2 rounded-xl text-sm font-medium flex items-center justify-between"
+                                     onMouseEnter={() => handleGuideEnter('acc_phone')} onMouseLeave={handleGuideLeave}
                                      style={{ borderColor: '#DCFCE7', backgroundColor: C.g50, color: C.g700 }}>
                                   <span>{accountForm.phone || 'Your number has been verified'}</span>
                                   <CheckCircle size={14} style={{ color: C.success, flexShrink: 0 }} />
@@ -1343,6 +1517,7 @@ export default function Settings({ user, setUser }) {
                             ) : (
                                 <input type="tel" value={accountForm.phone}
                                        onChange={e => setAccountForm({ ...accountForm, phone: e.target.value })}
+                                       onMouseEnter={() => handleGuideEnter('acc_phone')} onMouseLeave={handleGuideLeave}
                                        placeholder="+[country code] your number — e.g. +233XXXXXXXXX"
                                        className={inputCls} style={inputStyle(accountForm.phone)} />
                             )}
@@ -1379,10 +1554,19 @@ export default function Settings({ user, setUser }) {
                           );
                         })()}
 
-                        <div>
-                          <label className={labelCls}>Bio <span className="font-normal text-gray-400">(optional)</span></label>
+                        <div className="relative">
+                          <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+                            onMouseEnter={() => handleGuideEnter('acc_bio')} onMouseLeave={handleGuideLeave}>
+                            Bio
+                            <span className="font-normal text-gray-400">(optional)</span>
+                          </label>
+                          <GuideTooltip id="acc_bio" icon={FileText} step={6}
+                            title="About You"
+                            body="Optional short bio displayed on your public trader profile. It helps build trust with trade partners."
+                            example="e.g. Trusted BTC trader in Accra, 300+ trades completed" />
                           <textarea
                               value={accountForm.bio}
+                              onMouseEnter={() => handleGuideEnter('acc_bio')} onMouseLeave={handleGuideLeave}
                               onChange={e => {
                                 const val = e.target.value;
                                 const wc = val.trim() === '' ? 0 : val.trim().split(/\s+/).length;
@@ -1397,11 +1581,18 @@ export default function Settings({ user, setUser }) {
                           </p>
                         </div>
 
-                        <button type="submit" disabled={loading}
-                                className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-bold text-sm hover:opacity-90 disabled:opacity-50"
-                                style={{ backgroundColor: C.green }}>
-                          {loading ? <><RefreshCw size={15} className="animate-spin" /> Saving…</> : <><Save size={15} /> Save Changes</>}
-                        </button>
+                        <div className="relative">
+                          <GuideTooltip id="acc_save" icon={Save} step={7}
+                            title="Save Profile Changes"
+                            body="Apply and save your updated information to your public profile."
+                            example="Double-check your location and bio before saving!" />
+                          <button type="submit" disabled={loading}
+                                  onMouseEnter={() => handleGuideEnter('acc_save')} onMouseLeave={handleGuideLeave}
+                                  className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-bold text-sm hover:opacity-90 disabled:opacity-50 transition"
+                                  style={{ backgroundColor: C.green }}>
+                            {loading ? <><RefreshCw size={15} className="animate-spin" /> Saving…</> : <><Save size={15} /> Save Changes</>}
+                          </button>
+                        </div>
                       </form>
                     </div>
 
@@ -1539,9 +1730,14 @@ export default function Settings({ user, setUser }) {
                                     )}
 
                                     {!emailVerified && !underReview && (
-                                        <div className="mt-3 space-y-2">
+                                        <div className="mt-3 space-y-2 relative">
+                                          <GuideTooltip id="ver_email" icon={Mail} step={8}
+                                            title="Email Verification"
+                                            body="We'll send a 6-digit code to your email. Check your inbox and spam folder. Enter the code to verify."
+                                            example="Code looks like: 482917" />
                                           {emailVerifyStep === 'idle' && (
                                               <button onClick={handleSendEmailCode} disabled={emailCodeLoading}
+                                                      onMouseEnter={() => handleGuideEnter('ver_email')} onMouseLeave={handleGuideLeave}
                                                       className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-xs font-black disabled:opacity-60"
                                                       style={{ backgroundColor: C.paid }}>
                                                 <Mail size={13} />
@@ -1554,16 +1750,19 @@ export default function Settings({ user, setUser }) {
                                                 <div className="flex gap-2 flex-wrap items-center">
                                                   <input type="text" inputMode="numeric" maxLength={6}
                                                          placeholder="000000" value={emailCode}
+                                                         onMouseEnter={() => handleGuideEnter('ver_email')} onMouseLeave={handleGuideLeave}
                                                          onChange={e => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                                                          className="px-3 py-2 border-2 rounded-xl text-sm font-black focus:outline-none w-36"
                                                          style={{ borderColor: '#3b82f6', letterSpacing: '0.2em', color: C.g800 }} />
                                                   <button onClick={handleVerifyEmailCode}
                                                           disabled={emailVerifyStep === 'verifying' || emailCode.length < 6}
+                                                          onMouseEnter={() => handleGuideEnter('ver_email')} onMouseLeave={handleGuideLeave}
                                                           className="px-4 py-2 rounded-xl text-white text-xs font-black disabled:opacity-50"
                                                           style={{ backgroundColor: C.success }}>
                                                     {emailVerifyStep === 'verifying' ? 'Verifying…' : '✓ Verify'}
                                                   </button>
                                                   <button onClick={() => { setEmailVerifyStep('idle'); setEmailCode(''); }}
+                                                          onMouseEnter={() => handleGuideEnter('ver_email')} onMouseLeave={handleGuideLeave}
                                                           className="text-xs underline text-gray-400">Resend</button>
                                                 </div>
                                               </>
@@ -1601,29 +1800,38 @@ export default function Settings({ user, setUser }) {
                                     </p>
 
                                     {!done && emailVerified && (
-                                        <div className="mt-3 space-y-2">
+                                        <div className="mt-3 space-y-2 relative">
+                                          <GuideTooltip id="ver_phone" icon={Smartphone} step={9}
+                                            title="Phone Verification"
+                                            body="Enter your phone number with country code. Choose Email, SMS, or WhatsApp to receive your 6-digit code."
+                                            example="If SMS fails, try WhatsApp — it's the most reliable" />
                                           {phoneStep === 'idle' && (
                                               <>
                                                 <input type="tel" placeholder="+233 XX XXX XXXX" value={accountForm.phone || ''}
                                                        onChange={e => setAccountForm({ ...accountForm, phone: e.target.value })}
+                                                       onMouseEnter={() => handleGuideEnter('ver_phone')} onMouseLeave={handleGuideLeave}
                                                        className="w-full px-3 py-2 border-2 rounded-xl text-sm focus:outline-none"
                                                        style={{ borderColor: accountForm.phone ? C.green : C.g200, color: C.g800, backgroundColor: 'white' }} />
                                                 <p className="text-xs font-bold" style={{ color: '#1e40af' }}>How would you like to receive your code?</p>
                                                 <div className="flex gap-2">
                                                   <button onClick={() => setPhoneOtpMethod('email')}
+                                                          onMouseEnter={() => handleGuideEnter('ver_phone')} onMouseLeave={handleGuideLeave}
                                                           className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border-2 text-xs font-black transition ${phoneOtpMethod === 'email' ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-gray-200 bg-white text-gray-500'}`}>
                                                     <Mail size={12} /> Email
                                                   </button>
                                                   <button onClick={() => setPhoneOtpMethod('sms')}
+                                                          onMouseEnter={() => handleGuideEnter('ver_phone')} onMouseLeave={handleGuideLeave}
                                                           className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border-2 text-xs font-black transition ${phoneOtpMethod === 'sms' ? 'border-orange-500 bg-orange-50 text-orange-800' : 'border-gray-200 bg-white text-gray-500'}`}>
                                                     <Smartphone size={12} /> SMS
                                                   </button>
                                                   <button onClick={() => setPhoneOtpMethod('whatsapp')}
+                                                          onMouseEnter={() => handleGuideEnter('ver_phone')} onMouseLeave={handleGuideLeave}
                                                           className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border-2 text-xs font-black transition ${phoneOtpMethod === 'whatsapp' ? 'border-green-500 bg-green-50 text-green-800' : 'border-gray-200 bg-white text-gray-500'}`}>
                                                     <MessageCircle size={12} /> WhatsApp
                                                   </button>
                                                 </div>
                                                 <button onClick={handleSendPhoneOtp} disabled={!accountForm.phone}
+                                                        onMouseEnter={() => handleGuideEnter('ver_phone')} onMouseLeave={handleGuideLeave}
                                                         className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-xs font-black disabled:opacity-60"
                                                         style={{ backgroundColor: C.paid }}>
                                                   <Smartphone size={13} /> Send Verification Code →
@@ -1647,16 +1855,19 @@ export default function Settings({ user, setUser }) {
                                                 <div className="flex gap-2 flex-wrap items-center">
                                                   <input type="text" inputMode="numeric" maxLength={6}
                                                          placeholder="000000" value={phoneOtpCode}
+                                                         onMouseEnter={() => handleGuideEnter('ver_phone')} onMouseLeave={handleGuideLeave}
                                                          onChange={e => setPhoneOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                                                          className="px-3 py-2 border-2 rounded-xl text-sm font-black focus:outline-none w-36"
                                                          style={{ borderColor: '#3b82f6', letterSpacing: '0.2em', color: C.g800 }} autoFocus />
                                                   <button onClick={handleVerifyPhoneOtp}
                                                           disabled={phoneStep === 'verifying' || phoneOtpCode.length < 6}
+                                                          onMouseEnter={() => handleGuideEnter('ver_phone')} onMouseLeave={handleGuideLeave}
                                                           className="px-4 py-2 rounded-xl text-white text-xs font-black disabled:opacity-50"
                                                           style={{ backgroundColor: C.success }}>
                                                     {phoneStep === 'verifying' ? 'Verifying…' : '✓ Verify'}
                                                   </button>
                                                   <button onClick={() => { setPhoneStep('idle'); setPhoneOtpCode(''); }}
+                                                          onMouseEnter={() => handleGuideEnter('ver_phone')} onMouseLeave={handleGuideLeave}
                                                           className="text-xs underline text-gray-400">Resend</button>
                                                 </div>
                                               </>
@@ -1687,7 +1898,12 @@ export default function Settings({ user, setUser }) {
                             return `${Math.floor(s / 86400)}d ago`;
                           })() : null;
                           return (
-                              <div className={`p-4 rounded-xl border transition ${kycVerified ? 'bg-green-50 border-green-200' : kycRejected ? 'bg-red-50 border-red-200' : kycPending ? 'bg-amber-50 border-amber-200' : phoneVerified ? 'border-blue-200 bg-blue-50' : 'bg-gray-50 border-gray-100'}`}>
+                              <div className={`p-4 rounded-xl border transition relative ${kycVerified ? 'bg-green-50 border-green-200' : kycRejected ? 'bg-red-50 border-red-200' : kycPending ? 'bg-amber-50 border-amber-200' : phoneVerified ? 'border-blue-200 bg-blue-50' : 'bg-gray-50 border-gray-100'}`}
+                                   onMouseEnter={() => handleGuideEnter('ver_kyc_status')} onMouseLeave={handleGuideLeave}>
+                                <GuideTooltip id="ver_kyc_status" icon={Shield} step={10}
+                                  title="Identity Verification (KYC) Status"
+                                  body="Shows your current KYC tier and status. Level 3 (Identity verified) unlocks unlimited trading limits."
+                                  example="Status can be: Advanced, Under Review, Verified, or Rejected." />
                                 <div className="flex items-start gap-4">
                                   <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${kycVerified ? 'bg-green-500 text-white' : kycRejected ? 'bg-red-500 text-white' : kycPending ? 'bg-amber-400 text-white' : phoneVerified ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
                                     {kycVerified ? <CheckCircle size={18} /> : kycPending ? <Clock size={18} /> : kycRejected ? '✕' : 3}
@@ -1765,8 +1981,13 @@ export default function Settings({ user, setUser }) {
                                     )}
 
                                     {!kycVerified && !kycPending && kycStatus !== 'approved' && phoneVerified && (
-                                        <div className="mt-4 space-y-4">
-                                          <div className={`rounded-xl border-2 p-4 transition ${kycIdType ? 'border-green-300 bg-green-50' : 'border-dashed border-gray-200 bg-gray-50'}`}>
+                                        <div className="mt-4 space-y-4 relative">
+                                          <GuideTooltip id="ver_kyc" icon={Shield} step={11}
+                                            title="Identity Verification (KYC)"
+                                            body="Select your document type and upload clear pictures of the front and back of your ID. Keep text readable with no glare."
+                                            example="Uploads are encrypted and checked within 24 hours." />
+                                          <div className={`rounded-xl border-2 p-4 transition ${kycIdType ? 'border-green-300 bg-green-50' : 'border-dashed border-gray-200 bg-gray-50'}`}
+                                               onMouseEnter={() => handleGuideEnter('ver_kyc')} onMouseLeave={handleGuideLeave}>
                                             <div className="flex items-center gap-2 mb-2">
                                               <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 ${kycIdType ? 'bg-green-500 text-white' : 'bg-blue-500 text-white'}`}>
                                                 {kycIdType ? '✓' : '1'}
@@ -1774,6 +1995,7 @@ export default function Settings({ user, setUser }) {
                                               <p className="text-xs font-black text-gray-700">Select your ID type</p>
                                             </div>
                                             <select value={kycIdType} onChange={e => { setKycIdType(e.target.value); if (e.target.value) setKycStep('upload_id'); setKycFiles({ front: null, back: null }); }}
+                                                    onMouseEnter={() => handleGuideEnter('ver_kyc')} onMouseLeave={handleGuideLeave}
                                                     className="w-full px-3 py-2.5 border-2 rounded-xl text-sm font-semibold focus:outline-none transition"
                                                     style={{ borderColor: kycIdType ? C.success : C.g200, color: C.g800, backgroundColor: 'white' }}>
                                               <option value="">— Choose a document type —</option>
@@ -1798,6 +2020,7 @@ export default function Settings({ user, setUser }) {
                                                   <CheckCircle size={12} className="inline-block mr-1" />Make sure the <strong>entire card is visible</strong>, all text is readable, and there is <strong>no glare or blur</strong>
                                                 </div>
                                                 <label className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed cursor-pointer hover:border-blue-400 transition bg-white"
+                                                       onMouseEnter={() => handleGuideEnter('ver_kyc')} onMouseLeave={handleGuideLeave}
                                                        style={{ borderColor: kycFiles.front ? C.success : '#93C5FD' }}>
                                                   <Upload size={18} style={{ color: kycFiles.front ? C.success : '#3B82F6', flexShrink: 0 }} />
                                                   <div className="flex-1 min-w-0">
@@ -1831,6 +2054,7 @@ export default function Settings({ user, setUser }) {
                                                   <CheckCircle size={12} className="inline-block mr-1" />Flip your ID and photograph the <strong>back side</strong> — all details must be <strong>clear and unobstructed</strong>
                                                 </div>
                                                 <label className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed cursor-pointer hover:border-orange-400 transition bg-white"
+                                                       onMouseEnter={() => handleGuideEnter('ver_kyc')} onMouseLeave={handleGuideLeave}
                                                        style={{ borderColor: kycFiles.back ? C.success : '#FDBA74' }}>
                                                   <Upload size={18} style={{ color: kycFiles.back ? C.success : '#EA580C', flexShrink: 0 }} />
                                                   <div className="flex-1 min-w-0">
@@ -1904,8 +2128,13 @@ export default function Settings({ user, setUser }) {
               {/* ── SECURITY ────────────────────────────────────────── */}
               {activeTab === 'security' && (
                   <div className="space-y-5">
-                    <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: C.g200 }}>
+                    <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6 relative" style={{ borderColor: C.g200 }}
+                         onMouseEnter={() => handleGuideEnter('sec_metadata')} onMouseLeave={handleGuideLeave}>
                       <h2 className="text-lg font-black mb-4" style={{ color: C.forest }}>Account Security</h2>
+                      <GuideTooltip id="sec_metadata" icon={Shield} step={12}
+                        title="Security Metadata & Access logs"
+                        body="Monitor your registered country, IP address, login history, and browser details. Report any suspicious entries to support."
+                        example="Your current browser language and device information are displayed here." />
                       <div className="space-y-2">
                         <div className="flex items-center gap-3 p-2.5 md:p-3 rounded-xl" style={{ backgroundColor: C.g50 }}>
                           <Globe size={16} style={{ color: C.forest, flexShrink: 0 }} />
@@ -2065,6 +2294,7 @@ export default function Settings({ user, setUser }) {
                             </div>
                         )}
                         <button type="submit" disabled={loading}
+                                onMouseEnter={() => handleGuideEnter('sec_password')} onMouseLeave={handleGuideLeave}
                                 className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-bold text-sm hover:opacity-90 disabled:opacity-50 transition-all"
                                 style={{ backgroundColor: C.green }}>
                           {loading ? <><RefreshCw size={15} className="animate-spin" /> Updating…</> : <><Lock size={15} /> Update Password</>}
@@ -2095,10 +2325,18 @@ export default function Settings({ user, setUser }) {
                                   )}
                                 </div>
                                 {showDisable2FA && (
-                                    <div className="mt-3 pt-3 border-t" style={{ borderColor: C.g100 }}>
-                                      <label className={labelCls}>Current Password</label>
+                                    <div className="mt-3 pt-3 border-t relative" style={{ borderColor: C.g100 }}>
+                                      <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+                                        onMouseEnter={() => handleGuideEnter('sec_2fa_disable')} onMouseLeave={handleGuideLeave}>
+                                        Current Password
+                                      </label>
+                                      <GuideTooltip id="sec_2fa_disable" icon={Lock} step={14}
+                                        title="Confirm Your Password"
+                                        body="Enter your current account password to confirm you want to disable Two-Factor Authentication. This is a security step."
+                                        example="This is your PRAQEN login password, not a PIN" />
                                       <input type="password" value={twoFADisablePw}
                                              onChange={e => setTwoFADisablePw(e.target.value)}
+                                             onMouseEnter={() => handleGuideEnter('sec_2fa_disable')} onMouseLeave={handleGuideLeave}
                                              placeholder="Enter your password to confirm"
                                              className={inputCls} style={inputStyle(twoFADisablePw)} />
                                       <div className="flex gap-2 mt-2">
@@ -2108,6 +2346,7 @@ export default function Settings({ user, setUser }) {
                                           Cancel
                                         </button>
                                         <button onClick={handleDisable2FA} disabled={twoFADisabling || !twoFADisablePw}
+                                                onMouseEnter={() => handleGuideEnter('sec_2fa_disable')} onMouseLeave={handleGuideLeave}
                                                 className="flex-1 py-2 rounded-lg text-white font-bold text-xs transition hover:opacity-90 disabled:opacity-50"
                                                 style={{ backgroundColor: C.danger }}>
                                           {twoFADisabling ? 'Disabling…' : 'Disable 2FA'}
@@ -2193,9 +2432,17 @@ export default function Settings({ user, setUser }) {
                       <p className="text-xs mb-6" style={{ color: C.g400 }}>Customize how prices, dates, and content display across PRAQEN</p>
 
                       <div className="space-y-6">
-                        <div>
-                          <label className={labelCls}><DollarSign size={14} className="inline mr-1" /> Preferred Currency</label>
+                        <div className="relative">
+                          <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+                            onMouseEnter={() => handleGuideEnter('pref_currency')} onMouseLeave={handleGuideLeave}>
+                            <DollarSign size={14} className="inline mr-1" /> Preferred Currency
+                          </label>
+                          <GuideTooltip id="pref_currency" icon={DollarSign} step={15}
+                            title="Preferred Currency"
+                            body="This sets how all prices are displayed in your wallet, offers, and trading history. Choose your local currency for the best experience."
+                            example="NGN for Nigeria • GHS for Ghana • KES for Kenya • USD for global" />
                           <select value={prefs.currency} onChange={e => setPrefs({ ...prefs, currency: e.target.value })}
+                                  onMouseEnter={() => handleGuideEnter('pref_currency')} onMouseLeave={handleGuideLeave}
                                   className={inputCls} style={inputStyle(true)}>
                             {CURRENCIES.map(({ code, label, symbol, flag }) => (
                                 <option key={code} value={code}>{flag} {label} ({symbol})</option>
@@ -2213,9 +2460,17 @@ export default function Settings({ user, setUser }) {
                           })()}
                         </div>
 
-                        <div>
-                          <label className={labelCls}><Languages size={14} className="inline mr-1" /> Language</label>
+                        <div className="relative">
+                          <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+                            onMouseEnter={() => handleGuideEnter('pref_language')} onMouseLeave={handleGuideLeave}>
+                            <Languages size={14} className="inline mr-1" /> Language
+                          </label>
+                          <GuideTooltip id="pref_language" icon={Languages} step={16}
+                            title="Display Language"
+                            body="Controls the language used throughout the PRAQEN app interface. This only changes the UI language — trade chats are always in the language you type."
+                            example="Select English for English interface, Français for French" />
                           <select value={prefs.language} onChange={e => setPrefs({ ...prefs, language: e.target.value })}
+                                  onMouseEnter={() => handleGuideEnter('pref_language')} onMouseLeave={handleGuideLeave}
                                   className={inputCls} style={inputStyle(true)}>
                             {LANGUAGES.map(({ code, label, native }) => (
                                 <option key={code} value={code}>{label}{native !== label ? ` — ${native}` : ''}</option>
@@ -2232,9 +2487,17 @@ export default function Settings({ user, setUser }) {
                           })()}
                         </div>
 
-                        <div>
-                          <label className={labelCls}><MapPin size={14} className="inline mr-1" /> Timezone</label>
+                        <div className="relative">
+                          <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+                            onMouseEnter={() => handleGuideEnter('pref_timezone')} onMouseLeave={handleGuideLeave}>
+                            <MapPin size={14} className="inline mr-1" /> Timezone
+                          </label>
+                          <GuideTooltip id="pref_timezone" icon={Clock} step={17}
+                            title="Your Timezone"
+                            body="Sets the timezone for trade expiry countdowns, chat timestamps, and scheduled events. Always set this to your local timezone to avoid confusion."
+                            example="WAT (West Africa Time) for Nigeria/Ghana • EAT for Kenya/Uganda" />
                           <select value={prefs.timezone} onChange={e => setPrefs({ ...prefs, timezone: e.target.value })}
+                                  onMouseEnter={() => handleGuideEnter('pref_timezone')} onMouseLeave={handleGuideLeave}
                                   className={inputCls} style={inputStyle(true)}>
                             {Object.entries(TIMEZONE_GROUPS).map(([region, zones]) => (
                                 <optgroup key={region} label={region}>
@@ -2274,19 +2537,43 @@ export default function Settings({ user, setUser }) {
                     <h2 className="text-lg font-black mb-2" style={{ color: C.forest }}>Payment Methods</h2>
                     <p className="text-xs text-gray-400 mb-5">These details are shared with buyers/sellers during a trade</p>
                     <form onSubmit={handlePaymentUpdate} className="space-y-4">
-                      <div>
-                        <label className={labelCls}>Bank Name</label>
+                      <div className="relative">
+                        <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+                          onMouseEnter={() => handleGuideEnter('pay_bank')} onMouseLeave={handleGuideLeave}>
+                          Bank Name
+                        </label>
+                        <GuideTooltip id="pay_bank" icon={CreditCard} step={18}
+                          title="Bank Name"
+                          body="Enter the name of your bank. This is shown to your trade partner so they can send payment to the correct bank."
+                          example="e.g. GTBank, GCB Bank, Zenith Bank, Ecobank" />
                         <input type="text" value={payments.bankName} onChange={e => setPayments({ ...payments, bankName: e.target.value })}
+                               onMouseEnter={() => handleGuideEnter('pay_bank')} onMouseLeave={handleGuideLeave}
                                placeholder="e.g. GCB Bank, GTBank, Ecobank" className={inputCls} style={inputStyle(payments.bankName)} />
                       </div>
-                      <div>
-                        <label className={labelCls}>Bank Account Number</label>
+                      <div className="relative">
+                        <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+                          onMouseEnter={() => handleGuideEnter('pay_account')} onMouseLeave={handleGuideLeave}>
+                          Bank Account Number
+                        </label>
+                        <GuideTooltip id="pay_account" icon={CreditCard} step={19}
+                          title="Bank Account Number"
+                          body="Your account number where fiat payments will be sent. Double-check this — incorrect numbers cause failed trades."
+                          example="Usually 10–13 digits depending on your bank" />
                         <input type="text" value={payments.accountNumber} onChange={e => setPayments({ ...payments, accountNumber: e.target.value })}
+                               onMouseEnter={() => handleGuideEnter('pay_account')} onMouseLeave={handleGuideLeave}
                                placeholder="Enter account number" className={inputCls} style={inputStyle(payments.accountNumber)} />
                       </div>
-                      <div>
-                        <label className={labelCls}>Mobile Money Provider</label>
+                      <div className="relative">
+                        <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+                          onMouseEnter={() => handleGuideEnter('pay_mobile_prov')} onMouseLeave={handleGuideLeave}>
+                          Mobile Money Provider
+                        </label>
+                        <GuideTooltip id="pay_mobile_prov" icon={Smartphone} step={20}
+                          title="Mobile Money Provider"
+                          body="Select your mobile money wallet. Buyers will use this to pay you via mobile money during a trade."
+                          example="MTN MoMo, OPay, PalmPay, M-Pesa, Vodafone Cash" />
                         <select value={payments.mobileProvider} onChange={e => setPayments({ ...payments, mobileProvider: e.target.value })}
+                                onMouseEnter={() => handleGuideEnter('pay_mobile_prov')} onMouseLeave={handleGuideLeave}
                                 className={inputCls} style={inputStyle(payments.mobileProvider)}>
                           <option value="">Select provider</option>
                           <option value="mtn">MTN Mobile Money</option>
@@ -2298,20 +2585,35 @@ export default function Settings({ user, setUser }) {
                           <option value="wave">Wave</option>
                         </select>
                       </div>
-                      <div>
-                        <label className={labelCls}>Mobile Money Number</label>
+                      <div className="relative">
+                        <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+                          onMouseEnter={() => handleGuideEnter('pay_mobile_num')} onMouseLeave={handleGuideLeave}>
+                          Mobile Money Number
+                        </label>
+                        <GuideTooltip id="pay_mobile_num" icon={Phone} step={21}
+                          title="Mobile Money Number"
+                          body="The phone number linked to your mobile money wallet. Include your country code."
+                          example="+233 24 XXX XXXX or +234 81X XXX XXXX" />
                         <input type="tel" value={payments.mobileNumber} onChange={e => setPayments({ ...payments, mobileNumber: e.target.value })}
+                               onMouseEnter={() => handleGuideEnter('pay_mobile_num')} onMouseLeave={handleGuideLeave}
                                placeholder="+233 XX XXX XXXX" className={inputCls} style={inputStyle(payments.mobileNumber)} />
                       </div>
                       <div className="p-3 rounded-xl text-xs font-semibold flex items-start gap-2" style={{ backgroundColor: `${C.warn}12`, color: '#92400E' }}>
                         <AlertCircle size={13} className="flex-shrink-0 mt-0.5" />
                         Your payment details are only shared with your trade partner during an active trade. Never share outside the platform.
                       </div>
-                      <button type="submit" disabled={loading}
-                              className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-bold text-sm hover:opacity-90 disabled:opacity-50"
-                              style={{ backgroundColor: C.green }}>
-                        {loading ? <><RefreshCw size={15} className="animate-spin" /> Saving…</> : <><Save size={15} /> Save Payment Methods</>}
-                      </button>
+                      <div className="relative">
+                        <GuideTooltip id="pay_save" icon={Save} step={22}
+                          title="Save Payment Methods"
+                          body="Click to save your payment credentials. They are only shared when a trade is active."
+                          example="Never share payment details in public chats!" />
+                        <button type="submit" disabled={loading}
+                                onMouseEnter={() => handleGuideEnter('pay_save')} onMouseLeave={handleGuideLeave}
+                                className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-bold text-sm hover:opacity-90 disabled:opacity-50 transition"
+                                style={{ backgroundColor: C.green }}>
+                          {loading ? <><RefreshCw size={15} className="animate-spin" /> Saving…</> : <><Save size={15} /> Save Payment Methods</>}
+                        </button>
+                      </div>
                     </form>
                   </div>
               )}
@@ -2319,7 +2621,14 @@ export default function Settings({ user, setUser }) {
               {/* ── NOTIFICATIONS ───────────────────────────────────── */}
               {activeTab === 'notifications' && (
                   <div className="bg-white rounded-2xl shadow-sm border p-6" style={{ borderColor: C.g200 }}>
-                    <h2 className="text-lg font-black mb-5" style={{ color: C.forest }}>Notification Preferences</h2>
+                    <h2 className="text-lg font-black mb-4" style={{ color: C.forest, cursor: 'pointer' }}
+                      onMouseEnter={() => handleGuideEnter('notif_intro')} onMouseLeave={handleGuideLeave}>
+                      Notification Preferences <Info size={13} style={{ color: C.g300, verticalAlign: 'middle' }} />
+                    </h2>
+                    <GuideTooltip id="notif_intro" icon={Bell} step={23}
+                      title="Notification Preferences"
+                      body="Control how PRAQEN contacts you. Trade alerts keep you informed of payments and releases. Security alerts protect your account."
+                      example="We recommend keeping Trade Updates and Security Alerts ON at all times" />
                     <div className="space-y-4">
                       <PushEnableCard />
 
@@ -2339,7 +2648,9 @@ export default function Settings({ user, setUser }) {
                             <p className="text-sm font-black text-gray-700 mb-2">{section}</p>
                             <div className="space-y-2">
                               {items.map(({ key, label, desc }) => (
-                                  <div key={key} className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border" style={{ borderColor: C.g100 }}>
+                                  <div key={key} className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border relative"
+                                       onMouseEnter={() => handleGuideEnter('notif_intro')} onMouseLeave={handleGuideLeave}
+                                       style={{ borderColor: C.g100 }}>
                                     <div>
                                       <p className="text-sm font-bold text-gray-800">{label}</p>
                                       <p className="text-xs text-gray-500">{desc}</p>
@@ -2351,11 +2662,18 @@ export default function Settings({ user, setUser }) {
                           </div>
                       ))}
 
-                      <button onClick={handleSaveNotifications} disabled={loading}
-                              className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-bold text-sm hover:opacity-90 disabled:opacity-50 transition"
-                              style={{ backgroundColor: C.green }}>
-                        {loading ? <><RefreshCw size={15} className="animate-spin" /> Saving…</> : <><Save size={15} /> Save Preferences</>}
-                      </button>
+                      <div className="relative">
+                        <GuideTooltip id="notif_save" icon={Save} step={24}
+                          title="Save Notification Settings"
+                          body="Click to save your notifications setup. Keeps you updated on active trades and logins."
+                          example="Make sure trade alerts are turned ON so you don't miss messages!" />
+                        <button onClick={handleSaveNotifications} disabled={loading}
+                                onMouseEnter={() => handleGuideEnter('notif_save')} onMouseLeave={handleGuideLeave}
+                                className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-bold text-sm hover:opacity-90 disabled:opacity-50 transition"
+                                style={{ backgroundColor: C.green }}>
+                          {loading ? <><RefreshCw size={15} className="animate-spin" /> Saving…</> : <><Save size={15} /> Save Preferences</>}
+                        </button>
+                      </div>
                     </div>
                   </div>
               )}

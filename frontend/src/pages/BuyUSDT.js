@@ -550,14 +550,16 @@ function OfferCard({listing, usdtPriceUSD, onViewSeller, onBuy, liked, onToggleL
           }}>
           <Info size={15} style={{color: ft ? ft.border : C.g400}}/>
         </button>
-        <button onClick={onBuy}
-          className="flex-1 h-11 rounded-xl text-white font-black text-base flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition"
-          style={{
-            background: ft ? ft.btnGradient : C.forest,
-            boxShadow: ft ? ft.btnShadow : undefined,
-          }}>
-          BUY USDT <ArrowRight size={15}/>
-        </button>
+        <div style={{ position: 'relative', flex: 1 }}>
+          <button onClick={onBuy}
+            className="w-full h-11 rounded-xl text-white font-black text-base flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition"
+            style={{
+              background: ft ? ft.btnGradient : C.forest,
+              boxShadow: ft ? ft.btnShadow : undefined,
+            }}>
+            BUY USDT <ArrowRight size={15}/>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1060,6 +1062,66 @@ export default function BuyUSDT({user}) {
   const countryRef  = useRef(null);
   const paymentRef  = useRef(null);
   const sortRef     = useRef(null);
+  const [activeGuide, setActiveGuide] = useState(null);
+  const guideTimer   = useRef(null);
+
+  function handleGuideEnter(id) { clearTimeout(guideTimer.current); setActiveGuide(id); }
+  function handleGuideLeave()   { guideTimer.current = setTimeout(() => setActiveGuide(null), 140); }
+
+  const GUIDE_TOTAL = 4;
+  function MarketGuide({ id, icon: Icon = Info, title, body, example, guideStep }) {
+    if (activeGuide !== id) return null;
+    const isTab = id.startsWith('tab_');
+    const isRightTab = id.includes('crypto') || id.includes('giftcards');
+
+    const posStyle = isTab
+      ? {
+          top: 'calc(100% + 8px)',
+          ...(isRightTab ? { right: 0, left: 'auto' } : { left: 0 }),
+        }
+      : { bottom: 'calc(100% + 8px)', left: 0 };
+
+    return (
+      <div style={{
+        position: 'absolute',
+        ...posStyle,
+        zIndex: 10000,
+        width: 'min(300px, calc(100vw - 32px))',
+        background: 'linear-gradient(135deg,#1E40AF 0%,#2563EB 100%)',
+        borderRadius: 14, padding: '11px 13px',
+        boxShadow: '0 10px 36px rgba(37,99,235,0.30),0 2px 8px rgba(0,0,0,0.08)',
+        animation: isTab ? 'usdtGuideFadeDown 0.2s ease both' : 'usdtGuideFadeUp 0.2s ease both',
+        pointerEvents: 'none',
+        boxSizing: 'border-box', color: '#fff',
+      }}>
+        <style>{`
+          @keyframes usdtGuideFadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+          @keyframes usdtGuideFadeDown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+        `}</style>
+        {guideStep && (
+          <div style={{ marginBottom: 7 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+              <span style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 20, padding: '1px 8px', fontSize: 10, fontWeight: 800, color: '#fff', letterSpacing: 0.5, textTransform: 'uppercase' }}>Step {guideStep} of {GUIDE_TOTAL}</span>
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>{Math.round((guideStep / GUIDE_TOTAL) * 100)}%</span>
+            </div>
+            <div style={{ height: 3, background: 'rgba(255,255,255,0.18)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ width: `${(guideStep / GUIDE_TOTAL) * 100}%`, height: '100%', background: 'rgba(255,255,255,0.75)', borderRadius: 2 }} />
+            </div>
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+          <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            {guideStep ? <span style={{ fontWeight: 900, fontSize: 11, color: '#fff' }}>{guideStep}</span> : <Icon size={12} style={{ color: '#fff' }} />}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: '0 0 3px', fontWeight: 800, fontSize: 12, color: '#fff', lineHeight: 1.3 }}>{title}</p>
+            <p style={{ margin: '0 0 5px', fontSize: 11, color: 'rgba(255,255,255,0.9)', lineHeight: 1.45 }}>{body}</p>
+            {example && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.68)', fontStyle: 'italic', background: 'rgba(255,255,255,0.12)', borderRadius: 6, padding: '2px 8px', display: 'inline-block' }}>💡 {example}</div>}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const userBtcBalance = parseFloat(user?.btc_balance || 0);
   const [userUsdtBalance, setUserUsdtBalance] = useState(0);
@@ -1339,21 +1401,36 @@ export default function BuyUSDT({user}) {
       {/* ══ 2. TAB NAVIGATION ══════════════════════════════════ */}
       <div className="bg-white border-b sticky z-30 flex-shrink-0" style={{top:'var(--navbar-h)',borderColor:C.g200}}>
         <div className="flex w-full">
-          <div className="flex-1 relative">
-            <button onClick={()=>navigate('/buy-bitcoin')}
+          <div className="flex-1 relative"
+            onMouseEnter={() => handleGuideEnter('tab_usdt_buy')} onMouseLeave={handleGuideLeave}>
+            <MarketGuide id="tab_usdt_buy" icon={Coins} guideStep={null}
+              title="Buy USDT"
+              body="Browse sellers offering Tether (USDT). USDT is a stable digital dollar, ideal for protecting savings from local currency inflation."
+              example="Pay with MTN MoMo, Bank Transfer, OPay, M-Pesa & more" />
+            <button onClick={()=>navigate('/buy-usdt')}
               className="w-full text-center py-3 text-xs font-black border-b-2 transition-all flex items-center justify-center gap-1"
               style={{borderColor:C.forest, color:C.forest, backgroundColor:`${C.forest}18`}}>
-              Buy
+              Buy USDT
             </button>
           </div>
-          <div className="flex-1 relative">
-            <button onClick={()=>navigate('/sell-bitcoin')}
+          <div className="flex-1 relative"
+            onMouseEnter={() => handleGuideEnter('tab_usdt_sell')} onMouseLeave={handleGuideLeave}>
+            <MarketGuide id="tab_usdt_sell" icon={TrendingUp} guideStep={null}
+              title="Sell USDT"
+              body="Switch to Sell USDT to cash out your Tether into local fiat currency directly into your bank or mobile money wallet."
+              example="Sell USDT for GHS, NGN, KES, ZAR & more" />
+            <button onClick={()=>navigate('/sell-usdt')}
               className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1"
               style={{color:C.g400}}>
               Sell
             </button>
           </div>
-          <div className="flex-1 relative">
+          <div className="flex-1 relative"
+            onMouseEnter={() => handleGuideEnter('tab_usdt_crypto')} onMouseLeave={handleGuideLeave}>
+            <MarketGuide id="tab_usdt_crypto" icon={Bitcoin} guideStep={null}
+              title="All Crypto"
+              body="Switch between Bitcoin (BTC) and Tether (USDT) peer-to-peer markets."
+              example="Bitcoin (BTC) · Tether (USDT)" />
             <button onClick={()=>setShowAllCryptoMenu(v=>!v)}
               className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1"
               style={{color:C.g400}}>
@@ -1423,7 +1500,12 @@ export default function BuyUSDT({user}) {
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
 
-            <div>
+            <div style={{ position: 'relative' }}
+              onMouseEnter={() => handleGuideEnter('usdt_buy_amount')} onMouseLeave={handleGuideLeave}>
+              <MarketGuide id="usdt_buy_amount" icon={Coins} guideStep={1}
+                title="Trade Amount"
+                body="Enter how much USDT or local currency you want to spend. The list will filter to sellers whose limits match your amount."
+                example="Type 100 to see sellers accepting 100 USDT orders" />
               <p className="text-xs font-black mb-1 tracking-wide" style={{color:C.g500}}>AMOUNT</p>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black pointer-events-none select-none"
@@ -1445,7 +1527,12 @@ export default function BuyUSDT({user}) {
               </div>
             </div>
 
-            <div className="relative" ref={currencyRef}>
+            <div className="relative" ref={currencyRef}
+              onMouseEnter={() => handleGuideEnter('usdt_buy_currency')} onMouseLeave={handleGuideLeave}>
+              <MarketGuide id="usdt_buy_currency" icon={CreditCard} guideStep={2}
+                title="Currency"
+                body="Select your local currency to view offer prices in your local fiat currency."
+                example="GHS for Ghana · NGN for Nigeria · KES for Kenya" />
               <p className="text-xs font-black mb-1 tracking-wide" style={{color:C.g500}}>CURRENCY</p>
               <button
                 onClick={()=>{setShowCurrency(!showCurrency);setShowCountry(false);setShowPayment(false);}}
@@ -1488,7 +1575,12 @@ export default function BuyUSDT({user}) {
               )}
             </div>
 
-            <div className="relative" ref={paymentRef}>
+            <div className="relative" ref={paymentRef}
+              onMouseEnter={() => handleGuideEnter('usdt_buy_payment')} onMouseLeave={handleGuideLeave}>
+              <MarketGuide id="usdt_buy_payment" icon={Smartphone} guideStep={3}
+                title="Payment Method"
+                body="Filter by how you want to pay for Tether. Select MTN MoMo, Bank Transfer, PayPal, Wise & more."
+                example="MTN MoMo · Bank Transfer · OPay · PayPal" />
               <p className="text-xs font-black mb-1 tracking-wide" style={{color:C.g500}}>PAYMENT</p>
               <button
                 onClick={()=>{setShowPayment(!showPayment);setShowCurrency(false);setShowCountry(false);}}
@@ -1541,7 +1633,12 @@ export default function BuyUSDT({user}) {
               )}
             </div>
 
-            <div className="relative" ref={countryRef}>
+            <div className="relative" ref={countryRef}
+              onMouseEnter={() => handleGuideEnter('usdt_buy_country')} onMouseLeave={handleGuideLeave}>
+              <MarketGuide id="usdt_buy_country" icon={Globe} guideStep={4}
+                title="Country"
+                body="Filter sellers by country to find local vendors with instant payment processing."
+                example="Ghana · Nigeria · Kenya · South Africa" />
               <p className="text-xs font-black mb-1 tracking-wide" style={{color:C.g500}}>COUNTRY</p>
               <button
                 onClick={()=>{setShowCountry(!showCountry);setShowCurrency(false);setShowPayment(false);}}

@@ -206,3 +206,144 @@ label {
   border: none;
   cursor: pointer;
 }
+
+/* ── Modern Blue User Guide Popup System ─────────────────────────── */
+.prq-guide-popup {
+  position: relative;
+  background: linear-gradient(135deg, #1E40AF 0%, #2563EB 100%);
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: 0 10px 30px rgba(30, 64, 175, 0.35), 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  z-index: 99;
+  animation: guideFadeIn 0.22s ease both;
+  color: #ffffff;
+  pointer-events: auto;
+}
+
+.prq-guide-left {
+  position: absolute;
+  right: calc(100% + 14px);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 230px;
+}
+
+.prq-guide-right {
+  position: absolute;
+  left: calc(100% + 14px);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 230px;
+}
+
+.prq-guide-top {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 0;
+  width: 100%;
+}
+
+.prq-guide-bottom {
+  position: absolute;
+  top: calc(100% + 12px);
+  left: 0;
+  width: 100%;
+}
+
+.prq-guide-inline {
+  position: relative;
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+@keyframes guideFadeIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Arrows */
+.prq-guide-arrow {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+.prq-guide-arrow-left {
+  right: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-left: 8px solid #1E40AF;
+}
+.prq-guide-arrow-right {
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-right: 8px solid #1E40AF;
+}
+.prq-guide-arrow-top {
+  bottom: -8px;
+  left: 20px;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 8px solid #2563EB;
+}
+.prq-guide-arrow-bottom {
+  top: -8px;
+  left: 20px;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 8px solid #1E40AF;
+}
+
+/* Responsiveness — on screens <= 1023px, convert popovers to non-overlapping inline/drop-in cards */
+@media (max-width: 1023px) {
+  .prq-guide-left,
+  .prq-guide-right,
+  .prq-guide-bottom {
+    position: relative !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    transform: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-bottom: 10px !important;
+    margin-top: 6px !important;
+  }
+  .prq-guide-arrow {
+    display: none !important;
+  }
+}
+/* Global Field Tooltip System (Positioned on TOP of parent, responsive, z-index 10000, pointer-events none) */
+.field-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: max-content;
+  max-width: min(340px, calc(100vw - 32px));
+  min-width: 200px;
+  background: linear-gradient(135deg, #1E40AF 0%, #2563EB 100%);
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: 0 10px 36px rgba(37, 99, 235, 0.35), 0 2px 8px rgba(0, 0, 0, 0.1);
+  z-index: 10000;
+  animation: tooltipFadeIn 0.22s ease both;
+  pointer-events: none !important;
+  color: #ffffff;
+  box-sizing: border-box;
+}
+
+.field-tooltip-bottom {
+  bottom: auto !important;
+  top: calc(100% + 8px) !important;
+}
+
+@keyframes tooltipFadeIn {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
