@@ -3900,7 +3900,7 @@ app.post('/api/auth/send-action-code', otpLimiter, verifyToken, async (req, res)
       return res.status(400).json({ error: 'No email address on your account. Please add one in Settings.' });
     }
 
-    const code = actionCodeService.generate(req.userId, action);
+    const code = await actionCodeService.generate(req.userId, action);
 
     const actionLabels = { release_btc: 'Release Bitcoin', send_btc: 'Send Bitcoin', enable_2fa: 'Enable Two-Factor Authentication' };
     const label = actionLabels[action] || action;
@@ -4100,7 +4100,7 @@ app.patch('/api/users/toggle-2fa', verifyToken, async (req, res) => {
       if (method === 'email' || method === 'sms' || method === 'whatsapp') {
         const { actionCode } = req.body;
         if (!actionCode) return res.status(400).json({ error: 'Enter the security code sent to you to activate 2FA.' });
-        const check = actionCodeService.verify(req.userId, 'enable_2fa', actionCode);
+        const check = await actionCodeService.verify(req.userId, 'enable_2fa', actionCode);
         if (!check.valid) return res.status(400).json({ error: check.error });
       }
 
@@ -6944,7 +6944,7 @@ app.post('/api/trades/:id/release', tradeLimiter, verifyToken, async (req, res) 
         action: 'release_btc',
       });
     }
-    const codeCheck = actionCodeService.verify(req.userId, 'release_btc', actionCode);
+    const codeCheck = await actionCodeService.verify(req.userId, 'release_btc', actionCode);
     if (!codeCheck.valid) return res.status(403).json({ error: codeCheck.error });
 
     const { data: releasedTrade } = await supabaseAdmin.from('trades').select('*').eq('id', req.params.id).single();
@@ -10626,17 +10626,18 @@ app.get('/api/wallet/usdt', verifyToken, async (req, res) => {
 
 // POST /api/wallet/usdt/send — withdraw USDT to external Tron address (2FA required)
 // Sends from PRAQEN hot wallet. Tiered fee credited to company wallet.
-// Fee tiers: ₮1–₮50 → ₮4.00 flat | ₮50+ → 4% of amount
+// Fee = max($5 flat floor, 5% of amount) — floor keeps small withdrawals from
+// costing less than the flat minimum; once 5% clears the floor (amount > $100)
+// the percentage takes over. No boundary where a bigger withdrawal ever costs
+// less fee than a smaller one — that gap let users dodge the flat fee by
+// nudging just above the old $50 cutoff.
 app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
-  const FEE_FLAT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_FLAT || '4.0');  // flat for ≤ $50
-  const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.04'); // 4% for > $50
+  const FEE_FLAT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_FLAT || '5.0');  // flat floor
+  const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.05'); // 5% once it exceeds the floor
   const MIN_SEND = parseFloat(process.env.USDT_MIN_SEND || '5.0');  // minimum $5
 
-  // ── Tiered fee calculator ─────────────────────────────────────────────────
-  const calcFee = (amt) => {
-    if (amt <= 50) return FEE_FLAT;                                   // ₮4 flat
-    return parseFloat((amt * FEE_PERCENT).toFixed(6));               // 4%
-  };
+  // ── Fee calculator: flat floor, percentage above it — no cliff ────────────
+  const calcFee = (amt) => Math.max(FEE_FLAT, parseFloat((amt * FEE_PERCENT).toFixed(6)));
 
   try {
     const { toAddress, amount, actionCode } = req.body;
@@ -10662,7 +10663,7 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
         action: 'send_usdt',
       });
     }
-    const codeCheck = actionCodeService.verify(req.userId, 'send_usdt', actionCode);
+    const codeCheck = await actionCodeService.verify(req.userId, 'send_usdt', actionCode);
     if (!codeCheck.valid) return res.status(403).json({ error: codeCheck.error });
 
     // ── KYC gate: all 3 steps required ───────────────────────────────────
@@ -10702,10 +10703,11 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
       });
     }
 
-    // ── Calculate tiered fee ──────────────────────────────────────────────
+    // ── Calculate fee: flat floor vs percentage, whichever is higher ──────
     const withdrawalFee = calcFee(sendAmount);
     const totalDeduct = parseFloat((sendAmount + withdrawalFee).toFixed(6));
-    const feeLabel = sendAmount <= 50
+    const percentWouldBe = parseFloat((sendAmount * FEE_PERCENT).toFixed(6));
+    const feeLabel = percentWouldBe <= FEE_FLAT
       ? `₮${withdrawalFee.toFixed(2)} flat`
       : `${(FEE_PERCENT * 100).toFixed(0)}% (₮${withdrawalFee.toFixed(2)})`;
 
@@ -10737,10 +10739,28 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
     }
 
     // ── Step 2: Credit fee to company wallet (internal ledger) ───────────
-    await tronHotWallet.creditFeeToCompany(
-      withdrawalFee,
-      `withdrawal fee (${feeLabel}) from ${req.userId.slice(0, 8)}`
-    );
+    // Must succeed before any on-chain funds move: if the fee can't be reliably
+    // recorded, we'd otherwise still broadcast the real send and the fee
+    // portion the user was charged would vanish from every revenue ledger with
+    // no trace. Abort and fully restore the user's balance instead — same as
+    // a broadcast failure below.
+    try {
+      await tronHotWallet.creditFeeToCompany(
+        withdrawalFee,
+        `withdrawal fee (${feeLabel}) from ${req.userId.slice(0, 8)}`
+      );
+    } catch (feeErr) {
+      console.error('[USDT Send] Fee credit failed — aborting before broadcast, restoring balance:', feeErr.message);
+      const { error: restoreErr } = await supabaseAdmin.from('wallets')
+        .update({ balance_usdt: available, updated_at: new Date().toISOString() })
+        .eq('user_id', req.userId);
+      if (restoreErr) {
+        console.error('[USDT Send] CRITICAL: user balance restore failed!', restoreErr.message, 'user:', req.userId, 'amount:', totalDeduct);
+      }
+      return res.status(500).json({
+        error: 'Sorry, we are experiencing a blockchain issue. Please try again later or contact support. This issue is from the blockchain.',
+      });
+    }
 
     // ── Step 3: Send net amount from hot wallet on-chain ──────────────────
     let txResult;
@@ -10768,7 +10788,15 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
         }
       }
 
-      return res.status(500).json({ error: broadcastErr.message });
+      // HOT_WALLET_*_INSUFFICIENT carries internal treasury numbers (exact USDT/TRX
+      // balances) for admin logs — never show that to the end user, who should
+      // just see that withdrawals are temporarily down, not why.
+      const isTreasuryError = /^HOT_WALLET_(USDT|TRX)_INSUFFICIENT/.test(broadcastErr.message || '');
+      const userMessage = isTreasuryError
+        ? 'Sorry, we are experiencing a blockchain issue. Please try again later or contact support. This issue is from the blockchain.'
+        : broadcastErr.message;
+
+      return res.status(500).json({ error: userMessage });
     }
 
     // ── Step 4: Record withdrawal transaction (user) + fee credit (company) ──
@@ -11230,6 +11258,126 @@ app.post('/api/admin/hot-wallet/collect-fees', verifyToken, async (req, res) => 
     res.json({ success: true, ...result });
   } catch (e) {
     console.error('[POST /admin/hot-wallet/collect-fees]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/usdt-wallet — USDT hot wallet balance + all activity (deposits,
+// sweeps, external withdrawals, internal P2P transfers). Mirrors the BTC
+// PlatformWalletsCard + Transfer Activity view in the admin Finance tab.
+app.get('/api/admin/usdt-wallet', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+
+    const [
+      status,
+      { data: depositsRaw },
+      { data: sweepsRaw },
+      { data: withdrawalsRaw },
+      { data: internalRaw },
+    ] = await Promise.all([
+      tronHotWallet.getStatus(),
+      supabaseAdmin.from('wallet_transactions')
+        .select('id, user_id, amount_usdt, notes, created_at, tx_hash')
+        .eq('type', 'DEPOSIT').eq('currency', 'USDT')
+        .order('created_at', { ascending: false }).limit(200),
+      supabaseAdmin.from('hot_wallet_sweeps')
+        .select('id, user_id, from_address, amount_usdt, status, txid, error, created_at, updated_at')
+        .order('created_at', { ascending: false }).limit(200),
+      supabaseAdmin.from('wallet_transactions')
+        .select('id, user_id, amount_usdt, notes, status, created_at, tx_hash')
+        .eq('type', 'WITHDRAWAL').eq('currency', 'USDT')
+        .order('created_at', { ascending: false }).limit(200),
+      supabaseAdmin.from('wallet_transactions')
+        .select('id, user_id, amount_usdt, notes, created_at, tx_hash')
+        .eq('type', 'TRANSFER_OUT').eq('currency', 'USDT')
+        .order('created_at', { ascending: false }).limit(200),
+    ]);
+
+    // Batch-fetch usernames for every user referenced across all four lists
+    const allUserIds = [...new Set([
+      ...(depositsRaw || []).map(t => t.user_id),
+      ...(sweepsRaw || []).map(t => t.user_id),
+      ...(withdrawalsRaw || []).map(t => t.user_id),
+      ...(internalRaw || []).map(t => t.user_id),
+    ])];
+    const { data: usersRaw } = await supabaseAdmin.from('users')
+      .select('id, username, full_name').in('id', allUserIds);
+    const userMap = Object.fromEntries((usersRaw || []).map(u => [u.id, u.username || u.full_name || u.id.slice(0, 8)]));
+    const nameFor = (userId) => userId === COMPANY_WALLET_ID ? 'PRAQEN Company Wallet' : (userMap[userId] || userId?.slice(0, 8) || '—');
+
+    const deposits    = (depositsRaw    || []).map(t => ({ ...t, username: nameFor(t.user_id) }));
+    const sweeps       = (sweepsRaw      || []).map(t => ({ ...t, username: nameFor(t.user_id) }));
+    const withdrawals = (withdrawalsRaw || []).map(t => ({ ...t, username: nameFor(t.user_id) }));
+    const internal     = (internalRaw    || []).map(t => {
+      const m = t.notes?.match(/→ @(\S+)/);
+      return { ...t, sender: nameFor(t.user_id), recipient: m ? m[1].replace(/·.*$/, '').trim() : '—' };
+    });
+
+    const totalDepositsUsdt   = deposits.reduce((s, t) => s + parseFloat(t.amount_usdt || 0), 0);
+    const totalSweptUsdt      = sweeps.filter(s => s.status === 'COMPLETED').reduce((s, t) => s + parseFloat(t.amount_usdt || 0), 0);
+    const totalWithdrawnUsdt = withdrawals.reduce((s, t) => s + parseFloat(t.amount_usdt || 0), 0);
+    const totalInternalUsdt   = internal.reduce((s, t) => s + parseFloat(t.amount_usdt || 0), 0);
+    const pendingSweepsCount  = sweeps.filter(s => s.status === 'PENDING').length;
+
+    res.json({
+      status,
+      deposits, sweeps, withdrawals, internal,
+      totals: {
+        depositsUsdt:   totalDepositsUsdt.toFixed(6),
+        sweptUsdt:       totalSweptUsdt.toFixed(6),
+        withdrawnUsdt:  totalWithdrawnUsdt.toFixed(6),
+        internalUsdt:    totalInternalUsdt.toFixed(6),
+        depositCount:    deposits.length,
+        sweepCount:      sweeps.length,
+        pendingSweepCount: pendingSweepsCount,
+        withdrawalCount: withdrawals.length,
+        internalCount:   internal.length,
+      },
+    });
+  } catch (e) {
+    console.error('[GET /admin/usdt-wallet]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/admin/hot-wallet/send-usdt — admin manually sends USDT straight
+// from the hot wallet to any external Tron address. Unlike collect-fees, this
+// does not touch the company internal ledger — it is a raw treasury move of
+// whatever USDT is actually sitting in the hot wallet (e.g. rebalancing to
+// cold storage). Real on-chain funds move immediately; there is no undo.
+app.post('/api/admin/hot-wallet/send-usdt', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+
+    const { toAddress, amountUsdt, note } = req.body;
+    const amount = parseFloat(amountUsdt);
+
+    if (!toAddress || !tronWalletService.isValidTronAddress(toAddress)) {
+      return res.status(400).json({ error: 'Valid Tron destination address required' });
+    }
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: 'Positive USDT amount required' });
+    }
+
+    const result = await tronHotWallet.sendUsdtToExternal(toAddress, amount);
+
+    await supabaseAdmin.from('wallet_transactions').insert({
+      user_id: COMPANY_WALLET_ID,
+      type: 'WITHDRAWAL',
+      currency: 'USDT',
+      amount_usdt: amount,
+      status: 'CONFIRMED',
+      tx_hash: result.txid,
+      notes: `Admin manual send → ${toAddress.slice(0, 16)}…${toAddress.slice(-4)} by ${req.userId.slice(0, 8)}${note ? ` — ${note}` : ''}`,
+      created_at: new Date().toISOString(),
+    }).then(null, () => {});
+
+    logAdminAction(req, 'HOT_WALLET_SEND_USDT', null, `${amount} USDT → ${toAddress}`).catch(() => {});
+
+    res.json({ success: true, ...result });
+  } catch (e) {
+    console.error('[POST /admin/hot-wallet/send-usdt]', e.message);
     res.status(500).json({ error: e.message });
   }
 });

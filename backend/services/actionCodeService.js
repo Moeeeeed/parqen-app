@@ -1,37 +1,63 @@
 // services/actionCodeService.js
-// Short-lived one-time codes for high-risk actions (release BTC, send BTC).
-// Shared between server.js and hdWalletRoutes.js via require().
+// Short-lived one-time codes for high-risk actions (release BTC, send BTC,
+// send USDT, enable 2FA). Shared between server.js and hdWalletRoutes.js.
+//
+// Backed by the security_action_codes table (see database/security_action_codes.sql),
+// not in-memory — an in-memory Map loses every pending code on server
+// restart/redeploy, which meant a user could request a code, wait a few
+// seconds, and get "No security code found" through no fault of their own.
 
-const store = new Map(); // `${userId}:${action}` → { code, expires }
+require('dotenv').config();
+const { createClient } = require('@supabase/supabase-js');
 
-// Clean up expired codes every minute
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of store) { if (v.expires < now) store.delete(k); }
-}, 60000);
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
+);
 
 const VALID_ACTIONS = ['release_btc', 'send_btc', 'send_usdt', 'enable_2fa'];
 const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-function generate(userId, action) {
+async function generate(userId, action) {
   if (!VALID_ACTIONS.includes(action)) throw new Error('Invalid action');
   const code = Math.floor(100000 + Math.random() * 900000).toString();
-  store.set(`${userId}:${action}`, { code, expires: Date.now() + TTL_MS });
+  const expiresAt = new Date(Date.now() + TTL_MS).toISOString();
+
+  const { error } = await supabase.from('security_action_codes').upsert({
+    user_id: userId,
+    action,
+    code,
+    expires_at: expiresAt,
+    created_at: new Date().toISOString(),
+  }, { onConflict: 'user_id,action' });
+
+  if (error) throw new Error(`actionCodeService.generate: ${error.message}`);
   return code;
 }
 
-function verify(userId, action, inputCode) {
-  const key = `${userId}:${action}`;
-  const record = store.get(key);
-  if (!record) return { valid: false, error: 'No security code found. Please tap "Send Code" to request a new one.' };
-  if (Date.now() > record.expires) {
-    store.delete(key);
+async function verify(userId, action, inputCode) {
+  const { data: record, error } = await supabase
+    .from('security_action_codes')
+    .select('code, expires_at')
+    .eq('user_id', userId)
+    .eq('action', action)
+    .maybeSingle();
+
+  if (error) {
+    return { valid: false, error: 'Could not verify your security code right now. Please try again.' };
+  }
+  if (!record) {
+    return { valid: false, error: 'No security code found. Please tap "Send Code" to request a new one.' };
+  }
+  if (new Date(record.expires_at).getTime() < Date.now()) {
+    await supabase.from('security_action_codes').delete().eq('user_id', userId).eq('action', action);
     return { valid: false, error: 'Security code expired. Please request a new one.' };
   }
   if (record.code !== String(inputCode || '').trim()) {
     return { valid: false, error: 'Incorrect security code. Please check your email and try again.' };
   }
-  store.delete(key); // single-use
+
+  await supabase.from('security_action_codes').delete().eq('user_id', userId).eq('action', action); // single-use
   return { valid: true };
 }
 

@@ -1305,29 +1305,30 @@ function UsdtWithdrawModal({ balance, onClose, onSend, kycStatus, twoFactorEnabl
   const [sending,       setSending]       = useState(false);
   const [sendError,     setSendError]     = useState('');
 
-  const FEE_FLAT    = 4.00;
-  const FEE_PERCENT = 0.04;
+  // Fee = max($5 flat floor, 5% of amount) — mirrors backend calcFee() in
+  // POST /api/wallet/usdt/send. The floor means the fee never drops as the
+  // amount goes up: 5% only takes over once it clears $5, at amounts above
+  // $100 ($5 / 5%). No boundary where a bigger withdrawal costs less fee.
+  const FEE_FLAT    = 5.00;
+  const FEE_PERCENT = 0.05;
   const MIN_SEND    = 5.00;
+  const FEE_SWITCH  = FEE_FLAT / FEE_PERCENT; // $100 — where percent first exceeds the floor
 
-  const calcFee = (amt) => amt <= 50
-    ? FEE_FLAT
-    : parseFloat((amt * FEE_PERCENT).toFixed(2));
+  const calcFee = (amt) => Math.max(FEE_FLAT, parseFloat((amt * FEE_PERCENT).toFixed(2)));
 
   const usdtAmt     = parseFloat(amount || 0);
   const fee         = usdtAmt > 0 ? calcFee(usdtAmt) : 0;
   const totalDeduct = usdtAmt > 0 ? parseFloat((usdtAmt + fee).toFixed(2)) : 0;
   const bal         = parseFloat(balance || 0);
-  const feeLabel    = usdtAmt > 0 && usdtAmt <= 50
-    ? `₮${fee.toFixed(2)} flat fee`
-    : usdtAmt > 50
-    ? `₮${fee.toFixed(2)} (4%)`
+  const feeLabel    = usdtAmt > 0
+    ? (usdtAmt <= FEE_SWITCH ? `₮${fee.toFixed(2)} flat fee` : `₮${fee.toFixed(2)} (${(FEE_PERCENT * 100).toFixed(0)}%)`)
     : '';
 
   // Calculate true max sendable so that amount + fee(amount) ≤ balance
   const calcMax = (b) => {
     if (b <= FEE_FLAT + MIN_SEND) return 0;
     const tryFlat = parseFloat((b - FEE_FLAT).toFixed(2));
-    if (tryFlat > 0 && tryFlat <= 50 && tryFlat + FEE_FLAT <= b) return tryFlat;
+    if (tryFlat > 0 && tryFlat <= FEE_SWITCH) return tryFlat;
     const tryPct = parseFloat((b / (1 + FEE_PERCENT)).toFixed(2));
     return tryPct >= MIN_SEND ? tryPct : 0;
   };
@@ -1461,8 +1462,8 @@ function UsdtWithdrawModal({ balance, onClose, onSend, kycStatus, twoFactorEnabl
             </div>
             <div className="px-4 py-3 space-y-1.5" style={{ backgroundColor: '#fffdf5' }}>
               {[
-                { range: 'Up to ₮50',    fee: '₮4.00 flat' },
-                { range: 'Above ₮50',    fee: '4% of amount' },
+                { range: `Up to ₮${FEE_SWITCH.toFixed(0)}`,    fee: `₮${FEE_FLAT.toFixed(2)} flat` },
+                { range: `Above ₮${FEE_SWITCH.toFixed(0)}`,    fee: `${(FEE_PERCENT * 100).toFixed(0)}% of amount` },
                 { range: 'Minimum send', fee: `₮${MIN_SEND.toFixed(2)}` },
               ].map(({ range, fee: f }) => (
                 <div key={range} className="flex justify-between items-center">
@@ -1610,7 +1611,7 @@ function UsdtWithdrawModal({ balance, onClose, onSend, kycStatus, twoFactorEnabl
             <div className="rounded-2xl overflow-hidden" style={{ border: '1.5px solid #e2e8f0' }}>
               {[
                 { label: 'You send',        val: `₮${usdtAmt.toFixed(2)}`,      icon: '→',  bold: false },
-                { label: `Platform fee (${usdtAmt <= 50 ? '₮4 flat' : '4%'})`, val: `₮${fee.toFixed(2)}`, icon: <DollarSign size={11} />, bold: false, warn: true },
+                { label: `Platform fee (${usdtAmt <= FEE_SWITCH ? `₮${FEE_FLAT.toFixed(0)} flat` : `${(FEE_PERCENT * 100).toFixed(0)}%`})`, val: `₮${fee.toFixed(2)}`, icon: <DollarSign size={11} />, bold: false, warn: true },
                 { label: 'Total deducted',  val: `₮${totalDeduct.toFixed(2)}`,  icon: null, bold: true  },
               ].map(({ label, val, icon, bold, warn }, i) => (
                 <div key={label} className="flex justify-between items-center px-4 py-3"
@@ -1691,7 +1692,7 @@ function UsdtWithdrawModal({ balance, onClose, onSend, kycStatus, twoFactorEnabl
               <div className="rounded-2xl overflow-hidden" style={{ border: '1.5px solid #e2e8f0' }}>
                 {[
                   { label: 'Recipient gets',  val: `₮${usdtAmt.toFixed(2)}`,     color: '#10b981' },
-                  { label: `Fee (${usdtAmt <= 50 ? '₮4 flat' : '4%'})`,          val: `₮${fee.toFixed(2)}`,       color: '#d97706' },
+                  { label: `Fee (${usdtAmt <= FEE_SWITCH ? `₮${FEE_FLAT.toFixed(0)} flat` : `${(FEE_PERCENT * 100).toFixed(0)}%`})`,          val: `₮${fee.toFixed(2)}`,       color: '#d97706' },
                   { label: 'Total deducted',  val: `₮${totalDeduct.toFixed(2)}`,  color: '#1e293b', bold: true },
                 ].map(({ label, val, color, bold }, i) => (
                   <div key={label} className="flex justify-between items-center px-4 py-2.5"

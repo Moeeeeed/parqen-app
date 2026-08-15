@@ -85,15 +85,37 @@ class TronHotWallet {
     return this._getTrxAt(this.getHotWalletAddress());
   }
 
-  /** TRX balance at any Tron address */
-  async _getTrxAt(address) {
+  /**
+   * TRX balance at any Tron address.
+   * By default, swallows API errors as 0 — fine for callers that only use the
+   * result to decide "does this address need gas" (worst case: an unnecessary
+   * funding attempt). Pass { throwOnError: true } for callers that would
+   * misinterpret a transient API failure as a genuine zero balance, such as
+   * checking the hot wallet's own balance before funding a sweep.
+   */
+  async _getTrxAt(address, { throwOnError = false } = {}) {
+    const fetch = () => axios.get(
+      `https://api.trongrid.io/v1/accounts/${address}`,
+      { headers: tronHeaders(), timeout: 10000 }
+    );
     try {
-      const r = await axios.get(
-        `https://api.trongrid.io/v1/accounts/${address}`,
-        { headers: tronHeaders(), timeout: 10000 }
-      );
+      const r = await fetch();
       return (r.data?.data?.[0]?.balance || 0) / 1_000_000; // SUN → TRX
     } catch (e) {
+      // A single 429 is often just a transient burst — wait and retry once
+      // before giving up.
+      if (e.response?.status === 429) {
+        await new Promise(res => setTimeout(res, 1200));
+        try {
+          const r = await fetch();
+          return (r.data?.data?.[0]?.balance || 0) / 1_000_000;
+        } catch (retryErr) {
+          if (throwOnError) throw retryErr;
+          console.warn(`[HotWallet] TRX balance check failed for ${address?.slice(0, 10)}…: ${retryErr.message}`);
+          return 0;
+        }
+      }
+      if (throwOnError) throw e;
       console.warn(`[HotWallet] TRX balance check failed for ${address?.slice(0, 10)}…: ${e.message}`);
       return 0;
     }
@@ -131,15 +153,22 @@ class TronHotWallet {
     const onchain = await this.getUsdtBalance();
     if (onchain < amountUsdt) {
       throw new Error(
-        `Sorry, we are experiencing a blockchain issue. Please try again later or contact support. This issue is from the blockchain.`
+        `HOT_WALLET_USDT_INSUFFICIENT: hot wallet has ₮${onchain.toFixed(2)} USDT, needs ₮${amountUsdt.toFixed(2)}. Top up the hot wallet with USDT.`
       );
     }
 
     // ── Pre-flight: check TRX for gas ──────────────────────────────────────
+    // MIN_TRX_FOR_WITHDRAWAL is a floor, not a tight estimate: a real TRC-20
+    // USDT transfer measured on this wallet cost ~6.4 TRX, but sending to a
+    // destination address that has never held USDT before costs noticeably
+    // more (Tron charges extra energy to initialize its balance storage slot),
+    // and energy price is not fixed — it moves with network demand. 30 TRX
+    // keeps a real safety margin over that worst case instead of a bare minimum.
+    const MIN_TRX_FOR_WITHDRAWAL = 30;
     const trx = await this.getTrxBalance();
-    if (trx < 20) {
+    if (trx < MIN_TRX_FOR_WITHDRAWAL) {
       throw new Error(
-        `Sorry, we are experiencing a blockchain issue. Please try again later or contact support. This issue is from the blockchain.`
+        `HOT_WALLET_TRX_INSUFFICIENT: hot wallet has ${trx.toFixed(2)} TRX gas, needs at least ${MIN_TRX_FOR_WITHDRAWAL} TRX. Top up the hot wallet (${hotAddr}) with TRX.`
       );
     }
 
@@ -165,38 +194,79 @@ class TronHotWallet {
    * Does NOT move any on-chain funds — purely a DB credit.
    * On-chain representation: fees accumulate in the hot wallet until collected.
    *
+   * Throws on failure instead of swallowing errors — a withdrawal fee that
+   * silently fails to credit isn't lost on-chain (only `amount`, not the fee,
+   * ever gets broadcast), but it vanishes from every ledger that tracks
+   * company revenue, with nothing to show it ever happened. Callers must
+   * treat a thrown error here as fatal to the withdrawal, not a background
+   * blip — see /api/wallet/usdt/send.
+   *
    * @param {number} amountUsdt - Fee amount to credit
    * @param {string} note       - Description for logs
    */
   async creditFeeToCompany(amountUsdt, note) {
-    if (amountUsdt <= 0) return;
+    if (amountUsdt <= 0) return 0;
 
-    const { data: cw, error: fetchErr } = await supabase
-      .from('wallets')
-      .select('balance_usdt')
-      .eq('user_id', COMPANY_WALLET_ID)
-      .maybeSingle();
+    // Small retry loop against optimistic-lock conflicts: two withdrawals'
+    // fee credits can legitimately race (both read the same starting balance,
+    // both try to write current+fee) — a bare blind update would silently
+    // lose one of them. A conditional update guards against that; on conflict
+    // (0 rows affected) we just re-read and retry with the fresh balance.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { data: cw, error: fetchErr } = await supabase
+        .from('wallets')
+        .select('balance_usdt')
+        .eq('user_id', COMPANY_WALLET_ID)
+        .maybeSingle();
 
-    if (fetchErr) {
-      console.error('[HotWallet] creditFeeToCompany: fetch failed:', fetchErr.message);
-      return;
+      if (fetchErr) {
+        throw new Error(`creditFeeToCompany: fetch failed — ${fetchErr.message}`);
+      }
+
+      if (!cw) {
+        // No company wallet row yet — create it directly with the fee amount.
+        // Never a blind update against a possibly-missing row: that affects
+        // zero rows without Supabase raising any error, which is exactly the
+        // silent-loss failure mode this rewrite exists to close.
+        const newBal = parseFloat(amountUsdt.toFixed(6));
+        const { error: insertErr } = await supabase.from('wallets').insert({
+          user_id: COMPANY_WALLET_ID,
+          balance_usdt: newBal,
+          locked_balance_usdt: 0,
+          balance_btc: 0,
+          locked_balance_btc: 0,
+          updated_at: new Date().toISOString(),
+        });
+        if (insertErr) {
+          // Someone else's concurrent insert may have won the race — retry and pick up their row.
+          if (attempt < 4) continue;
+          throw new Error(`creditFeeToCompany: company wallet row missing and insert failed — ${insertErr.message}`);
+        }
+        console.log(`[HotWallet] 💰 +₮${amountUsdt} fee → company wallet (${note}) | total: ₮${newBal} (row created)`);
+        return newBal;
+      }
+
+      const current = parseFloat(cw.balance_usdt || 0);
+      const newBal  = parseFloat((current + amountUsdt).toFixed(6));
+
+      const { data: updated, error: updateErr } = await supabase
+        .from('wallets')
+        .update({ balance_usdt: newBal, updated_at: new Date().toISOString() })
+        .eq('user_id', COMPANY_WALLET_ID)
+        .eq('balance_usdt', cw.balance_usdt) // optimistic lock — retry below if this raced
+        .select('balance_usdt');
+
+      if (updateErr) {
+        throw new Error(`creditFeeToCompany: update failed — ${updateErr.message}`);
+      }
+      if (updated && updated.length > 0) {
+        console.log(`[HotWallet] 💰 +₮${amountUsdt} fee → company wallet (${note}) | total: ₮${newBal}`);
+        return newBal;
+      }
+      // 0 rows affected — balance changed between our read and write. Retry with a fresh read.
     }
 
-    const current = parseFloat(cw?.balance_usdt || 0);
-    const newBal  = parseFloat((current + amountUsdt).toFixed(6));
-
-    const { error: updateErr } = await supabase
-      .from('wallets')
-      .update({ balance_usdt: newBal, updated_at: new Date().toISOString() })
-      .eq('user_id', COMPANY_WALLET_ID);
-
-    if (updateErr) {
-      console.error('[HotWallet] creditFeeToCompany: update failed:', updateErr.message);
-    } else {
-      console.log(`[HotWallet] 💰 +₮${amountUsdt} fee → company wallet (${note}) | total: ₮${newBal}`);
-    }
-
-    return newBal;
+    throw new Error('creditFeeToCompany: gave up after 5 attempts — company wallet balance kept changing concurrently');
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -408,6 +478,29 @@ class TronHotWallet {
   async _sendTrxToAddress(toAddress, trxAmount) {
     tronWallet.initialize();
     const TronWebClass = this._getTronWebClass();
+    const hotAddr = this.getHotWalletAddress();
+
+    // Cap the funding amount to what the hot wallet can actually afford, leaving
+    // a buffer for this transfer's own network fee. Sending the fixed TRX_PER_SWEEP
+    // amount regardless of hot wallet balance meant that once the hot wallet ran
+    // low, the funding tx had insufficient balance and silently never broadcast —
+    // the sweep would then wait the full confirmation timeout only to fail.
+    const TRX_FEE_BUFFER      = 1.5;
+    const MIN_USEFUL_TRX_FUND = 15; // matches the threshold used to decide a deposit address needs funding
+    let hotTrx;
+    try {
+      hotTrx = await this._getTrxAt(hotAddr, { throwOnError: true });
+    } catch (err) {
+      throw new Error(`Could not verify hot wallet TRX balance (API error, will retry next cycle): ${err.message}`);
+    }
+    const fundAmount = Math.min(trxAmount, parseFloat((hotTrx - TRX_FEE_BUFFER).toFixed(6)));
+
+    if (fundAmount < MIN_USEFUL_TRX_FUND) {
+      throw new Error(
+        `Hot wallet TRX too low to fund sweep gas: have ${hotTrx.toFixed(2)} TRX, need at least ${(MIN_USEFUL_TRX_FUND + TRX_FEE_BUFFER).toFixed(2)} TRX. Top up the hot wallet (${hotAddr}) with TRX.`
+      );
+    }
+
     const pk = tronWallet.getPrivateKeyHex(HOT_ID);
     const tw = new TronWebClass({
       fullHost:   'https://api.trongrid.io',
@@ -415,7 +508,7 @@ class TronHotWallet {
       privateKey: pk,
     });
 
-    const sunAmount = Math.floor(trxAmount * 1_000_000);
+    const sunAmount = Math.floor(fundAmount * 1_000_000);
     const tx = await tw.trx.sendTransaction(toAddress, sunAmount);
 
     if (!tx?.result && !tx?.txid) {
@@ -431,7 +524,7 @@ class TronHotWallet {
       throw new Error(`TRX funding did not confirm on-chain (txid ${tx.txid}): ${confirmation.reason}`);
     }
 
-    console.log(`[HotWallet] Sent ${trxAmount} TRX → ${toAddress} | txid: ${tx.txid}`);
+    console.log(`[HotWallet] Sent ${fundAmount} TRX → ${toAddress} | txid: ${tx.txid}`);
     return tx;
   }
 

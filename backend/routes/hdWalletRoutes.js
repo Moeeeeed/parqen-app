@@ -560,7 +560,7 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
         action: 'send_btc',
       });
     }
-    const sendCodeCheck = actionCodeService.verify(userId, 'send_btc', actionCode);
+    const sendCodeCheck = await actionCodeService.verify(userId, 'send_btc', actionCode);
     if (!sendCodeCheck.valid) return res.status(403).json({ error: sendCodeCheck.error });
 
     // All 3 verifications required to withdraw BTC to an external address

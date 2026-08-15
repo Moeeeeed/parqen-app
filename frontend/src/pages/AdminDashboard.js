@@ -2109,6 +2109,361 @@ function PlatformWalletsCard() {
   );
 }
 
+// ── USDT Hot Wallet sub-card — parity with PlatformWalletsCard (BTC) ─────────
+function UsdtWalletCard() {
+  const [data,     setData]     = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [busy,     setBusy]     = useState(false);
+  const [copied,   setCopied]   = useState('');
+  const [sendTo,   setSendTo]   = useState('');
+  const [sendAmt,  setSendAmt]  = useState('');
+  const [sending,  setSending]  = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await axios.get(`${API_URL}/admin/usdt-wallet`, { headers: authH() });
+      setData(r.data);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to load USDT wallet');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const copy = (text, key) => {
+    copyToClipboard(text, 'Copied!')
+      .then((ok) => { if (ok) setCopied(key); setTimeout(() => setCopied(''), 2000); });
+  };
+
+  const processSweeps = async () => {
+    setBusy(true);
+    try {
+      await axios.post(`${API_URL}/admin/hot-wallet/process-sweeps`, {}, { headers: authH() });
+      toast.success('Pending sweeps processed');
+      await load();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to process sweeps');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sendUsdt = async () => {
+    const amount = parseFloat(sendAmt);
+    if (!sendTo || !amount || amount <= 0) { toast.error('Enter a valid address and amount'); return; }
+    if (!window.confirm(`Send ₮${amount.toFixed(2)} USDT from the hot wallet to ${sendTo}? This broadcasts on-chain immediately and cannot be undone.`)) return;
+    setSending(true);
+    try {
+      const r = await axios.post(`${API_URL}/admin/hot-wallet/send-usdt`,
+        { toAddress: sendTo, amountUsdt: amount }, { headers: authH() });
+      toast.success(`Sent ₮${amount.toFixed(2)} USDT — txid ${r.data.txid?.slice(0, 10)}…`);
+      setSendTo(''); setSendAmt('');
+      await load();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Send failed');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const s = data?.status;
+  const trxColor = s?.trx_status === 'ok' ? C.forest : s?.trx_status === 'low' ? '#D97706' : '#DC2626';
+  const trxBg    = s?.trx_status === 'ok' ? '#F0FDF4' : s?.trx_status === 'low' ? '#FFFBEB' : '#FEF2F2';
+
+  return (
+    <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
+      <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.g100, backgroundColor: '#ECFEFF' }}>
+        <div>
+          <h3 className="font-black text-sm inline-flex items-center gap-1.5" style={{ color: '#0E7490' }}><DollarSign size={15} /> USDT Hot Wallet — Live TRC-20 Balance</h3>
+          <p className="text-xs mt-0.5" style={{ color: C.g500 }}>Tron mainnet · deposits sweep here, withdrawals send from here</p>
+        </div>
+        <button onClick={load} disabled={loading}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition hover:opacity-80 disabled:opacity-50"
+          style={{ backgroundColor: '#0E7490', color: '#fff' }}>
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+          {loading ? 'Checking…' : 'Refresh'}
+        </button>
+      </div>
+
+      {loading && !data ? (
+        <div className="flex items-center justify-center py-10 gap-3">
+          <RefreshCw size={18} className="animate-spin" style={{ color: C.g400 }} />
+          <span className="text-sm" style={{ color: C.g500 }}>Checking live Tron balances…</span>
+        </div>
+      ) : s ? (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x" style={{ borderColor: C.g100 }}>
+            {/* USDT balance */}
+            <div className="p-5 space-y-3">
+              <p className="text-[11px] font-black uppercase tracking-wide" style={{ color: C.g400 }}>Hot Wallet USDT</p>
+              <p className="text-2xl font-black" style={{ color: '#0E7490' }}>₮{fmt(s.hot_wallet_usdt, 2)}</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-[11px] bg-gray-50 border px-2 py-1.5 rounded-lg truncate font-mono"
+                  style={{ borderColor: C.g200, color: C.g600 }}>
+                  {s.hot_wallet_address}
+                </code>
+                <button onClick={() => copy(s.hot_wallet_address, 'usdt')}
+                  className="px-2.5 py-1.5 rounded-lg text-[11px] font-black transition hover:opacity-80 flex-shrink-0"
+                  style={{ backgroundColor: copied === 'usdt' ? '#0E7490' : C.g100, color: copied === 'usdt' ? '#fff' : C.g600 }}>
+                  {copied === 'usdt' ? '✓ Copied' : 'Copy'}
+                </button>
+              </div>
+              <a href={`https://tronscan.org/#/address/${s.hot_wallet_address}`}
+                target="_blank" rel="noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] font-bold hover:underline" style={{ color: '#2563EB' }}>
+                View on TronScan ↗
+              </a>
+            </div>
+
+            {/* TRX gas */}
+            <div className="p-5 space-y-3">
+              <p className="text-[11px] font-black uppercase tracking-wide" style={{ color: C.g400 }}>Gas Reserve (TRX)</p>
+              <div className="p-3 rounded-xl" style={{ backgroundColor: trxBg }}>
+                <p className="text-xl font-black" style={{ color: trxColor }}>{fmt(s.hot_wallet_trx, 2)} TRX</p>
+                <p className="text-[11px] font-bold uppercase mt-1" style={{ color: trxColor }}>{s.trx_status}</p>
+                <p className="text-[10px] mt-1" style={{ color: C.g400 }}>Min reserve: {s.min_trx_reserve} TRX</p>
+              </div>
+              {s.trx_status !== 'ok' && (
+                <p className="text-[11px] font-bold" style={{ color: '#DC2626' }}>
+                  <AlertTriangle size={11} className="inline-block mr-1" /> Sweeps &amp; withdrawals need TRX for gas — top up soon
+                </p>
+              )}
+            </div>
+
+            {/* Company wallet + sweep status */}
+            <div className="p-5 space-y-3">
+              <p className="text-[11px] font-black uppercase tracking-wide" style={{ color: C.g400 }}>Company Fee Wallet</p>
+              <p className="text-xl font-black" style={{ color: '#D97706' }}>₮{fmt(s.company_wallet_usdt, 2)}</p>
+              <div className="flex gap-4 pt-2 border-t" style={{ borderColor: C.g100 }}>
+                <div>
+                  <p className="text-[10px] font-black uppercase" style={{ color: C.g500 }}>Pending Sweeps</p>
+                  <p className="text-xs font-black" style={{ color: (s.pending_sweeps || 0) > 0 ? '#D97706' : C.forest }}>{s.pending_sweeps || 0}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase" style={{ color: C.g500 }}>Swept Today</p>
+                  <p className="text-xs font-black" style={{ color: C.forest }}>₮{fmt(s.swept_today_usdt, 2)}</p>
+                </div>
+              </div>
+              <button onClick={processSweeps} disabled={busy}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition hover:opacity-80 disabled:opacity-50"
+                style={{ backgroundColor: C.g100, color: C.g700 }}>
+                <Repeat size={12} className={busy ? 'animate-spin' : ''} />
+                {busy ? 'Processing…' : 'Process Pending Sweeps'}
+              </button>
+            </div>
+          </div>
+
+          {/* Admin — send USDT externally */}
+          <div className="px-5 py-4 border-t" style={{ borderColor: C.g100, backgroundColor: C.g50 }}>
+            <p className="text-[11px] font-black uppercase tracking-wide mb-2 inline-flex items-center gap-1.5" style={{ color: C.g500 }}>
+              <Send size={12} /> Send USDT From Hot Wallet (external)
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input value={sendTo} onChange={e => setSendTo(e.target.value)} placeholder="Destination Tron address (T…)"
+                className="flex-1 text-xs font-mono px-3 py-2 rounded-lg border" style={{ borderColor: C.g200 }} />
+              <input value={sendAmt} onChange={e => setSendAmt(e.target.value)} placeholder="Amount USDT" type="number" min="0" step="0.01"
+                className="sm:w-32 text-xs font-bold px-3 py-2 rounded-lg border" style={{ borderColor: C.g200 }} />
+              <button onClick={sendUsdt} disabled={sending}
+                className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-black transition hover:opacity-80 disabled:opacity-50 flex-shrink-0"
+                style={{ backgroundColor: '#DC2626', color: '#fff' }}>
+                <Send size={12} /> {sending ? 'Sending…' : 'Send'}
+              </button>
+            </div>
+            <p className="text-[10px] mt-1.5" style={{ color: C.g400 }}>Moves real on-chain USDT immediately — for treasury rebalancing / cold storage moves, not user withdrawals.</p>
+          </div>
+        </>
+      ) : (
+        <div className="py-8 text-center">
+          <p className="text-sm font-semibold" style={{ color: C.g400 }}>Click Refresh to check live balances</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── USDT activity tabs — deposits / sweeps / internal / external ────────────
+function UsdtActivityCard() {
+  const [data,    setData]    = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [tab,     setTab]     = useState('deposits'); // deposits | sweeps | internal | external
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await axios.get(`${API_URL}/admin/usdt-wallet`, { headers: authH() });
+      setData(r.data);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to load USDT activity');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading && !data) return <Spin />;
+  if (!data) return <Empty text="No USDT activity data" />;
+
+  const t = data.totals || {};
+  const tabs = [
+    ['deposits', <><ArrowLeftRight size={12} /> Deposits</>, t.depositCount],
+    ['sweeps',   <><Repeat size={12} /> Sweeps</>,            t.sweepCount],
+    ['internal', <><Repeat size={12} /> Internal</>,          t.internalCount],
+    ['external', <><ArrowUpRight size={12} /> External</>,   t.withdrawalCount],
+  ];
+
+  const sweepStatusColor = (status) => status === 'COMPLETED' ? { color: '#166534', bg: '#F0FDF4' }
+    : status === 'STALE' ? { color: '#6B7280', bg: '#F3F4F6' }
+    : { color: '#92400E', bg: '#FFFBEB' };
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-4 gap-3">
+        <StatCard icon={<ArrowLeftRight size={22} />} label="Total Deposited" value={`₮${fmt(t.depositsUsdt, 2)}`}
+          sub={`${t.depositCount || 0} deposits`} color="#0E7490" bg="#ECFEFF" />
+        <StatCard icon={<Repeat size={22} />}          label="Total Swept"    value={`₮${fmt(t.sweptUsdt, 2)}`}
+          sub={`${t.sweepCount || 0} sweeps · ${t.pendingSweepCount || 0} pending`} color={C.forest} bg="#F0FDF4" />
+        <StatCard icon={<Repeat size={22} />}          label="Internal Transfers" value={`₮${fmt(t.internalUsdt, 2)}`}
+          sub={`${t.internalCount || 0} transfers`} color="#8B5CF6" bg="#F5F3FF" />
+        <StatCard icon={<ArrowUpRight size={22} />}   label="External Sent"  value={`₮${fmt(t.withdrawnUsdt, 2)}`}
+          sub={`${t.withdrawalCount || 0} sends`} color="#EF4444" bg="#FEF2F2" />
+      </div>
+
+      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
+        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: C.g100 }}>
+          <h3 className="font-black text-sm" style={{ color: C.g800 }}>USDT Activity</h3>
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: C.g200 }}>
+              {tabs.map(([key, label]) => (
+                <button key={key} onClick={() => setTab(key)}
+                  className="px-3 py-1.5 text-xs font-black inline-flex items-center gap-1 transition"
+                  style={{ backgroundColor: tab === key ? '#0E7490' : 'transparent', color: tab === key ? '#fff' : C.g500 }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button onClick={load} className="p-2 rounded-xl border hover:bg-gray-50 transition" style={{ borderColor: C.g200 }}>
+              <RefreshCw size={14} style={{ color: C.g500 }} />
+            </button>
+          </div>
+        </div>
+
+        {tab === 'deposits' && (
+          (data.deposits || []).length === 0
+            ? <Empty icon={<ArrowLeftRight size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No USDT deposits yet" />
+            : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead style={{ backgroundColor: C.g50 }}>
+                    <tr>{['User', 'Amount (USDT)', 'Notes', 'Date'].map(h => (
+                      <th key={h} className="text-left px-4 py-3 text-xs font-black uppercase tracking-wide" style={{ color: C.g500 }}>{h}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody>
+                    {data.deposits.map(d => (
+                      <tr key={d.id} className="border-t hover:bg-gray-50" style={{ borderColor: C.g100 }}>
+                        <td className="px-4 py-3"><span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: '#ECFEFF', color: '#0E7490' }}>@{d.username}</span></td>
+                        <td className="px-4 py-3 text-xs font-black" style={{ color: '#0E7490' }}>₮{fmt(d.amount_usdt, 2)}</td>
+                        <td className="px-4 py-3 text-xs" style={{ color: C.g400 }}>{d.notes || '—'}</td>
+                        <td className="px-4 py-3 text-xs" style={{ color: C.g400 }}>{fmtDate(d.created_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+        )}
+
+        {tab === 'sweeps' && (
+          (data.sweeps || []).length === 0
+            ? <Empty icon={<Repeat size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No sweeps yet" />
+            : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead style={{ backgroundColor: C.g50 }}>
+                    <tr>{['User', 'From Address', 'Amount (USDT)', 'Status', 'Date'].map(h => (
+                      <th key={h} className="text-left px-4 py-3 text-xs font-black uppercase tracking-wide" style={{ color: C.g500 }}>{h}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody>
+                    {data.sweeps.map(sw => {
+                      const sc = sweepStatusColor(sw.status);
+                      return (
+                        <tr key={sw.id} className="border-t hover:bg-gray-50" style={{ borderColor: C.g100 }}>
+                          <td className="px-4 py-3"><span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F0FDF4', color: C.forest }}>@{sw.username}</span></td>
+                          <td className="px-4 py-3 text-[11px] font-mono" style={{ color: C.g500 }}>{sw.from_address?.slice(0, 10)}…{sw.from_address?.slice(-4)}</td>
+                          <td className="px-4 py-3 text-xs font-black" style={{ color: C.forest }}>₮{fmt(sw.amount_usdt, 2)}</td>
+                          <td className="px-4 py-3"><Pill label={sw.status} color={sc.color} bg={sc.bg} /></td>
+                          <td className="px-4 py-3 text-xs" style={{ color: C.g400 }}>{fmtDate(sw.created_at)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )
+        )}
+
+        {tab === 'internal' && (
+          (data.internal || []).length === 0
+            ? <Empty icon={<Repeat size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No internal USDT transfers yet" />
+            : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead style={{ backgroundColor: C.g50 }}>
+                    <tr>{['Sender', 'Recipient', 'Amount (USDT)', 'Date'].map(h => (
+                      <th key={h} className="text-left px-4 py-3 text-xs font-black uppercase tracking-wide" style={{ color: C.g500 }}>{h}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody>
+                    {data.internal.map(t2 => (
+                      <tr key={t2.id} className="border-t hover:bg-gray-50" style={{ borderColor: C.g100 }}>
+                        <td className="px-4 py-3"><span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F0FDF4', color: C.forest }}>@{t2.sender}</span></td>
+                        <td className="px-4 py-3"><span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#1D4ED8' }}>@{t2.recipient}</span></td>
+                        <td className="px-4 py-3 text-xs font-black" style={{ color: C.forest }}>₮{fmt(t2.amount_usdt, 2)}</td>
+                        <td className="px-4 py-3 text-xs" style={{ color: C.g400 }}>{fmtDate(t2.created_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+        )}
+
+        {tab === 'external' && (
+          (data.withdrawals || []).length === 0
+            ? <Empty icon={<ArrowUpRight size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No external USDT sends yet" />
+            : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead style={{ backgroundColor: C.g50 }}>
+                    <tr>{['User', 'Amount (USDT)', 'Notes', 'Status', 'Date'].map(h => (
+                      <th key={h} className="text-left px-4 py-3 text-xs font-black uppercase tracking-wide" style={{ color: C.g500 }}>{h}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody>
+                    {data.withdrawals.map(w => (
+                      <tr key={w.id} className="border-t hover:bg-gray-50" style={{ borderColor: C.g100 }}>
+                        <td className="px-4 py-3"><span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F0FDF4', color: C.forest }}>@{w.username}</span></td>
+                        <td className="px-4 py-3 text-xs font-black" style={{ color: '#EF4444' }}>₮{fmt(w.amount_usdt, 2)}</td>
+                        <td className="px-4 py-3 text-xs" style={{ color: C.g400 }}>{w.notes || '—'}</td>
+                        <td className="px-4 py-3"><Pill label={w.status || 'CONFIRMED'} color="#166534" bg="#F0FDF4" /></td>
+                        <td className="px-4 py-3 text-xs" style={{ color: C.g400 }}>{fmtDate(w.created_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+        )}
+      </div>
+    </div>
+  );
+}
+
 function FinanceSection() {
   const [data,      setData]    = useState(null);
   const [transfers, setTransfers] = useState(null);
@@ -2153,6 +2508,8 @@ function FinanceSection() {
         action={<button onClick={load} className="p-2 rounded-xl border hover:bg-gray-50 transition" style={{ borderColor: C.g200 }}><RefreshCw size={14} style={{ color: C.g500 }} /></button>} />
 
       <PlatformWalletsCard />
+      <UsdtWalletCard />
+      <UsdtActivityCard />
 
       {/* ── Revenue + Escrow snapshot ──────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3">

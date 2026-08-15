@@ -35,7 +35,12 @@ function tronHeaders() {
 // Underfunded senders, expired transactions, and rejected contract calls all
 // return a txid without ever confirming. Callers must not treat a txid alone
 // as proof of success.
-async function waitForConfirmation(txid, { timeoutMs = 30000, intervalMs = 3000 } = {}) {
+// Default timeout is 90s, not the ~20s a Tron block time would suggest — observed
+// mainnet behavior is that TronGrid's getTransactionInfo often doesn't reflect a
+// transaction until well past 30s even though it already succeeded on-chain
+// (verifiable via TronScan earlier). A short timeout was causing legitimate,
+// successful sweeps to be reported as failed and left the deposit re-queued.
+async function waitForConfirmation(txid, { timeoutMs = 90000, intervalMs = 3000 } = {}) {
   const TronWeb = getTronWebClass();
   const tw      = new TronWeb({ fullHost: TRONGRID_BASE, headers: tronHeaders() });
   const deadline = Date.now() + timeoutMs;
