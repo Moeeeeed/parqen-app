@@ -445,9 +445,14 @@ function OfferCard({listing, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLi
         </div>
         <div className="border-l pl-3" style={{borderColor: ft ? ft.divider : C.g100}}>
           <p className="text-[11px] font-bold uppercase tracking-wide mb-0.5" style={{color: ft ? ft.labelColor : C.g500}}>You pay</p>
-          <p className="text-base font-bold leading-tight" style={{color:C.g800, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', paddingRight:'4px'}}>
-            {fBtc(examplePayBtc)}&nbsp;<span style={{fontSize:'0.7em', color:C.g500}}>BTC</span>
+          <p className="text-[13px] font-bold leading-tight" style={{color:C.g700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', paddingRight:'4px'}}>
+            {fBtc(examplePayBtc)}&nbsp;<span style={{fontSize:'0.85em', color:C.g500}}>BTC</span>
           </p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <p className="text-[10px] font-semibold" style={{color:C.g500}}>
+              ≈ {cur} {fmt(exampleReceiveFiat, 2)}
+            </p>
+          </div>
         </div>
       </div>
 
