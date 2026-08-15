@@ -3376,8 +3376,13 @@ export default function WalletPage({ user }) {
                       )}
                     </div>
                     <button onClick={() => {
-                      if (swapInputMode === 'usd') { setSwapUsdAmount(maxUsd.toFixed(2)); }
-                      else { setSwapAmount(swapFrom === 'BTC' ? fmt(availableBal, 8) : maxNative.toFixed(2)); }
+                      // Truncate down (never round up) when pre-filling MAX — the underlying
+                      // USDT balance carries more precision than the 2dp shown on screen, so
+                      // rounding .toFixed(2) up could fill in an amount that's actually more
+                      // than the real balance, tripping "insufficient" on the very next check.
+                      const floorTo2 = (n) => (Math.floor(n * 100) / 100).toFixed(2);
+                      if (swapInputMode === 'usd') { setSwapUsdAmount(floorTo2(maxUsd)); }
+                      else { setSwapAmount(swapFrom === 'BTC' ? fmt(availableBal, 8) : floorTo2(maxNative)); }
                     }}
                       className="text-xs font-black px-2.5 py-1.5 rounded-xl transition"
                       style={{ background: `linear-gradient(135deg, ${C.forest}, ${C.green})`, color: '#fff', boxShadow: `0 2px 8px ${C.forest}40` }}>

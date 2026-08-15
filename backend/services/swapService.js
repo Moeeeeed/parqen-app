@@ -64,15 +64,59 @@ class SwapService {
   }
 
   // ── Credit company fee wallet ─────────────────────────────────────────────
+  // Throws on failure instead of swallowing errors — same fix applied to
+  // tronHotWallet.creditFeeToCompany earlier: a blind update-with-no-error-
+  // check against a possibly-missing row, or one that races a concurrent
+  // swap's fee credit, can silently drop the fee from company revenue with
+  // no trace anywhere. Retries on that race; creates the row if missing.
+  // Callers must NOT let this failure invalidate the swap itself — by the
+  // time this runs, the user's own balance change has already committed
+  // (with its own optimistic lock), so the swap genuinely succeeded even if
+  // this fee credit needs a retry.
   async _creditCompanyFee(currency, amount) {
+    if (amount <= 0) return;
     const field = currency === 'BTC' ? 'balance_btc' : 'balance_usdt';
-    const { data: c } = await supabaseAdmin
-      .from('wallets').select(field).eq('user_id', COMPANY_WALLET_ID).maybeSingle();
-    const current = parseFloat(c?.[field] || 0);
-    const newBal  = parseFloat((current + amount).toFixed(currency === 'BTC' ? 8 : 6));
-    await supabaseAdmin.from('wallets')
-      .update({ [field]: newBal, updated_at: new Date().toISOString() })
-      .eq('user_id', COMPANY_WALLET_ID);
+    const precision = currency === 'BTC' ? 8 : 6;
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { data: c, error: fetchErr } = await supabaseAdmin
+        .from('wallets').select(field).eq('user_id', COMPANY_WALLET_ID).maybeSingle();
+      if (fetchErr) throw new Error(`_creditCompanyFee: fetch failed — ${fetchErr.message}`);
+
+      if (!c) {
+        const newBal = parseFloat(amount.toFixed(precision));
+        const { error: insertErr } = await supabaseAdmin.from('wallets').insert({
+          user_id: COMPANY_WALLET_ID,
+          [field]: newBal,
+          balance_btc: field === 'balance_btc' ? newBal : 0,
+          balance_usdt: field === 'balance_usdt' ? newBal : 0,
+          locked_balance_btc: 0,
+          locked_balance_usdt: 0,
+          updated_at: new Date().toISOString(),
+        });
+        if (insertErr) {
+          if (attempt < 4) continue; // someone else's concurrent insert may have won — retry and pick it up
+          throw new Error(`_creditCompanyFee: company wallet row missing and insert failed — ${insertErr.message}`);
+        }
+        return newBal;
+      }
+
+      const current = parseFloat(c[field] || 0);
+      const newBal  = parseFloat((current + amount).toFixed(precision));
+
+      const { data: updated, error: updateErr } = await supabaseAdmin
+        .from('wallets')
+        .update({ [field]: newBal, updated_at: new Date().toISOString() })
+        .eq('user_id', COMPANY_WALLET_ID)
+        .eq(field, c[field]) // optimistic lock — retry below if this raced
+        .select(field);
+
+      if (updateErr) throw new Error(`_creditCompanyFee: update failed — ${updateErr.message}`);
+      if (updated && updated.length > 0) return newBal;
+      // 0 rows affected — balance changed concurrently, retry with a fresh read.
+    }
+
+    throw new Error('_creditCompanyFee: gave up after 5 attempts — company wallet balance kept changing concurrently');
   }
 
   // ── Record swap in swap_transactions ─────────────────────────────────────
@@ -138,8 +182,14 @@ class SwapService {
     if (updateErr) throw new Error(`Swap failed: ${updateErr.message}`);
     if (!swapRows || swapRows.length === 0) throw new Error('Balance changed — please retry the swap');
 
-    // Platform fee → company wallet (in USDT)
-    await this._creditCompanyFee('USDT', feeUsdt);
+    // Platform fee → company wallet (in USDT). The user's own swap already
+    // committed above — don't fail their successful swap over an internal
+    // accounting hiccup, but never let it fail silently either.
+    try {
+      await this._creditCompanyFee('USDT', feeUsdt);
+    } catch (feeErr) {
+      console.error(`[SwapService] ⚠️ FEE CREDIT FAILED — needs manual reconciliation: $${feeUsdt} USDT from BTC→USDT swap by ${userId.slice(0, 8)}:`, feeErr.message);
+    }
 
     // Record swap
     const swapRef = 'SWAP_' + crypto.randomBytes(6).toString('hex').toUpperCase();
@@ -204,8 +254,14 @@ class SwapService {
     if (updateErr) throw new Error(`Swap failed: ${updateErr.message}`);
     if (!swapRows || swapRows.length === 0) throw new Error('Balance changed — please retry the swap');
 
-    // Platform fee → company wallet (in BTC)
-    await this._creditCompanyFee('BTC', feeBtc);
+    // Platform fee → company wallet (in BTC). The user's own swap already
+    // committed above — don't fail their successful swap over an internal
+    // accounting hiccup, but never let it fail silently either.
+    try {
+      await this._creditCompanyFee('BTC', feeBtc);
+    } catch (feeErr) {
+      console.error(`[SwapService] ⚠️ FEE CREDIT FAILED — needs manual reconciliation: ₿${feeBtc} BTC from USDT→BTC swap by ${userId.slice(0, 8)}:`, feeErr.message);
+    }
 
     const swapRef = 'SWAP_' + crypto.randomBytes(6).toString('hex').toUpperCase();
     await this._recordSwap(userId, 'USDT', 'BTC', amount, netBtc, rate, feeBtc, 0);
