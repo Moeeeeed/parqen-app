@@ -1966,6 +1966,28 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     // 2. Detect and save country from IP (fire and forget)
     detectAndSaveCountry(newUser.id, req).catch(() => { });
 
+    // 2. If this email already has an approved P2P migration request (Noones /
+    // Binance P2P / other — submitted before they finished signing up), stamp
+    // their verified reputation onto the new profile right away. Covers the
+    // case where admin approval happened before registration; the reverse
+    // order is handled in /api/admin/p2p-migration/:id/approve.
+    if (email) {
+      supabaseAdmin.from('p2p_migration_requests')
+        .select('platform, admin_username_seen, admin_feedback_count')
+        .eq('email', email.toLowerCase().trim()).eq('status', 'approved')
+        .maybeSingle()
+        .then(({ data: migration }) => {
+          if (!migration) return;
+          supabaseAdmin.from('users').update({
+            p2p_migrated_platform: migration.platform,
+            p2p_migrated_username: migration.admin_username_seen,
+            p2p_migrated_feedback: migration.admin_feedback_count,
+            p2p_migration_approved_at: new Date().toISOString(),
+          }).eq('id', newUser.id).then(null, () => { });
+        })
+        .catch(() => { });
+    }
+
     // 2. Send verification + welcome email (email users only)
     if (email && emailVerifyCode) {
       emailService.sendVerificationEmail(email, emailVerifyCode, newUser.id)
@@ -4728,6 +4750,7 @@ app.get('/api/kyc/status', verifyToken, async (req, res) => {
 });
 
 // ── P2P Migration (Noones / Binance P2P / other) — pre-registration lead capture ──
+const MIGRATION_PLATFORM_LABELS = { noones: 'Noones', binance: 'Binance P2P', other: 'P2P' };
 // Shown as a welcome step on /register before a user creates an account. No auth
 // required (they don't have an account yet). Admin reviews the screenshot by hand
 // and approves/rejects manually — see /api/admin/p2p-migration/* below.
@@ -5008,7 +5031,7 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
     let extraFields = {};
     try {
       const { data: extra } = await supabaseAdmin.from('users')
-        .select('email_verified, is_phone_verified, phone_verified, kyc_verified, kyc_status, id_type, kyc_submitted_at, id_front_url, id_back_url, selfie_url, kyc_rejection_reason, username_changed, preferred_currency, preferred_language, timezone, hide_full_name, name_display, city, country_name, last_seen_location, referral_code, total_referrals, referral_earnings_btc')
+        .select('email_verified, is_phone_verified, phone_verified, kyc_verified, kyc_status, id_type, kyc_submitted_at, id_front_url, id_back_url, selfie_url, kyc_rejection_reason, username_changed, preferred_currency, preferred_language, timezone, hide_full_name, name_display, city, country_name, last_seen_location, referral_code, total_referrals, referral_earnings_btc, p2p_migrated_platform, p2p_migrated_username, p2p_migrated_feedback, p2p_migration_approved_at')
         .eq('id', req.userId).single();
       if (extra) extraFields = extra;
     } catch { }
@@ -8872,7 +8895,34 @@ app.put('/api/admin/p2p-migration/:id/approve', verifyToken, async (req, res) =>
     if (error) return res.status(400).json({ error: error.message });
     if (!updated) return res.status(404).json({ error: 'Submission not found' });
     logAdminAction(req, 'P2P_MIGRATION_APPROVE', req.params.id, { email: updated.email }).catch(() => { });
-    res.json({ success: true, submission: updated });
+
+    // If this person has already registered (by email match), stamp their
+    // verified reputation onto their PRAQEN profile right away. If they
+    // haven't registered yet, /api/auth/register does this same match on
+    // signup, so it works regardless of which happens first.
+    let linkedUser = false;
+    try {
+      const { data: matchedUser } = await supabaseAdmin.from('users')
+        .select('id').eq('email', updated.email).maybeSingle();
+      if (matchedUser) {
+        await supabaseAdmin.from('users').update({
+          p2p_migrated_platform: updated.platform,
+          p2p_migrated_username: usernameSeen,
+          p2p_migrated_feedback: feedbackCount,
+          p2p_migration_approved_at: new Date().toISOString(),
+        }).eq('id', matchedUser.id);
+        linkedUser = true;
+        createNotification(
+          matchedUser.id, 'kyc', '✅ P2P Reputation Verified',
+          `Your ${MIGRATION_PLATFORM_LABELS[updated.platform] || 'P2P'} trading history has been verified and now shows on your profile.`,
+          '/profile'
+        ).catch(() => { });
+      }
+    } catch (linkErr) {
+      console.warn('[admin/p2p-migration/approve] Could not link to a user account:', linkErr.message);
+    }
+
+    res.json({ success: true, submission: updated, linkedUser });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

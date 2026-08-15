@@ -32,6 +32,8 @@ const C = {
   online: '#22C55E', purple: '#8B5CF6',
 };
 
+const MIGRATION_PLATFORM_LABELS = { noones: 'Noones', binance: 'Binance P2P', other: 'P2P' };
+
 const BADGE_DEFS = BADGE_ORDER.map((key) => {
   const b = TRUST_MAP[key];
   const tradesNeeded = BADGE_THRESHOLDS[key];
@@ -578,6 +580,16 @@ export default function Profile({ userId: propUserId }) {
                       </span>
                     ))}
                   </div>
+
+                  {/* Verified P2P migration reputation (Noones / Binance P2P / other) */}
+                  {user.p2p_migrated_platform && (
+                    <div className="inline-flex items-center gap-1.5 mt-2.5" style={{ fontSize: 11, fontWeight: 800, padding: '5px 12px', borderRadius: 99, backgroundColor: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+                      <BadgeCheck size={12} />
+                      Verified {MIGRATION_PLATFORM_LABELS[user.p2p_migrated_platform] || 'P2P'} Trader
+                      {user.p2p_migrated_username && ` · @${user.p2p_migrated_username}`}
+                      {user.p2p_migrated_feedback && ` · ${user.p2p_migrated_feedback}`}
+                    </div>
+                  )}
 
                   {/* Actions */}
                   <div className="flex items-center justify-center gap-2 mt-5">

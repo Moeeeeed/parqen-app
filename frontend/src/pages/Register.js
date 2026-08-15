@@ -290,7 +290,7 @@ function P2PWelcomeGate({ onDone }) {
 
   const finish = () => {
     localStorage.setItem('praqen_migration_seen', '1');
-    onDone();
+    onDone(stage === 'submitted' ? email : '');
   };
 
   const pickPlatform = (id) => { setPlatform(id); setStage('form'); setError(''); };
@@ -732,7 +732,10 @@ export default function Register({ onLogin }) {
   });
 
   if (welcomeStep !== 'done') {
-    return <P2PWelcomeGate onDone={() => setWelcomeStep('done')} />;
+    return <P2PWelcomeGate onDone={(capturedEmail) => {
+      if (capturedEmail) { setEmail(capturedEmail); setMethod('email'); }
+      setWelcomeStep('done');
+    }} />;
   }
 
   return (
