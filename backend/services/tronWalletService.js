@@ -7,7 +7,6 @@
 require('dotenv').config();
 const bip39  = require('bip39');
 const crypto = require('crypto');
-const axios  = require('axios');
 
 const TRON_USDT_CONTRACT = process.env.TRON_USDT_CONTRACT || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 const TRONGRID_API_KEY   = process.env.TRONGRID_API_KEY   || '';
@@ -28,6 +27,35 @@ function tronHeaders() {
   const h = { 'Content-Type': 'application/json' };
   if (TRONGRID_API_KEY) h['TRON-PRO-API-KEY'] = TRONGRID_API_KEY;
   return h;
+}
+
+// ── Wait for a broadcast tx to actually land on-chain ─────────────────────
+// A successful sendRawTransaction/sendTransaction response only means the
+// node ACCEPTED the tx for broadcast — not that it was included in a block.
+// Underfunded senders, expired transactions, and rejected contract calls all
+// return a txid without ever confirming. Callers must not treat a txid alone
+// as proof of success.
+async function waitForConfirmation(txid, { timeoutMs = 30000, intervalMs = 3000 } = {}) {
+  const TronWeb = getTronWebClass();
+  const tw      = new TronWeb({ fullHost: TRONGRID_BASE, headers: tronHeaders() });
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    try {
+      const info = await tw.trx.getTransactionInfo(txid);
+      if (info && info.id) {
+        if (info.receipt?.result) {
+          return { confirmed: info.receipt.result === 'SUCCESS', info, reason: `on-chain result: ${info.receipt.result}` };
+        }
+        // Plain TRX transfer — no contract receipt, but landing in a block is confirmation
+        if (info.blockNumber) return { confirmed: true, info };
+      }
+    } catch (err) {
+      // Transient lookup failure — keep polling until deadline
+    }
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  return { confirmed: false, reason: `not confirmed within ${timeoutMs}ms — never broadcast, still pending, or expired` };
 }
 
 class TronWalletService {
@@ -89,25 +117,35 @@ class TronWalletService {
   }
 
   // ── USDT balance at any Tron address ─────────────────────────────────────
+  // Reads balanceOf() directly from the USDT contract instead of TronGrid's
+  // /v1/accounts summary endpoint. That endpoint returns an empty account for
+  // any address that was never TRX-activated — but an address can receive
+  // TRC-20 tokens (like USDT) without ever being activated, so the summary
+  // endpoint silently under-reports fresh deposit addresses. balanceOf() reads
+  // contract storage directly and isn't affected by activation status.
   // Throws on network/API errors so callers can distinguish from genuine zero.
-  // Returns 0 only when the address genuinely has no USDT.
   async getUSDTBalance(address) {
+    const TronWeb = getTronWebClass();
+    const tw      = new TronWeb({ fullHost: TRONGRID_BASE, headers: tronHeaders() });
+
+    const call = () => tw.transactionBuilder.triggerConstantContract(
+      TRON_USDT_CONTRACT,
+      'balanceOf(address)',
+      {},
+      [{ type: 'address', value: address }],
+      address
+    );
+
     let resp;
     try {
-      resp = await axios.get(
-        `${TRONGRID_BASE}/v1/accounts/${address}`,
-        { headers: tronHeaders(), timeout: 15000 }
-      );
+      resp = await call();
     } catch (err) {
       // A single 429 is often just a transient burst — wait and retry once
       // before giving up, instead of failing the whole check immediately.
-      if (err.response?.status === 429) {
+      if (err.response?.status === 429 || /429/.test(err.message || '')) {
         await new Promise(r => setTimeout(r, 1200));
         try {
-          resp = await axios.get(
-            `${TRONGRID_BASE}/v1/accounts/${address}`,
-            { headers: tronHeaders(), timeout: 15000 }
-          );
+          resp = await call();
         } catch (retryErr) {
           throw new Error(`TronGrid API error for ${address?.slice(0, 12)}…: ${retryErr.message}`);
         }
@@ -117,15 +155,11 @@ class TronWalletService {
       }
     }
 
-    const accountData = resp.data?.data?.[0];
-    if (!accountData) return 0; // New or empty account — genuinely zero
+    const hex = resp?.constant_result?.[0];
+    if (!hex || /^0*$/.test(hex)) return 0; // No balance — genuinely zero
 
-    const trc20 = accountData.trc20 || [];
-    const entry = trc20.find(t => t[TRON_USDT_CONTRACT] !== undefined);
-    if (!entry) return 0;
-
-    const rawBalance = parseInt(entry[TRON_USDT_CONTRACT] || '0', 10);
-    return rawBalance / 1e6; // USDT TRC-20 has 6 decimals
+    const rawBalance = BigInt('0x' + hex);
+    return Number(rawBalance) / 1e6; // USDT TRC-20 has 6 decimals
   }
 
   // ── Send USDT TRC-20 to an external Tron address ─────────────────────────
@@ -186,6 +220,13 @@ class TronWalletService {
     const txid       = receipt.txid || receipt.transaction?.txID;
     const explorerUrl = `https://tronscan.org/#/transaction/${txid}`;
 
+    // A txid back from sendRawTransaction only means it was accepted for
+    // broadcast — confirm it actually landed before reporting success.
+    const confirmation = await waitForConfirmation(txid);
+    if (!confirmation.confirmed) {
+      throw new Error(`USDT transfer did not confirm on-chain (txid ${txid}): ${confirmation.reason}`);
+    }
+
     console.log(`✅ [TronWallet] USDT sent! txid: ${txid}`);
     console.log(`   Explorer: ${explorerUrl}`);
 
@@ -203,6 +244,11 @@ class TronWalletService {
   isValidTronAddress(address) {
     // Strict base58 alphabet: no 0, O, I, l (ambiguous chars excluded from base58check)
     return typeof address === 'string' && /^T[A-HJ-NP-Za-km-z1-9]{33}$/.test(address);
+  }
+
+  // ── Wait for any broadcast txid (USDT or plain TRX) to confirm on-chain ───
+  async waitForConfirmation(txid, opts) {
+    return waitForConfirmation(txid, opts);
   }
 }
 

@@ -422,6 +422,15 @@ class TronHotWallet {
       throw new Error(`TRX send failed: ${JSON.stringify(tx)}`);
     }
 
+    // A txid back only means it was accepted for broadcast — confirm it
+    // actually landed before treating gas funding as complete. Without this,
+    // an underfunded hot wallet reports a fake success and the sweep that
+    // depends on this gas silently no-ops.
+    const confirmation = await tronWallet.waitForConfirmation(tx.txid);
+    if (!confirmation.confirmed) {
+      throw new Error(`TRX funding did not confirm on-chain (txid ${tx.txid}): ${confirmation.reason}`);
+    }
+
     console.log(`[HotWallet] Sent ${trxAmount} TRX → ${toAddress} | txid: ${tx.txid}`);
     return tx;
   }

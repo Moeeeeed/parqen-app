@@ -278,6 +278,7 @@ class USDTDepositMonitor {
         user_id:     userId,
         type:        'DEPOSIT',
         currency:    'USDT',
+        amount_btc:  0,
         amount_usdt: depositUsdt,
         status:      'CONFIRMED',
         notes:       `USDT deposit to ${address.slice(0, 20)}…`,
