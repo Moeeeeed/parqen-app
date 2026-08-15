@@ -279,19 +279,16 @@ const MIGRATION_PLATFORMS = [
   { id: 'other', label: 'Another P2P platform' },
 ];
 
-function P2PWelcomeGate({ onDone }) {
+function P2PWelcomeGate({ userEmail, onDone }) {
   const [stage, setStage] = useState('intro'); // intro | form | submitted
   const [platform, setPlatform] = useState(null);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(userEmail || '');
   const [screenshotFile, setScreenshotFile] = useState(null);
   const [screenshotPreview, setScreenshotPreview] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  const finish = () => {
-    localStorage.setItem('praqen_migration_seen', '1');
-    onDone(stage === 'submitted' ? email : '');
-  };
+  const finish = () => onDone();
 
   const pickPlatform = (id) => { setPlatform(id); setStage('form'); setError(''); };
 
@@ -414,15 +411,17 @@ function P2PWelcomeGate({ onDone }) {
                         <AlertCircle size={14} style={{ flexShrink: 0 }} /> {error}
                       </div>
                     )}
-                    <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: C.g600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Your Email</label>
-                      <div style={{ position: 'relative' }}>
-                        <Mail size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: C.g400 }} />
-                        <input type="email" value={email} onChange={e => { setEmail(e.target.value); setError(''); }}
-                          placeholder="you@example.com"
-                          style={{ width: '100%', padding: '13px 14px 13px 44px', fontSize: 14, borderRadius: 14, border: `2px solid ${email ? C.green : C.g200}`, outline: 'none', color: C.g800, fontFamily: "'Inter', sans-serif" }} />
+                    {!userEmail && (
+                      <div>
+                        <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: C.g600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Your Email</label>
+                        <div style={{ position: 'relative' }}>
+                          <Mail size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: C.g400 }} />
+                          <input type="email" value={email} onChange={e => { setEmail(e.target.value); setError(''); }}
+                            placeholder="you@example.com"
+                            style={{ width: '100%', padding: '13px 14px 13px 44px', fontSize: 14, borderRadius: 14, border: `2px solid ${email ? C.green : C.g200}`, outline: 'none', color: C.g800, fontFamily: "'Inter', sans-serif" }} />
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     <div>
                       <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: C.g600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -474,9 +473,8 @@ function P2PWelcomeGate({ onDone }) {
 export default function Register({ onLogin }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [welcomeStep, setWelcomeStep] = useState(() =>
-    localStorage.getItem('praqen_migration_seen') === '1' ? 'done' : 'intro'
-  );
+  const [showMigrationGate, setShowMigrationGate] = useState(false);
+  const pendingNavRef = useRef(null);
   const [mode, setMode] = useState('register');
   const [step, setStep] = useState(1);
   const [method, setMethod] = useState('email');
@@ -504,6 +502,7 @@ export default function Register({ onLogin }) {
   const [errs, setErrs] = useState({});
   const [referralCode, setReferralCode] = useState('');
   const [referrerInfo, setReferrerInfo] = useState(null);
+  const [wantsMigration, setWantsMigration] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -549,7 +548,8 @@ export default function Register({ onLogin }) {
         localStorage.setItem('token', res.data.token);
         localStorage.removeItem('referralCode');
         onLogin(res.data.user, res.data.token);
-        navigate('/buy-bitcoin');
+        pendingNavRef.current = () => navigate('/buy-bitcoin');
+        setShowMigrationGate(true);
       }
     } catch (err) {
       if (!err.response) {
@@ -694,14 +694,17 @@ export default function Register({ onLogin }) {
         onLogin(res.data.user, res.data.token);
         if (method === 'email' && email) {
           // Email users go to dedicated verification page
-          navigate(`/verify-email?email=${encodeURIComponent(email)}`);
+          pendingNavRef.current = () => navigate(`/verify-email?email=${encodeURIComponent(email)}`);
         } else {
           // Phone users: the SMS code was already sent during registration —
           // send them straight to Settings to enter it, instead of silently
           // leaving the account unverified.
-          setStep(4);
-          setTimeout(() => navigate('/settings?tab=verification'), 1800);
+          pendingNavRef.current = () => {
+            setStep(4);
+            setTimeout(() => navigate('/settings?tab=verification'), 1800);
+          };
         }
+        setShowMigrationGate(true);
       }
     } catch (err) {
       if (!err.response) {
@@ -753,10 +756,11 @@ export default function Register({ onLogin }) {
     paddingRight: 46,
   });
 
-  if (welcomeStep !== 'done') {
-    return <P2PWelcomeGate onDone={(capturedEmail) => {
-      if (capturedEmail) { setEmail(capturedEmail); setMethod('email'); }
-      setWelcomeStep('done');
+  if (showMigrationGate) {
+    return <P2PWelcomeGate userEmail={method === 'email' ? email : ''} onDone={() => {
+      setShowMigrationGate(false);
+      pendingNavRef.current?.();
+      pendingNavRef.current = null;
     }} />;
   }
 
@@ -1501,6 +1505,35 @@ export default function Register({ onLogin }) {
                   }
                 </p>
               </div>
+
+              {/* ── MOVE FEEDBACK OPTION ── always visible for traders coming from another P2P platform.
+                  Signing up (or logging in) always happens before any feedback/screenshot is uploaded. */}
+              {mode === 'register' && step === 1 && !wantsMigration && (
+                <div style={{ margin: '0 20px 4px', padding: '12px 14px', borderRadius: 12, background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 100%)` }}>
+                  <p style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 800, color: C.gold, margin: '0 0 8px' }}>
+                    <Globe size={14} style={{ color: C.gold, flexShrink: 0 }} />
+                    Moving from Noones or Binance P2P? Do you already have a PRAQEN account?
+                  </p>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" onClick={() => navigate('/login?next=migrate')}
+                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 10px', borderRadius: 10, border: 'none', background: C.gold, color: C.forest, fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                      <LogIn size={13} /> Yes, log in
+                    </button>
+                    <button type="button" onClick={() => setWantsMigration(true)}
+                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 10px', borderRadius: 10, border: '1.5px solid rgba(255,255,255,0.5)', background: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                      No, sign me up <ArrowRight size={13} />
+                    </button>
+                  </div>
+                </div>
+              )}
+              {mode === 'register' && step === 1 && wantsMigration && (
+                <div style={{ margin: '0 20px 4px', padding: '10px 14px', borderRadius: 12, background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 100%)`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <BadgeCheck size={14} style={{ color: C.gold, flexShrink: 0 }} />
+                  <p style={{ fontSize: 12, color: C.gold, fontWeight: 800, margin: 0 }}>
+                    Sign up below with the <u>same email</u> you use on Noones/Binance — once your account is created, you'll be able to upload your feedback for review.
+                  </p>
+                </div>
+              )}
 
               {/* ── REFERRAL BANNER ── shown when arriving via an affiliate link */}
               {referralCode && mode === 'register' && (

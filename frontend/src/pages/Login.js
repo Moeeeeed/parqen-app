@@ -130,6 +130,13 @@ export default function Login({ onLogin }) {
 
   const fullPhone = `${country.code}${phone.replace(/^0+/, '')}`;
 
+  // Traders sent here from the "move my P2P feedback" prompt on Register
+  // land on their Profile (with the migration card auto-opened) instead of Buy Bitcoin.
+  const postLoginRedirect = (user) => {
+    if (searchParams.get('next') === 'migrate' && user?.id) navigate(`/profile/${user.id}?migrate=1`);
+    else navigate('/buy-bitcoin');
+  };
+
   const go = newStep => {
     setStep(newStep); setError(''); setNotice('');
     setOtp(''); setEmailOtp(''); setOtpSent(false); setShowDrop(false); setSearch('');
@@ -157,7 +164,7 @@ export default function Login({ onLogin }) {
       });
       if (res.data.success && res.data.token) {
         onLogin(res.data.user, res.data.token);
-        navigate('/buy-bitcoin');
+        postLoginRedirect(res.data.user);
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Google login failed. Please try again.');
@@ -217,7 +224,7 @@ export default function Login({ onLogin }) {
       } else if (data.success) {
         if (remember) localStorage.setItem('remember_contact', email);
         onLogin(data.user, data.token);
-        navigate('/buy-bitcoin');
+        postLoginRedirect(data.user);
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Login failed. Check your details and try again.');
@@ -242,7 +249,7 @@ export default function Login({ onLogin }) {
         setStep('2fa-otp');
       } else if (data.success) {
         onLogin(data.user, data.token);
-        navigate('/buy-bitcoin');
+        postLoginRedirect(data.user);
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Invalid code. Please try again.');
@@ -257,7 +264,7 @@ export default function Login({ onLogin }) {
       const { data } = await axios.post(`${API_URL}/auth/verify-2fa-login`, { tempToken, code: twoFACode });
       if (data.success) {
         onLogin(data.user, data.token);
-        navigate('/buy-bitcoin');
+        postLoginRedirect(data.user);
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Invalid code. Please try again.');
@@ -310,7 +317,7 @@ export default function Login({ onLogin }) {
     try {
       await axios.post(`${API_URL}/auth/verify-otp`, { phone: fullPhone, code: otp });
       const { data } = await axios.post(`${API_URL}/auth/login`, { phone: fullPhone, method: 'phone' });
-      if (data.success) { onLogin(data.user, data.token); navigate('/buy-bitcoin'); }
+      if (data.success) { onLogin(data.user, data.token); postLoginRedirect(data.user); }
     } catch (err) {
       setError(err.response?.data?.error || 'Invalid code. Please try again.');
       setOtp('');

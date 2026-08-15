@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../App';
 import { supabase } from '../lib/supabaseClient'; // eslint-disable-line no-unused-vars
@@ -33,6 +33,121 @@ const C = {
 };
 
 const MIGRATION_PLATFORM_LABELS = { noones: 'Noones', binance: 'Binance P2P', other: 'P2P' };
+const MIGRATION_PLATFORMS = [
+  { id: 'noones', label: 'Noones' },
+  { id: 'binance', label: 'Binance P2P' },
+  { id: 'other', label: 'Another P2P platform' },
+];
+
+// ── Move-my-feedback card ── for a logged-in user who hasn't migrated a P2P
+// reputation yet. They're already signed in here, so this only asks for the
+// platform + a screenshot — no email step needed.
+function MigrateFeedbackCard({ email, autoOpen }) {
+  const [open, setOpen] = useState(!!autoOpen);
+  const [platform, setPlatform] = useState(null);
+  const [screenshotFile, setScreenshotFile] = useState(null);
+  const [screenshotPreview, setScreenshotPreview] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState('');
+
+  const compressScreenshot = (file, maxPx = 1200, quality = 0.8) =>
+    new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image load failed')); };
+      img.src = url;
+    });
+
+  const handleFile = (file) => {
+    if (!file) return;
+    setScreenshotFile(file);
+    setScreenshotPreview(URL.createObjectURL(file));
+    setError('');
+  };
+
+  const submit = async () => {
+    if (!platform) { setError('Choose which platform you traded on'); return; }
+    if (!screenshotFile) { setError('Please upload a screenshot of your P2P profile'); return; }
+    setSubmitting(true); setError('');
+    try {
+      const screenshot = await compressScreenshot(screenshotFile);
+      await axios.post(`${API_URL}/p2p-migration/submit`, { email, platform, screenshot });
+      setSubmitted(true);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Something went wrong. Please try again.');
+    } finally { setSubmitting(false); }
+  };
+
+  if (submitted) {
+    return (
+      <div className="mt-4 rounded-2xl p-4 text-center" style={{ background: '#ECFDF5', border: '1px solid #A7F3D0' }}>
+        <CheckCircle size={18} style={{ color: '#059669', margin: '0 auto 6px' }} />
+        <p style={{ fontSize: 12.5, fontWeight: 800, color: '#065F46', margin: 0 }}>Submitted! We'll review and reach out soon.</p>
+      </div>
+    );
+  }
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)}
+        className="mt-4 w-full flex items-center gap-2 justify-center"
+        style={{ padding: '10px 16px', borderRadius: 99, border: 'none', background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 100%)`, color: C.gold, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
+        <Globe size={14} style={{ color: C.gold }} /> Already trading on Noones or Binance P2P? Move your feedback here →
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-4 rounded-2xl p-4" style={{ background: C.g50, border: `1px solid ${C.g200}`, textAlign: 'left' }}>
+      <p style={{ fontSize: 12.5, fontWeight: 800, color: C.forest, margin: '0 0 10px' }}>Move your feedback from another P2P platform</p>
+      {error && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 10, fontSize: 11.5, background: '#FEF2F2', color: '#EF4444', marginBottom: 10 }}>
+          <AlertTriangle size={12} />{error}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+        {MIGRATION_PLATFORMS.map(p => (
+          <button key={p.id} onClick={() => { setPlatform(p.id); setError(''); }}
+            style={{ padding: '8px 14px', borderRadius: 99, border: `2px solid ${platform === p.id ? C.green : C.g200}`, background: platform === p.id ? '#ECFDF5' : '#fff', color: platform === p.id ? C.green : C.g600, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+      <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, padding: screenshotPreview ? 0 : '18px 12px', borderRadius: 12, border: `2px dashed ${screenshotPreview ? C.green : C.g200}`, cursor: 'pointer', overflow: 'hidden', background: screenshotPreview ? 'transparent' : '#fff', marginBottom: 10 }}>
+        <input type="file" accept="image/*" onChange={e => handleFile(e.target.files?.[0])} style={{ display: 'none' }} />
+        {screenshotPreview ? (
+          <img src={screenshotPreview} alt="Screenshot preview" style={{ width: '100%', maxHeight: 160, objectFit: 'cover' }} />
+        ) : (
+          <>
+            <FileText size={18} style={{ color: C.g400 }} />
+            <span style={{ fontSize: 11.5, color: C.g500, fontWeight: 600 }}>Tap to upload a screenshot of your profile</span>
+          </>
+        )}
+      </label>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={() => setOpen(false)}
+          style={{ padding: '10px 16px', borderRadius: 12, border: `1.5px solid ${C.g200}`, background: '#fff', color: C.g500, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+          Cancel
+        </button>
+        <button onClick={submit} disabled={submitting}
+          style={{ flex: 1, padding: '10px 16px', borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${C.green}, ${C.mint})`, color: '#fff', fontSize: 12.5, fontWeight: 800, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          {submitting ? <><RefreshCw size={13} style={{ animation: 'spin 0.7s linear infinite' }} /> Submitting…</> : <>Submit for Review</>}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const BADGE_DEFS = BADGE_ORDER.map((key) => {
   const b = TRUST_MAP[key];
@@ -224,6 +339,8 @@ function SectionHeader({ icon, title, action, actionLabel }) {
 // ── Main Profile Component ───────────────────────────────────────────────────
 export default function Profile({ userId: propUserId }) {
   const { id: urlId } = useParams(); const navigate = useNavigate(); const fileRef = useRef(null);
+  const [searchParams] = useSearchParams();
+  const autoOpenMigrate = searchParams.get('migrate') === '1';
   const userId = urlId || propUserId;
   const { btcUsd } = useRates();
   const [user, setUser] = useState(null); const [reviews, setReviews] = useState([]);
@@ -589,6 +706,11 @@ export default function Profile({ userId: propUserId }) {
                       {user.p2p_migrated_username && ` · @${user.p2p_migrated_username}`}
                       {user.p2p_migrated_feedback && ` · ${user.p2p_migrated_feedback}`}
                     </div>
+                  )}
+
+                  {/* Move feedback from another P2P platform — own profile, not yet migrated */}
+                  {own && !user.p2p_migrated_platform && (
+                    <MigrateFeedbackCard email={user.email} autoOpen={autoOpenMigrate} />
                   )}
 
                   {/* Actions */}
