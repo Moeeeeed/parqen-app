@@ -1664,6 +1664,237 @@ UPDATE users SET kyc_status = 'approved' WHERE is_id_verified = true AND kyc_sta
 }
 
 // ================================================================
+// P2P MIGRATION SECTION — leads from Noones / Binance P2P / other,
+// captured on /register before they create an account.
+// ================================================================
+const MIGRATION_PLATFORM_LABEL = { noones: 'Noones', binance: 'Binance P2P', other: 'Other P2P' };
+
+function P2PMigrationSection() {
+  const [submissions, setSubs] = useState([]);
+  const [loading, setLoading]  = useState(true);
+  const [filter, setFilter]    = useState('pending');
+  const [zoomImg, setZoomImg]  = useState(null);
+  const [acting, setActing]    = useState(false);
+  const [migrationNeeded, setMigrationNeeded] = useState(false);
+  const [migrationHint, setMigrationHint]     = useState('');
+
+  // Approve modal — collects what the admin saw in the screenshot
+  const [approveTarget, setApproveTarget] = useState(null);
+  const [usernameSeen, setUsernameSeen]   = useState('');
+  const [feedbackCount, setFeedbackCount] = useState('');
+  const [approveNotes, setApproveNotes]   = useState('');
+
+  // Reject modal
+  const [rejectTarget, setRejectTarget] = useState(null);
+  const [rejectNotes, setRejectNotes]   = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setMigrationNeeded(false);
+    try {
+      const r = await axios.get(`${API_URL}/admin/p2p-migration`, { headers: authH(), params: { status: filter } });
+      setSubs(r.data.submissions || []);
+      if (r.data.migration_needed) {
+        setMigrationNeeded(true);
+        setMigrationHint(r.data.migration_hint || '');
+      }
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to load P2P migration requests');
+    } finally { setLoading(false); }
+  }, [filter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const openApprove = (s) => {
+    setApproveTarget(s);
+    setUsernameSeen(s.admin_username_seen || '');
+    setFeedbackCount(s.admin_feedback_count || '');
+    setApproveNotes(s.admin_notes || '');
+  };
+
+  const confirmApprove = async () => {
+    if (!approveTarget) return;
+    setActing(true);
+    try {
+      await axios.put(`${API_URL}/admin/p2p-migration/${approveTarget.id}/approve`,
+        { usernameSeen, feedbackCount, notes: approveNotes }, { headers: authH() });
+      toast.success(<span className="inline-flex items-center gap-1"><CheckCircle size={14} /> Approved</span>);
+      setApproveTarget(null); setUsernameSeen(''); setFeedbackCount(''); setApproveNotes('');
+      load();
+    } catch (e) { toast.error(e.response?.data?.error || 'Approval failed'); }
+    finally { setActing(false); }
+  };
+
+  const confirmReject = async () => {
+    if (!rejectTarget) return;
+    setActing(true);
+    try {
+      await axios.put(`${API_URL}/admin/p2p-migration/${rejectTarget.id}/reject`,
+        { notes: rejectNotes }, { headers: authH() });
+      toast.success('Rejected');
+      setRejectTarget(null); setRejectNotes('');
+      load();
+    } catch (e) { toast.error(e.response?.data?.error || 'Rejection failed'); }
+    finally { setActing(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      {zoomImg && <ImageModal src={zoomImg.src} label={zoomImg.label} onClose={() => setZoomImg(null)} />}
+
+      {/* Approve modal */}
+      {approveTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+            <h3 className="font-black text-base mb-1" style={{ color: C.g800 }}>Approve Migration Request</h3>
+            <p className="text-xs mb-4" style={{ color: C.g500 }}>
+              Log what you saw on their {MIGRATION_PLATFORM_LABEL[approveTarget.platform] || 'P2P'} profile screenshot for <strong>{approveTarget.email}</strong>.
+            </p>
+            <label className="block text-xs font-bold mb-1" style={{ color: C.g600 }}>Username on that platform</label>
+            <input value={usernameSeen} onChange={e => setUsernameSeen(e.target.value)}
+              placeholder="e.g. trader_jane"
+              className="w-full border rounded-xl p-2.5 text-sm outline-none mb-3" style={{ borderColor: C.g200, color: C.g700 }} />
+            <label className="block text-xs font-bold mb-1" style={{ color: C.g600 }}>Feedback / trade count</label>
+            <input value={feedbackCount} onChange={e => setFeedbackCount(e.target.value)}
+              placeholder="e.g. 412 trades, 99% positive"
+              className="w-full border rounded-xl p-2.5 text-sm outline-none mb-3" style={{ borderColor: C.g200, color: C.g700 }} />
+            <label className="block text-xs font-bold mb-1" style={{ color: C.g600 }}>Notes (optional)</label>
+            <textarea value={approveNotes} onChange={e => setApproveNotes(e.target.value)} rows={2}
+              className="w-full border rounded-xl p-2.5 text-sm outline-none mb-4 resize-none" style={{ borderColor: C.g200, color: C.g700 }} />
+            <div className="flex gap-2">
+              <button onClick={() => setApproveTarget(null)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold border" style={{ borderColor: C.g200, color: C.g600 }}>
+                Cancel
+              </button>
+              <button onClick={confirmApprove} disabled={acting}
+                className="flex-1 py-2.5 rounded-xl text-sm font-black text-white" style={{ backgroundColor: C.forest }}>
+                {acting ? 'Saving…' : <span className="inline-flex items-center gap-1.5"><CheckCircle size={14} /> Approve</span>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject modal */}
+      {rejectTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+            <h3 className="font-black text-base mb-1" style={{ color: C.g800 }}>Reject Migration Request</h3>
+            <p className="text-xs mb-4" style={{ color: C.g500 }}>Rejecting the request from <strong>{rejectTarget.email}</strong>.</p>
+            <textarea value={rejectNotes} onChange={e => setRejectNotes(e.target.value)}
+              placeholder="e.g. Screenshot doesn't match a real profile…" rows={3}
+              className="w-full border rounded-xl p-3 text-sm outline-none mb-4 resize-none" style={{ borderColor: C.g200, color: C.g700 }} />
+            <div className="flex gap-2">
+              <button onClick={() => setRejectTarget(null)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold border" style={{ borderColor: C.g200, color: C.g600 }}>
+                Cancel
+              </button>
+              <button onClick={confirmReject} disabled={acting}
+                className="flex-1 py-2.5 rounded-xl text-sm font-black text-white" style={{ backgroundColor: '#EF4444' }}>
+                {acting ? 'Rejecting…' : <span className="inline-flex items-center gap-1.5"><XCircle size={14} /> Reject</span>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <SectionHead title="P2P Migration Requests" sub="Traders who submitted a screenshot from Noones / Binance P2P / other platforms before signing up"
+        action={
+          <div className="flex gap-2 items-center">
+            {['pending', 'approved', 'rejected', 'all'].map(s => (
+              <button key={s} onClick={() => setFilter(s)}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition"
+                style={{ backgroundColor: filter === s ? C.forest : C.g100, color: filter === s ? '#fff' : C.g600 }}>
+                {s}
+              </button>
+            ))}
+            <button onClick={load} className="p-2 rounded-xl border hover:bg-gray-50 transition" style={{ borderColor: C.g200 }}>
+              <RefreshCw size={14} style={{ color: C.g500 }} />
+            </button>
+          </div>
+        } />
+
+      {migrationNeeded && (
+        <div className="flex items-start gap-3 p-4 rounded-2xl border-2" style={{ backgroundColor: '#FFFBEB', borderColor: '#F59E0B' }}>
+          <AlertTriangle size={18} style={{ color: '#92400E', flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <p className="text-sm font-black" style={{ color: '#92400E' }}>Database Migration Required</p>
+            <p className="text-xs mt-0.5" style={{ color: '#A16207' }}>{migrationHint}</p>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
+        {loading ? <Spin /> : submissions.length === 0 ? (
+          <Empty icon={<Users size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No P2P migration requests — all clear!" />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead style={{ backgroundColor: C.g50 }}>
+                <tr>
+                  {['Email', 'Platform', 'Screenshot', 'Reviewed Info', 'Submitted', 'Status', 'Actions'].map(h => (
+                    <th key={h} className="text-left px-4 py-3 text-xs font-black uppercase tracking-wide" style={{ color: C.g500 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {submissions.map(s => (
+                  <tr key={s.id} className="border-t hover:bg-gray-50 transition" style={{ borderColor: C.g100 }}>
+                    <td className="px-4 py-3 font-bold text-xs" style={{ color: C.g800 }}>{s.email}</td>
+                    <td className="px-4 py-3">
+                      <span className="text-xs font-black px-2 py-1 rounded-lg" style={{ backgroundColor: '#FFFBEB', color: '#92400E' }}>
+                        {MIGRATION_PLATFORM_LABEL[s.platform] || 'Other'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {s.screenshot_url ? (
+                        <img src={s.screenshot_url} alt="P2P profile screenshot"
+                          onClick={() => setZoomImg({ src: s.screenshot_url, label: s.email })}
+                          className="w-14 h-14 object-cover rounded-lg cursor-pointer border" style={{ borderColor: C.g200 }} />
+                      ) : <span className="text-xs" style={{ color: C.g400 }}>No image</span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs" style={{ color: C.g600 }}>
+                      {s.admin_username_seen || s.admin_feedback_count ? (
+                        <>
+                          {s.admin_username_seen && <p className="font-bold">@{s.admin_username_seen}</p>}
+                          {s.admin_feedback_count && <p style={{ color: C.g400 }}>{s.admin_feedback_count}</p>}
+                        </>
+                      ) : <span style={{ color: C.g400 }}>—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs" style={{ color: C.g500 }}>
+                      {fmtDate(s.created_at)}<br /><span style={{ color: C.g400 }}>{fmtAge(s.created_at)}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Pill label={s.status}
+                        color={s.status === 'approved' ? '#166534' : s.status === 'rejected' ? '#991B1B' : '#92400E'}
+                        bg={s.status === 'approved' ? '#F0FDF4' : s.status === 'rejected' ? '#FEF2F2' : '#FFFBEB'} />
+                    </td>
+                    <td className="px-4 py-3">
+                      {s.status === 'pending' ? (
+                        <div className="flex gap-2">
+                          <button onClick={() => openApprove(s)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-black text-white" style={{ backgroundColor: C.forest }}>
+                            Approve
+                          </button>
+                          <button onClick={() => { setRejectTarget(s); setRejectNotes(''); }}
+                            className="px-3 py-1.5 rounded-lg text-xs font-black" style={{ backgroundColor: '#FEF2F2', color: '#991B1B' }}>
+                            Reject
+                          </button>
+                        </div>
+                      ) : <span className="text-xs" style={{ color: C.g400 }}>Reviewed</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ================================================================
 // FINANCE SECTION
 // ================================================================
 // ── Platform Wallets sub-card ─────────────────────────────────────────────────
@@ -3893,6 +4124,7 @@ const NAV = [
   { id:'team',         label:'Team',          icon:Shield          },
   { id:'phone-verif',  label:'Phone Verif.',  icon:Phone           },
   { id:'kyc',          label:'KYC Review',    icon:ShieldCheck     },
+  { id:'p2p-migration',label:'P2P Migration', icon:Repeat          },
   { id:'finance',      label:'Finance',       icon:DollarSign      },
   { id:'listings',     label:'Listings',      icon:List            },
   { id:'suggestions',  label:'User Messages',  icon:MessageSquare   },
@@ -3953,6 +4185,7 @@ export default function AdminDashboard({ user: appUser, onLogin }) {
     team:        <TeamActivitySection />,
     'phone-verif': <PhoneVerifSection />,
     kyc:         <KycSection />,
+    'p2p-migration': <P2PMigrationSection />,
     finance:     <FinanceSection />,
     listings:    <ListingsSection />,
     suggestions: <SuggestionsSection />,

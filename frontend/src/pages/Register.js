@@ -8,7 +8,8 @@ import {
   ArrowRight, ArrowLeft, RefreshCw, AlertCircle, Smartphone,
   AtSign, Check, X, Home, Gift, LogIn, Phone, ChevronDown,
   Bitcoin, Zap, Globe, TrendingUp, Users, BadgeCheck, Star,
-  ArrowUpRight, CircleDollarSign, Wallet, BarChart3, MapPin, PartyPopper
+  ArrowUpRight, CircleDollarSign, Wallet, BarChart3, MapPin, PartyPopper,
+  Upload, Sparkles
 } from 'lucide-react';
 
 // ─── Guided Onboarding Field Tips ───────────────────────────────────────────
@@ -268,9 +269,192 @@ function OTPInput({ value, onChange, hasError }) {
   );
 }
 
+// ─── Welcome gate for traders coming from Noones / Binance P2P / other ──────
+// Shown once, before the normal signup form. Captures an email + a screenshot
+// of their existing P2P profile (so the admin can see their username and
+// feedback/trade count) for manual review — it never blocks registration.
+const MIGRATION_PLATFORMS = [
+  { id: 'noones', label: 'Noones' },
+  { id: 'binance', label: 'Binance P2P' },
+  { id: 'other', label: 'Another P2P platform' },
+];
+
+function P2PWelcomeGate({ onDone }) {
+  const [stage, setStage] = useState('intro'); // intro | form | submitted
+  const [platform, setPlatform] = useState(null);
+  const [email, setEmail] = useState('');
+  const [screenshotFile, setScreenshotFile] = useState(null);
+  const [screenshotPreview, setScreenshotPreview] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const finish = () => {
+    localStorage.setItem('praqen_migration_seen', '1');
+    onDone();
+  };
+
+  const pickPlatform = (id) => { setPlatform(id); setStage('form'); setError(''); };
+
+  const compressScreenshot = (file, maxPx = 1200, quality = 0.8) =>
+    new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image load failed')); };
+      img.src = url;
+    });
+
+  const handleFile = (file) => {
+    if (!file) return;
+    setScreenshotFile(file);
+    setScreenshotPreview(URL.createObjectURL(file));
+    setError('');
+  };
+
+  const submit = async () => {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('Enter a valid email address'); return; }
+    if (!screenshotFile) { setError('Please upload a screenshot of your P2P profile'); return; }
+    setSubmitting(true); setError('');
+    try {
+      const screenshot = await compressScreenshot(screenshotFile);
+      await axios.post(`${API_URL}/p2p-migration/submit`, { email, platform, screenshot });
+      setStage('submitted');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Something went wrong. Please try again.');
+    } finally { setSubmitting(false); }
+  };
+
+  const platformLabel = MIGRATION_PLATFORMS.find(p => p.id === platform)?.label || 'P2P';
+
+  return (
+    <div style={{
+      minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '24px 16px', background: 'linear-gradient(135deg, #F0F9F4 0%, #E8F5EC 100%)',
+      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+    }}>
+      <style>{`@keyframes p2pSpin { to { transform: rotate(360deg); } } .p2p-spin { animation: p2pSpin 0.7s linear infinite; }`}</style>
+      <div style={{ width: '100%', maxWidth: 460 }}>
+        <div style={{ background: '#FFFFFF', borderRadius: 28, boxShadow: '0 20px 60px rgba(27,67,50,0.12), 0 0 0 1px rgba(27,67,50,0.06)', overflow: 'hidden' }}>
+
+          {stage === 'submitted' ? (
+            <div style={{ padding: '48px 32px 40px', textAlign: 'center' }}>
+              <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'rgba(16,185,129,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+                <CheckCircle size={42} style={{ color: '#10B981' }} />
+              </div>
+              <h3 style={{ fontSize: 24, fontWeight: 800, color: C.forest, margin: '0 0 8px' }}>You're in! 🎉</h3>
+              <p style={{ fontSize: 14, color: C.g500, margin: '0 0 24px', lineHeight: 1.6 }}>
+                Thanks — we've got your details and screenshot. Our team will review your {platformLabel} profile and reach out soon.
+              </p>
+              <button onClick={finish}
+                style={{ width: '100%', padding: 15, borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${C.green}, ${C.mint})`, color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                Continue to Create Account <ArrowRight size={16} />
+              </button>
+            </div>
+          ) : (
+            <>
+              <div style={{ background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 100%)`, padding: '36px 32px 26px', textAlign: 'center' }}>
+                <div style={{ width: 60, height: 60, borderRadius: 16, background: C.gold, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', boxShadow: '0 8px 24px rgba(244,164,34,0.3)' }}>
+                  <Sparkles size={28} style={{ color: C.forest }} />
+                </div>
+                <h1 style={{ fontSize: 22, fontWeight: 800, color: '#fff', margin: '0 0 6px' }}>Welcome, P2P Trader! 👋</h1>
+                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', margin: 0, lineHeight: 1.5 }}>
+                  Already trading on Noones or Binance P2P? Bring your reputation with you.
+                </p>
+              </div>
+
+              <div style={{ padding: '28px 28px 24px' }}>
+                {stage === 'intro' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: C.g500, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>
+                      Where are you trading now?
+                    </p>
+                    {MIGRATION_PLATFORMS.map(p => (
+                      <button key={p.id} onClick={() => pickPlatform(p.id)}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderRadius: 14, border: `2px solid ${C.g200}`, background: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 14, color: C.g800, fontFamily: "'Inter', sans-serif" }}>
+                        {p.label}
+                        <ArrowRight size={16} style={{ color: C.g400 }} />
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {stage === 'form' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {error && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 12, fontSize: 12, background: '#FEF2F2', color: '#EF4444', border: '1.5px solid #FECACA' }}>
+                        <AlertCircle size={14} style={{ flexShrink: 0 }} /> {error}
+                      </div>
+                    )}
+                    <div>
+                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: C.g600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Your Email</label>
+                      <div style={{ position: 'relative' }}>
+                        <Mail size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: C.g400 }} />
+                        <input type="email" value={email} onChange={e => { setEmail(e.target.value); setError(''); }}
+                          placeholder="you@example.com"
+                          style={{ width: '100%', padding: '13px 14px 13px 44px', fontSize: 14, borderRadius: 14, border: `2px solid ${email ? C.green : C.g200}`, outline: 'none', color: C.g800, fontFamily: "'Inter', sans-serif" }} />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: C.g600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Screenshot of your {platformLabel} profile
+                      </label>
+                      <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: screenshotPreview ? 0 : '28px 16px', borderRadius: 14, border: `2px dashed ${screenshotPreview ? C.green : C.g200}`, cursor: 'pointer', overflow: 'hidden', background: screenshotPreview ? 'transparent' : C.g50 }}>
+                        <input type="file" accept="image/*" onChange={e => handleFile(e.target.files?.[0])} style={{ display: 'none' }} />
+                        {screenshotPreview ? (
+                          <img src={screenshotPreview} alt="Screenshot preview" style={{ width: '100%', maxHeight: 200, objectFit: 'cover' }} />
+                        ) : (
+                          <>
+                            <Upload size={22} style={{ color: C.g400 }} />
+                            <span style={{ fontSize: 12, color: C.g500, fontWeight: 600 }}>Tap to upload a screenshot</span>
+                            <span style={{ fontSize: 11, color: C.g400 }}>Show your username & feedback/trade count</span>
+                          </>
+                        )}
+                      </label>
+                    </div>
+
+                    <button onClick={submit} disabled={submitting}
+                      style={{ width: '100%', padding: 15, borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${C.green}, ${C.mint})`, color: '#fff', fontSize: 15, fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: "'Inter', sans-serif" }}>
+                      {submitting ? <><RefreshCw size={16} className="p2p-spin" /> Submitting…</> : <>Submit for Review <ArrowRight size={16} /></>}
+                    </button>
+
+                    <button onClick={() => { setStage('intro'); setError(''); }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: C.g500, fontFamily: "'Inter', sans-serif" }}>
+                      ← Back
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ padding: '14px 28px', borderTop: `1px solid ${C.g100}`, background: C.g50, textAlign: 'center' }}>
+                <button onClick={finish}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: C.g500, fontFamily: "'Inter', sans-serif" }}>
+                  I'm new here — skip and create my account →
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Register({ onLogin }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const [welcomeStep, setWelcomeStep] = useState(() =>
+    localStorage.getItem('praqen_migration_seen') === '1' ? 'done' : 'intro'
+  );
   const [mode, setMode] = useState('register');
   const [step, setStep] = useState(1);
   const [method, setMethod] = useState('email');
@@ -289,6 +473,7 @@ export default function Register({ onLogin }) {
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [otpError, setOtpError] = useState('');
+  const [resetToken, setResetToken] = useState('');
   const [username, setUsername] = useState('');
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
@@ -428,9 +613,11 @@ export default function Register({ onLogin }) {
     if (!validateContact()) return;
     setLoading(true); setGlobalError('');
     try {
-      const channel = method === 'email' ? 'email' : 'sms';
-      const body = method === 'email' ? { email: contact, channel } : { phone: contact, channel };
-      const r = await axios.post(`${API_URL}/auth/send-otp`, { ...body, purpose: 'forgot-password' });
+      // Forgot-password codes for email go through the email verification-code
+      // pipeline (/send-verification); /send-otp only supports phone (SMS/WhatsApp).
+      const r = method === 'email'
+        ? await axios.post(`${API_URL}/auth/send-verification`, { email: contact })
+        : await axios.post(`${API_URL}/auth/send-otp`, { phone: contact, channel: 'sms', purpose: 'forgot-password' });
       setStep('f2'); setOtpTimer(60);
       // Dev mode: if email/SMS delivery failed, auto-fill the OTP
       if (r.data?.devCode) {
@@ -453,9 +640,15 @@ export default function Register({ onLogin }) {
     setLoading(true); setOtpError('');
     try {
       if (method === 'email') {
-        await axios.post(`${API_URL}/auth/verify-code`, { email: contact, code: otp });
+        const { data } = await axios.post(`${API_URL}/auth/verify-code`, {
+          email: contact, code: otp, purpose: mode === 'forgot' ? 'forgot-password' : undefined,
+        });
+        if (mode === 'forgot') setResetToken(data.resetToken || '');
       } else {
-        await axios.post(`${API_URL}/auth/verify-otp`, { contact, otp, purpose: mode === 'register' ? 'register' : 'forgot-password' });
+        const { data } = await axios.post(`${API_URL}/auth/verify-otp`, {
+          contact, otp, purpose: mode === 'register' ? 'register' : 'forgot-password',
+        });
+        if (mode === 'forgot') setResetToken(data.resetToken || '');
       }
       setStep(mode === 'register' ? 3 : 'f3');
     } catch (err) { setOtpError(err.response?.data?.error || 'Incorrect code. Try again.'); }
@@ -481,8 +674,11 @@ export default function Register({ onLogin }) {
           // Email users go to dedicated verification page
           navigate(`/verify-email?email=${encodeURIComponent(email)}`);
         } else {
+          // Phone users: the SMS code was already sent during registration —
+          // send them straight to Settings to enter it, instead of silently
+          // leaving the account unverified.
           setStep(4);
-          setTimeout(() => navigate('/buy-bitcoin'), 1800);
+          setTimeout(() => navigate('/settings?tab=verification'), 1800);
         }
       }
     } catch (err) {
@@ -497,9 +693,10 @@ export default function Register({ onLogin }) {
 
   const handleResetPassword = async () => {
     if (!validateNewPassword()) return;
+    if (!resetToken) { setGlobalError('Your code verification expired. Please start over.'); return; }
     setLoading(true); setGlobalError('');
     try {
-      await axios.post(`${API_URL}/auth/reset-password`, { contact, otp, newPassword: password });
+      await axios.post(`${API_URL}/auth/reset-password`, { newPassword: password, token: resetToken });
       setStep('f4');
     } catch (err) { setGlobalError(err.response?.data?.error || 'Failed to reset password.'); }
     finally { setLoading(false); }
@@ -507,7 +704,7 @@ export default function Register({ onLogin }) {
 
   const startForgot = () => {
     setMode('forgot'); setStep('f1');
-    setEmail(''); setPhone(''); setOtp(''); setPassword(''); setConfirm('');
+    setEmail(''); setPhone(''); setOtp(''); setPassword(''); setConfirm(''); setResetToken('');
     setErrs({}); setGlobalError('');
   };
 
@@ -533,6 +730,10 @@ export default function Register({ onLogin }) {
     ...inputStyle(filled, error),
     paddingRight: 46,
   });
+
+  if (welcomeStep !== 'done') {
+    return <P2PWelcomeGate onDone={() => setWelcomeStep('done')} />;
+  }
 
   return (
     <>

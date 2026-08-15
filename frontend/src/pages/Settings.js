@@ -518,7 +518,7 @@ export default function Settings({ user, setUser }) {
     if (user?.is_phone_verified || user?.phone_verified) return "done";
     return "idle";
   });
-  const [phoneOtpMethod, setPhoneOtpMethod] = useState("email");
+  const [phoneOtpMethod, setPhoneOtpMethod] = useState(user?.email ? "email" : "sms");
   const [phoneOtpCode, setPhoneOtpCode] = useState("");
 
   // Email verification
@@ -830,6 +830,11 @@ export default function Settings({ user, setUser }) {
     }
     if (!phone.startsWith("+")) {
       toast.error("Please include your country code, e.g. +233 for Ghana, +234 for Nigeria");
+      return;
+    }
+    const digitCount = phone.replace(/\D/g, "").length;
+    if (digitCount < 10 || digitCount > 15) {
+      toast.error("That doesn't look like a full number. Example for Ghana: +233241234567 (country code + 9-digit number, no leading 0).");
       return;
     }
     setAccountForm((prev) => ({ ...prev, phone }));
@@ -1582,38 +1587,47 @@ export default function Settings({ user, setUser }) {
 
                         {(() => {
                           const done = phoneVerified || phoneStep === 'done';
+                          // Phone-only accounts (no email on file) have no email step to clear
+                          // first, so let them straight into phone verification too — otherwise
+                          // this card would be permanently locked for them.
+                          const canVerifyPhone = emailVerified || !accountForm.email;
                           return (
-                              <div className={`p-4 rounded-xl border transition ${done ? 'bg-green-50 border-green-200' : emailVerified ? 'border-blue-200 bg-blue-50' : 'bg-gray-50 border-gray-100'}`}>
+                              <div className={`p-4 rounded-xl border transition ${done ? 'bg-green-50 border-green-200' : canVerifyPhone ? 'border-blue-200 bg-blue-50' : 'bg-gray-50 border-gray-100'}`}>
                                 <div className="flex items-start gap-4">
-                                  <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${done ? 'bg-green-500 text-white' : emailVerified ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
+                                  <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${done ? 'bg-green-500 text-white' : canVerifyPhone ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
                                     {done ? <CheckCircle size={18} /> : 2}
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 flex-wrap">
-                                      <p className={`font-bold text-sm ${done ? 'text-green-800' : emailVerified ? 'text-blue-800' : 'text-gray-600'}`}>Phone Number</p>
+                                      <p className={`font-bold text-sm ${done ? 'text-green-800' : canVerifyPhone ? 'text-blue-800' : 'text-gray-600'}`}>Phone Number</p>
                                       <span className={`text-xs font-black px-2 py-0.5 rounded-full ${done ? 'bg-green-200 text-green-800' : 'bg-gray-200 text-gray-600'}`}>
                                   {done ? '✓ Verified' : 'Not Verified'}
                                 </span>
                                     </div>
-                                    <p className={`text-xs mt-0.5 ${done ? 'text-green-600' : emailVerified ? 'text-blue-600' : 'text-gray-400'}`}>
+                                    <p className={`text-xs mt-0.5 ${done ? 'text-green-600' : canVerifyPhone ? 'text-blue-600' : 'text-gray-400'}`}>
                                       {done ? accountForm.phone ? `${accountForm.phone} — verified ✓` : 'Phone verified — you can now trade up to $2,000 ✓' :
                                           'Add your phone number to unlock the $2,000 trade limit'}
                                     </p>
 
-                                    {!done && emailVerified && (
+                                    {!done && canVerifyPhone && (
                                         <div className="mt-3 space-y-2">
                                           {phoneStep === 'idle' && (
                                               <>
-                                                <input type="tel" placeholder="+233 XX XXX XXXX" value={accountForm.phone || ''}
-                                                       onChange={e => setAccountForm({ ...accountForm, phone: e.target.value })}
+                                                <input type="tel" placeholder="+233241234567" value={accountForm.phone || ''}
+                                                       onChange={e => setAccountForm({ ...accountForm, phone: e.target.value.replace(/[^\d+]/g, '') })}
                                                        className="w-full px-3 py-2 border-2 rounded-xl text-sm focus:outline-none"
                                                        style={{ borderColor: accountForm.phone ? C.green : C.g200, color: C.g800, backgroundColor: 'white' }} />
+                                                <p className="text-xs" style={{ color: C.g400 }}>
+                                                  Example: <span className="font-bold" style={{ color: C.g800 }}>+233241234567</span> — country code (+233 for Ghana) followed by your 9-digit number, no spaces or leading 0.
+                                                </p>
                                                 <p className="text-xs font-bold" style={{ color: '#1e40af' }}>How would you like to receive your code?</p>
                                                 <div className="flex gap-2">
-                                                  <button onClick={() => setPhoneOtpMethod('email')}
-                                                          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border-2 text-xs font-black transition ${phoneOtpMethod === 'email' ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-gray-200 bg-white text-gray-500'}`}>
-                                                    <Mail size={12} /> Email
-                                                  </button>
+                                                  {accountForm.email && (
+                                                      <button onClick={() => setPhoneOtpMethod('email')}
+                                                              className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border-2 text-xs font-black transition ${phoneOtpMethod === 'email' ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-gray-200 bg-white text-gray-500'}`}>
+                                                        <Mail size={12} /> Email
+                                                      </button>
+                                                  )}
                                                   <button onClick={() => setPhoneOtpMethod('sms')}
                                                           className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border-2 text-xs font-black transition ${phoneOtpMethod === 'sms' ? 'border-orange-500 bg-orange-50 text-orange-800' : 'border-gray-200 bg-white text-gray-500'}`}>
                                                     <Smartphone size={12} /> SMS

@@ -91,6 +91,17 @@ setInterval(() => {
   for (const [k, v] of emailLoginOtpStore) { if (v.expires < now) emailLoginOtpStore.delete(k); }
 }, 60000);
 
+// Password-reset tokens issued right after an OTP (phone or email) is verified
+// for purpose='forgot-password'. Lets /api/auth/reset-password accept a
+// one-time token from either the emailed link flow OR this OTP flow, so
+// phone-only accounts (no email) can still reset their password.
+// Key: resetToken, Value: { contact, method: 'phone'|'email', expires }
+const passwordResetOtpTokens = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of passwordResetOtpTokens) { if (v.expires < now) passwordResetOtpTokens.delete(k); }
+}, 60000);
+
 // In-memory market cache — serves offers/listings without hitting DB on every page load
 const _marketCache = new Map(); // key -> { data, ts }
 const MARKET_CACHE_TTL = 300000; // 5 minutes
@@ -2070,14 +2081,15 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 
     // ── Email + password login ────────────────────────────────────────────────
     if (!email || !password) return res.status(400).json({ error: 'Missing email or password' });
-    const { data, error } = await supabaseAdmin.from('users').select('*').eq('email', email).single();
+    const normalizedLoginEmail = email.toLowerCase().trim();
+    const { data, error } = await supabaseAdmin.from('users').select('*').eq('email', normalizedLoginEmail).single();
     if (error || !data) return res.status(401).json({ error: 'Invalid credentials' });
     const validPassword = await bcrypt.compare(password, data.password_hash);
     if (!validPassword) return res.status(401).json({ error: 'Invalid credentials' });
 
     // Generate 6-digit OTP and store it for 10 minutes
     const loginOtp = String(Math.floor(100000 + Math.random() * 900000));
-    emailLoginOtpStore.set(email.toLowerCase(), {
+    emailLoginOtpStore.set(normalizedLoginEmail, {
       code: loginOtp,
       expires: Date.now() + 10 * 60 * 1000,
       userId: data.id,
@@ -2394,12 +2406,50 @@ app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
   try {
     const { email, newPassword, token } = req.body;
 
-    if (!email || !newPassword || !token) {
-      return res.status(400).json({ error: 'Email, new password, and reset token are required' });
+    if (!newPassword || !token) {
+      return res.status(400).json({ error: 'New password and reset token are required' });
     }
 
     if (newPassword.length < 6) {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    // ── OTP-issued reset token (phone or email, from the in-app "Forgot
+    // password?" OTP flow) — checked first since it doesn't require `email`. ──
+    const otpReset = passwordResetOtpTokens.get(token);
+    if (otpReset) {
+      if (Date.now() > otpReset.expires) {
+        passwordResetOtpTokens.delete(token);
+        return res.status(400).json({ error: 'Reset code has expired. Please request a new one.' });
+      }
+      passwordResetOtpTokens.delete(token); // one-time use
+
+      const lookupField = otpReset.method === 'phone' ? 'phone' : 'email';
+      const { data: otpUser, error: otpFetchError } = await supabaseAdmin
+        .from('users').select('id').eq(lookupField, otpReset.contact).maybeSingle();
+
+      if (otpFetchError || !otpUser) {
+        return res.status(400).json({ error: 'Account not found.' });
+      }
+
+      const otpPasswordHash = await bcrypt.hash(newPassword, 10);
+      const { error: otpUpdateError } = await supabaseAdmin
+        .from('users')
+        .update({ password_hash: otpPasswordHash, updated_at: new Date().toISOString() })
+        .eq('id', otpUser.id);
+
+      if (otpUpdateError) {
+        console.error('[reset-password] OTP-flow DB update error:', otpUpdateError.message);
+        return res.status(500).json({ error: 'Failed to reset password. Please try again.' });
+      }
+
+      console.log(`✅ Password reset successful via OTP for ${otpReset.contact}`);
+      return res.json({ success: true, message: 'Password has been reset successfully. You can now log in with your new password.' });
+    }
+
+    // ── Emailed-link reset token (existing flow) — requires `email` ────────
+    if (!email) {
+      return res.status(400).json({ error: 'Invalid or expired reset link' });
     }
 
     const normalizedEmail = email.toLowerCase().trim();
@@ -2521,121 +2571,6 @@ async function sendPasswordResetEmail(email, resetUrl) {
   });
   throw new Error(`Email delivery failed: ${result.error || 'Unknown error'}`);
 }
-
-// ── Forgot Password: generate reset token & email link ────────────────────────
-app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
-  try {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ error: 'Email is required' });
-
-    const normalizedEmail = email.toLowerCase().trim();
-
-    const { data: user } = await supabaseAdmin
-      .from('users')
-      .select('id, email')
-      .eq('email', normalizedEmail)
-      .maybeSingle();
-
-    if (!user) {
-      console.log(`[forgot-password] No account for ${normalizedEmail}`);
-      return res.json({ success: true, message: 'If an account exists with that email, a reset link has been sent.' });
-    }
-
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const tokenExpires = new Date(Date.now() + 60 * 60 * 1000);
-
-    const { error: updateError } = await supabaseAdmin
-      .from('users')
-      .update({
-        reset_password_token: resetToken,
-        reset_password_expires: tokenExpires.toISOString(),
-      })
-      .eq('id', user.id);
-
-    if (updateError) {
-      console.error('[forgot-password] DB update error:', updateError.message);
-      return res.status(500).json({ error: 'Failed to process request. Please try again.' });
-    }
-
-    const frontendUrl = (process.env.FRONTEND_URL || 'https://praqen.com').split(',')[0].trim();
-    const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}&email=${encodeURIComponent(normalizedEmail)}`;
-
-    sendPasswordResetEmail(normalizedEmail, resetUrl)
-      .then(() => console.log(`[forgot-password] Reset email sent to ${normalizedEmail}`))
-      .catch(e => console.error('[forgot-password] Email send failed:', e.message));
-
-    return res.json({ success: true, message: 'If an account exists with that email, a reset link has been sent.' });
-
-  } catch (err) {
-    console.error('[forgot-password] error:', err.message);
-    res.status(500).json({ error: 'Failed to process request. Please try again.' });
-  }
-});
-
-// ── Reset Password: validate token & update password ──────────────────────────
-app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
-  try {
-    const { email, newPassword, token } = req.body;
-
-    if (!email || !newPassword || !token) {
-      return res.status(400).json({ error: 'Email, new password, and reset token are required' });
-    }
-
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
-    }
-
-    const normalizedEmail = email.toLowerCase().trim();
-
-    const { data: user, error: fetchError } = await supabaseAdmin
-      .from('users')
-      .select('id, email, reset_password_token, reset_password_expires, password_hash')
-      .eq('email', normalizedEmail)
-      .maybeSingle();
-
-    if (fetchError || !user) {
-      console.error('[reset-password] DB fetch error:', fetchError?.message);
-      return res.status(400).json({ error: 'Invalid or expired reset link' });
-    }
-
-    if (!user.reset_password_token) {
-      return res.status(400).json({ error: 'No password reset has been requested for this account' });
-    }
-
-    if (user.reset_password_token !== token) {
-      return res.status(400).json({ error: 'Invalid or expired reset link' });
-    }
-
-    const expiresAt = new Date(user.reset_password_expires).getTime();
-    if (Date.now() > expiresAt) {
-      return res.status(400).json({ error: 'Reset link has expired. Please request a new one.' });
-    }
-
-    const passwordHash = await bcrypt.hash(newPassword, 10);
-
-    const { error: updateError } = await supabaseAdmin
-      .from('users')
-      .update({
-        password_hash: passwordHash,
-        reset_password_token: null,
-        reset_password_expires: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', user.id);
-
-    if (updateError) {
-      console.error('[reset-password] DB update error:', updateError.message);
-      return res.status(500).json({ error: 'Failed to reset password. Please try again.' });
-    }
-
-    console.log(`✅ Password reset successful for ${normalizedEmail}`);
-    return res.json({ success: true, message: 'Password has been reset successfully. You can now log in with your new password.' });
-
-  } catch (err) {
-    console.error('[reset-password] error:', err.message);
-    res.status(500).json({ error: 'Failed to reset password. Please try again.' });
-  }
-});
 
 // ── Team portal: explicit email allowlist ────────────────────────────────────
 // Deliberately a hand-maintained list of exact addresses, not a domain check —
@@ -3845,7 +3780,7 @@ app.post('/api/auth/send-phone-otp', otpLimiter, async (req, res) => {
 
 app.post('/api/auth/verify-otp', otpLimiter, async (req, res) => {
   try {
-    const { phone, code, channel, contact, otp, country = 'GH' } = req.body;
+    const { phone, code, channel, contact, otp, country = 'GH', purpose } = req.body;
     const ch = channel || 'sms';
 
     // Only phone (SMS/WhatsApp) is supported
@@ -3907,6 +3842,18 @@ app.post('/api/auth/verify-otp', otpLimiter, async (req, res) => {
     });
 
     console.log(`[OTP verify] success for ${normalizedContact}`);
+
+    // For a forgot-password OTP check, issue a one-time reset token so the
+    // client can set a new password without re-proving phone ownership —
+    // the OTP itself was already consumed by checkOtp() above.
+    if (purpose === 'forgot-password') {
+      const resetToken = crypto.randomBytes(24).toString('hex');
+      passwordResetOtpTokens.set(resetToken, {
+        contact: normalizedContact, method: 'phone', expires: Date.now() + 10 * 60 * 1000,
+      });
+      return res.json({ success: true, message: 'Phone number verified successfully!', resetToken });
+    }
+
     return res.json({ success: true, message: 'Phone number verified successfully!' });
   } catch (error) {
     console.error('[OTP verify unexpected error]', error.message);
@@ -3991,7 +3938,7 @@ app.post('/api/auth/send-verification', otpLimiter, async (req, res) => {
 
 app.post('/api/auth/verify-code', async (req, res) => {
   try {
-    const { email, code } = req.body;
+    const { email, code, purpose } = req.body;
     if (!email || !code) return res.status(400).json({ error: 'Email and code are required' });
     const codeStr = String(code).trim();
     if (codeStr.length !== 6) return res.status(400).json({ error: 'Enter the full 6-digit code' });
@@ -4049,6 +3996,18 @@ app.post('/api/auth/verify-code', async (req, res) => {
       .eq('email', email);
 
     const { data: user } = await supabaseAdmin.from('users').select('*').eq('email', email).single();
+
+    // For a forgot-password code check, issue a one-time reset token instead
+    // of a login session — the client still needs to submit a new password.
+    if (purpose === 'forgot-password') {
+      if (!user) return res.status(400).json({ error: 'Account not found.' });
+      const resetToken = crypto.randomBytes(24).toString('hex');
+      passwordResetOtpTokens.set(resetToken, {
+        contact: email, method: 'email', expires: Date.now() + 10 * 60 * 1000,
+      });
+      return res.json({ success: true, message: 'Code verified!', resetToken });
+    }
+
     const token = user ? jwt.sign({ userId: user.id, email }, JWT_SECRET, { expiresIn: '7d' }) : null;
 
     res.json({
@@ -4765,6 +4724,58 @@ app.get('/api/kyc/status', verifyToken, async (req, res) => {
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ── P2P Migration (Noones / Binance P2P / other) — pre-registration lead capture ──
+// Shown as a welcome step on /register before a user creates an account. No auth
+// required (they don't have an account yet). Admin reviews the screenshot by hand
+// and approves/rejects manually — see /api/admin/p2p-migration/* below.
+app.post('/api/p2p-migration/submit', authLimiter, async (req, res) => {
+  try {
+    const { email, platform, screenshot } = req.body;
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'A valid email address is required' });
+    }
+    if (!screenshot) {
+      return res.status(400).json({ error: 'Please upload a screenshot of your P2P profile' });
+    }
+    const normalizedPlatform = ['noones', 'binance'].includes(platform) ? platform : 'other';
+    const normalizedEmail = email.toLowerCase().trim();
+
+    let screenshotUrl = null;
+    try {
+      const buffer = Buffer.from(screenshot.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+      const path = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`;
+      const { error: uploadErr } = await supabaseAdmin.storage
+        .from('p2p-migration')
+        .upload(path, buffer, { contentType: 'image/jpeg', upsert: true });
+      if (!uploadErr) {
+        const { data: { publicUrl } } = supabaseAdmin.storage.from('p2p-migration').getPublicUrl(path);
+        screenshotUrl = publicUrl;
+      } else {
+        console.warn('[p2p-migration/submit] Storage upload failed (bucket may not exist):', uploadErr.message);
+      }
+    } catch (storageErr) {
+      console.warn('[p2p-migration/submit] Screenshot processing failed:', storageErr.message);
+    }
+
+    const { error: insertErr } = await supabaseAdmin.from('p2p_migration_requests').insert({
+      email: normalizedEmail,
+      platform: normalizedPlatform,
+      screenshot_url: screenshotUrl,
+      status: 'pending',
+    });
+    if (insertErr) {
+      console.error('[p2p-migration/submit] DB insert error:', insertErr.message);
+      return res.status(500).json({ error: 'Could not submit right now. Please try again shortly.' });
+    }
+
+    console.log(`[p2p-migration/submit] New request from ${normalizedEmail} (${normalizedPlatform})`);
+    res.json({ success: true, message: "Thanks! We've got it — our team will review and reach out soon." });
+  } catch (err) {
+    console.error('[p2p-migration/submit] error:', err.message);
+    res.status(500).json({ error: 'Submission failed. Please try again.' });
   }
 });
 
@@ -8819,6 +8830,71 @@ app.get('/api/admin/kyc/:userId/image', verifyToken, async (req, res) => {
     console.error('[admin/kyc/image]', e.message);
     res.status(500).json({ error: e.message });
   }
+});
+
+// ── P2P Migration admin review (Noones / Binance P2P / other leads) ──────────
+// GET /api/admin/p2p-migration?status=pending|approved|rejected|all
+app.get('/api/admin/p2p-migration', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const { status = 'pending' } = req.query;
+
+    let query = supabaseAdmin.from('p2p_migration_requests')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (status !== 'all') query = query.eq('status', status);
+
+    const { data, error } = await query;
+    if (error) {
+      console.warn('[admin/p2p-migration] Query error (run database/p2p_migration_requests.sql):', error.message);
+      return res.json({ submissions: [], migration_needed: true, migration_hint: 'Run database/p2p_migration_requests.sql in Supabase SQL Editor.' });
+    }
+    res.json({ submissions: data || [] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/admin/p2p-migration/:id/approve
+app.put('/api/admin/p2p-migration/:id/approve', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const { usernameSeen = null, feedbackCount = null, notes = null } = req.body;
+    const { data: updated, error } = await supabaseAdmin.from('p2p_migration_requests')
+      .update({
+        status: 'approved',
+        admin_username_seen: usernameSeen,
+        admin_feedback_count: feedbackCount,
+        admin_notes: notes,
+        reviewed_by: req.userId,
+        reviewed_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id)
+      .select().single();
+    if (error) return res.status(400).json({ error: error.message });
+    if (!updated) return res.status(404).json({ error: 'Submission not found' });
+    logAdminAction(req, 'P2P_MIGRATION_APPROVE', req.params.id, { email: updated.email }).catch(() => { });
+    res.json({ success: true, submission: updated });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/admin/p2p-migration/:id/reject
+app.put('/api/admin/p2p-migration/:id/reject', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const { notes = null } = req.body;
+    const { data: updated, error } = await supabaseAdmin.from('p2p_migration_requests')
+      .update({
+        status: 'rejected',
+        admin_notes: notes,
+        reviewed_by: req.userId,
+        reviewed_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id)
+      .select().single();
+    if (error) return res.status(400).json({ error: error.message });
+    if (!updated) return res.status(404).json({ error: 'Submission not found' });
+    logAdminAction(req, 'P2P_MIGRATION_REJECT', req.params.id, { email: updated.email }).catch(() => { });
+    res.json({ success: true, submission: updated });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET /api/admin/listings/all — all listings
