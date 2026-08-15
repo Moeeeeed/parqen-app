@@ -9,7 +9,7 @@ import {
   AtSign, Check, X, Home, Gift, LogIn, Phone, ChevronDown,
   Bitcoin, Zap, Globe, TrendingUp, Users, BadgeCheck, Star,
   ArrowUpRight, CircleDollarSign, Wallet, BarChart3, MapPin, PartyPopper,
-  Upload, Sparkles
+  Upload
 } from 'lucide-react';
 
 // ─── Guided Onboarding Field Tips ───────────────────────────────────────────
@@ -274,9 +274,9 @@ function OTPInput({ value, onChange, hasError }) {
 // of their existing P2P profile (so the admin can see their username and
 // feedback/trade count) for manual review — it never blocks registration.
 const MIGRATION_PLATFORMS = [
-  { id: 'noones', label: 'Noones' },
-  { id: 'binance', label: 'Binance P2P' },
-  { id: 'other', label: 'Another P2P platform' },
+  { id: 'noones', label: 'Noones', emoji: '🟠' },
+  { id: 'binance', label: 'Binance P2P', emoji: '🟡' },
+  { id: 'other', label: 'Another P2P platform', emoji: '🌍' },
 ];
 
 function P2PWelcomeGate({ onDone }) {
@@ -350,40 +350,54 @@ function P2PWelcomeGate({ onDone }) {
               <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'rgba(16,185,129,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
                 <CheckCircle size={42} style={{ color: '#10B981' }} />
               </div>
-              <h3 style={{ fontSize: 24, fontWeight: 800, color: C.forest, margin: '0 0 8px' }}>You're in! 🎉</h3>
+              <h3 style={{ fontSize: 24, fontWeight: 800, color: C.forest, margin: '0 0 8px' }}>Awesome, you're in! 🎉</h3>
               <p style={{ fontSize: 14, color: C.g500, margin: '0 0 24px', lineHeight: 1.6 }}>
-                Thanks — we've got your details and screenshot. Our team will review your {platformLabel} profile and reach out soon.
+                Thanks for sharing your {platformLabel} profile — our team will take a look and reach out soon. In the meantime, let's get your PRAQEN account set up!
               </p>
               <button onClick={finish}
                 style={{ width: '100%', padding: 15, borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${C.green}, ${C.mint})`, color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                Continue to Create Account <ArrowRight size={16} />
+                Let's Create My Account <ArrowRight size={16} />
               </button>
             </div>
           ) : (
             <>
               <div style={{ background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 100%)`, padding: '36px 32px 26px', textAlign: 'center' }}>
-                <div style={{ width: 60, height: 60, borderRadius: 16, background: C.gold, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', boxShadow: '0 8px 24px rgba(244,164,34,0.3)' }}>
-                  <Sparkles size={28} style={{ color: C.forest }} />
+                <div style={{
+                  width: 64, height: 64, borderRadius: 20, background: C.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  margin: '0 auto 16px', boxShadow: '0 8px 24px rgba(244,164,34,0.35)',
+                  fontFamily: 'Georgia, serif', fontWeight: 900, fontSize: 32, color: C.forest,
+                }}>
+                  P
                 </div>
-                <h1 style={{ fontSize: 22, fontWeight: 800, color: '#fff', margin: '0 0 6px' }}>Welcome, P2P Trader! 👋</h1>
-                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', margin: 0, lineHeight: 1.5 }}>
-                  Already trading on Noones or Binance P2P? Bring your reputation with you.
+                <h1 style={{ fontSize: 24, fontWeight: 800, color: '#fff', margin: '0 0 6px' }}>Welcome to PRAQEN! 🎉</h1>
+                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.78)', margin: 0, lineHeight: 1.5 }}>
+                  We're so glad you're here — let's get you set up in no time.
                 </p>
               </div>
 
               <div style={{ padding: '28px 28px 24px' }}>
                 {stage === 'intro' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <p style={{ fontSize: 12, fontWeight: 700, color: C.g500, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>
-                      Where are you trading now?
+                    <p style={{ fontSize: 13, color: C.g600, lineHeight: 1.6, margin: '0 0 4px', textAlign: 'center' }}>
+                      Already building a reputation on <strong style={{ color: C.g800 }}>Noones</strong> or <strong style={{ color: C.g800 }}>Binance P2P</strong>? Bring it with you and skip the cold start 👇
                     </p>
                     {MIGRATION_PLATFORMS.map(p => (
                       <button key={p.id} onClick={() => pickPlatform(p.id)}
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderRadius: 14, border: `2px solid ${C.g200}`, background: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 14, color: C.g800, fontFamily: "'Inter', sans-serif" }}>
-                        {p.label}
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderRadius: 14, border: `2px solid ${C.g200}`, background: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 14, color: C.g800, fontFamily: "'Inter', sans-serif" }}>
+                        <span style={{ fontSize: 18 }}>{p.emoji}</span>
+                        <span style={{ flex: 1, textAlign: 'left' }}>{p.label}</span>
                         <ArrowRight size={16} style={{ color: C.g400 }} />
                       </button>
                     ))}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0' }}>
+                      <div style={{ flex: 1, height: 1, background: C.g100 }} />
+                      <span style={{ fontSize: 11, fontWeight: 600, color: C.g400 }}>OR</span>
+                      <div style={{ flex: 1, height: 1, background: C.g100 }} />
+                    </div>
+                    <button onClick={finish}
+                      style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${C.green}, ${C.mint})`, color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: "'Inter', sans-serif" }}>
+                      🆕 I'm new here — let's go! <ArrowRight size={16} />
+                    </button>
                   </div>
                 )}
 
@@ -435,12 +449,14 @@ function P2PWelcomeGate({ onDone }) {
                 )}
               </div>
 
-              <div style={{ padding: '14px 28px', borderTop: `1px solid ${C.g100}`, background: C.g50, textAlign: 'center' }}>
-                <button onClick={finish}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: C.g500, fontFamily: "'Inter', sans-serif" }}>
-                  I'm new here — skip and create my account →
-                </button>
-              </div>
+              {stage === 'form' && (
+                <div style={{ padding: '14px 28px', borderTop: `1px solid ${C.g100}`, background: C.g50, textAlign: 'center' }}>
+                  <button onClick={finish}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: C.g500, fontFamily: "'Inter', sans-serif" }}>
+                    Changed your mind? Skip and create my account →
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>
