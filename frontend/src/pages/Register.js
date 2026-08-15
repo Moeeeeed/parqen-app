@@ -351,9 +351,15 @@ function P2PWelcomeGate({ onDone }) {
                 <CheckCircle size={42} style={{ color: '#10B981' }} />
               </div>
               <h3 style={{ fontSize: 24, fontWeight: 800, color: C.forest, margin: '0 0 8px' }}>Awesome, you're in! 🎉</h3>
-              <p style={{ fontSize: 14, color: C.g500, margin: '0 0 24px', lineHeight: 1.6 }}>
+              <p style={{ fontSize: 14, color: C.g500, margin: '0 0 16px', lineHeight: 1.6 }}>
                 Thanks for sharing your {platformLabel} profile — our team will take a look and reach out soon. In the meantime, let's get your PRAQEN account set up!
               </p>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 16px', borderRadius: 14, background: '#FFFBEB', border: '1px solid #FDE68A', textAlign: 'left', marginBottom: 24 }}>
+                <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1 }}>🔔</span>
+                <p style={{ fontSize: 12.5, color: '#92400E', margin: 0, lineHeight: 1.6, fontWeight: 600 }}>
+                  Keep an eye on your <strong>Profile page</strong> — we'll send you a notification the moment your {platformLabel} reputation is approved.
+                </p>
+              </div>
               <button onClick={finish}
                 style={{ width: '100%', padding: 15, borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${C.green}, ${C.mint})`, color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                 Let's Create My Account <ArrowRight size={16} />

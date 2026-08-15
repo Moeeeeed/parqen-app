@@ -305,11 +305,13 @@ function OfferCard({listing, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLi
   const minLocal = listing.min_limit_local || (listing.min_limit_usd ? listing.min_limit_usd*usdRate : 100*usdRate);
   const maxLocal = listing.max_limit_local || (listing.max_limit_usd ? listing.max_limit_usd*usdRate : 1000*usdRate);
 
-  const examplePay = (userSellAmt && parseFloat(userSellAmt) > 0)
+  // Seller receives this much fiat (via the buyer's payment method) for the
+  // BTC amount shown below — naming kept explicit since a swapped "pay/receive"
+  // label here previously made it look like the seller was the one paying cash.
+  const exampleReceiveFiat = (userSellAmt && parseFloat(userSellAmt) > 0)
     ? parseFloat(userSellAmt)
     : (minLocal || Math.round(100*usdRate));
-  const { btcReceived } = calcBtc(examplePay, btcPriceUSD, margin, usdRate);
-  const fiatEquiv = parseFloat((btcReceived * btcPriceUSD * usdRate).toFixed(2));
+  const { btcReceived: examplePayBtc } = calcBtc(exampleReceiveFiat, btcPriceUSD, margin, usdRate);
 
   const pos   = parseInt(u.positive_feedback||0);
   const neg   = parseInt(u.negative_feedback||0);
@@ -434,22 +436,18 @@ function OfferCard({listing, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLi
       <div style={{height:1, backgroundColor: ft ? ft.divider : C.g100}}/>
 
       <div className="px-3.5 py-2.5 grid grid-cols-2 gap-2.5">
+        {/* Seller receives cash first — reads correctly for someone selling BTC */}
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-wide mb-0.5" style={{color: ft ? ft.labelColor : C.g500}}>You pay</p>
+          <p className="text-[11px] font-bold uppercase tracking-wide mb-0.5" style={{color: ft ? ft.labelColor : C.g500}}>You receive</p>
           <p className="text-base font-bold leading-tight" style={{color:C.g800, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', paddingRight:'4px'}}>
-            {fmt(examplePay, 2)}&nbsp;<span style={{fontSize:'0.7em', color:C.g500}}>{cur}</span>
+            {fmt(exampleReceiveFiat, 2)}&nbsp;<span style={{fontSize:'0.7em', color:C.g500}}>{cur}</span>
           </p>
         </div>
         <div className="border-l pl-3" style={{borderColor: ft ? ft.divider : C.g100}}>
-          <p className="text-[11px] font-bold uppercase tracking-wide mb-0.5" style={{color: ft ? ft.labelColor : C.g500}}>You receive</p>
+          <p className="text-[11px] font-bold uppercase tracking-wide mb-0.5" style={{color: ft ? ft.labelColor : C.g500}}>You pay</p>
           <p className="text-base font-bold leading-tight" style={{color:C.g800, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', paddingRight:'4px'}}>
-            {fmt(fiatEquiv, 2)}&nbsp;<span style={{fontSize:'0.7em', color:C.g500}}>{cur}</span>
+            {fBtc(examplePayBtc)}&nbsp;<span style={{fontSize:'0.7em', color:C.g500}}>BTC</span>
           </p>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <p className="text-[10px] font-semibold" style={{color:C.g500}}>
-              ≈ {fBtc(btcReceived)} BTC
-            </p>
-          </div>
         </div>
       </div>
 
