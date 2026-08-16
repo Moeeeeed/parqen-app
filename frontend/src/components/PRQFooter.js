@@ -55,6 +55,15 @@ const LINK_COLUMNS = [
     ],
   },
   {
+    heading: 'Regional Corridors',
+    links: [
+      { label: 'Buy BTC with MTN MoMo', to: '/buy-bitcoin' },
+      { label: 'M-Pesa Bitcoin P2P', to: '/buy-bitcoin' },
+      { label: 'Mobile Money Exchange', to: '/buy-bitcoin' },
+      { label: 'Local Fiat Trading', to: '/buy-bitcoin' },
+    ],
+  },
+  {
     heading: 'Account',
     links: [
       { label: 'Dashboard', to: '/dashboard' },
