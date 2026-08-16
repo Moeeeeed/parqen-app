@@ -5715,12 +5715,14 @@ app.get('/api/listings', async (req, res) => {
     const sellerIdSet = [...new Set((rawListings || []).map(l => l.seller_id).filter(Boolean))];
     const btcRequiredTypes = ['SELL', 'SELL_BITCOIN', 'BUY_GIFT_CARD'];
     const btcSellerIds = [...new Set((rawListings || []).filter(l => btcRequiredTypes.includes(l.listing_type)).map(l => l.seller_id).filter(Boolean))];
+    const sellGcSellerIds = [...new Set((rawListings || []).filter(l => l.listing_type === 'SELL_GIFT_CARD').map(l => l.seller_id).filter(Boolean))];
 
     let userMap = {};
     let walletRows = [];
+    let depositedSellerIds = new Set();
 
     if (sellerIdSet.length > 0) {
-      const [usersResult, walletsResult] = await Promise.all([
+      const [usersResult, walletsResult, depositsResult] = await Promise.all([
         Promise.race([
           supabaseAdmin.from('users').select(
             'id, username, full_name, average_rating, total_trades, completion_rate, is_id_verified, is_email_verified, last_login, last_seen_at, total_feedback_count, positive_feedback, negative_feedback, country, bio, badge, avatar_url'
@@ -5730,6 +5732,12 @@ app.get('/api/listings', async (req, res) => {
         btcSellerIds.length > 0
           ? Promise.race([
             supabaseAdmin.from('wallets').select('user_id, balance_btc, balance_usdt').in('user_id', btcSellerIds),
+            new Promise(resolve => setTimeout(() => resolve({ data: [] }), 4000)),
+          ])
+          : Promise.resolve({ data: [] }),
+        sellGcSellerIds.length > 0
+          ? Promise.race([
+            supabaseAdmin.from('seller_deposits').select('user_id, remaining_amount, amount_usdt').eq('status', 'LOCKED').in('user_id', sellGcSellerIds),
             new Promise(resolve => setTimeout(() => resolve({ data: [] }), 4000)),
           ])
           : Promise.resolve({ data: [] }),
@@ -5747,9 +5755,19 @@ app.get('/api/listings', async (req, res) => {
       }
       (usersResult.data || []).forEach(u => { userMap[u.id] = u; });
       walletRows = walletsResult.data || [];
+      // Only a never-seized (amount_usdt === remaining_amount) LOCKED deposit counts as "secured"
+      depositedSellerIds = new Set(
+        (depositsResult.data || [])
+          .filter(d => parseFloat(d.remaining_amount) === parseFloat(d.amount_usdt))
+          .map(d => d.user_id)
+      );
     }
 
-    let listings = (rawListings || []).map(l => ({ ...l, users: userMap[l.seller_id] || null }));
+    let listings = (rawListings || []).map(l => ({
+      ...l,
+      users: userMap[l.seller_id] || null,
+      seller_has_deposit: l.listing_type === 'SELL_GIFT_CARD' ? depositedSellerIds.has(l.seller_id) : undefined,
+    }));
 
     const balanceCheckedListings = listings.filter(l => btcRequiredTypes.includes(l.listing_type));
 
@@ -6289,12 +6307,35 @@ app.post('/api/offers', verifyToken, async (req, res) => {
     // Determine listing type early — gift card offers don't have a
     // traditional payment_method (the "payment" is the gift card code
     // itself), so the check below must not apply to them.
-    const offerTypeMap = { 'sell': 'SELL', 'buy': 'BUY', 'gc_buy': 'BUY_GIFT_CARD' };
+    const offerTypeMap = { 'sell': 'SELL', 'buy': 'BUY', 'gc_buy': 'BUY_GIFT_CARD', 'gc_sell': 'SELL_GIFT_CARD' };
     const mappedType = offerTypeMap[type] || listing_type || 'SELL';
     const isGiftCard = mappedType === 'BUY_GIFT_CARD' || mappedType === 'SELL_GIFT_CARD';
 
     if (!isGiftCard && !payment_method) {
       return res.status(400).json({ error: 'Missing payment_method' });
+    }
+
+    // Sellers must hold an active, never-seized $200 USDT security deposit
+    // before listing a gift card for sale. Covers unlimited listings/trades
+    // until withdrawn; any seizure blocks new listings until re-locked.
+    if (mappedType === 'SELL_GIFT_CARD') {
+      const { data: activeDeposit } = await supabaseAdmin
+        .from('seller_deposits')
+        .select('remaining_amount, amount_usdt')
+        .eq('user_id', userId)
+        .eq('status', 'LOCKED')
+        .maybeSingle();
+
+      const hasCleanDeposit = activeDeposit &&
+        parseFloat(activeDeposit.remaining_amount) === parseFloat(activeDeposit.amount_usdt);
+
+      if (!hasCleanDeposit) {
+        return res.status(402).json({
+          error: 'A $200 USDT security deposit is required before creating gift-card sell listings.',
+          code: 'SECURITY_DEPOSIT_REQUIRED',
+          deposit_amount_required: 200,
+        });
+      }
     }
 
     // Verify user has at least 1 verification
@@ -6359,7 +6400,7 @@ app.post('/api/offers', verifyToken, async (req, res) => {
     }
 
     // Block duplicate active offers: same payment method + same currency + same asset + same type (skip gift cards)
-    if (mappedType !== 'BUY_GIFT_CARD') {
+    if (mappedType !== 'BUY_GIFT_CARD' && mappedType !== 'SELL_GIFT_CARD') {
       const { data: dupCheck2 } = await supabaseAdmin
         .from('listings')
         .select('id')
@@ -6419,6 +6460,448 @@ app.post('/api/offers', verifyToken, async (req, res) => {
     res.json({ success: true, offer: data, listing: data });
   } catch (err) {
     console.error('Offer creation exception:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// SELLER SECURITY DEPOSIT ROUTES
+// One-time $200 USDT deposit required before a user can list gift
+// cards for sale. Covers unlimited SELL_GIFT_CARD listings/trades
+// while LOCKED. Withdrawal requires 7 days elapsed + no open
+// gift-card trades + admin approval. Admins may seize (partially or
+// fully) a LOCKED deposit to make a scammed buyer whole.
+// ============================================================
+
+const SELLER_DEPOSIT_AMOUNT = 200;
+const SELLER_DEPOSIT_HOLD_DAYS = 7;
+const OPEN_TRADE_STATUSES = ['CREATED', 'FUNDS_LOCKED', 'PAYMENT_SENT', 'DISPUTED'];
+
+// Count this seller's open/disputed trades tied to SELL_GIFT_CARD listings.
+async function countOpenGiftCardSales(userId) {
+  const { data: trades } = await supabaseAdmin
+    .from('trades')
+    .select('id, status, listing:listing_id(listing_type)')
+    .eq('seller_id', userId)
+    .in('status', OPEN_TRADE_STATUSES);
+  return (trades || []).filter(t => t.listing?.listing_type === 'SELL_GIFT_CARD').length;
+}
+
+// Pause a seller's live SELL_GIFT_CARD listings — called whenever their
+// deposit stops being LOCKED-and-clean, so buyers can't trade against an
+// offer that's no longer backed by a security deposit.
+async function pauseGiftCardListings(userId) {
+  try {
+    await supabaseAdmin.from('listings')
+      .update({ status: 'PAUSED', updated_at: new Date().toISOString() })
+      .eq('seller_id', userId)
+      .eq('listing_type', 'SELL_GIFT_CARD')
+      .eq('status', 'ACTIVE');
+    bustCache();
+  } catch (e) {
+    console.error('[seller-deposit] failed to pause listings for', userId, e.message);
+  }
+}
+
+// POST /api/seller-deposit/lock — lock $200 USDT from the user's own wallet balance
+app.post('/api/seller-deposit/lock', verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    const { data: existing } = await supabaseAdmin
+      .from('seller_deposits').select('id')
+      .eq('user_id', userId).in('status', ['LOCKED', 'PENDING_WITHDRAWAL']).maybeSingle();
+    if (existing) {
+      return res.status(400).json({ error: 'You already have an active security deposit.' });
+    }
+
+    const { data: wallet } = await supabaseAdmin
+      .from('wallets').select('balance_usdt, locked_balance_usdt').eq('user_id', userId).maybeSingle();
+    const available = parseFloat(wallet?.balance_usdt || 0);
+    const lockedAvailable = parseFloat(wallet?.locked_balance_usdt || 0);
+
+    if (available < SELLER_DEPOSIT_AMOUNT) {
+      return res.status(400).json({
+        error: `You need $${SELLER_DEPOSIT_AMOUNT} USDT in your wallet to lock a seller security deposit.`,
+        code: 'INSUFFICIENT_BALANCE',
+        available,
+        shortfall: parseFloat((SELLER_DEPOSIT_AMOUNT - available).toFixed(6)),
+      });
+    }
+
+    // Insert the deposit row first — the partial unique index polices concurrent
+    // lock attempts cheaply, before any money moves.
+    const nowIso = new Date().toISOString();
+    const eligibleAt = new Date(Date.now() + SELLER_DEPOSIT_HOLD_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    const { data: depositRow, error: insertErr } = await supabaseAdmin
+      .from('seller_deposits')
+      .insert({
+        user_id: userId,
+        amount_usdt: SELLER_DEPOSIT_AMOUNT,
+        remaining_amount: SELLER_DEPOSIT_AMOUNT,
+        status: 'LOCKED',
+        locked_at: nowIso,
+        eligible_at: eligibleAt,
+      })
+      .select().single();
+
+    if (insertErr) {
+      // Unique-index violation = a concurrent request already locked a deposit for this user
+      return res.status(409).json({ error: 'You already have an active security deposit.' });
+    }
+
+    const { data: deductRows, error: deductErr } = await supabaseAdmin.from('wallets')
+      .update({
+        balance_usdt: parseFloat((available - SELLER_DEPOSIT_AMOUNT).toFixed(6)),
+        locked_balance_usdt: parseFloat((lockedAvailable + SELLER_DEPOSIT_AMOUNT).toFixed(6)),
+        updated_at: nowIso,
+      })
+      .eq('user_id', userId)
+      .eq('balance_usdt', available)
+      .eq('locked_balance_usdt', lockedAvailable)
+      .select('balance_usdt, locked_balance_usdt');
+
+    if (deductErr || !deductRows || deductRows.length === 0) {
+      // Wallet changed under us — roll back the deposit row we just inserted
+      await supabaseAdmin.from('seller_deposits').delete().eq('id', depositRow.id);
+      return res.status(409).json({ error: 'Balance changed — please retry.' });
+    }
+
+    await supabaseAdmin.from('wallet_transactions').insert({
+      user_id: userId,
+      type: 'SECURITY_DEPOSIT_LOCK',
+      currency: 'USDT',
+      amount_usdt: SELLER_DEPOSIT_AMOUNT,
+      status: 'CONFIRMED',
+      notes: 'Gift-card seller security deposit locked',
+      created_at: nowIso,
+    }).then(null, e => console.error('[seller-deposit/lock] ledger insert failed (non-fatal):', e.message));
+
+    res.json({ success: true, deposit: depositRow, wallet: deductRows[0] });
+  } catch (err) {
+    console.error('[seller-deposit/lock] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/seller-deposit/status — single source of truth for deposit/eligibility state
+app.get('/api/seller-deposit/status', verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { data: deposit } = await supabaseAdmin
+      .from('seller_deposits').select('*')
+      .eq('user_id', userId).in('status', ['LOCKED', 'PENDING_WITHDRAWAL'])
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+    if (!deposit) {
+      return res.json({ has_deposit: false, can_create_sell_listing: false });
+    }
+
+    const isClean = parseFloat(deposit.remaining_amount) === parseFloat(deposit.amount_usdt);
+    const timeEligible = new Date(deposit.eligible_at).getTime() <= Date.now();
+    const openTradeCount = await countOpenGiftCardSales(userId);
+    const eligibleToWithdraw = deposit.status === 'LOCKED' && timeEligible && openTradeCount === 0;
+    const daysRemaining = Math.max(0, Math.ceil((new Date(deposit.eligible_at).getTime() - Date.now()) / 86400000));
+
+    res.json({
+      has_deposit: true,
+      can_create_sell_listing: deposit.status === 'LOCKED' && isClean,
+      deposit,
+      eligible_to_withdraw: eligibleToWithdraw,
+      days_remaining: daysRemaining,
+      open_trade_count: openTradeCount,
+    });
+  } catch (err) {
+    console.error('[seller-deposit/status] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/seller-deposit/withdraw-request — request release; does not move funds.
+// Eligibility (7 days + no open trades) is auto-checked; actual release requires
+// admin approval via /api/admin/seller-deposits/:userId/approve-withdrawal.
+app.post('/api/seller-deposit/withdraw-request', verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { data: deposit } = await supabaseAdmin
+      .from('seller_deposits').select('*').eq('user_id', userId).eq('status', 'LOCKED').maybeSingle();
+
+    if (!deposit) {
+      return res.status(400).json({ error: 'No active deposit to withdraw.' });
+    }
+    if (new Date(deposit.eligible_at).getTime() > Date.now()) {
+      return res.status(403).json({
+        error: 'Your deposit unlocks 7 days after it was locked.',
+        code: 'DEPOSIT_TIME_LOCK',
+        eligible_at: deposit.eligible_at,
+      });
+    }
+    const openTradeCount = await countOpenGiftCardSales(userId);
+    if (openTradeCount > 0) {
+      return res.status(403).json({
+        error: 'You have open gift-card trades — withdraw once they finish.',
+        code: 'DEPOSIT_TRADES_OPEN',
+        open_trade_count: openTradeCount,
+      });
+    }
+
+    const { data: rows, error } = await supabaseAdmin.from('seller_deposits')
+      .update({ status: 'PENDING_WITHDRAWAL', withdrawal_requested_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', deposit.id).eq('status', 'LOCKED')
+      .select().single();
+
+    if (error || !rows) {
+      return res.status(409).json({ error: 'Deposit state changed — please retry.' });
+    }
+
+    res.json({ success: true, deposit: rows, message: 'Withdrawal requested — awaiting admin approval.' });
+  } catch (err) {
+    console.error('[seller-deposit/withdraw-request] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/seller-deposits — list all deposits + running total locked
+app.get('/api/admin/seller-deposits', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+
+    const statusFilter = req.query.status;
+    let query = supabaseAdmin.from('seller_deposits')
+      .select('*, user:user_id(id, username, email, badge)')
+      .order('created_at', { ascending: false });
+    if (statusFilter) query = query.eq('status', statusFilter);
+
+    const { data: deposits, error } = await query;
+    if (error) return res.status(500).json({ error: error.message });
+
+    const totalLocked = (deposits || [])
+      .filter(d => d.status === 'LOCKED' || d.status === 'PENDING_WITHDRAWAL')
+      .reduce((sum, d) => sum + parseFloat(d.remaining_amount || 0), 0);
+
+    res.json({ success: true, deposits: deposits || [], total_locked_usdt: totalLocked });
+  } catch (err) {
+    console.error('[admin/seller-deposits] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/seller-deposits/:userId/approve-withdrawal
+app.post('/api/admin/seller-deposits/:userId/approve-withdrawal', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const targetUserId = req.params.userId;
+
+    const { data: deposit } = await supabaseAdmin
+      .from('seller_deposits').select('*').eq('user_id', targetUserId).eq('status', 'PENDING_WITHDRAWAL').maybeSingle();
+    if (!deposit) {
+      return res.status(400).json({ error: 'No pending withdrawal request for this user.' });
+    }
+
+    const { data: wallet } = await supabaseAdmin
+      .from('wallets').select('balance_usdt, locked_balance_usdt').eq('user_id', targetUserId).maybeSingle();
+    const available = parseFloat(wallet?.balance_usdt || 0);
+    const lockedAvailable = parseFloat(wallet?.locked_balance_usdt || 0);
+    const releaseAmount = parseFloat(deposit.remaining_amount);
+    const nowIso = new Date().toISOString();
+
+    const { data: updRows, error: updErr } = await supabaseAdmin.from('wallets')
+      .update({
+        balance_usdt: parseFloat((available + releaseAmount).toFixed(6)),
+        locked_balance_usdt: Math.max(0, parseFloat((lockedAvailable - releaseAmount).toFixed(6))),
+        updated_at: nowIso,
+      })
+      .eq('user_id', targetUserId)
+      .eq('balance_usdt', available)
+      .eq('locked_balance_usdt', lockedAvailable)
+      .select('balance_usdt, locked_balance_usdt');
+
+    if (updErr || !updRows || updRows.length === 0) {
+      return res.status(409).json({ error: 'Wallet balance changed — please retry.' });
+    }
+
+    await supabaseAdmin.from('seller_deposits')
+      .update({ status: 'WITHDRAWN', withdrawn_at: nowIso, updated_at: nowIso })
+      .eq('id', deposit.id);
+
+    await supabaseAdmin.from('wallet_transactions').insert({
+      user_id: targetUserId,
+      type: 'SECURITY_DEPOSIT_RELEASE',
+      currency: 'USDT',
+      amount_usdt: releaseAmount,
+      status: 'CONFIRMED',
+      notes: `Seller security deposit released (approved by admin ${admin.email || req.userId})`,
+      created_at: nowIso,
+    }).then(null, e => console.error('[approve-withdrawal] ledger insert failed (non-fatal):', e.message));
+
+    await logAdminAction(req, 'SELLER_DEPOSIT_WITHDRAWAL_APPROVED', targetUserId, { amount: releaseAmount });
+    await pauseGiftCardListings(targetUserId);
+
+    supabaseAdmin.from('notifications').insert({
+      user_id: targetUserId,
+      type: 'wallet',
+      title: '✅ Security Deposit Released',
+      message: `Your $${releaseAmount.toFixed(2)} USDT seller security deposit has been released to your wallet.`,
+      action: '/wallet',
+      is_read: false,
+      created_at: nowIso,
+    }).then(null, () => {});
+
+    res.json({ success: true, amount_withdrawn: releaseAmount, wallet: updRows[0] });
+  } catch (err) {
+    console.error('[approve-withdrawal] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/seller-deposits/:userId/reject-withdrawal — reverts to LOCKED, no funds move
+app.post('/api/admin/seller-deposits/:userId/reject-withdrawal', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const targetUserId = req.params.userId;
+    const { reason } = req.body;
+
+    const { data: rows, error } = await supabaseAdmin.from('seller_deposits')
+      .update({ status: 'LOCKED', admin_notes: reason || null, updated_at: new Date().toISOString() })
+      .eq('user_id', targetUserId).eq('status', 'PENDING_WITHDRAWAL')
+      .select().single();
+
+    if (error || !rows) {
+      return res.status(400).json({ error: 'No pending withdrawal request for this user.' });
+    }
+
+    await logAdminAction(req, 'SELLER_DEPOSIT_WITHDRAWAL_REJECTED', targetUserId, { reason });
+    res.json({ success: true, deposit: rows });
+  } catch (err) {
+    console.error('[reject-withdrawal] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/seller-deposits/:userId/seize — move some/all of a LOCKED deposit
+// to a wronged buyer, following a dispute resolved against this seller.
+app.post('/api/admin/seller-deposits/:userId/seize', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const targetUserId = req.params.userId;
+    const { amount, trade_id, buyer_id, reason } = req.body;
+
+    const seizeAmount = parseFloat(amount);
+    if (!seizeAmount || seizeAmount <= 0) {
+      return res.status(400).json({ error: 'Invalid seize amount.' });
+    }
+    if (!buyer_id) {
+      return res.status(400).json({ error: 'buyer_id is required.' });
+    }
+
+    const { data: deposit } = await supabaseAdmin
+      .from('seller_deposits').select('*').eq('user_id', targetUserId).eq('status', 'LOCKED').maybeSingle();
+    if (!deposit) {
+      return res.status(404).json({ error: 'No active deposit for this user.' });
+    }
+    if (seizeAmount > parseFloat(deposit.remaining_amount)) {
+      return res.status(400).json({ error: `Cannot seize more than the remaining deposit ($${deposit.remaining_amount}).` });
+    }
+
+    const nowIso = new Date().toISOString();
+    const newRemaining = parseFloat((parseFloat(deposit.remaining_amount) - seizeAmount).toFixed(6));
+    const newStatus = newRemaining <= 0 ? 'SEIZED' : 'LOCKED';
+
+    // Step 1: reduce the deposit row (optimistic lock on remaining_amount)
+    const { data: depRows, error: depErr } = await supabaseAdmin.from('seller_deposits')
+      .update({
+        remaining_amount: newRemaining,
+        seized_amount: parseFloat((parseFloat(deposit.seized_amount) + seizeAmount).toFixed(6)),
+        seized_at: nowIso,
+        status: newStatus,
+        updated_at: nowIso,
+      })
+      .eq('id', deposit.id).eq('remaining_amount', deposit.remaining_amount)
+      .select().single();
+    if (depErr || !depRows) {
+      return res.status(409).json({ error: 'Deposit changed — please retry.' });
+    }
+
+    // Step 2: debit seller's locked_balance_usdt
+    const { data: sellerWallet } = await supabaseAdmin
+      .from('wallets').select('locked_balance_usdt').eq('user_id', targetUserId).maybeSingle();
+    const sellerLocked = parseFloat(sellerWallet?.locked_balance_usdt || 0);
+    const { data: sellerRows, error: sellerErr } = await supabaseAdmin.from('wallets')
+      .update({ locked_balance_usdt: Math.max(0, parseFloat((sellerLocked - seizeAmount).toFixed(6))), updated_at: nowIso })
+      .eq('user_id', targetUserId).eq('locked_balance_usdt', sellerLocked)
+      .select('locked_balance_usdt');
+
+    if (sellerErr || !sellerRows || sellerRows.length === 0) {
+      // Roll back step 1
+      await supabaseAdmin.from('seller_deposits')
+        .update({ remaining_amount: deposit.remaining_amount, seized_amount: deposit.seized_amount, status: deposit.status, updated_at: nowIso })
+        .eq('id', deposit.id);
+      return res.status(409).json({ error: 'Seller wallet changed — please retry.' });
+    }
+
+    // Step 3: credit buyer's balance_usdt — retry a couple times since this is a
+    // low-traffic admin path; if it still fails, roll back steps 1 and 2, since
+    // leaving the seller's money seized with no buyer credit is worse than not
+    // seizing at all.
+    let buyerCredited = false;
+    let lastBuyerErr = null;
+    for (let attempt = 0; attempt < 3 && !buyerCredited; attempt++) {
+      const { data: buyerWallet } = await supabaseAdmin
+        .from('wallets').select('balance_usdt').eq('user_id', buyer_id).maybeSingle();
+      const buyerAvailable = parseFloat(buyerWallet?.balance_usdt || 0);
+      const { data: buyerRows, error: buyerErr } = await supabaseAdmin.from('wallets')
+        .update({ balance_usdt: parseFloat((buyerAvailable + seizeAmount).toFixed(6)), updated_at: nowIso })
+        .eq('user_id', buyer_id).eq('balance_usdt', buyerAvailable)
+        .select('balance_usdt');
+      if (!buyerErr && buyerRows && buyerRows.length > 0) { buyerCredited = true; break; }
+      lastBuyerErr = buyerErr;
+    }
+
+    if (!buyerCredited) {
+      console.error('[seize] CRITICAL: buyer credit failed after retries, rolling back seller-side mutations:', lastBuyerErr?.message);
+      await supabaseAdmin.from('wallets')
+        .update({ locked_balance_usdt: sellerLocked, updated_at: nowIso }).eq('user_id', targetUserId);
+      await supabaseAdmin.from('seller_deposits')
+        .update({ remaining_amount: deposit.remaining_amount, seized_amount: deposit.seized_amount, status: deposit.status, updated_at: nowIso })
+        .eq('id', deposit.id);
+      return res.status(500).json({ error: 'Failed to credit buyer — seizure rolled back, please retry.' });
+    }
+
+    await Promise.all([
+      supabaseAdmin.from('wallet_transactions').insert({
+        user_id: targetUserId, trade_id: trade_id || null,
+        type: 'SECURITY_DEPOSIT_SEIZED', currency: 'USDT', amount_usdt: seizeAmount,
+        status: 'CONFIRMED', notes: reason || 'Security deposit seized following lost dispute', created_at: nowIso,
+      }),
+      supabaseAdmin.from('wallet_transactions').insert({
+        user_id: buyer_id, trade_id: trade_id || null,
+        type: 'SECURITY_DEPOSIT_CREDIT', currency: 'USDT', amount_usdt: seizeAmount,
+        status: 'CONFIRMED', notes: reason || 'Credited from scammer seller security deposit', created_at: nowIso,
+      }),
+    ]).catch(e => console.error('[seize] ledger insert failed (non-fatal):', e.message));
+
+    await logAdminAction(req, 'SELLER_DEPOSIT_SEIZE', targetUserId, { amount: seizeAmount, trade_id, buyer_id, reason });
+
+    if (newStatus === 'SEIZED') {
+      await pauseGiftCardListings(targetUserId);
+    }
+
+    Promise.all([
+      supabaseAdmin.from('notifications').insert({
+        user_id: targetUserId, type: 'wallet', title: '⚠️ Security Deposit Seized',
+        message: `$${seizeAmount.toFixed(2)} USDT was seized from your security deposit following a resolved dispute.${newStatus === 'SEIZED' ? ' Your gift-card listings are paused until you relock a fresh $200 deposit.' : ''}`,
+        action: '/wallet', is_read: false, created_at: nowIso,
+      }),
+      supabaseAdmin.from('notifications').insert({
+        user_id: buyer_id, type: 'wallet', title: '✅ Dispute Refund Credited',
+        message: `$${seizeAmount.toFixed(2)} USDT was credited to your wallet from the seller's security deposit.`,
+        action: '/wallet', is_read: false, created_at: nowIso,
+      }),
+    ]).catch(() => {});
+
+    res.json({ success: true, seized_amount: seizeAmount, remaining_deposit: newRemaining, deposit_status: newStatus });
+  } catch (err) {
+    console.error('[seize] error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6658,21 +7141,11 @@ app.post('/api/trades', verifyToken, requireEmailVerified, async (req, res) => {
       console.log(`[Quote] id=${quoteId.slice(0, 8)} rate=${quote.executableRate.toFixed(2)} btc=${verifiedAmountBtc}`);
     } else {
       // ── FALLBACK PATH: live rate re-fetch (no quoteId or gift-card trade) ─
-      const FX_API_KEY = 'd51dba3e8a731b12d73e8d72';
-      let fxApiData;
-      try {
-        const res = await fetch('https://open.er-api.com/v6/latest/USD');
-        fxApiData = await res.json();
-      } catch (e) {
-        // Fallback to ExchangeRate-API if open.er-api.com is down
-        const res = await fetch(`https://v6.exchangerate-api.com/v6/${FX_API_KEY}/latest/USD`);
-        fxApiData = await res.json();
-      }
-      const btcApiRes = await fetch('https://api.coinbase.com/v2/prices/BTC-USD/spot');
-      if (fxApiData.result !== 'success') throw new Error('FX rate fetch failed');
-      const fxRates = fxApiData.rates;
-      const btcApiData = await btcApiRes.json();
-      const marketRateUSD = parseFloat(btcApiData.data.amount) || await getCurrentBTCPrice();
+      // Reuse the already-hardened multi-source helpers (each source individually
+      // try/caught, with cached + static fallbacks) instead of raw fetch() calls
+      // that crash this entire request if a single external host is unreachable.
+      const fxRates = await getLiveFXRates();
+      const marketRateUSD = await getCurrentBTCPrice();
       const tradeCurRate = (tradeCur && fxRates[tradeCur]) ? fxRates[tradeCur] : 1;
 
       tradeAmountUsd = tradeLocalAmt > 0
@@ -6705,11 +7178,18 @@ app.post('/api/trades', verifyToken, requireEmailVerified, async (req, res) => {
     const verifiedFee = parseFloat(calculateFee(verifiedAmountBtc));
     const tradeRef = 'PRAQ-' + require('crypto').randomBytes(4).toString('hex').toUpperCase();
 
-    // Pre-check: ensure BTC provider has enough balance before creating the trade.
-    // wallets is the single source of truth — read only from there.
+    // Pre-check: ensure the provider has enough balance in the LISTING'S ASSET
+    // before creating the trade. wallets is the single source of truth — read
+    // only from there. Gift-card / BTC listings lock BTC; USDT-asset listings
+    // lock USDT — checking the wrong field here let $0-BTC USDT sellers pass
+    // as "insufficient" or, worse, let BTC-poor USDT holders slip through.
+    const tradeCurrency = listing.asset === 'USDT' ? 'USDT' : 'BTC';
+    const isUsdtTrade = tradeCurrency === 'USDT';
     const { data: providerWallet } = await supabaseAdmin
-      .from('wallets').select('balance_btc').eq('user_id', btcProviderId).maybeSingle();
-    const availableBtc = parseFloat(providerWallet?.balance_btc || 0);
+      .from('wallets').select('balance_btc, balance_usdt').eq('user_id', btcProviderId).maybeSingle();
+    const availableBtc = isUsdtTrade
+      ? parseFloat(providerWallet?.balance_usdt || 0)
+      : parseFloat(providerWallet?.balance_btc || 0);
     if (availableBtc < verifiedAmountBtc) {
       const isOwnBalance = btcProviderId === req.userId;
       // Auto-pause the offer if the balance problem is on the offer creator's side
@@ -6719,10 +7199,11 @@ app.post('/api/trades', verifyToken, requireEmailVerified, async (req, res) => {
           .eq('id', listingId)
           .then(() => { }).catch(() => { });
       }
-      const availableUsd = (availableBtc * (verifiedAmountBtc > 0 ? (tradeAmountUsd / verifiedAmountBtc) : 88000)).toFixed(2);
+      const assetLabel = isUsdtTrade ? 'USDT' : 'Bitcoin';
+      const neededStr = isUsdtTrade ? `${verifiedAmountBtc.toFixed(2)} USDT` : `${verifiedAmountBtc.toFixed(6)} BTC`;
       const msg = isOwnBalance
-        ? `You don't have enough Bitcoin in your PRAQEN wallet to open this trade. You need ${verifiedAmountBtc.toFixed(6)} BTC. Please top up your wallet first.`
-        : `This seller doesn't have enough Bitcoin to complete this trade right now. Their offer has been paused automatically. Please choose a different offer.`;
+        ? `You don't have enough ${assetLabel} in your PRAQEN wallet to open this trade. You need ${neededStr}. Please top up your wallet first.`
+        : `This seller doesn't have enough ${assetLabel} to complete this trade right now. Their offer has been paused automatically. Please choose a different offer.`;
       return res.status(400).json({ error: msg });
     }
 
@@ -6745,7 +7226,10 @@ app.post('/api/trades', verifyToken, requireEmailVerified, async (req, res) => {
       amount_local: tradeLocalAmt > 0 ? tradeLocalAmt : null,
       local_currency: tradeCur || null,
       currency_symbol: tradeSym || null,
+      currency: tradeCurrency,
+      amount_usdt: isUsdtTrade ? verifiedAmountBtc : null,
       platform_fee_btc: verifiedFee,
+      platform_fee_usdt: isUsdtTrade ? verifiedFee : null,
       platform_fee_usd: (tradeAmountUsd * 0.01).toFixed(2), fee_status: 'PENDING',
       payment_method: paymentMethod || listing.payment_method,
       gift_card_brand: listingTypeUpper.includes('GIFT_CARD') ? (listing.gift_card_brand || null) : null,
@@ -6790,13 +7274,13 @@ app.post('/api/trades', verifyToken, requireEmailVerified, async (req, res) => {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    console.log(`[BTC Lock] btcProvider:${btcProviderId.slice(0, 8)} locking ${verifiedAmountBtc} BTC`);
+    console.log(`[Escrow Lock] btcProvider:${btcProviderId.slice(0, 8)} locking ${verifiedAmountBtc} ${tradeCurrency}`);
 
 
 
     let escrowResult;
     try {
-      escrowResult = await tradeEscrowService.lockFundsInEscrow(trade[0].id, btcProviderId, verifiedAmountBtc, listing.time_limit || 30);
+      escrowResult = await tradeEscrowService.lockFundsInEscrow(trade[0].id, btcProviderId, verifiedAmountBtc, listing.time_limit || 30, tradeCurrency);
     } catch (lockError) {
       console.error('❌ lockFundsInEscrow failed:', lockError.message);
       await supabaseAdmin.from('trades').update({
@@ -6805,7 +7289,7 @@ app.post('/api/trades', verifyToken, requireEmailVerified, async (req, res) => {
         cancelled_at: new Date().toISOString(),
       }).eq('id', trade[0].id);
       return res.status(400).json({
-        error: 'Could not lock Bitcoin in escrow. The seller may have insufficient funds. Please try a different offer.'
+        error: `Could not lock ${tradeCurrency} in escrow. The seller may have insufficient funds. Please try a different offer.`
       });
     }
     // Invalidate marketplace cache so seller's reduced BTC balance shows immediately

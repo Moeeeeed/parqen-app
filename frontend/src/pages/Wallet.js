@@ -1403,14 +1403,6 @@ function UsdtWithdrawModal({ balance, onClose, onSend, kycStatus, twoFactorEnabl
             </button>
           </div>
 
-          {/* ── Temporary notice: external sends delayed while blockchain is under maintenance ── */}
-          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
-            <AlertTriangle size={13} style={{ color: '#D97706', flexShrink: 0 }} />
-            <p className="text-xs font-semibold" style={{ color: '#92400E' }}>
-              External wallet sending is temporarily delayed — blockchain is under maintenance. Send to a PRAQEN user instead or trade in our P2P market for now. Sorry for the inconvenience, we're fixing it soon.
-            </p>
-          </div>
-
           {/* ── KYC gate ── */}
           {kycStatus && !(kycStatus.email && kycStatus.phone && kycStatus.kyc) ? (
             <div className="space-y-4">
@@ -1514,6 +1506,15 @@ function UsdtWithdrawModal({ balance, onClose, onSend, kycStatus, twoFactorEnabl
             )}
             {addrOk && <p className="text-xs mt-1.5 font-semibold flex items-center gap-1" style={{ color: '#10b981' }}><CheckCircle size={11} /> Valid Tron address</p>}
           </div>
+
+          {/* ── Wrong-address responsibility warning ── */}
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
+            <AlertTriangle size={13} style={{ color: '#D97706', flexShrink: 0 }} />
+            <p className="text-xs font-semibold" style={{ color: '#92400E' }}>
+              Double-check this address before sending. If it's wrong, your funds are gone for good — PRAQEN can't recover or refund a send to the wrong wallet.
+            </p>
+          </div>
+
           <div>
             {/* ── Input mode toggle ── */}
             <div className="flex items-center justify-between mb-2">
@@ -1646,7 +1647,7 @@ function UsdtWithdrawModal({ balance, onClose, onSend, kycStatus, twoFactorEnabl
             </div>
             <input type="checkbox" checked={confirm} onChange={e => setConfirm(e.target.checked)} className="sr-only" />
             <p className="text-xs font-semibold leading-relaxed" style={{ color: confirm ? '#166534' : C.g600 }}>
-              I confirm this Tron address is correct. USDT-TRC20 transactions are irreversible.
+              I've double-checked this address is correct. I understand USDT-TRC20 sends are irreversible, and PRAQEN is not responsible if I send to the wrong wallet.
             </p>
           </label>
           {step === 'form' && (
@@ -1887,14 +1888,6 @@ function UsdtInternalTransferModal({ balance, onClose, onTransfer, onSwitchToExt
                   style={{ background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: '#fff' }}>
                   PRAQEN User
                 </div>
-              </div>
-
-              {/* ── Temporary notice: external sends delayed while blockchain is under maintenance ── */}
-              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
-                <AlertTriangle size={13} style={{ color: '#D97706', flexShrink: 0 }} />
-                <p className="text-xs font-semibold" style={{ color: '#92400E' }}>
-                  External wallet sending is temporarily delayed — blockchain is under maintenance. Send to a PRAQEN user instead or trade in our P2P market for now. Sorry for the inconvenience, we're fixing it soon.
-                </p>
               </div>
 
               {/* Input */}
@@ -2549,6 +2542,32 @@ export default function WalletPage({ user }) {
   const [scanCooldown,  setScanCooldown]  = useState(0); // seconds remaining
   const [loadingUsdt,   setLoadingUsdt]   = useState(false);
 
+  // Seller security deposit (only relevant to users who've listed gift cards for sale)
+  const [depositStatus,   setDepositStatus]   = useState(null);
+  const [depositReqLoading, setDepositReqLoading] = useState(false);
+
+  const loadDepositStatus = async () => {
+    try {
+      const r = await axios.get(`${API_URL}/seller-deposit/status`, { headers: authH() });
+      setDepositStatus(r.data);
+    } catch { /* silent — most users have no deposit, this is not an error worth surfacing */ }
+  };
+
+  const requestDepositWithdrawal = async () => {
+    setDepositReqLoading(true);
+    try {
+      await axios.post(`${API_URL}/seller-deposit/withdraw-request`, {}, { headers: authH() });
+      toast.success('Withdrawal requested — awaiting admin approval.');
+      loadDepositStatus();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to request withdrawal.');
+    } finally {
+      setDepositReqLoading(false);
+    }
+  };
+
+  useEffect(() => { loadDepositStatus(); }, []);
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) return;
@@ -2971,6 +2990,46 @@ export default function WalletPage({ user }) {
                 style={{ background: 'linear-gradient(135deg,#B91C1C,#DC2626)' }}>
                 Top Up Now →
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── SELLER SECURITY DEPOSIT — only shown to users who have (or had) one ── */}
+        {depositStatus?.has_deposit && (
+          <div className="rounded-2xl bg-white shadow-sm border p-4 sm:p-5" style={{ borderColor: C.g200 }}>
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: C.mist }}>
+                  <Shield size={18} style={{ color: C.forest }} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-black" style={{ color: C.g800 }}>
+                    Gift-Card Seller Security Deposit
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: C.g500 }}>
+                    {depositStatus.deposit?.status === 'LOCKED' && (
+                      depositStatus.eligible_to_withdraw
+                        ? 'Eligible to withdraw — no open trades, 7-day hold passed.'
+                        : depositStatus.open_trade_count > 0
+                          ? `Locked — ${depositStatus.open_trade_count} open trade(s) must finish first.`
+                          : `Locked — eligible in ${depositStatus.days_remaining} day(s).`
+                    )}
+                    {depositStatus.deposit?.status === 'PENDING_WITHDRAWAL' && 'Withdrawal requested — awaiting admin approval.'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <span className="text-lg font-black" style={{ color: C.g800 }}>
+                  ₮{fmtUsd(depositStatus.deposit?.remaining_amount).replace('$', '')}
+                </span>
+                {depositStatus.deposit?.status === 'LOCKED' && depositStatus.eligible_to_withdraw && (
+                  <button onClick={requestDepositWithdrawal} disabled={depositReqLoading}
+                    className="px-4 py-2 rounded-xl text-xs font-black text-white"
+                    style={{ backgroundColor: depositReqLoading ? C.g400 : C.green }}>
+                    {depositReqLoading ? 'Requesting…' : 'Request Withdrawal'}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}

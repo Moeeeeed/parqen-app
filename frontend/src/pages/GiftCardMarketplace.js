@@ -444,6 +444,12 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
                   {getDisplayName(u) || 'Seller'}
                 </button>
                 {isVerified(u) && <BadgeCheck size={14} style={{ color: '#3B82F6', flexShrink: 0 }} />}
+                {listing.listing_type === 'SELL_GIFT_CARD' && listing.seller_has_deposit && (
+                  <span title="Seller has a $200 security deposit locked" className="inline-flex items-center gap-0.5 flex-shrink-0"
+                    style={{ color: '#16A34A' }}>
+                    <ShieldCheck size={14} />
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">

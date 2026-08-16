@@ -63,8 +63,9 @@ async function updateOfferStatus(userId) {
 
     if (!offers || offers.length === 0) return { paused: 0, reactivated: 0 };
 
-    const toPause      = offers.filter(o => o.status === 'ACTIVE'  && btcBalUsd < MIN_USD).map(o => o.id);
-    const toReactivate = offers.filter(o => o.status === 'PAUSED'  && btcBalUsd >= MIN_USD).map(o => o.id);
+    const balUsdFor = (o) => o.asset === 'USDT' ? usdtBalUsd : btcBalUsd;
+    const toPause      = offers.filter(o => o.status === 'ACTIVE'  && balUsdFor(o) < MIN_USD).map(o => o.id);
+    const toReactivate = offers.filter(o => o.status === 'PAUSED'  && balUsdFor(o) >= MIN_USD).map(o => o.id);
 
     if (toPause.length > 0) {
       await supabaseAdmin.from('listings')
@@ -125,7 +126,9 @@ async function syncAllOfferStatuses() {
     const livePrice = _getLiveBtcPrice();
     for (const listing of listings) {
       const isUsdt    = listing.asset === 'USDT';
-      const balUsd    = (balMap[listing.seller_id] || 0) * livePrice; // default to BTC balance
+      const balUsd     = isUsdt
+        ? (usdtBalMap[listing.seller_id] || 0)
+        : (balMap[listing.seller_id] || 0) * livePrice;
       const minUsd    = parseFloat(listing.min_limit_usd || 0);
 
       // Pause if balance < $10 or can't meet the offer's own minimum

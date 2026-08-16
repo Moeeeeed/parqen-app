@@ -13,8 +13,15 @@ const supabase = createClient(
 
 const FROM_ADDRESS = `PRAQEN <${process.env.SMTP_FROM || process.env.EMAIL_USER || 'support@praqen.com'}>`;
 
-function makeTransporter() {
-  return nodemailer.createTransport({
+// Pooled, reused connection — nodemailer's defaults (no pooling, connectionTimeout
+// 2min, socketTimeout 10min) meant every single email paid a fresh TCP+TLS
+// handshake, and a slow/stuck Brevo connection could stall a request for minutes
+// before anything failed over to Resend. Short explicit timeouts here mean a bad
+// connection fails fast into the fallback instead of hanging the caller.
+let _transporter = null;
+function getTransporter() {
+  if (_transporter) return _transporter;
+  _transporter = nodemailer.createTransport({
     host:   process.env.SMTP_HOST || 'smtp-relay.brevo.com',
     port:   parseInt(process.env.SMTP_PORT || '587', 10),
     secure: false,
@@ -23,7 +30,14 @@ function makeTransporter() {
       pass: process.env.SMTP_PASS,
     },
     tls: { rejectUnauthorized: false },
+    pool: true,
+    maxConnections: 5,
+    maxMessages: 200,
+    connectionTimeout: 5000,
+    greetingTimeout: 5000,
+    socketTimeout: 10000,
   });
+  return _transporter;
 }
 
 // ── Logging ──────────────────────────────────────────────────────────────────
@@ -46,14 +60,17 @@ async function logEmail({ userId, email, subject, type, status, messageId, error
 }
 
 // ── Core send — tries Brevo SMTP first, falls back to Resend API ──────────────
+// The DB log write is intentionally not awaited — it's a fire-and-forget audit
+// trail with its own internal try/catch, so it should never add its own
+// round-trip to a caller waiting on the actual send result.
 async function sendEmail({ userId, to, subject, html, text, type, metadata }) {
   // ── Attempt 1: Brevo SMTP ────────────────────────────────────────────────
   if (process.env.SMTP_USER && process.env.SMTP_PASS) {
     try {
-      const transporter = makeTransporter();
+      const transporter = getTransporter();
       const info = await transporter.sendMail({ from: FROM_ADDRESS, to, subject, html, text: text || '' });
       console.log(`[Email] ✅ Brevo SMTP ${type} → ${to} (${info.messageId})`);
-      await logEmail({ userId, email: to, subject, type, status: 'sent', messageId: info.messageId, metadata });
+      logEmail({ userId, email: to, subject, type, status: 'sent', messageId: info.messageId, metadata });
       return { success: true, messageId: info.messageId };
     } catch (smtpErr) {
       console.error(`[Email] ⚠️ Brevo SMTP failed for ${type} → ${to}: ${smtpErr.message} — trying Resend fallback`);
@@ -71,24 +88,25 @@ async function sendEmail({ userId, to, subject, html, text, type, metadata }) {
         method:  'POST',
         headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ from: resendFrom, to, subject, html }),
+        signal:  AbortSignal.timeout(8000),
       });
       const data = await response.json();
       if (data.id) {
         console.log(`[Email] ✅ Resend fallback ${type} → ${to} (${data.id})`);
-        await logEmail({ userId, email: to, subject, type, status: 'sent', messageId: data.id, metadata });
+        logEmail({ userId, email: to, subject, type, status: 'sent', messageId: data.id, metadata });
         return { success: true, messageId: data.id };
       }
       throw new Error(JSON.stringify(data));
     } catch (resendErr) {
       console.error(`[Email] ❌ Resend fallback also failed for ${type} → ${to}: ${resendErr.message}`);
-      await logEmail({ userId, email: to, subject, type, status: 'failed', errorMessage: `SMTP: failed, Resend: ${resendErr.message}`, metadata });
+      logEmail({ userId, email: to, subject, type, status: 'failed', errorMessage: `SMTP: failed, Resend: ${resendErr.message}`, metadata });
       return { success: false, error: resendErr.message };
     }
   }
 
   // ── Both providers unconfigured ──────────────────────────────────────────
   console.error(`[Email] ❌ No email provider configured — cannot send ${type} → ${to}`);
-  await logEmail({ userId, email: to, subject, type, status: 'failed', errorMessage: 'No provider configured', metadata });
+  logEmail({ userId, email: to, subject, type, status: 'failed', errorMessage: 'No provider configured', metadata });
   return { success: false, error: 'No email provider configured' };
 }
 

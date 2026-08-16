@@ -1094,6 +1094,199 @@ function DisputesSection() {
 }
 
 // ================================================================
+// SELLER SECURITY DEPOSITS — $200 USDT deposits gift-card sellers lock
+// before listing. Approve/reject withdrawal requests, seize on lost
+// disputes, and see the total currently locked across all sellers.
+// ================================================================
+const DEPOSIT_STATUS_PILL = {
+  LOCKED:              { label: 'Locked',              color: '#166534', bg: '#F0FDF4' },
+  PENDING_WITHDRAWAL:  { label: 'Pending Withdrawal',  color: '#92400E', bg: '#FFFBEB' },
+  WITHDRAWN:           { label: 'Withdrawn',            color: C.g500,   bg: C.g100    },
+  SEIZED:              { label: 'Seized',               color: '#991B1B', bg: '#FEF2F2' },
+};
+
+function SellerDepositsSection() {
+  const [deposits, setDeposits] = useState([]);
+  const [totalLocked, setTotalLocked] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [seizeFor, setSeizeFor] = useState(null); // deposit row being seized
+  const [seizeAmount, setSeizeAmount] = useState('');
+  const [seizeBuyerId, setSeizeBuyerId] = useState('');
+  const [seizeTradeId, setSeizeTradeId] = useState('');
+  const [seizeReason, setSeizeReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await axios.get(`${API_URL}/admin/seller-deposits`, { headers: authH() });
+      setDeposits(r.data.deposits || []);
+      setTotalLocked(parseFloat(r.data.total_locked_usdt || 0));
+    } catch { toast.error('Failed to load seller deposits'); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const approve = async (userId) => {
+    if (!window.confirm('Release this security deposit back to the seller?')) return;
+    try {
+      await axios.post(`${API_URL}/admin/seller-deposits/${userId}/approve-withdrawal`, {}, { headers: authH() });
+      toast.success('Deposit withdrawal approved');
+      load();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed to approve withdrawal'); }
+  };
+
+  const reject = async (userId) => {
+    const reason = window.prompt('Reason for rejecting this withdrawal request (optional):') || '';
+    try {
+      await axios.post(`${API_URL}/admin/seller-deposits/${userId}/reject-withdrawal`, { reason }, { headers: authH() });
+      toast.success('Withdrawal request rejected — deposit stays locked');
+      load();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed to reject withdrawal'); }
+  };
+
+  const openSeize = (d) => {
+    setSeizeFor(d);
+    setSeizeAmount(d.remaining_amount);
+    setSeizeBuyerId('');
+    setSeizeTradeId('');
+    setSeizeReason('');
+  };
+
+  const submitSeize = async () => {
+    if (!seizeFor || !seizeAmount || !seizeBuyerId) {
+      toast.error('Amount and buyer ID are required');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await axios.post(`${API_URL}/admin/seller-deposits/${seizeFor.user_id}/seize`, {
+        amount: parseFloat(seizeAmount),
+        buyer_id: seizeBuyerId.trim(),
+        trade_id: seizeTradeId.trim() || undefined,
+        reason: seizeReason.trim() || undefined,
+      }, { headers: authH() });
+      toast.success('Deposit seized and credited to buyer');
+      setSeizeFor(null);
+      load();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed to seize deposit'); }
+    finally { setSubmitting(false); }
+  };
+
+  const daysRemaining = (d) => Math.max(0, Math.ceil((new Date(d.eligible_at).getTime() - Date.now()) / 86400000));
+
+  return (
+    <div className="space-y-4">
+      <SectionHead title="Seller Security Deposits" sub="Gift-card sellers' $200 USDT deposits — approve withdrawals, seize on lost disputes"
+        action={<button onClick={load} className="p-2 rounded-xl border" style={{ borderColor: C.g200 }}><RefreshCw size={14} style={{ color: C.g500 }} /></button>} />
+
+      <StatCard icon={<DollarSign size={20} />} label="Total Locked" value={`₮${totalLocked.toFixed(2)}`}
+        sub={`${deposits.filter(d => d.status === 'LOCKED' || d.status === 'PENDING_WITHDRAWAL').length} active deposits`} />
+
+      {loading ? <Spin /> : deposits.length === 0 ? <Empty icon={<Lock size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No seller deposits yet" /> : (
+        <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
+          <table className="w-full text-xs">
+            <thead>
+              <tr style={{ backgroundColor: C.g50 }}>
+                {['Seller', 'Status', 'Remaining', 'Locked', 'Eligible', 'Actions'].map(h => (
+                  <th key={h} className="text-left px-4 py-2.5 font-black" style={{ color: C.g500 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {deposits.map(d => {
+                const pill = DEPOSIT_STATUS_PILL[d.status] || { label: d.status, color: C.g500, bg: C.g100 };
+                return (
+                  <tr key={d.id} className="border-t" style={{ borderColor: C.g100 }}>
+                    <td className="px-4 py-2.5">
+                      <p className="font-bold" style={{ color: C.g800 }}>{d.user?.username || d.user_id?.slice(0, 8)}</p>
+                      <p style={{ color: C.g400 }}>{d.user?.email}</p>
+                    </td>
+                    <td className="px-4 py-2.5"><Pill label={pill.label} color={pill.color} bg={pill.bg} /></td>
+                    <td className="px-4 py-2.5 font-bold" style={{ color: C.g700 }}>₮{parseFloat(d.remaining_amount).toFixed(2)}</td>
+                    <td className="px-4 py-2.5" style={{ color: C.g500 }}>{fmtAge(d.locked_at)}</td>
+                    <td className="px-4 py-2.5" style={{ color: C.g500 }}>
+                      {d.status === 'LOCKED' ? (daysRemaining(d) > 0 ? `${daysRemaining(d)}d left` : 'Eligible now') : '—'}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-1.5">
+                        {d.status === 'PENDING_WITHDRAWAL' && (
+                          <>
+                            <button onClick={() => approve(d.user_id)}
+                              className="px-2.5 py-1 rounded-lg font-bold" style={{ backgroundColor: '#F0FDF4', color: '#166534' }}>
+                              Approve
+                            </button>
+                            <button onClick={() => reject(d.user_id)}
+                              className="px-2.5 py-1 rounded-lg font-bold" style={{ backgroundColor: '#FEF2F2', color: '#991B1B' }}>
+                              Reject
+                            </button>
+                          </>
+                        )}
+                        {d.status === 'LOCKED' && (
+                          <button onClick={() => openSeize(d)}
+                            className="px-2.5 py-1 rounded-lg font-bold" style={{ backgroundColor: '#FEF2F2', color: '#991B1B' }}>
+                            Seize
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {seizeFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
+          <div className="bg-white rounded-2xl border p-5 w-full max-w-sm" style={{ borderColor: C.g200 }}>
+            <div className="flex items-start justify-between mb-4">
+              <h3 className="font-black text-sm" style={{ color: C.g800 }}>
+                Seize Deposit — {seizeFor.user?.username || seizeFor.user_id?.slice(0, 8)}
+              </h3>
+              <button onClick={() => setSeizeFor(null)}><X size={14} style={{ color: C.g400 }} /></button>
+            </div>
+            <p className="text-xs mb-3" style={{ color: C.g500 }}>
+              Moves USDT from this seller's deposit to the wronged buyer's wallet. Use after a dispute resolves against this seller.
+            </p>
+            <div className="space-y-2.5">
+              <div>
+                <label className="text-xs font-bold" style={{ color: C.g600 }}>Amount to seize (max ₮{parseFloat(seizeFor.remaining_amount).toFixed(2)})</label>
+                <input type="number" value={seizeAmount} onChange={e => setSeizeAmount(e.target.value)}
+                  max={seizeFor.remaining_amount} min="0" step="0.01"
+                  className="w-full border rounded-xl px-3 py-2 text-sm outline-none mt-1" style={{ borderColor: C.g200 }} />
+              </div>
+              <div>
+                <label className="text-xs font-bold" style={{ color: C.g600 }}>Buyer user ID (receives the credit)</label>
+                <input type="text" value={seizeBuyerId} onChange={e => setSeizeBuyerId(e.target.value)}
+                  className="w-full border rounded-xl px-3 py-2 text-sm outline-none mt-1" style={{ borderColor: C.g200 }} />
+              </div>
+              <div>
+                <label className="text-xs font-bold" style={{ color: C.g600 }}>Trade ID (optional)</label>
+                <input type="text" value={seizeTradeId} onChange={e => setSeizeTradeId(e.target.value)}
+                  className="w-full border rounded-xl px-3 py-2 text-sm outline-none mt-1" style={{ borderColor: C.g200 }} />
+              </div>
+              <div>
+                <label className="text-xs font-bold" style={{ color: C.g600 }}>Reason</label>
+                <textarea value={seizeReason} onChange={e => setSeizeReason(e.target.value)} rows={2}
+                  className="w-full border rounded-xl px-3 py-2 text-sm outline-none mt-1 resize-none" style={{ borderColor: C.g200 }} />
+              </div>
+            </div>
+            <button onClick={submitSeize} disabled={submitting}
+              className="w-full py-3 rounded-xl text-sm font-black transition mt-4"
+              style={{ backgroundColor: submitting ? C.g200 : '#991B1B', color: submitting ? C.g400 : '#fff' }}>
+              {submitting ? 'Seizing…' : 'Confirm Seizure'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ================================================================
 // TEAM ACTIVITY — who's on the moderator team, and when they last logged in
 // ================================================================
 function TeamActivitySection() {
@@ -4478,6 +4671,7 @@ const NAV = [
   { id:'newusers',     label:'New Users',     icon:UserPlus        },
   { id:'trades',       label:'Trades',        icon:ArrowLeftRight  },
   { id:'disputes',     label:'Disputes',      icon:AlertTriangle   },
+  { id:'deposits',     label:'Deposits',      icon:Lock            },
   { id:'team',         label:'Team',          icon:Shield          },
   { id:'phone-verif',  label:'Phone Verif.',  icon:Phone           },
   { id:'kyc',          label:'KYC Review',    icon:ShieldCheck     },
@@ -4539,6 +4733,7 @@ export default function AdminDashboard({ user: appUser, onLogin }) {
     newusers:    <NewUsersSection />,
     trades:      <TradesSection />,
     disputes:    <DisputesSection />,
+    deposits:    <SellerDepositsSection />,
     team:        <TeamActivitySection />,
     'phone-verif': <PhoneVerifSection />,
     kyc:         <KycSection />,

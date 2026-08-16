@@ -1340,14 +1340,14 @@ export default function BuyUSDT({user}) {
       <div className="bg-white border-b sticky z-30 flex-shrink-0" style={{top:'var(--navbar-h)',borderColor:C.g200}}>
         <div className="flex w-full">
           <div className="flex-1 relative">
-            <button onClick={()=>navigate('/buy-bitcoin')}
+            <button
               className="w-full text-center py-3 text-xs font-black border-b-2 transition-all flex items-center justify-center gap-1"
               style={{borderColor:C.forest, color:C.forest, backgroundColor:`${C.forest}18`}}>
               Buy
             </button>
           </div>
           <div className="flex-1 relative">
-            <button onClick={()=>navigate('/sell-bitcoin')}
+            <button onClick={()=>navigate('/sell-usdt')}
               className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1"
               style={{color:C.g400}}>
               Sell
@@ -1387,6 +1387,11 @@ export default function BuyUSDT({user}) {
               </>
             )}
           </div>
+          <Link to="/gift-cards"
+            className="flex-1 text-center py-3 text-xs font-black border-b-2 border-transparent transition-all"
+            style={{color:C.g400}}>
+            Gift Cards
+          </Link>
         </div>
       </div>
 

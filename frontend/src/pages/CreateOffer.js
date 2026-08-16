@@ -320,6 +320,7 @@ const OFFER_TYPES = [
   { id: 'sell',   title: (a) => `Sell ${a}`,   desc: (a) => `Buyers pay you, you release ${a} from your wallet.`, icon: ArrowUpRight },
   { id: 'buy',    title: (a) => `Buy ${a}`,    desc: (a) => `You pay sellers to receive ${a} into your wallet.`, icon: ArrowDownRight },
   { id: 'gc_buy', title: (a) => `Buy ${a} with Gift Card`, desc: (a) => `Sellers send you a gift card, you send them ${a}.`, icon: Gift },
+  { id: 'gc_sell', title: (a) => `Sell Gift Card for ${a}`, desc: (a) => `You send a gift card, buyer sends you ${a}. Requires a $200 security deposit.`, icon: Gift },
 ];
 
 // ── Reusable premium searchable select ────────────────────────────────────
@@ -478,6 +479,87 @@ const GC_STEPS = [
   { id: 5, label: 'Review', icon: FileText },
 ];
 
+// ── Seller security deposit modal (gated before creating SELL_GIFT_CARD offers) ──
+const DEPOSIT_AMOUNT = 200;
+function DepositSecurityModal({ walletUsdt, onClose, onLock, loading, error }) {
+  const shortfall = Math.max(0, DEPOSIT_AMOUNT - walletUsdt);
+  const canAfford = walletUsdt >= DEPOSIT_AMOUNT;
+
+  return (
+    <div className="fixed inset-0 z-[1100] flex items-end md:items-center justify-center p-0 md:p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)' }}>
+      <div className="bg-white w-full md:max-w-md rounded-t-3xl md:rounded-3xl overflow-hidden shadow-2xl">
+        <div style={{ background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 100%)`, padding: '20px 20px 18px' }}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl flex items-center justify-center"
+                style={{ background: `linear-gradient(135deg, ${C.gold} 0%, ${C.amber} 100%)`, boxShadow: `0 4px 14px ${C.gold}66` }}>
+                <Shield size={18} color="#fff" strokeWidth={2.2} />
+              </div>
+              <div>
+                <h2 className="font-black text-base text-white">Security Deposit Required</h2>
+                <p className="text-xs" style={{ color: 'rgba(255,255,255,0.6)' }}>Builds buyer trust in your listings</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center"
+              style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}>
+              <X size={16} color="#fff" />
+            </button>
+          </div>
+        </div>
+
+        <div className="p-5" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p className="text-sm leading-relaxed" style={{ color: C.g700 }}>
+            Lock a one-time <b>${DEPOSIT_AMOUNT} USDT</b> deposit from your PRAQEN wallet before you start selling gift cards. It's how buyers know you're a trustworthy seller.
+          </p>
+
+          <div className="rounded-2xl p-3.5" style={{ backgroundColor: C.mist, border: `1px solid ${C.sage}40` }}>
+            <ul className="text-xs leading-relaxed" style={{ color: C.g700, paddingLeft: 16, margin: 0, listStyle: 'disc' }}>
+              <li>One deposit covers <b>unlimited</b> gift-card listings and trades — no extra fees.</li>
+              <li>Get it back to your wallet after <b>7 days</b>, once you have no open trades (admin-reviewed).</li>
+              <li>If a dispute proves you scammed a buyer, we may use part or all of it to refund them.</li>
+              <li>Withdrawn or used for a refund? Just relock $200 anytime to keep selling.</li>
+            </ul>
+          </div>
+
+          <div className="flex items-center justify-between rounded-2xl px-4 py-3" style={{ backgroundColor: C.g50, border: `1px solid ${C.g200}` }}>
+            <span className="text-xs font-bold" style={{ color: C.g600 }}>Your USDT balance</span>
+            <span className="text-sm font-black" style={{ color: canAfford ? C.success : C.danger }}>
+              ₮{fmt(walletUsdt)}
+            </span>
+          </div>
+
+          {!canAfford && (
+            <div className="p-3.5 rounded-2xl flex items-start gap-2.5" style={{ backgroundColor: `${C.danger}12`, border: `1px solid ${C.danger}30` }}>
+              <AlertTriangle size={14} style={{ color: C.danger, flexShrink: 0, marginTop: 1 }} />
+              <p className="text-xs leading-relaxed" style={{ color: C.g700 }}>
+                You're <b>₮{fmt(shortfall)}</b> short. Top up your wallet to lock the deposit.
+              </p>
+            </div>
+          )}
+
+          {error && (
+            <div className="p-3 rounded-xl" style={{ backgroundColor: `${C.danger}12`, border: `1px solid ${C.danger}30` }}>
+              <p className="text-xs" style={{ color: C.danger }}>{error}</p>
+            </div>
+          )}
+
+          <button
+            onClick={canAfford ? onLock : () => { window.location.href = '/wallet'; }}
+            disabled={loading}
+            style={{
+              width: '100%', padding: '13px', borderRadius: 14, border: 'none',
+              backgroundColor: loading ? C.g300 : (canAfford ? C.green : C.gold),
+              color: '#fff', fontWeight: 800, fontSize: 14, cursor: loading ? 'default' : 'pointer',
+            }}>
+            {loading ? 'Locking Deposit…' : canAfford ? `Lock $${DEPOSIT_AMOUNT} Security Deposit` : 'Top Up Wallet'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CreateOffer() {
   const navigate = useNavigate();
   const { rates: USD_RATES, btcUsd: contextBtcUsd } = useRates();
@@ -493,7 +575,13 @@ export default function CreateOffer() {
   const [walletBal, setWalletBal] = useState({ btc: 0, usdt: 0, usd: 0 });
 
   // Step 1
-  const [offerType, setOfferType] = useState('sell'); // sell | buy | gc_buy
+  const [offerType, setOfferType] = useState('sell'); // sell | buy | gc_buy | gc_sell
+
+  // Seller security deposit (gc_sell only)
+  const [depositStatus, setDepositStatus] = useState(null);
+  const [showDepositModal, setShowDepositModal] = useState(false);
+  const [depositLoading, setDepositLoading] = useState(false);
+  const [depositError, setDepositError] = useState('');
 
   // Step 2 – GC
   const [gcBrand, setGcBrand] = useState('Amazon');
@@ -527,8 +615,37 @@ export default function CreateOffer() {
   const [instructions, setInstructions] = useState('');
   const [terms, setTerms] = useState('');
 
-  const isGC = offerType === 'gc_buy';
+  const isGC = offerType === 'gc_buy' || offerType === 'gc_sell';
   const steps = isGC ? GC_STEPS : BTC_STEPS;
+
+  // Fetch seller deposit status once the user picks "Sell Gift Card"
+  useEffect(() => {
+    if (offerType !== 'gc_sell' || depositStatus !== null) return;
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    axios.get(`${API_URL}/seller-deposit/status`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => setDepositStatus(res.data))
+      .catch(() => setDepositStatus({ has_deposit: false, can_create_sell_listing: false }));
+  }, [offerType, depositStatus]);
+
+  const canCreateSellListing = depositStatus?.can_create_sell_listing === true;
+
+  const lockDeposit = async () => {
+    setDepositLoading(true);
+    setDepositError('');
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`${API_URL}/seller-deposit/lock`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.get(`${API_URL}/seller-deposit/status`, { headers: { Authorization: `Bearer ${token}` } });
+      setDepositStatus(res.data);
+      setShowDepositModal(false);
+      setStep(2);
+    } catch (err) {
+      setDepositError(err.response?.data?.error || 'Failed to lock security deposit. Please try again.');
+    } finally {
+      setDepositLoading(false);
+    }
+  };
 
   // Sync live BTC/USD price from the shared RatesContext
   useEffect(() => {
@@ -632,7 +749,14 @@ export default function CreateOffer() {
   };
 
   const back = () => setStep(s => Math.max(1, s - 1));
-  const next = () => { if (canNext()) setStep(s => Math.min(steps.length, s + 1)); };
+  const next = () => {
+    if (!canNext()) return;
+    if (step === 1 && offerType === 'gc_sell') {
+      if (depositStatus === null) return; // still checking deposit status
+      if (!canCreateSellListing) { setShowDepositModal(true); return; }
+    }
+    setStep(s => Math.min(steps.length, s + 1));
+  };
 
   const handleSubmit = async () => {
     if (!canNext() || submitting) return;
@@ -677,6 +801,9 @@ export default function CreateOffer() {
       const data = err?.response?.data;
       if (status === 409 && data?.id) {
         setDupOfferWarning({ status: data.status || 'ACTIVE', id: data.id });
+      } else if (status === 402 && data?.code === 'SECURITY_DEPOSIT_REQUIRED') {
+        setDepositStatus({ has_deposit: false, can_create_sell_listing: false });
+        setShowDepositModal(true);
       } else {
         toast.error(data?.error || data?.message || 'Failed to publish offer. Please try again.');
       }
@@ -1754,7 +1881,7 @@ export default function CreateOffer() {
                   {offerType === 'sell' ? 'Tell buyers exactly how to pay you — MoMo number, bank details, etc.' :
                     offerType === 'buy' ? 'Tell sellers how you will send payment and what info you need.' :
                       offerType === 'gc_buy' ? 'Tell gift card sellers how to send you the code and redemption steps.' :
-                        'Tell BTC buyers how to pay you and what info you need to send the gift card code.'}
+                        'Tell buyers how you will deliver the gift card code once payment is confirmed.'}
                 </p>
                 <textarea value={instructions} onChange={e => setInstructions(e.target.value)} rows={3}
                   placeholder={
@@ -1762,7 +1889,9 @@ export default function CreateOffer() {
                       ? 'e.g. Send MTN MoMo to: 024-XXX-XXXX (Your Name). Include your username as reference. Send screenshot.'
                       : offerType === 'buy'
                         ? 'e.g. I will pay via MTN MoMo within 10 minutes. Share your number when trade starts.'
-                        : 'e.g. Send gift card code and PIN photo. Code must be unused and unredeemed.'
+                        : offerType === 'gc_sell'
+                          ? 'e.g. I will send the code and PIN photo once payment is confirmed. Code will be unused and unredeemed.'
+                          : 'e.g. Send gift card code and PIN photo. Code must be unused and unredeemed.'
                   }
                   className="w-full px-4 py-3 border-2 rounded-xl text-sm focus:outline-none resize-none"
                   style={{ borderColor: instructions ? C.green : C.g200 }} />
@@ -1910,6 +2039,16 @@ export default function CreateOffer() {
           </p>
         </div>
       </div>
+
+      {showDepositModal && (
+        <DepositSecurityModal
+          walletUsdt={walletBal.usdt}
+          onClose={() => setShowDepositModal(false)}
+          onLock={lockDeposit}
+          loading={depositLoading}
+          error={depositError}
+        />
+      )}
     </div>
   );
 }

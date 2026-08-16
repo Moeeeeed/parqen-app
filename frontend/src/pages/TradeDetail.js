@@ -887,9 +887,7 @@ export default function TradeDetail({user}) {
   const [loadErr,   setLoadErr]   = useState(false);
   const [errMsg,    setErrMsg]    = useState('');
   const [paidAt,    setPaidAt]    = useState(null);
-  const [now,       setNow]       = useState(Date.now());
 
-  const DISPUTE_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes before dispute can be opened after marking paid
   const toastShown  = useRef(false);
   const [infoOpen,  setInfoOpen]  = useState(false);
   const [showDisputeModal,  setShowDisputeModal]  = useState(false);
@@ -993,12 +991,11 @@ export default function TradeDetail({user}) {
     if(distFromBottom<150) el.scrollTop=el.scrollHeight;
   },[messages]);
 
-  // ── Dispute cooldown timer ──────────────────────────────────────────────
-  // Records when payment was actually made so the 30 min cooldown is accurate.
-  // Uses the server's paid_at (survives page refresh), then updated_at,
-  // then falls back to Date.now() (set by markPaid on first click).
-  // Previously this was Date.now() - DISPUTE_COOLDOWN_MS, which made the
-  // dispute button instantly available — the timer was a no-op.
+  // ── Paid-at tracking ─────────────────────────────────────────────────────
+  // Records when payment was actually made, used for the "paid" timestamp
+  // shown in the system message. Uses the server's paid_at (survives page
+  // refresh), then updated_at, then falls back to Date.now() (set by markPaid
+  // on first click).
   useEffect(() => {
     if (isPaid) {
       if (!paidAt) {
@@ -1009,12 +1006,6 @@ export default function TradeDetail({user}) {
       setPaidAt(null);
     }
   }, [isPaid, trade?.paid_at, trade?.updated_at]);
-
-  useEffect(()=>{
-    if(!isPaid) return;
-    const iv=setInterval(()=>setNow(Date.now()), 1000);
-    return ()=>clearInterval(iv);
-  },[isPaid]);
 
   const loadAll=async()=>{
     await Promise.all([loadTrade(), loadMessages(), loadImages()]);
@@ -1171,7 +1162,7 @@ export default function TradeDetail({user}) {
     autoCancelled.current = true;
     try{
       await axios.post(`${API_URL}/trades/${id}/mark-paid`,{},{headers:authH()});
-      setPaidAt(Date.now()); // Start the 30-minute dispute cooldown immediately
+      setPaidAt(Date.now()); // Record the paid timestamp shown in the system message
       toast.success(isGiftCardTrade ? 'Code sent! Waiting for buyer to verify.' : 'Payment confirmed!');
       // Post this as a real system message in the chat (matches the "Trade
       // Complete"/"Trade Cancelled" system messages below) instead of only a
@@ -1392,10 +1383,10 @@ export default function TradeDetail({user}) {
 
   const showMarkPaid  = isGiftCardTrade ? (isSeller&&isEscrow&&isActive) : (isBuyer&&isEscrow&&isActive);
   const showRelease   = isGiftCardTrade ? (isBuyer&&isPaid&&isActive)    : (isSeller&&isPaid&&isActive);
-  const showDispute   = isActive&&!isDisputed&&(isBuyer||isSeller);
-  const paidDuration       = paidAt ? now - paidAt : 0;
-  const disputeReady       = isPaid && paidAt && paidDuration >= DISPUTE_COOLDOWN_MS;
-  const disputeCountdownS  = paidAt ? Math.max(0, Math.ceil((DISPUTE_COOLDOWN_MS - paidDuration) / 1000)) : 0;
+  // Dispute is only offered once payment has been marked as sent — before that,
+  // "not paid yet" isn't a disputable state, it's just the normal trade flow.
+  // Once paid, either side can open a dispute immediately, with no cooldown.
+  const showDispute   = isActive&&isPaid&&!isDisputed&&(isBuyer||isSeller);
 
   // ── Cancel eligibility ────────────────────────────────────────────────────
   // Mirrors the backend rule in POST /api/trades/:id/cancel exactly:
@@ -1509,24 +1500,18 @@ export default function TradeDetail({user}) {
                 </button>
               )}
               {showDispute&&(
-                <button onClick={disputeReady ? openDispute : undefined}
-                  className={`w-full py-2.5 rounded-xl font-semibold text-xs border flex items-center justify-center gap-1.5 transition ${
-                    disputeReady ? 'hover:bg-red-50' : 'opacity-60'
-                  }`}
+                <button onClick={openDispute}
+                  className="w-full py-2.5 rounded-xl font-semibold text-xs border flex items-center justify-center gap-1.5 transition hover:bg-red-50"
                   style={{
-                    borderColor: disputeReady ? `${C.danger}40` : C.g300,
-                    color: disputeReady ? C.danger : C.g400,
-                    cursor: disputeReady ? 'pointer' : 'not-allowed',
+                    borderColor: `${C.danger}40`,
+                    color: C.danger,
+                    cursor: 'pointer',
                   }}>
                   <Flag size={12}/>
-                  {disputeReady
-                    ? 'Open Dispute'
-                    : !isPaid
-                      ? <><Clock size={12}/> Dispute available after payment is sent</>
-                      : <><Clock size={12}/> Dispute in {Math.floor(disputeCountdownS/60)}:{String(disputeCountdownS%60).padStart(2,'0')}</>}
+                  Open Dispute
                 </button>
               )}
-              {showCancelBtn && (!isPaid || !disputeReady) && (
+              {showCancelBtn && !isPaid && (
                 <button onClick={()=>setShowCancel(true)}
                   className="w-full py-2 rounded-xl font-semibold text-xs border hover:bg-gray-50 transition"
                   style={{borderColor:C.g200,color:C.g500}}>
