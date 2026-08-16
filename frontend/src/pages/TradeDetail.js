@@ -1383,10 +1383,11 @@ export default function TradeDetail({user}) {
 
   const showMarkPaid  = isGiftCardTrade ? (isSeller&&isEscrow&&isActive) : (isBuyer&&isEscrow&&isActive);
   const showRelease   = isGiftCardTrade ? (isBuyer&&isPaid&&isActive)    : (isSeller&&isPaid&&isActive);
-  // Dispute is only offered once payment has been marked as sent — before that,
-  // "not paid yet" isn't a disputable state, it's just the normal trade flow.
-  // Once paid, either side can open a dispute immediately, with no cooldown.
-  const showDispute   = isActive&&isPaid&&!isDisputed&&(isBuyer||isSeller);
+  // Either side can open a dispute at any point during an active trade — not
+  // just after payment is marked sent. The backend places no status gate on
+  // /api/trades/:id/dispute either, so this just lets users reach a moderator
+  // as soon as something feels wrong instead of waiting on the other party.
+  const showDispute   = isActive&&!isDisputed&&(isBuyer||isSeller);
 
   // ── Cancel eligibility ────────────────────────────────────────────────────
   // Mirrors the backend rule in POST /api/trades/:id/cancel exactly:
@@ -1501,10 +1502,10 @@ export default function TradeDetail({user}) {
               )}
               {showDispute&&(
                 <button onClick={openDispute}
-                  className="w-full py-2.5 rounded-xl font-semibold text-xs border flex items-center justify-center gap-1.5 transition hover:bg-red-50"
+                  className="w-full py-2 rounded-lg font-semibold text-xs shadow-sm flex items-center justify-center gap-1.5 transition hover:opacity-90"
                   style={{
-                    borderColor: `${C.danger}40`,
-                    color: C.danger,
+                    backgroundColor: '#9333EA',
+                    color: '#fff',
                     cursor: 'pointer',
                   }}>
                   <Flag size={12}/>

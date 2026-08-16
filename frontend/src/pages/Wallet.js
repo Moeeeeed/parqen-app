@@ -1446,23 +1446,13 @@ function UsdtWithdrawModal({ balance, onClose, onSend, kycStatus, twoFactorEnabl
             </div>
           ) : <>
 
-          {/* ── Fee tier info ── */}
+          {/* ── Fee notice ── */}
           <div className="rounded-2xl overflow-hidden" style={{ border: '1.5px solid #fde68a' }}>
-            <div className="px-4 py-2.5 flex items-center gap-2" style={{ backgroundColor: '#fffbeb' }}>
+            <div className="px-4 py-3 flex items-center gap-2.5" style={{ backgroundColor: '#fffbeb' }}>
               <AlertTriangle size={13} style={{ color: '#d97706', flexShrink: 0 }} />
-              <p className="text-xs font-black" style={{ color: '#92400e' }}>Withdrawal Fee</p>
-            </div>
-            <div className="px-4 py-3 space-y-1.5" style={{ backgroundColor: '#fffdf5' }}>
-              {[
-                { range: `Up to ₮${FEE_SWITCH.toFixed(0)}`,    fee: `₮${FEE_FLAT.toFixed(2)} flat` },
-                { range: `Above ₮${FEE_SWITCH.toFixed(0)}`,    fee: `${(FEE_PERCENT * 100).toFixed(0)}% of amount` },
-                { range: 'Minimum send', fee: `₮${MIN_SEND.toFixed(2)}` },
-              ].map(({ range, fee: f }) => (
-                <div key={range} className="flex justify-between items-center">
-                  <span className="text-xs font-semibold" style={{ color: '#92400e' }}>{range}</span>
-                  <span className="text-xs font-black" style={{ color: '#78350f' }}>{f}</span>
-                </div>
-              ))}
+              <p className="text-xs font-semibold leading-relaxed" style={{ color: '#92400e' }}>
+                A send fee applies. You'll see the exact amount before you confirm.
+              </p>
             </div>
           </div>
 
@@ -2521,7 +2511,8 @@ export default function WalletPage({ user }) {
   const [displayCurrency,  setDisplayCurrency]  = useState(localStorage.getItem('praqen_currency') || 'USD');
   const [userVerif,        setUserVerif]        = useState(null);
 
-  // USDT + Swap state
+  // USDT + Swap state — SWAP_FEE_PERCENT mirrors backend swapService.js
+  const SWAP_FEE_PERCENT = 0.005; // 0.5%
   const [activeCoin,    setActiveCoin]    = useState('BTC');
   const [usdtData,      setUsdtData]      = useState(null);
   const [swapRate,      setSwapRate]      = useState(null);
@@ -3285,7 +3276,7 @@ export default function WalletPage({ user }) {
                     <p className="font-black text-white text-base tracking-wide">BTC ↔ USDT</p>
                     <WalletSwitcher activeCoin={activeCoin} onSelect={setActiveCoin} dark />
                   </div>
-                  <p className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.55)' }}>Instant swap · 1% fee · No blockchain delay</p>
+                  <p className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.55)' }}>Instant swap · {(SWAP_FEE_PERCENT * 100).toFixed(1)}% fee · No blockchain delay</p>
                 </div>
               </div>
               <div className="text-right">
@@ -3477,7 +3468,7 @@ export default function WalletPage({ user }) {
                 {/* You receive preview */}
                 {hasInput && !insufficient && swapRate && effNative > 0 && (() => {
                   const gross = swapFrom === 'BTC' ? effNative * swapRate : effNative / swapRate;
-                  const fee   = gross * 0.01;
+                  const fee   = gross * SWAP_FEE_PERCENT;
                   const net   = gross - fee;
                   const isB2U = swapFrom === 'BTC';
                   const sendUsd = swapInputMode === 'usd' ? usdVal : (swapFrom === 'BTC' ? effNative * swapRate : effNative);
@@ -3495,7 +3486,7 @@ export default function WalletPage({ user }) {
                             {isB2U ? net.toFixed(2) : net.toFixed(8)}
                           </p>
                           <p className="text-xs font-semibold mt-0.5" style={{ color: C.green }}>
-                            {isB2U ? 'Tether USDT' : 'Bitcoin'} · after 1% fee
+                            {isB2U ? 'Tether USDT' : 'Bitcoin'} · after {(SWAP_FEE_PERCENT * 100).toFixed(1)}% fee
                           </p>
                         </div>
                         <div className="text-right">
@@ -3510,7 +3501,7 @@ export default function WalletPage({ user }) {
                           { label: isB2U ? 'BTC sent'        : 'USDT sent',   val: `${isB2U ? '₿' : '₮'}${isB2U ? fmt(effNative, 8) : effNative.toFixed(2)}` },
                           { label: 'USD equivalent',                            val: `$${sendUsd.toFixed(2)}` },
                           { label: 'Rate',                                      val: `1 BTC = $${swapRate.toLocaleString('en-US', { maximumFractionDigits: 0 })}` },
-                          { label: 'Platform fee (1%)',                         val: `${isB2U ? '₮' : '₿'}${isB2U ? fee.toFixed(2) : fee.toFixed(8)}  ≈ $${(fee * (isB2U ? 1 : swapRate)).toFixed(2)}` },
+                          { label: `Platform fee (${(SWAP_FEE_PERCENT * 100).toFixed(1)}%)`,          val: `${isB2U ? '₮' : '₿'}${isB2U ? fee.toFixed(2) : fee.toFixed(8)}  ≈ $${(fee * (isB2U ? 1 : swapRate)).toFixed(2)}` },
                           { label: `${isB2U ? 'USDT' : 'BTC'} received`,       val: `${isB2U ? '₮' : '₿'}${isB2U ? net.toFixed(2) : net.toFixed(8)}`, bold: true },
                         ].map(({ label, val, bold }, i) => (
                           <div key={label} className="flex items-center justify-between px-3.5 py-2"

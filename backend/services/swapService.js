@@ -2,7 +2,7 @@
 // PRAQEN BTC ↔ USDT Swap Service
 // Internal ledger transfer — no on-chain transactions.
 // Live rate: Binance primary → CoinGecko fallback.
-// 1% platform fee, credited to company wallet.
+// 0.5% platform fee, credited to company wallet.
 
 require('dotenv').config();
 const axios  = require('axios');
@@ -14,7 +14,7 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
 
-const SWAP_FEE_RATE     = 0.01; // 1% fee
+const SWAP_FEE_RATE     = 0.005; // 0.5% fee
 const BINANCE_URL       = process.env.BINANCE_API_URL || 'https://api.binance.com/api/v3';
 const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
 

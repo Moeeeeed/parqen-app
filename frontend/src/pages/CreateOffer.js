@@ -708,6 +708,10 @@ export default function CreateOffer() {
   const isSellSide = offerType === 'sell';
   const walletKey = asset.toLowerCase();
   const walletCapacityLocal = (walletBal[walletKey] || 0) * assetLocal;
+  // Backend rejects SELL offers under $10 wallet balance (server.js calcFee gate) —
+  // mirrored here so the form blocks early instead of failing at final submit.
+  const walletUsdValue = (walletBal[walletKey] || 0) * assetPriceUsd;
+  const sellWalletTooLow = isSellSide && walletUsdValue < 10;
   const maxExceedsWallet = isSellSide && !!maxLimit && walletCapacityLocal > 0 && parseFloat(maxLimit) > walletCapacityLocal;
   const minUSDVal = minLimit ? parseFloat(minLimit) / localRate : 0;
   const gcMinVal = gcCardValues.length ? Math.min(...gcCardValues) : 0;
@@ -738,6 +742,7 @@ export default function CreateOffer() {
       if (step === 2) return !!country && !!currencyCode && !!payMethod;
       if (step === 3) return pricingType === 'fixed' ? !!fixedPrice : true;
       if (step === 4) {
+        if (sellWalletTooLow) return false;
         if (!minLimit || !maxLimit) return false;
         if (parseFloat(maxLimit) < parseFloat(minLimit)) return false;
         if (minUSDVal < 10) return false;
@@ -1683,20 +1688,20 @@ export default function CreateOffer() {
               {isSellSide ? (
                 <div className="rounded-xl border overflow-hidden"
                   style={{
-                    backgroundColor: walletCapacityLocal > 0 ? '#F0FDF4' : '#FFFBEB',
-                    borderColor: walletCapacityLocal > 0 ? '#A7F3D0' : '#FDE68A'
+                    backgroundColor: !sellWalletTooLow ? '#F0FDF4' : '#FFFBEB',
+                    borderColor: !sellWalletTooLow ? '#A7F3D0' : '#FDE68A'
                   }}>
                   <div className="p-3 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="text-sm flex items-center"><Briefcase size={16} /></span>
                       <div>
                         <p className="text-xs font-bold uppercase tracking-wide"
-                          style={{ color: walletCapacityLocal > 0 ? C.forest : '#92400E' }}>
+                          style={{ color: !sellWalletTooLow ? C.forest : '#92400E' }}>
                           {assetLabel} Wallet
                         </p>
                         <p className="text-xs font-bold"
-                          style={{ color: walletCapacityLocal > 0 ? C.forest : '#B45309' }}>
-                          {assetSymbol}{(walletBal[walletKey] || 0).toFixed(assetDecimals)} ≈ ${fmt((walletBal[walletKey] || 0) * assetPriceUsd, 0)} USD
+                          style={{ color: !sellWalletTooLow ? C.forest : '#B45309' }}>
+                          {assetSymbol}{(walletBal[walletKey] || 0).toFixed(assetDecimals)} ≈ ${fmt(walletUsdValue, 0)} USD
                         </p>
                         {cur !== 'USD' && walletCapacityLocal > 0 && (
                           <p className="text-xs font-semibold" style={{ color: C.g500 }}>
@@ -1709,12 +1714,19 @@ export default function CreateOffer() {
                       Max you<br />can offer
                     </p>
                   </div>
-                  {walletCapacityLocal === 0 && (
-                    <div className="px-3 pb-2 flex items-start gap-1.5">
+                  {sellWalletTooLow && (
+                    <div className="px-3 pb-3 flex items-start gap-1.5">
                       <Info size={13} style={{ color: '#92400E', flexShrink: 0, marginTop: 1 }} />
-                      <p className="text-xs font-semibold" style={{ color: '#92400E' }}>
-                        No balance yet — you can still create this offer. BTC is only locked when a buyer opens a trade.
-                      </p>
+                      <div>
+                        <p className="text-xs font-semibold" style={{ color: '#92400E' }}>
+                          You need at least $10 in your {assetLabel} wallet to publish a sell offer — fund it first, then come back to finish this offer.
+                        </p>
+                        <button type="button" onClick={() => navigate('/wallet')}
+                          className="mt-2 text-xs font-bold underline"
+                          style={{ color: '#92400E' }}>
+                          Fund my wallet
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

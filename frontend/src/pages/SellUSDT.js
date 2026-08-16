@@ -20,6 +20,7 @@ import CountryFlag, { resolveCode } from '../components/CountryFlag';
 import { BadgeChip } from '../lib/badge';
 import ActiveTradeCard from '../components/ActiveTradeCard';
 import PRQFooter from '../components/PRQFooter';
+import GettingStartedSteps from '../components/GettingStartedSteps';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -269,6 +270,11 @@ function OfferCard({listing, usdtPriceUSD, onViewBuyer, onSell, liked, onToggleL
     ? parseFloat(userSellAmt)
     : (minLocal || Math.round(100*usdRate));
   const usdtAmount = examplePay / rateLocal;
+  // Market value of that USDT at the real USDT/USD rate — NOT the buyer's
+  // marked-up rate. Deliberately different from examplePay whenever margin
+  // != 0, so the margin's effect is visible instead of the "you sell" line
+  // just echoing "you receive" back unchanged.
+  const usdtMarketFiat = parseFloat((usdtAmount * (usdtPriceUSD || 1) * usdRate).toFixed(2));
 
   const marginLabel = margin===0 ? 'Market rate' : margin>0 ? `+${margin}%` : `${Math.abs(margin)}%`;
   const marginBg    = margin>0 ? C.danger : margin<0 ? C.success : C.g400;
@@ -353,10 +359,10 @@ function OfferCard({listing, usdtPriceUSD, onViewBuyer, onSell, liked, onToggleL
       <div className="px-4 py-3 grid grid-cols-2 gap-2">
         <div>
           <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{color:C.g500}}>YOU SELL</p>
-          <p className="text-lg font-bold leading-tight truncate" style={{color:C.gold}}>
-            USDT {fUsdt(usdtAmount)}
+          <p className="text-lg font-bold leading-tight truncate" style={{color:C.g800}}>
+            {sym}{fmt(usdtMarketFiat, 2)}
           </p>
-          <p className="text-xs font-semibold mt-0.5" style={{color:C.g500}}>≈ {sym}{fmt(examplePay, 2)} {cur}</p>
+          <p className="text-xs font-semibold mt-0.5" style={{color:C.g500}}>≈ USDT {fUsdt(usdtAmount)}</p>
         </div>
         <div className="border-l pl-3" style={{borderColor:C.g100}}>
           <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{color:C.g500}}>YOU RECEIVE</p>
@@ -852,6 +858,7 @@ export default function SellUSDT({user}) {
   const [modal,        setModal]        = useState(null);
   const [sellAmt,      setSellAmt]      = useState('');
   const [activeTrades, setActiveTrades] = useState([]);
+  const [userUsdtBalance, setUserUsdtBalance] = useState(0);
   const [showAllTrades, setShowAllTrades] = useState(false);
   const [traderSearch, setTraderSearch] = useState('');
   const [selCurrency,  setSelCurrency]  = useState(CURRENCIES[0]);
@@ -973,6 +980,15 @@ export default function SellUSDT({user}) {
       axios.post(`${API_URL}/users/heartbeat`, {}, { headers: h }).catch(() => {}),
       fetchTrades(),
     ]);
+  }, []);
+
+  // ── Own USDT balance — drives the getting-started guide ────────────────────
+  useEffect(() => {
+    const tk = localStorage.getItem('token');
+    if (!tk) return;
+    axios.get(`${API_URL}/wallet/usdt`, { headers: { Authorization: `Bearer ${tk}` } })
+      .then(r => setUserUsdtBalance(parseFloat(r.data?.balance_usdt || 0)))
+      .catch(() => {});
   }, []);
 
   // ── Auto-detect country + currency on first load ───────────────────────────
@@ -1175,21 +1191,11 @@ export default function SellUSDT({user}) {
               </>
             )}
           </div>
-          {[
-            {label:'Gift Cards', path:'/gift-cards',  active:false, color:'#0D9488'},
-          ].map(tab=>(
-            <Link key={tab.path} to={tab.path}
-              className="flex-1 text-center py-3 text-xs font-black border-b-2 transition-all"
-              style={{
-                borderColor:     tab.active ? tab.color : 'transparent',
-                color:           tab.active ? tab.color : C.g400,
-                backgroundColor: tab.active ? tab.color+'18' : 'transparent',
-              }}>
-              {tab.label}
-            </Link>
-          ))}
         </div>
       </div>
+
+      {/* Getting-started guide — shown to logged-in users who haven't funded their wallet yet */}
+      {user && userUsdtBalance < 10 && <GettingStartedSteps userId={user.id} />}
 
       {/* ══ 3. FILTER BAR ══════════════════════════════════════ */}
       <div className="bg-white border-b flex-shrink-0" style={{borderColor:C.g200}}>

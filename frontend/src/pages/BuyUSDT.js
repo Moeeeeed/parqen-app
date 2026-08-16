@@ -22,6 +22,7 @@ import CountryFlag, { resolveCode } from '../components/CountryFlag';
 import { BadgeChip, BADGE_COLORS } from '../lib/badge';
 import ActiveTradeCard from '../components/ActiveTradeCard';
 import PRQFooter from '../components/PRQFooter';
+import GettingStartedSteps from '../components/GettingStartedSteps';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -1040,7 +1041,8 @@ export default function BuyUSDT({user}) {
   const [paymentSearch, setPaymentSearch] = useState('');
   const [showCountry,   setShowCountry]   = useState(false);
   const [showPayment,   setShowPayment]   = useState(false);
-  const [showAllCryptoMenu, setShowAllCryptoMenu] = useState(false);
+  const [showBuyMenu, setShowBuyMenu] = useState(false);
+  const [showSellMenu, setShowSellMenu] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [sortBy,       setSortBy]       = useState('rate_low');
   const [modal,        setModal]        = useState(null);
@@ -1340,31 +1342,17 @@ export default function BuyUSDT({user}) {
       <div className="bg-white border-b sticky z-30 flex-shrink-0" style={{top:'var(--navbar-h)',borderColor:C.g200}}>
         <div className="flex w-full">
           <div className="flex-1 relative">
-            <button
+            <button onClick={()=>setShowBuyMenu(v=>!v)}
               className="w-full text-center py-3 text-xs font-black border-b-2 transition-all flex items-center justify-center gap-1"
-              style={{borderColor:C.forest, color:C.forest, backgroundColor:`${C.forest}18`}}>
-              Buy
+              style={{borderColor:'#26A17B', color:'#1c7d5e', backgroundColor:'rgba(38,161,123,0.08)'}}>
+              Buy USDT <ChevronDown size={12} className={`transition-transform ${showBuyMenu?'rotate-180':''}`}/>
             </button>
-          </div>
-          <div className="flex-1 relative">
-            <button onClick={()=>navigate('/sell-usdt')}
-              className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1"
-              style={{color:C.g400}}>
-              Sell
-            </button>
-          </div>
-          <div className="flex-1 relative">
-            <button onClick={()=>setShowAllCryptoMenu(v=>!v)}
-              className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1"
-              style={{color:C.g400}}>
-              All Crypto <ChevronDown size={12} className={`transition-transform ${showAllCryptoMenu?'rotate-180':''}`}/>
-            </button>
-            {showAllCryptoMenu && (
+            {showBuyMenu && (
               <>
-                <div className="fixed inset-0 z-40" onClick={()=>setShowAllCryptoMenu(false)}/>
+                <div className="fixed inset-0 z-40" onClick={()=>setShowBuyMenu(false)}/>
                 <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-52 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white"
                   style={{borderColor:C.g200}}>
-                  <button onClick={()=>{setShowAllCryptoMenu(false); navigate('/buy-bitcoin');}}
+                  <button onClick={()=>{setShowBuyMenu(false); navigate('/buy-bitcoin');}}
                     className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition hover:bg-gray-50">
                     <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
                       style={{background:'linear-gradient(135deg,#F7931A,#e8830a)'}}>₿</span>
@@ -1372,8 +1360,46 @@ export default function BuyUSDT({user}) {
                       <span className="block text-xs font-black" style={{color:C.g800}}>Bitcoin</span>
                       <span className="block text-[10px] font-semibold" style={{color:C.g400}}>BTC</span>
                     </span>
+                    <ArrowRight size={13} style={{color:C.g300}}/>
                   </button>
-                  <button onClick={()=>{setShowAllCryptoMenu(false); navigate('/buy-usdt');}}
+                  <button onClick={()=>setShowBuyMenu(false)}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t"
+                    style={{borderColor:C.g100, backgroundColor:'rgba(38,161,123,0.08)'}}>
+                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
+                      style={{background:'#26A17B'}}>₮</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-xs font-black" style={{color:C.g800}}>Tether</span>
+                      <span className="block text-[10px] font-semibold" style={{color:C.g400}}>USDT · you're here</span>
+                    </span>
+                    <CheckCircle size={14} style={{color:'#1c7d5e', flexShrink:0}}/>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="flex-1 relative">
+            <button onClick={()=>setShowSellMenu(v=>!v)}
+              className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1"
+              style={{color:C.g400}}>
+              Sell <ChevronDown size={12} className={`transition-transform ${showSellMenu?'rotate-180':''}`}/>
+            </button>
+            {showSellMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={()=>setShowSellMenu(false)}/>
+                <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-52 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white"
+                  style={{borderColor:C.g200}}>
+                  <button onClick={()=>{setShowSellMenu(false); navigate('/sell-bitcoin');}}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition">
+                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
+                      style={{background:'linear-gradient(135deg,#F7931A,#e8830a)'}}>₿</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-xs font-black" style={{color:C.g800}}>Bitcoin</span>
+                      <span className="block text-[10px] font-semibold" style={{color:C.g400}}>BTC</span>
+                    </span>
+                    <ArrowRight size={13} style={{color:C.g300}}/>
+                  </button>
+                  <button onClick={()=>{setShowSellMenu(false); navigate('/sell-usdt');}}
                     className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition border-t"
                     style={{borderColor:C.g100}}>
                     <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
@@ -1382,18 +1408,17 @@ export default function BuyUSDT({user}) {
                       <span className="block text-xs font-black" style={{color:C.g800}}>Tether</span>
                       <span className="block text-[10px] font-semibold" style={{color:C.g400}}>USDT</span>
                     </span>
+                    <ArrowRight size={13} style={{color:C.g300}}/>
                   </button>
                 </div>
               </>
             )}
           </div>
-          <Link to="/gift-cards"
-            className="flex-1 text-center py-3 text-xs font-black border-b-2 border-transparent transition-all"
-            style={{color:C.g400}}>
-            Gift Cards
-          </Link>
         </div>
       </div>
+
+      {/* Getting-started guide — shown to logged-in users who haven't funded their wallet yet */}
+      {user && userUsdtBalance < 10 && <GettingStartedSteps userId={user.id} />}
 
       {/* Low-balance reminder — shown to logged-in sellers whose USDT is below $10 */}
       {user && userUsdtBalance < 10 && (
