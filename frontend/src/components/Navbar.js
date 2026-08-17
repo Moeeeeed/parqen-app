@@ -434,31 +434,48 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
                 <div className="prq-dropdown" style={{
                   position: 'absolute', top: 'calc(100% + 8px)', right: 0,
                   transformOrigin: 'top right',
-                  width: 240, background: '#fff', borderRadius: 16,
+                  width: 260, maxWidth: 'calc(100vw - 16px)', background: '#fff', borderRadius: 16,
                   boxShadow: '0 20px 60px rgba(0,0,0,0.18)', border: `1px solid ${C.g100}`,
                   overflow: 'hidden', zIndex: 50,
                 }}>
-                  {/* User header */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${C.g100}`, background: C.mist }}>
+                  {/* User header — doubles as a compact profile+balance card rather than just
+                      repeating the trigger button's avatar/name, so it earns its own space
+                      instead of reading as a near-duplicate directly beneath it. */}
+                  <Link to="/profile" onClick={() => setProfileDrop(false)}
+                    style={{ display: 'block', padding: '14px 16px', borderBottom: `1px solid ${C.g100}`, background: C.mist, textDecoration: 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{
+                        width: 40, height: 40, borderRadius: 12, overflow: 'hidden', flexShrink: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontWeight: 900, fontSize: 15,
+                        background: `linear-gradient(135deg, ${C.gold}, #FBBF24)`,
+                      }}>
+                        {displayUser?.avatar_url
+                          ? <img src={displayUser.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : <span style={{ color: C.dark }}>{displayUser?.username?.charAt(0)?.toUpperCase() || 'U'}</span>}
+                      </div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <p style={{ margin: 0, fontWeight: 900, fontSize: 13, color: C.forest, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {displayUser?.username || 'User'}
+                        </p>
+                        <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: C.g400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {displayUser?.email || ''}
+                        </p>
+                      </div>
+                      <ChevronDown size={14} color={C.g400} style={{ transform: 'rotate(-90deg)', flexShrink: 0 }} />
+                    </div>
                     <div style={{
-                      width: 36, height: 36, borderRadius: 10, overflow: 'hidden', flexShrink: 0,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontWeight: 900, fontSize: 14,
-                      background: `linear-gradient(135deg, ${C.gold}, #FBBF24)`,
+                      marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      background: '#fff', border: `1px solid #c8e6d4`, borderRadius: 10, padding: '7px 10px',
                     }}>
-                      {displayUser?.avatar_url
-                        ? <img src={displayUser.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        : <span style={{ color: C.dark }}>{displayUser?.username?.charAt(0)?.toUpperCase() || 'U'}</span>}
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: C.g500 }}>
+                        <Wallet size={12} color={C.forest} /> Balance
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 900, color: C.forest }}>
+                        {showBal ? `${localCode} ${sym}${fmt(totalLocal, 2)}` : '••••••'}
+                      </span>
                     </div>
-                    <div style={{ minWidth: 0 }}>
-                      <p style={{ margin: 0, fontWeight: 900, fontSize: 13, color: C.forest, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {displayUser?.username || 'User'}
-                      </p>
-                      <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: C.g400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {displayUser?.email || ''}
-                      </p>
-                    </div>
-                  </div>
+                  </Link>
 
                   {/* P2P Trade row */}
                   <Link to="/buy-bitcoin" onClick={() => setProfileDrop(false)}

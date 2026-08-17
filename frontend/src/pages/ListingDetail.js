@@ -37,10 +37,30 @@ function fmtAge(d) {
   return `${~~(s/86400)}d ago`;
 }
 
+// Bulk marketplace responses cap out oversized avatar_url values (see server.js capAvatar) so
+// this page can't just trust it's present — lazy-fetch from GET /api/users/:id/avatar when the
+// listing/seller payload omitted it, same pattern as the Avatar component on BuyBitcoin.js and
+// GiftCardMarketplace.js.
+const _avatarCache = {}; // userId → Promise<url> | url-string | null
 function Avatar({ user, size=48 }) {
   const [err, setErr] = useState(false);
-  if (user?.avatar_url && !err) return (
-    <img src={user.avatar_url} alt={user.username||'user'} onError={()=>setErr(true)}
+  const [lazyUrl, setLazyUrl] = useState(null);
+  useEffect(() => {
+    const stored = user?.avatar_url;
+    const id = user?.id;
+    if (stored || !id || err) return;
+    const hit = _avatarCache[id];
+    if (hit instanceof Promise) { hit.then(v => { if (v) setLazyUrl(v); }); return; }
+    if (hit !== undefined) { setLazyUrl(hit); return; }
+    const p = axios.get(`${API_URL}/users/${id}/avatar`)
+      .then(r => r.data?.avatar_url || null)
+      .catch(() => null)
+      .then(v => { _avatarCache[id] = v; if (v) setLazyUrl(v); return v; });
+    _avatarCache[id] = p;
+  }, [user?.id, user?.avatar_url, err]);
+  const url = user?.avatar_url || lazyUrl;
+  if (url && !err) return (
+    <img src={url} alt={user.username||'user'} onError={()=>setErr(true)}
       className="object-cover flex-shrink-0 rounded-2xl" style={{width:size,height:size}}/>
   );
   return (
@@ -241,20 +261,40 @@ const loadAll = useCallback(async (isBackground = false) => {
   const margin   = parseFloat(listing.margin || 0);
 
   // Logic Sync: Calculate base price exactly as backend quotes endpoint should.
-  // If fixed, use the fixed price. If market, use live btcPrice.
-  const basePriceUSD    = (listing.pricing_type === 'fixed' && parseFloat(listing.bitcoin_price||0) > 100)
-    ? parseFloat(listing.bitcoin_price) 
-    : btcPrice;
+  // If fixed, use the fixed price. If market, use live btcPrice — but only for BTC-asset
+  // listings. A USDT-asset listing's "price" is ~$1 (the peg), not the BTC/USD rate; using
+  // btcPrice unconditionally here made every USDT trade's amount come out ~88,000x too small
+  // (e.g. a real $50 trade computing as 0.0006 USDT instead of $50 USDT), and the `> 100`
+  // fixed-price sanity check — a valid heuristic for BTC, always tens of thousands — silently
+  // rejected any legitimate USDT fixed price (which is necessarily close to 1).
+  const isUsdtAsset      = listing.asset === 'USDT';
+  const basePriceUSD    = isUsdtAsset
+    ? ((listing.pricing_type === 'fixed' && parseFloat(listing.bitcoin_price || 0) > 0)
+        ? parseFloat(listing.bitcoin_price)
+        : 1)
+    : ((listing.pricing_type === 'fixed' && parseFloat(listing.bitcoin_price||0) > 100)
+        ? parseFloat(listing.bitcoin_price)
+        : btcPrice);
   
   const sellerRateUSD   = basePriceUSD * (1 + margin / 100);
   const sellerRateLocal = sellerRateUSD * usdRate;
 
   const minLocal = listing.min_limit_local || (listing.min_limit_usd ? listing.min_limit_usd * usdRate : 10 * usdRate);
-  // Use effective_max_usd (based on seller's live wallet) when available, else fall back to listing max
-  const effectiveMaxUsd = listing.effective_max_usd || listing.max_limit_usd || 0;
-  const maxLocal = listing.max_limit_local
-    || (effectiveMaxUsd ? effectiveMaxUsd * usdRate : listing.max_limit_usd ? listing.max_limit_usd * usdRate : 1000 * usdRate);
-  const sellerHasLowBalance = listing.seller_balance_btc !== undefined && listing.seller_balance_btc < (listing.min_limit_usd || 10) / (listing.bitcoin_price || 88000);
+  const rawMaxLocal = listing.max_limit_local
+    || (listing.max_limit_usd ? listing.max_limit_usd * usdRate : 1000 * usdRate);
+  // effective_max_usd reflects the seller's live wallet capacity for balance-capped listing
+  // types (SELL / SELL_BITCOIN / BUY_GIFT_CARD). It must actually cap maxLocal here — previously
+  // `listing.max_limit_local || (...)` short-circuited past this whenever max_limit_local was
+  // set (i.e. always), so the amount input silently allowed more than the seller could deliver
+  // and the trade only failed after submit.
+  const maxLocal = listing.effective_max_usd
+    ? Math.min(rawMaxLocal, listing.effective_max_usd * usdRate)
+    : rawMaxLocal;
+  // Compare against the seller's balance in whatever asset this listing is actually
+  // denominated in — a USDT offer's seller can hold $0 BTC and still easily cover it.
+  const sellerHasLowBalance = listing.asset === 'USDT'
+    ? listing.seller_balance_usdt !== undefined && listing.seller_balance_usdt < (listing.min_limit_usd || 10)
+    : listing.seller_balance_btc !== undefined && listing.seller_balance_btc < (listing.min_limit_usd || 10) / (listing.bitcoin_price || 88000);
   // Backend flags this when the seller's live balance can't cover the listing's own minimum —
   // in that case maxLocal can end up below minLocal (e.g. MIN $50 / MAX $10), which is untradeable.
   const sellerCantFulfillMin = listing.seller_can_fulfill_min === false || maxLocal < minLocal;
@@ -825,15 +865,17 @@ const loadAll = useCallback(async (isBackground = false) => {
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: C.gold, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <span style={{ color: '#fff', fontWeight: 900, fontSize: 13 }}>₿</span>
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: isUsdtAsset ? '#26A17B' : C.gold, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <span style={{ color: '#fff', fontWeight: 900, fontSize: 13 }}>{isUsdtAsset ? '₮' : '₿'}</span>
                   </div>
                   <div>
                     <div style={{ fontSize: 22, fontWeight: 900, color: T.primary, lineHeight: 1 }}>
                       {fiatEquivalent > 0 ? `${sym}${fmt(fiatEquivalent, 2)} ${cur}` : <span style={{ color: C.g300 }}>0.00 {cur}</span>}
                     </div>
                     <div style={{ fontSize: 11, color: C.g400, fontWeight: 600, marginTop: 2 }}>
-                      ₿ {btcAfterFee > 0 ? fmtBtc(btcAfterFee) : '0.00000000'}
+                      {isUsdtAsset
+                        ? `₮ ${btcAfterFee > 0 ? btcAfterFee.toFixed(2) : '0.00'} USDT`
+                        : `₿ ${btcAfterFee > 0 ? fmtBtc(btcAfterFee) : '0.00000000'}`}
                     </div>
                   </div>
                   {quoteFetching && <RefreshCw size={13} color={C.g300} style={{ marginLeft: 'auto' }} className="animate-spin" />}

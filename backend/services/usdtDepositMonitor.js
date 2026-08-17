@@ -231,11 +231,25 @@ class USDTDepositMonitor {
       console.log(`   Address     : ${address}`);
       console.log(`   On-chain now: ${onchainUsdt} USDT | Last: ${lastOnchainUsdt} USDT`);
 
-      // ── Step 3: Idempotency guard — update last_onchain_usdt FIRST ───────
-      const { error: claimErr } = await supabaseAdmin
+      // ── Step 3: Atomically claim this deposit (compare-and-swap on last_onchain_usdt) ──
+      // The unconditional update this replaced always wrote regardless of what the row
+      // currently held — but the periodic scanner (sequential, one address at a time) and the
+      // manual "check my deposit now" trigger (server.js POST handler calling checkUserDeposit
+      // directly) can run concurrently for the SAME user. Both would read the same stale
+      // lastOnchainUsdt and both credit the wallet for the same on-chain deposit. Guard against
+      // it in the WHERE clause itself (checked against the DB's current value, not the possibly
+      // -stale local one): only claim if the stored balance hasn't already caught up to what
+      // we're about to record. If another invocation already won, this matches zero rows and we
+      // abort before crediting anything.
+      const nowIsoUsdt = new Date().toISOString();
+      const { data: claimedUsdtRows, error: claimErr } = await supabaseAdmin
         .from('user_wallets')
-        .update({ last_onchain_usdt: onchainUsdt, updated_at: new Date().toISOString() })
-        .eq('user_id', userId);
+        .update({ last_onchain_usdt: onchainUsdt, updated_at: nowIsoUsdt })
+        .eq('user_id', userId)
+        .or(`last_onchain_usdt.is.null,last_onchain_usdt.lt.${onchainUsdt}`)
+        .select('user_id');
+
+      let usdtClaimed = !claimErr && claimedUsdtRows && claimedUsdtRows.length > 0;
 
       if (claimErr) {
         if (claimErr.message.includes('last_onchain_usdt')) {
@@ -243,7 +257,14 @@ class USDTDepositMonitor {
         } else {
           console.warn(`[USDTMonitor] last_onchain_usdt update failed for ${username}:`, claimErr.message);
         }
-        // Proceed — wallet_transactions insert acts as fallback idempotency
+        // Genuine query/schema error, not a race loss — credit without the atomic guard
+        // rather than silently dropping a real deposit, matching prior behavior.
+        usdtClaimed = true;
+      }
+
+      if (!usdtClaimed) {
+        console.log(`[USDTMonitor] Deposit for ${username} (${depositUsdt} USDT) already claimed by a concurrent check — skipping duplicate credit`);
+        return;
       }
 
       // ── Step 4: Get current USDT balance from wallets table ───────────────

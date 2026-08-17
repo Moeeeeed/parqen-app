@@ -401,9 +401,17 @@ async function pauseSellOffersIfEmpty(sellerId) {
 }
 
 router.post('/send', verifyToken, sendLimiter, async (req, res) => {
+  // Hoisted above the try block so the catch block below can actually see them —
+  // `const`/destructured bindings declared inside `try {}` are NOT visible inside
+  // the paired `catch (error) {}` (separate block scopes); referencing them there
+  // previously threw ReferenceError instead of returning the intended error JSON.
+  let toAddress, amount, force, available, sendUser, platformFee, platformFeeUsd,
+      feeLabel, amountUserReceives, deducted = false, broadcastSucceeded = false, newBalance;
+  const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
   try {
-    const { toAddress: rawAddress, amountBtc, actionCode, force } = req.body;
-    const toAddress = (rawAddress || '').trim();
+    const { toAddress: rawAddress, amountBtc, actionCode } = req.body;
+    force = req.body.force;
+    toAddress = (rawAddress || '').trim();
     const userId = req.userId;
 
     if (!toAddress || !amountBtc || parseFloat(amountBtc) <= 0) {
@@ -419,7 +427,7 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
       });
     }
 
-    const amount = parseFloat(amountBtc);
+    amount = parseFloat(amountBtc);
 
     // ── 2-verification required to send BTC out (external only) ─────────────
     // Internal PRAQEN-to-PRAQEN transfers remain free with 1 verification.
@@ -438,7 +446,7 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
 
       const { data: senderBal } = await supabaseAdmin
         .from('wallets').select('balance_btc').eq('user_id', userId).single();
-      const available = parseFloat(senderBal?.balance_btc || 0);
+      available = parseFloat(senderBal?.balance_btc || 0);
       if (available < amount) {
         return res.status(400).json({
           error: `Insufficient balance. Available: ${available.toFixed(8)} BTC, Requested: ${amount.toFixed(8)} BTC`,
@@ -564,10 +572,11 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
     if (!sendCodeCheck.valid) return res.status(403).json({ error: sendCodeCheck.error });
 
     // All 3 verifications required to withdraw BTC to an external address
-    const { data: sendUser } = await supabaseAdmin
+    const { data: sendUserData } = await supabaseAdmin
       .from('users')
       .select('email, username, is_email_verified, email_verified, is_phone_verified, phone_verified, is_id_verified, kyc_verified')
       .eq('id', userId).single();
+    sendUser = sendUserData;
 
     const sHasEmail = !!(sendUser?.is_email_verified || sendUser?.email_verified);
     const sHasPhone = !!(sendUser?.is_phone_verified  || sendUser?.phone_verified);
@@ -585,13 +594,15 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
     const { data: bal } = await supabaseAdmin
       .from('wallets').select('balance_btc').eq('user_id', userId).single();
 
-    const available = parseFloat(bal?.balance_btc || 0);
+    available = parseFloat(bal?.balance_btc || 0);
 
     // ── Tiered PRAQEN withdrawal fee ─────────────────────────────────────────
-    const COMPANY_WALLET_ID  = '14762cd0-d3b2-474f-acab-fe0071961e9a';
-    const liveBtcPrice       = await getLiveBtcPrice();
-    const { feeBtc: platformFee, feeUsd: platformFeeUsd, label: feeLabel } = calcWithdrawalFee(amount, liveBtcPrice);
-    const amountUserReceives = parseFloat((amount - platformFee).toFixed(8));
+    const liveBtcPrice = await getLiveBtcPrice();
+    const feeResult = calcWithdrawalFee(amount, liveBtcPrice);
+    platformFee = feeResult.feeBtc;
+    platformFeeUsd = feeResult.feeUsd;
+    feeLabel = feeResult.label;
+    amountUserReceives = parseFloat((amount - platformFee).toFixed(8));
 
     if (available < amount) {
       return res.status(400).json({
@@ -605,20 +616,41 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
 
     console.log(`[hdWalletRoutes] On-chain send: ₿${amountUserReceives} (+ ₿${platformFee} ${feeLabel}) from ${userId.slice(0,8)} → ${toAddress}`);
 
+    // ── Deduct BEFORE broadcasting, with an optimistic lock ────────────────────
+    // Broadcasting first and deducting only after success (the old order) let two
+    // concurrent requests both read the same `available`, both pass the balance
+    // check above, and both broadcast a real on-chain send before either
+    // deduction landed — an actual double-spend of hot-wallet funds. Deducting
+    // first (and restoring it on any genuine failure below) closes that race.
+    newBalance = parseFloat((available - amount).toFixed(8));
+    const { data: deductRows, error: deductErr } = await supabaseAdmin
+      .from('wallets')
+      .update({ balance_btc: newBalance, updated_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('balance_btc', available)
+      .select('balance_btc');
+    if (deductErr) {
+      return res.status(500).json({ error: 'Failed to reserve BTC — please try again' });
+    }
+    if (!deductRows || deductRows.length === 0) {
+      return res.status(409).json({ error: 'Balance changed — please retry the withdrawal' });
+    }
+    deducted = true;
+    await Promise.all([
+      supabaseAdmin.from('user_balances').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
+      supabaseAdmin.from('user_wallets').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
+    ]);
+
     // Attempt broadcast — hot wallet is NEVER touched if it has insufficient funds
     let result;
     try {
       result = await hdWallet.sendWithdrawal(userId, toAddress, amountUserReceives);
+      broadcastSucceeded = true;
     } catch (sendErr) {
-      // If hot wallet is low AND the user has force-confirmed, queue as PENDING — hot wallet stays safe
+      // If hot wallet is low AND the user has force-confirmed, queue as PENDING — hot wallet stays safe.
+      // Balance was already deducted above (before the broadcast attempt); don't deduct again.
       if (sendErr.message?.startsWith('HOT_WALLET_INSUFFICIENT') && force) {
         console.log(`[hdWalletRoutes] Force-confirmed — queuing ₿${amountUserReceives} as PENDING_WITHDRAWAL for ${userId.slice(0,8)}`);
-        const newBalance = parseFloat((available - amount).toFixed(8));
-        await Promise.all([
-          supabaseAdmin.from('wallets').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
-          supabaseAdmin.from('user_balances').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
-          supabaseAdmin.from('user_wallets').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
-        ]);
         // Credit fee to PRAQEN immediately — fee is earned regardless of PENDING status
         const { data: cw1 } = await supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', COMPANY_WALLET_ID).maybeSingle();
         const ncb1 = parseFloat((parseFloat(cw1?.balance_btc || 0) + platformFee).toFixed(8));
@@ -670,20 +702,7 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
       throw sendErr;
     }
 
-    const newBalance = parseFloat((available - amount).toFixed(8));
-
-    // Deduct full amount (including fee) from user — update all three tables
-    await Promise.all([
-      supabaseAdmin.from('wallets')
-        .update({ balance_btc: newBalance, updated_at: new Date().toISOString() })
-        .eq('user_id', userId),
-      supabaseAdmin.from('user_balances')
-        .update({ balance_btc: newBalance, updated_at: new Date().toISOString() })
-        .eq('user_id', userId),
-      supabaseAdmin.from('user_wallets')
-        .update({ balance_btc: newBalance, updated_at: new Date().toISOString() })
-        .eq('user_id', userId),
-    ]);
+    // Balance was already deducted above (before the broadcast attempt) — no further deduction needed.
 
     // Credit blockchain fee to PRAQEN company wallet — update all balance tables immediately
     const { data: companyWallet } = await supabaseAdmin
@@ -755,28 +774,43 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
 
   } catch (error) {
     console.error('[hdWalletRoutes POST /send]', error.message);
+    const userId = req.userId;
+
+    // Every branch below is a genuine failure (nothing broadcast, nothing queued)
+    // EXCEPT the INSUFFICIENT_UTXOS+force one, which deliberately keeps the
+    // deduction and records a PENDING withdrawal instead. Restore the reserved
+    // balance here so a failed send never leaves the user short — but only when
+    // the broadcast itself never succeeded; if it did and a later step (e.g. fee
+    // crediting) threw, the BTC already left the hot wallet and must NOT be
+    // credited back, or the user would get it twice.
+    const isQueueable = error.message?.startsWith('INSUFFICIENT_UTXOS') && force;
+    if (deducted && !broadcastSucceeded && !isQueueable) {
+      const { error: restoreErr } = await supabaseAdmin
+        .from('wallets').update({ balance_btc: available, updated_at: new Date().toISOString() }).eq('user_id', userId);
+      if (restoreErr) {
+        console.error('[hdWalletRoutes] CRITICAL: balance restore failed after send error!', restoreErr.message, 'user:', userId, 'amount:', amount);
+      } else {
+        await Promise.all([
+          supabaseAdmin.from('user_balances').update({ balance_btc: available, updated_at: new Date().toISOString() }).eq('user_id', userId),
+          supabaseAdmin.from('user_wallets').update({ balance_btc: available, updated_at: new Date().toISOString() }).eq('user_id', userId),
+        ]);
+      }
+    }
 
     if (error.message?.startsWith('MEMPOOL_API_ERROR')) {
       return res.status(503).json({
         error: 'We are experiencing a brief network delay. Your funds are safe — please try again in a few minutes.',
-        admin_detail: error.message,
       });
     }
     if (error.message?.startsWith('HOT_WALLET_INSUFFICIENT')) {
       return res.status(503).json({
         error: 'Sorry for the delay. This is a blockchain issue because you are sending to a risky wallet. Please contact support to set your 2FA code — this is for your security.',
-        admin_detail: error.message,
       });
     }
     if (error.message?.startsWith('INSUFFICIENT_UTXOS')) {
       if (force) {
-        // Queue as PENDING — hot wallet stays safe, user sees success
-        const newBalance = parseFloat((available - amount).toFixed(8));
-        await Promise.all([
-          supabaseAdmin.from('wallets').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
-          supabaseAdmin.from('user_balances').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
-          supabaseAdmin.from('user_wallets').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
-        ]);
+        // Queue as PENDING — hot wallet stays safe, user sees success.
+        // Balance was already deducted above (before the broadcast attempt); don't deduct again.
         // Credit fee to PRAQEN immediately — fee is earned regardless of PENDING status
         const { data: cw2 } = await supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', COMPANY_WALLET_ID).maybeSingle();
         const ncb2 = parseFloat((parseFloat(cw2?.balance_btc || 0) + platformFee).toFixed(8));
@@ -823,7 +857,6 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
       }
       return res.status(503).json({
         error: 'Sorry for the delay. This is a blockchain issue because you are sending to a risky wallet. Please contact support to set your 2FA code — this is for your security.',
-        admin_detail: error.message,
       });
     }
     if (error.message?.includes('No UTXOs')) {

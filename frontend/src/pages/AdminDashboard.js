@@ -2885,8 +2885,14 @@ function FinanceSection() {
 // Clear, unambiguous listing-status pill — ACTIVE gets a pulsing green dot
 // and the explicit words "Live in Market" so it can't be mistaken for the
 // generic ACTIVE/PAUSED/CLOSED text the plain Pill component would show.
-function ListingStatusPill({ status }) {
+function ListingStatusPill({ status, effectivelyVisible }) {
   if (status === 'ACTIVE') {
+    // DB status is ACTIVE, but GET /api/listings is silently excluding this row because the
+    // seller's live balance can't currently cover it — the seller sees it as "active" but no
+    // buyer can find it. Distinguish that from genuinely live so admins aren't misled.
+    if (effectivelyVisible === false) {
+      return <Pill label="Active but hidden (low balance)" color="#92400E" bg="#FFFBEB" />;
+    }
     return (
       <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-black" style={{ color: '#166534', backgroundColor: '#F0FDF4', border: '1px solid #86EFAC' }}>
         <span className="relative flex w-1.5 h-1.5 flex-shrink-0">
@@ -3006,7 +3012,7 @@ function ListingsSection() {
                     <td className="px-4 py-3 text-xs font-bold" style={{ color: C.g800 }}>{l.gift_card_brand || l.payment_method || '—'}</td>
                     <td className="px-4 py-3 text-xs font-bold" style={{ color: C.g800 }}>${fmt(l.amount_usd, 0)}</td>
                     <td className="px-4 py-3">
-                      <ListingStatusPill status={l.status} />
+                      <ListingStatusPill status={l.status} effectivelyVisible={l.effectively_visible} />
                     </td>
                     <td className="px-4 py-3 text-xs" style={{ color: C.g400 }}>{fmtDate(l.created_at)}</td>
                     <td className="px-4 py-3">

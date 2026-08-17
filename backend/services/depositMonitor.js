@@ -390,34 +390,53 @@ class DepositMonitor {
       const currentBalanceBTC = parseFloat(walRow?.balance_btc || 0);
       const newBalanceBTC     = parseFloat((currentBalanceBTC + depositBTC).toFixed(8));
 
-      // ── Step 5a: Claim this deposit by recording last_onchain_btc FIRST ────
-      // Idempotency guard — once set, the next poll will not re-credit the same deposit.
-      const { error: claimErr } = await supabaseAdmin
+      // ── Step 5a: Atomically claim this deposit (compare-and-swap on last_onchain_btc) ──
+      // The upsert this replaced always wrote unconditionally, regardless of what the row
+      // currently held — but blockchainBTC was read (Step 1) and this claim happens several
+      // `await`s later (a DB read, an external price-API call), and the realtime WebSocket
+      // handler + the 15-minute poller legitimately can both fire for the same address in
+      // that window. Two concurrent invocations reading the same stale last_onchain_btc would
+      // both compute the same deposit delta and both credit the wallet for it — a real double
+      // -credit, not a hypothetical one. Guard against it in the WHERE clause itself (checked
+      // against the DB's current value, not our possibly-stale local one) instead of relying on
+      // a local read: only claim if the stored balance hasn't already caught up to what we're
+      // about to record. If another invocation already won, this matches zero rows and we abort
+      // before crediting anything.
+      const nowIso = new Date().toISOString();
+      const { data: claimedRows, error: claimUpdErr } = await supabaseAdmin
         .from('user_wallets')
-        .upsert(
-          {
-            user_id:          userId,
-            btc_address:      address,
-            last_onchain_btc: blockchainBTC,
-            updated_at:       new Date().toISOString(),
-          },
-          { onConflict: 'user_id' }
-        );
+        .update({ last_onchain_btc: blockchainBTC, btc_address: address, updated_at: nowIso })
+        .eq('user_id', userId)
+        .or(`last_onchain_btc.is.null,last_onchain_btc.lt.${blockchainBTC}`)
+        .select('user_id');
 
-      if (claimErr) {
-        // Column likely not yet added — fall back to upsert without it.
-        // wallet_transactions insert below acts as the idempotency guard in this case.
-        console.warn(`[DepositMonitor] last_onchain_btc upsert failed for ${username} — trying fallback:`, claimErr.message);
-        const { error: fallbackErr } = await supabaseAdmin
+      let claimed = !claimUpdErr && claimedRows && claimedRows.length > 0;
+
+      if (!claimed && !claimUpdErr) {
+        // No row matched the WHERE clause — either this user has no user_wallets row yet, or
+        // a concurrent invocation already claimed it. Try an insert: a real row already
+        // existing means the unique constraint on user_id rejects it (race lost — correctly
+        // do NOT credit); no row existing means this insert IS the atomic claim.
+        const { error: insErr } = await supabaseAdmin
           .from('user_wallets')
-          .upsert(
-            { user_id: userId, btc_address: address, updated_at: new Date().toISOString() },
-            { onConflict: 'user_id' }
-          );
-        if (fallbackErr) {
-          console.error(`[DepositMonitor] Fallback upsert also failed for ${username}:`, fallbackErr.message);
+          .insert({ user_id: userId, btc_address: address, last_onchain_btc: blockchainBTC, updated_at: nowIso });
+        claimed = !insErr;
+        if (insErr && !/duplicate|unique|already exists/i.test(insErr.message || '')) {
+          console.warn(`[DepositMonitor] last_onchain_btc insert-claim failed for ${username}:`, insErr.message);
         }
-        // Do NOT return — proceed to credit balance; wallet_transactions insert prevents double-credit
+      }
+
+      if (claimUpdErr) {
+        // A genuine query/schema error (not a race loss) — fall back to crediting without the
+        // atomic guard rather than silently dropping a real deposit, matching prior behavior
+        // for this specific failure mode.
+        console.warn(`[DepositMonitor] last_onchain_btc claim query failed for ${username} — crediting without atomic guard:`, claimUpdErr.message);
+        claimed = true;
+      }
+
+      if (!claimed) {
+        console.log(`[DepositMonitor] Deposit for ${username} (${depositBTC} BTC) already claimed by a concurrent check — skipping duplicate credit`);
+        return;
       }
 
       // ── Step 5b: Credit wallets table FIRST (single source of truth) ────────

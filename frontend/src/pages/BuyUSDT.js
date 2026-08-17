@@ -1199,41 +1199,13 @@ export default function BuyUSDT({user}) {
       .catch(() => {});
   }, []);
 
-  // ── Auto-detect country + currency on first load ───────────────────────────
-  useEffect(() => {
-    const applyCountry = (cc) => {
-      const code = (cc || '').toUpperCase().slice(0, 2);
-      const matched = COUNTRIES.find(c => c.code === code);
-      if (!matched || matched.code === 'ALL') return false;
-      setSelCountry(matched);
-      const curMatch = CURRENCIES.find(c => c.code === matched.currency);
-      if (curMatch) setSelCurrency(curMatch);
-      return true;
-    };
-    if (user) {
-      const cc = user.country_code || (user.country?.length <= 3 ? user.country : null) || '';
-      if (applyCountry(cc)) return;
-    }
-    const detected = sessionStorage.getItem('praqen_geo');
-    if (detected) {
-      try {
-        const { countryCode } = JSON.parse(detected);
-        applyCountry(countryCode);
-      } catch {}
-      return;
-    }
-    const geoController = new AbortController();
-    const geoTimeout = setTimeout(() => geoController.abort(), 3000);
-    fetch('https://ipapi.co/json/', { signal: geoController.signal })
-      .then(r => r.json())
-      .then(data => {
-        const countryCode = (data.country_code || '').toUpperCase();
-        sessionStorage.setItem('praqen_geo', JSON.stringify({ countryCode }));
-        applyCountry(countryCode);
-      })
-      .catch(() => {})
-      .finally(() => clearTimeout(geoTimeout));
-  }, []);
+  // Country/currency intentionally start on "All" (COUNTRIES[0] / CURRENCIES[0]) and are no
+  // longer auto-set from the user's profile or IP on load — selCountry/selCurrency double as
+  // active filters here, so silently applying a detected country meant the market opened
+  // already narrowed to one country/currency, hiding every other seller's offers until the
+  // visitor noticed and manually reset the filter. The market should show everything live
+  // first; picking a country/currency is something the user opts into via the dropdowns
+  // (which already sync both together).
 
   const handleTradeExpire = (id) => setActiveTrades(prev => prev.filter(t =>
     t.id !== id ||

@@ -198,6 +198,19 @@ function computeDisplayName(user) {
   return user.username || '';
 }
 
+// avatar_url is sometimes a raw base64 data: URI (legacy uploads, before the frontend
+// compressed images before sending) — some are multi-MB. Embedding that inline in every
+// listing a seller has made bulk marketplace responses balloon to tens of MB, which is
+// the dominant cause of slow load times on the Buy/Sell/Gift Card pages. Cap it here so
+// bulk/list responses never inline an oversized avatar; the frontend's <Avatar> component
+// already lazy-fetches the real image per-card from GET /api/users/:id/avatar when the
+// bulk response omits it, so this doesn't lose the photo — it just stops shipping it 50x
+// over on every marketplace load.
+const MAX_INLINE_AVATAR_CHARS = 20000; // ~15KB decoded — generous for a compressed thumbnail
+function capAvatar(url) {
+  return (typeof url === 'string' && url.length > MAX_INLINE_AVATAR_CHARS) ? null : (url || null);
+}
+
 // ── 5. Express ─────────────────────────────────────────────────────────────
 const app = express();
 
@@ -280,8 +293,12 @@ const tradeEscrowService = require('./services/tradeEscrowService');
 const actionCodeService = require('./services/actionCodeService');
 const balanceIntegrity = require('./services/balanceIntegrityService');
 const { checkAndAwardBadges } = require('./services/badgeService');
-const { syncAllOfferStatuses, deactivateStaleOffers, setCacheBuster } = require('./services/offerStatusService');
+const { syncAllOfferStatuses, deactivateStaleOffers, setCacheBuster, setBtcPriceGetter } = require('./services/offerStatusService');
 setCacheBuster(bustCache);
+// Was never wired up — offerStatusService's pause sweep was silently running on the
+// $88k hardcoded fallback instead of the live price used everywhere else (GET /api/listings,
+// offer creation), so its pause/reactivate decisions could disagree with what buyers saw.
+setBtcPriceGetter(() => _btcCache || 88000);
 app.use('/api/hd-wallet', hdWalletRoutes);
 
 // NOTE: walletRoutes removed — wallet routes are defined inline below
@@ -359,12 +376,22 @@ async function validateEmailForRegistration(email) {
 
   try {
     const dns = require('dns').promises;
-    const mxRecords = await dns.resolveMx(domain);
+    // Bounded timeout — an unbounded DNS lookup could otherwise hang the whole
+    // registration request indefinitely on a slow/unresponsive resolver.
+    const mxRecords = await Promise.race([
+      dns.resolveMx(domain),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('MX lookup timed out')), 4000)),
+    ]);
     if (!mxRecords || mxRecords.length === 0) {
       return { valid: false, error: 'This email domain does not appear to accept mail. Please check your email address.' };
     }
   } catch (e) {
-    return { valid: false, error: 'This email domain could not be verified. Please check your email address.' };
+    // A DNS error/timeout here means we couldn't verify the domain — it does NOT mean
+    // the domain is invalid. Blocking registration on a transient resolver hiccup would
+    // reject real users with valid emails; the disposable-domain check above plus the
+    // email verification-code step later in the flow already guard against fake/dead
+    // addresses, so fail open here instead of fail closed.
+    console.warn(`[validateEmailForRegistration] MX lookup failed for ${domain}: ${e.message} — allowing registration to proceed`);
   }
 
   return { valid: true };
@@ -2117,11 +2144,20 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       userId: data.id,
     });
 
-    // Send OTP email (non-blocking — but we await to catch send failures)
-    emailService.sendLoginOtpEmail(
-      { id: data.id, email: data.email, username: data.username },
-      loginOtp
-    ).catch(err => console.error('[login-otp] email send failed:', err.message));
+    // Send OTP email — this comment used to claim "we await to catch send failures" while the
+    // code right below it did the opposite (fire-and-forget, catch() with no await). That meant
+    // the response always claimed success even when delivery failed outright, leaving the user
+    // stuck waiting for a code that was never coming with zero indication why. Actually await it.
+    try {
+      await emailService.sendLoginOtpEmail(
+        { id: data.id, email: data.email, username: data.username },
+        loginOtp
+      );
+    } catch (sendErr) {
+      console.error('[login-otp] email send failed:', sendErr.message);
+      emailLoginOtpStore.delete(normalizedLoginEmail);
+      return res.status(500).json({ error: 'Could not send your login code right now. Please try again in a moment.' });
+    }
 
     return res.json({ success: true, requiresOtp: true, email: data.email });
 
@@ -2526,86 +2562,12 @@ app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
   }
 });
 
-
-// ── Password Reset Email Template ────────────────────────────────────────────
-function buildPasswordResetEmailHtml(resetUrl) {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PRAQEN Password Reset</title></head>
-<body style="margin:0;padding:0;background:#F0FAF5;font-family:'Segoe UI',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F0FAF5;padding:32px 0;">
-    <tr><td align="center">
-      <table width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(27,67,50,0.10);">
-        <tr><td style="background:linear-gradient(135deg,#1B4332 0%,#2D6A4F 100%);padding:32px 40px;text-align:center;">
-          <div style="display:inline-block;width:56px;height:56px;background:#F4A422;border-radius:14px;line-height:56px;font-size:28px;font-weight:900;color:#1B4332;font-family:Georgia,serif;text-align:center;">P</div>
-          <p style="margin:12px 0 0;color:#ffffff;font-size:20px;font-weight:800;letter-spacing:3px;font-family:Georgia,serif;">PRAQEN</p>
-          <p style="margin:4px 0 0;color:rgba(255,255,255,0.65);font-size:12px;letter-spacing:1px;">Password Reset Request</p>
-        </td></tr>
-        <tr><td style="padding:40px 40px 32px;text-align:center;">
-          <p style="margin:0 0 8px;font-size:16px;font-weight:600;color:#334155;">Reset Your Password</p>
-          <p style="margin:0 0 24px;font-size:13px;color:#64748B;line-height:1.6;">We received a request to reset the password for your PRAQEN account. Click the button below to set a new password. This link expires in <strong>1 hour</strong>.</p>
-          <a href="${resetUrl}" style="display:inline-block;background:linear-gradient(135deg,#1B4332,#2D6A4F);color:#ffffff;text-decoration:none;font-size:15px;font-weight:800;padding:14px 36px;border-radius:10px;letter-spacing:0.5px;">Reset Password →</a>
-          <p style="margin:24px 0 8px;font-size:12px;color:#94A3B8;">If you didn't request this, you can safely ignore this email.</p>
-          <p style="margin:0;font-size:12px;color:#94A3B8;">Never share this link with anyone — PRAQEN will never ask for it.</p>
-        </td></tr>
-        <tr><td style="padding:0 40px 24px;">
-          <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:10px;padding:14px 18px;text-align:center;">
-            <p style="margin:0;font-size:12px;font-weight:700;color:#92400E;">⚠️ Always trade within PRAQEN — never outside our platform</p>
-          </div>
-        </td></tr>
-        <tr><td style="background:#F8FAFC;padding:20px 40px;text-align:center;border-top:1px solid #E2E8F0;">
-          <p style="margin:0 0 4px;font-size:12px;color:#94A3B8;">Need help? Contact us at <a href="mailto:support@praqen.com" style="color:#2D6A4F;font-weight:700;">support@praqen.com</a></p>
-          <p style="margin:0;font-size:11px;color:#CBD5E1;">© 2025 PRAQEN · The World's Most Trusted P2P Bitcoin Marketplace</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
-}
-
-// ── Send password reset email (reuses same working emailService pipeline as welcome/verification emails) ──
-async function sendPasswordResetEmail(email, resetUrl) {
-  const html = buildPasswordResetEmailHtml(resetUrl);
-  const subject = 'PRAQEN - Password Reset Request';
-  console.log(`📧 Sending password reset to ${email}`);
-
-  // Use emailService.sendEmail() — Brevo SMTP (primary) → Resend (fallback),
-  // same pipeline that successfully sends welcome/verification emails.
-  // emailService.js logs the actual error from each provider attempt.
-  const result = await emailService.sendEmail({
-    to: email,
-    subject,
-    html,
-    type: 'password_reset',
-    metadata: { reset_requested_at: new Date().toISOString() },
-  });
-
-  if (result.success) {
-    console.log(`✅ Password reset email sent via emailService to ${email} (${result.messageId})`);
-    return true;
-  }
-
-  // result.error contains the actual error from Brevo SMTP or Resend fallback
-  console.error('[sendPasswordResetEmail] emailService returned failure:', {
-    error: result.error,
-    providerChain: 'Brevo SMTP → Resend fallback',
-  });
-  throw new Error(`Email delivery failed: ${result.error || 'Unknown error'}`);
-}
-
 // ── Team portal: explicit email allowlist ────────────────────────────────────
-// Deliberately a hand-maintained list of exact addresses, not a domain check —
-// anyone with an @praqen.com mailbox should NOT be able to self-enroll as a
-// moderator. procineth@gmail.com and parqen5@gmail.com are the pre-existing
-// admin accounts, kept as exceptions.
-const MODERATOR_EMAIL_ALLOWLIST = [
-  'debby@praqen.com',
-  'ken@praqen.com',
-  'zeinudeen.team@praqen.com',
-  'procineth@gmail.com',
-  'parqen5@gmail.com',
-];
+// Deliberately a hand-maintained list of exact addresses, not a domain check.
+// Emptied at the platform owner's request — nobody self-enrolls as a moderator
+// via the Team Portal right now. Add an address back here only when someone
+// specific should be granted that path again.
+const MODERATOR_EMAIL_ALLOWLIST = [];
 
 // ── Team portal: direct login — password THEN a mandatory email OTP ──────────
 // No path through this route ever issues a token on password alone. Reuses the
@@ -2639,10 +2601,16 @@ app.post('/api/team/login', authLimiter, async (req, res) => {
       expires: Date.now() + 10 * 60 * 1000,
       userId: data.id,
     });
-    emailService.sendLoginOtpEmail(
-      { id: data.id, email: data.email, username: data.username },
-      loginOtp
-    ).catch(err => console.error('[team-login-otp] email send failed:', err.message));
+    try {
+      await emailService.sendLoginOtpEmail(
+        { id: data.id, email: data.email, username: data.username },
+        loginOtp
+      );
+    } catch (sendErr) {
+      console.error('[team-login-otp] email send failed:', sendErr.message);
+      emailLoginOtpStore.delete(email);
+      return res.status(500).json({ error: 'Could not send your login code right now. Please try again in a moment.' });
+    }
 
     return res.json({ success: true, requiresOtp: true, email: data.email });
   } catch (err) {
@@ -3895,21 +3863,43 @@ app.post('/api/auth/send-action-code', otpLimiter, verifyToken, async (req, res)
     }
 
     const { data: user } = await supabaseAdmin
-      .from('users').select('email, username').eq('id', req.userId).single();
+      .from('users').select('email, username, phone, is_phone_verified').eq('id', req.userId).single();
     if (!user?.email) {
       return res.status(400).json({ error: 'No email address on your account. Please add one in Settings.' });
     }
 
     const code = await actionCodeService.generate(req.userId, action);
 
-    const actionLabels = { release_btc: 'Release Bitcoin', send_btc: 'Send Bitcoin', enable_2fa: 'Enable Two-Factor Authentication' };
+    const actionLabels = { release_btc: 'Release Bitcoin', send_btc: 'Send Bitcoin', send_usdt: 'Send USDT', enable_2fa: 'Enable Two-Factor Authentication' };
     const label = actionLabels[action] || action;
 
-    await sendVerificationEmail(user.email, code,
-      `PRAQEN Security Code — ${label}`);
+    // Send over email AND SMS (when the user has a verified phone) in parallel — genuine
+    // channel redundancy, not just a second email provider sharing the same failure modes
+    // (spam filtering, a slow/misbehaving mail relay). SMS uses completely separate
+    // infrastructure (Africa's Talking / Twilio) and typically lands in seconds, so for a
+    // time-sensitive security code it's the faster path as often as it's the backup path.
+    // Success only requires ONE channel to get through — waiting on both would make delivery
+    // less reliable, not more.
+    const hasPhone = !!(user.phone && user.is_phone_verified);
+    const [emailResult, smsResult] = await Promise.allSettled([
+      sendVerificationEmail(user.email, code, `PRAQEN Security Code — ${label}`),
+      hasPhone
+        ? sendSmsOtp(user.phone, `${code} is your PRAQEN security code for ${label}. Valid for 5 minutes. Don't share this with anyone.`)
+        : Promise.reject(new Error('no verified phone on file')),
+    ]);
 
-    console.log(`[2FA] Action code sent to ${user.email} for action=${action} user=${req.userId.slice(0, 8)}`);
-    res.json({ success: true, message: `Security code sent to ${user.email}` });
+    const emailOk = emailResult.status === 'fulfilled';
+    const smsOk = smsResult.status === 'fulfilled';
+    if (!emailOk) console.warn(`[2FA] Email delivery failed for ${user.email}:`, emailResult.reason?.message);
+    if (hasPhone && !smsOk) console.warn(`[2FA] SMS delivery failed for ${user.phone}:`, smsResult.reason?.message);
+
+    if (!emailOk && !smsOk) {
+      throw new Error(emailResult.reason?.message || 'All delivery channels failed');
+    }
+
+    const via = emailOk && smsOk ? `${user.email} and your phone` : emailOk ? user.email : 'your phone via SMS';
+    console.log(`[2FA] Action code sent (email:${emailOk} sms:${smsOk}) for action=${action} user=${req.userId.slice(0, 8)}`);
+    res.json({ success: true, message: `Security code sent to ${via}` });
   } catch (err) {
     console.error('[2FA send-action-code]', err.message);
     res.status(500).json({ error: 'Failed to send security code. Please try again.' });
@@ -5293,6 +5283,13 @@ app.post('/api/users/upload-avatar', verifyToken, async (req, res) => {
     const { image } = req.body;
     if (!image) return res.status(400).json({ error: 'No image provided' });
     if (!image.startsWith('data:image/')) return res.status(400).json({ error: 'Invalid image format' });
+    // The frontend now resizes to a small thumbnail before upload — this cap is a backstop
+    // against any client that skips that step (old cached bundle, future upload path, etc.),
+    // since an uncompressed avatar embedded in every one of a seller's listings is what made
+    // marketplace loads balloon to tens of MB.
+    if (image.length > 400000) {
+      return res.status(400).json({ error: 'Image is too large. Please use a smaller photo.' });
+    }
     const { data, error } = await supabaseAdmin.from('users')
       .update({ avatar_url: image, updated_at: new Date().toISOString() })
       .eq('id', req.userId).select('id, username, avatar_url').single();
@@ -5619,7 +5616,7 @@ app.get('/api/featured-offers', async (req, res) => {
       ]);
       console.log('[featured] sellerIds:', allSellerIds.length, '| profilesResult count:', (profilesResult.data || []).length, '| err:', profilesResult.error?.message);
       (profilesResult.data || []).forEach(u => { userMap[u.id] = u; });
-      (avatarResult.data || []).forEach(u => { if (userMap[u.id]) userMap[u.id].avatar_url = u.avatar_url || null; });
+      (avatarResult.data || []).forEach(u => { if (userMap[u.id]) userMap[u.id].avatar_url = capAvatar(u.avatar_url); });
     }
 
     const enriched = listings.map(l => ({ ...l, users: userMap[l.seller_id] || {} }));
@@ -5759,7 +5756,7 @@ app.get('/api/listings', async (req, res) => {
         else console.warn('[/api/listings] Users query returned 0 rows for', sellerIdSet.length, 'seller IDs. Timed out or RLS blocking. Returning 503.');
         return res.status(503).json({ error: 'Could not load seller profiles. Please retry in a moment.' });
       }
-      (usersResult.data || []).forEach(u => { userMap[u.id] = u; });
+      (usersResult.data || []).forEach(u => { userMap[u.id] = { ...u, avatar_url: capAvatar(u.avatar_url) }; });
       walletRows = walletsResult.data || [];
       // Only a never-seized (amount_usdt === remaining_amount) LOCKED deposit counts as "secured"
       depositedSellerIds = new Set(
@@ -5875,6 +5872,7 @@ app.get('/api/listings/:id', async (req, res) => {
     // Step 2: seller + wallet — 4s cap; these are enrichment so we continue on failure
     let seller = null;
     let sellerBalanceBtc = 0;
+    let sellerBalanceUsdt = 0;
     try {
       const [sellerResult, walletResult] = await Promise.all([
         Promise.race([
@@ -5882,15 +5880,16 @@ app.get('/api/listings/:id', async (req, res) => {
           timeout(4000).then(() => ({ data: null })),
         ]),
         Promise.race([
-          supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', listing.seller_id).maybeSingle(),
+          supabaseAdmin.from('wallets').select('balance_btc, balance_usdt').eq('user_id', listing.seller_id).maybeSingle(),
           timeout(4000).then(() => ({ data: null })),
         ]),
       ]);
       if (sellerResult?.data?.id) {
         const { password_hash: _ph, email: _em, phone_number: _pn, bitcoin_wallet_address: _bwa, ...sellerSafe } = sellerResult.data;
-        seller = sellerSafe;
+        seller = { ...sellerSafe, avatar_url: capAvatar(sellerSafe.avatar_url) };
       }
       sellerBalanceBtc = parseFloat(walletResult?.data?.balance_btc || 0);
+      sellerBalanceUsdt = parseFloat(walletResult?.data?.balance_usdt || 0);
     } catch (e) {
       console.warn('[listings/:id] seller/wallet fetch failed:', e.message);
     }
@@ -5927,16 +5926,27 @@ app.get('/api/listings/:id', async (req, res) => {
       } catch { }
     }
 
-    const btcPriceVal = parseFloat(listing.bitcoin_price) || 88000;
-    // Only listing types where the seller pays out BTC need their live balance to cap the max —
-    // matches btcRequiredTypes used by the /api/listings list endpoint.
+    // Use the LIVE market price, not the listing's own bitcoin_price field, for balance-
+    // sufficiency math — that field is a snapshot taken at creation time (or unused entirely
+    // on 'market' pricing_type listings) and drifts from reality, which was making this
+    // endpoint disagree with GET /api/listings (which already uses the live price) about
+    // whether a seller could still fulfil their own offer.
+    const btcPriceVal = _btcCache || parseFloat(listing.bitcoin_price) || 88000;
+    // Only listing types where the seller pays out BTC/USDT need their live balance to cap
+    // the max — matches btcRequiredTypes used by the /api/listings list endpoint.
     const btcRequiredTypes = ['SELL', 'SELL_BITCOIN', 'BUY_GIFT_CARD'];
     const capsByBalance = btcRequiredTypes.includes(listing.listing_type);
     const minLimitUsd = parseFloat(listing.min_limit_usd || 0);
     const listingMaxUsd = parseFloat(listing.max_limit_usd || 0);
-    const balanceUsd = sellerBalanceBtc * btcPriceVal;
+    // This previously always priced the seller's BTC wallet regardless of the listing's own
+    // asset — a USDT-asset offer (1 USDT ≈ $1) was being checked against an unrelated BTC
+    // balance, so a seller sitting on plenty of USDT could still get flagged as unable to
+    // cover their own offer's minimum. Branch on listing.asset like the list endpoint does.
+    const isUsdtAsset = listing.asset === 'USDT';
+    const sellerBalanceForAsset = isUsdtAsset ? sellerBalanceUsdt : sellerBalanceBtc;
+    const balanceUsd = isUsdtAsset ? sellerBalanceUsdt : sellerBalanceBtc * btcPriceVal;
 
-    const effectiveMaxUsd = capsByBalance && sellerBalanceBtc > 0
+    const effectiveMaxUsd = capsByBalance && sellerBalanceForAsset > 0
       ? Math.min(balanceUsd, listingMaxUsd || balanceUsd)
       : listingMaxUsd;
 
@@ -5944,7 +5954,7 @@ app.get('/api/listings/:id', async (req, res) => {
     // (min > effective max) is impossible to trade — flag it instead of showing a broken range.
     const sellerCanFulfillMin = !capsByBalance || !minLimitUsd || balanceUsd >= minLimitUsd;
 
-    res.json({ listing: { ...listing, users: enrichedSeller.id ? [enrichedSeller] : [], seller_balance_btc: sellerBalanceBtc, effective_max_usd: effectiveMaxUsd, seller_can_fulfill_min: sellerCanFulfillMin } });
+    res.json({ listing: { ...listing, users: enrichedSeller.id ? [enrichedSeller] : [], seller_balance_btc: sellerBalanceBtc, seller_balance_usdt: sellerBalanceUsdt, effective_max_usd: effectiveMaxUsd, seller_can_fulfill_min: sellerCanFulfillMin } });
   } catch (error) {
     console.error('[listings/:id] error:', error);
     res.status(500).json({ error: error.message });
@@ -6417,7 +6427,7 @@ app.post('/api/offers', verifyToken, async (req, res) => {
         .from('wallets').select('balance_btc, balance_usdt').eq('user_id', userId).maybeSingle();
       const sellerBalUsd = offerAsset === 'USDT'
         ? parseFloat(sellerWallet?.balance_usdt || 0) // 1 USDT ≈ $1
-        : parseFloat(sellerWallet?.balance_btc || 0) * 88000; // approximate BTC price for cap
+        : parseFloat(sellerWallet?.balance_btc || 0) * (_btcCache || 88000); // live price — must match offerStatusService's sweep or a newly-created offer can fail its own check minutes later
 
       if (sellerBalUsd < 10) {
         return res.status(400).json({
@@ -6427,6 +6437,15 @@ app.post('/api/offers', verifyToken, async (req, res) => {
       if (parseFloat(max_limit_usd) > sellerBalUsd && sellerBalUsd > 0) {
         return res.status(400).json({
           error: `Maximum trade limit ($${parseFloat(max_limit_usd).toFixed(0)}) exceeds your wallet balance ($${sellerBalUsd.toFixed(0)}). Please top up or lower the maximum.`,
+        });
+      }
+      // The balance sync sweep (offerStatusService.syncAllOfferStatuses) pauses any ACTIVE
+      // offer whose min_limit_usd exceeds the seller's balance — this was previously only
+      // checked against max_limit_usd here, so an offer could pass creation with a minimum
+      // above the seller's balance and then get auto-paused minutes later with no warning.
+      if (parseFloat(min_limit_usd) > sellerBalUsd) {
+        return res.status(400).json({
+          error: `Minimum trade amount ($${parseFloat(min_limit_usd).toFixed(0)}) exceeds your wallet balance ($${sellerBalUsd.toFixed(0)}). Please top up or lower the minimum.`,
         });
       }
     }
@@ -9476,7 +9495,38 @@ app.get('/api/admin/listings/all', verifyToken, async (req, res) => {
     if (status) query = query.eq('status', status);
     const { data, error, count } = await query;
     if (error) return res.status(400).json({ error: error.message });
-    res.json({ listings: data || [], total: count || 0 });
+
+    // ACTIVE SELL / SELL_BITCOIN / BUY_GIFT_CARD listings can be marked ACTIVE in the DB
+    // yet still be silently excluded from the public GET /api/listings response when the
+    // seller's live balance can't cover $10 or the listing's own minimum — that endpoint
+    // deliberately leaves the DB row ACTIVE so it reappears once the seller tops up, instead
+    // of writing PAUSED. Without this flag the admin table can't tell "actually live" apart
+    // from "shows ACTIVE here but buyers never see it", which is confusing to audit.
+    const btcRequiredTypes = ['SELL', 'SELL_BITCOIN', 'BUY_GIFT_CARD'];
+    const balanceCheckedSellerIds = [...new Set(
+      (data || []).filter(l => l.status === 'ACTIVE' && btcRequiredTypes.includes(l.listing_type)).map(l => l.seller_id)
+    )];
+    let balMap = {}, usdtBalMap = {};
+    if (balanceCheckedSellerIds.length > 0) {
+      const { data: wallets } = await supabaseAdmin
+        .from('wallets').select('user_id, balance_btc, balance_usdt').in('user_id', balanceCheckedSellerIds);
+      (wallets || []).forEach(w => {
+        balMap[w.user_id] = parseFloat(w.balance_btc || 0);
+        usdtBalMap[w.user_id] = parseFloat(w.balance_usdt || 0);
+      });
+    }
+    const livePriceUsd = _btcCache || 88000;
+    const enriched = (data || []).map(l => {
+      if (l.status !== 'ACTIVE' || !btcRequiredTypes.includes(l.listing_type)) {
+        return { ...l, effectively_visible: l.status === 'ACTIVE' };
+      }
+      const balanceUsd = l.asset === 'USDT' ? (usdtBalMap[l.seller_id] || 0) : (balMap[l.seller_id] || 0) * livePriceUsd;
+      const minUsd = parseFloat(l.min_limit_usd || 0);
+      const hiddenForBalance = balanceUsd < 10 || (minUsd > 0 && balanceUsd < minUsd);
+      return { ...l, effectively_visible: !hiddenForBalance, seller_balance_usd: balanceUsd };
+    });
+
+    res.json({ listings: enriched, total: count || 0 });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -11317,15 +11367,22 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
     }
 
     // ── Step 4: Record withdrawal transaction (user) + fee credit (company) ──
+    // Each leg needs its own unique tx_hash (wallet_transactions has a UNIQUE constraint
+    // on tx_hash) — these two rows previously both used the bare on-chain txid, so whichever
+    // insert lost the race silently vanished (Supabase resolves with {error} rather than
+    // rejecting, so the .catch() below never caught it). In practice this meant the user's
+    // own WITHDRAWAL record was missing from their transaction history nearly every time,
+    // even though the send succeeded — same _OUT/_IN suffixing already used for internal
+    // transfers elsewhere in this file.
     const txNow = new Date().toISOString();
-    await Promise.all([
+    const [withdrawalLog, feeLog] = await Promise.all([
       supabaseAdmin.from('wallet_transactions').insert({
         user_id: req.userId,
         type: 'WITHDRAWAL',
         currency: 'USDT',
         amount_usdt: sendAmount,
         status: 'CONFIRMED',
-        tx_hash: txResult.txid,
+        tx_hash: `${txResult.txid}_OUT`,
         notes: `USDT withdrawal to ${toAddress.slice(0, 16)}…${toAddress.slice(-4)} | fee: ${feeLabel}`,
         created_at: txNow,
       }),
@@ -11335,11 +11392,13 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
         currency: 'USDT',
         amount_usdt: withdrawalFee,
         status: 'CONFIRMED',
-        tx_hash: txResult.txid,
+        tx_hash: `${txResult.txid}_FEE`,
         notes: `USDT withdrawal fee (${feeLabel}) from user ${req.userId.slice(0, 8)} — sent ₮${sendAmount.toFixed(2)} to ${toAddress.slice(0, 10)}…`,
         created_at: txNow,
       }),
-    ]).catch(e => console.error('[USDT Send] tx log error (non-fatal):', e.message));
+    ]);
+    if (withdrawalLog.error) console.error('[USDT Send] WITHDRAWAL log error:', withdrawalLog.error.message);
+    if (feeLog.error) console.error('[USDT Send] FEE log error:', feeLog.error.message);
 
     // ── Step 5: Notify user ───────────────────────────────────────────────
     await supabaseAdmin.from('notifications').insert({
