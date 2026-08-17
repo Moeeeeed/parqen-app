@@ -3848,7 +3848,7 @@ app.post('/api/auth/send-action-code', otpLimiter, verifyToken, async (req, res)
     }
 
     const { data: user } = await supabaseAdmin
-      .from('users').select('email, username').eq('id', req.userId).single();
+      .from('users').select('email, username, phone, is_phone_verified').eq('id', req.userId).single();
     if (!user?.email) {
       return res.status(400).json({ error: 'No email address on your account. Please add one in Settings.' });
     }
@@ -3858,11 +3858,33 @@ app.post('/api/auth/send-action-code', otpLimiter, verifyToken, async (req, res)
     const actionLabels = { release_btc: 'Release Bitcoin', send_btc: 'Send Bitcoin', send_usdt: 'Send USDT', enable_2fa: 'Enable Two-Factor Authentication' };
     const label = actionLabels[action] || action;
 
-    await sendVerificationEmail(user.email, code,
-      `PRAQEN Security Code — ${label}`);
+    // Send over email AND SMS (when the user has a verified phone) in parallel — genuine
+    // channel redundancy, not just a second email provider sharing the same failure modes
+    // (spam filtering, a slow/misbehaving mail relay). SMS uses completely separate
+    // infrastructure (Africa's Talking / Twilio) and typically lands in seconds, so for a
+    // time-sensitive security code it's the faster path as often as it's the backup path.
+    // Success only requires ONE channel to get through — waiting on both would make delivery
+    // less reliable, not more.
+    const hasPhone = !!(user.phone && user.is_phone_verified);
+    const [emailResult, smsResult] = await Promise.allSettled([
+      sendVerificationEmail(user.email, code, `PRAQEN Security Code — ${label}`),
+      hasPhone
+        ? sendSmsOtp(user.phone, `${code} is your PRAQEN security code for ${label}. Valid for 5 minutes. Don't share this with anyone.`)
+        : Promise.reject(new Error('no verified phone on file')),
+    ]);
 
-    console.log(`[2FA] Action code sent to ${user.email} for action=${action} user=${req.userId.slice(0, 8)}`);
-    res.json({ success: true, message: `Security code sent to ${user.email}` });
+    const emailOk = emailResult.status === 'fulfilled';
+    const smsOk = smsResult.status === 'fulfilled';
+    if (!emailOk) console.warn(`[2FA] Email delivery failed for ${user.email}:`, emailResult.reason?.message);
+    if (hasPhone && !smsOk) console.warn(`[2FA] SMS delivery failed for ${user.phone}:`, smsResult.reason?.message);
+
+    if (!emailOk && !smsOk) {
+      throw new Error(emailResult.reason?.message || 'All delivery channels failed');
+    }
+
+    const via = emailOk && smsOk ? `${user.email} and your phone` : emailOk ? user.email : 'your phone via SMS';
+    console.log(`[2FA] Action code sent (email:${emailOk} sms:${smsOk}) for action=${action} user=${req.userId.slice(0, 8)}`);
+    res.json({ success: true, message: `Security code sent to ${via}` });
   } catch (err) {
     console.error('[2FA send-action-code]', err.message);
     res.status(500).json({ error: 'Failed to send security code. Please try again.' });
