@@ -38,6 +38,11 @@ export default function Navbar({ user, onLogout }) {
   const [displayCurrency, setDisplayCurrency] = useState(localStorage.getItem('praqen_currency') || 'USD');
   const dropRef   = useRef(null);
   const marketRef = useRef(null);
+  const [activeGuide, setActiveGuide] = useState(null);
+  const guideTimer = useRef(null);
+
+  function handleGuideEnter(id) { clearTimeout(guideTimer.current); setActiveGuide(id); }
+  function handleGuideLeave() { guideTimer.current = setTimeout(() => setActiveGuide(null), 140); }
 
 
 useEffect(() => {
@@ -143,7 +148,7 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
 
   const isActive       = (path) => location.pathname === path;
   const isMarketActive = ['/buy-bitcoin', '/sell-bitcoin', '/buy-usdt', '/sell-usdt'].some(p => location.pathname.startsWith(p));
-  const isGiftActive   = location.pathname.startsWith('/gift-cards');
+  const isGiftActive   = location.pathname.startsWith('/gift-cards') || location.pathname.startsWith('/sell-gift-card');
 
   // ── Desktop Nav Links ───────────────────────────────────────────────────────
   const segStyle = (active, activeColor) => ({
@@ -172,15 +177,33 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
 
 {/* P2P Marketplace Dropdown */}
         <div className="relative" ref={marketRef}>
-          <button onClick={() => setMarketDrop(!marketDrop)} style={segStyle(isMarketActive || marketDrop, C.forest)}>
-            <TrendingUp size={14} />
-            P2P Trade
-            <span style={{
-              fontSize: '8.5px', background: C.gold, color: '#fff',
-              padding: '1.5px 5px', borderRadius: '20px', fontWeight: 900, letterSpacing: '0.3px',
-            }}>BETA</span>
-            <ChevronDown size={12} style={{ transform: marketDrop ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-          </button>
+          <div style={{ position: 'relative' }}
+            onMouseEnter={() => handleGuideEnter('nav_p2p_trade')} onMouseLeave={handleGuideLeave}>
+            {activeGuide === 'nav_p2p_trade' && !marketDrop && (
+              <div style={{
+                position: 'absolute', bottom: 'calc(100% + 8px)', left: 0, zIndex: 10000,
+                width: 'min(260px, calc(100vw - 32px))',
+                background: 'linear-gradient(135deg, #1E40AF 0%, #2563EB 100%)',
+                borderRadius: 14, padding: '10px 12px',
+                boxShadow: '0 10px 36px rgba(37,99,235,0.35)', pointerEvents: 'none',
+                color: '#fff', boxSizing: 'border-box',
+              }}>
+                <p style={{ margin: '0 0 3px', fontWeight: 800, fontSize: 12 }}>P2P Trading</p>
+                <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.9)' }}>
+                  Buy & Sell Bitcoin (BTC) or Tether (USDT) directly with verified peers using local payment methods.
+                </p>
+              </div>
+            )}
+            <button onClick={() => setMarketDrop(!marketDrop)} style={segStyle(isMarketActive || marketDrop, C.forest)}>
+              <TrendingUp size={14} />
+              P2P Trade
+              <span style={{
+                fontSize: '8.5px', background: C.gold, color: '#fff',
+                padding: '1.5px 5px', borderRadius: '20px', fontWeight: 900, letterSpacing: '0.3px',
+              }}>BETA</span>
+              <ChevronDown size={12} style={{ transform: marketDrop ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+            </button>
+          </div>
 
           {marketDrop && (
             <div className="prq-dropdown" style={{
@@ -256,19 +279,37 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
     </div>
  
       {/* Create Offer — deliberately outside the track so it reads as an action, not a tab */}
-      <Link to="/create-offer"
-        style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          background: `linear-gradient(135deg, ${C.gold}, #FBBF24)`,
-          color: '#0D1F14', borderRadius: 999, padding: '9px 18px',
-          fontSize: '13.5px', fontWeight: 900,
-          textDecoration: 'none', whiteSpace: 'nowrap',
-          boxShadow: '0 4px 14px rgba(244,164,34,0.4)',
-          transition: 'all 0.2s',
-        }}>
-        <Plus size={15} strokeWidth={3} />
-        Create Offer
-      </Link>
+      <div style={{ position: 'relative' }}
+        onMouseEnter={() => handleGuideEnter('nav_create_offer')} onMouseLeave={handleGuideLeave}>
+        {activeGuide === 'nav_create_offer' && (
+          <div style={{
+            position: 'absolute', bottom: 'calc(100% + 8px)', right: 0, zIndex: 10000,
+            width: 'min(280px, calc(100vw - 32px))',
+            background: 'linear-gradient(135deg, #1E40AF 0%, #2563EB 100%)',
+            borderRadius: 14, padding: '10px 12px',
+            boxShadow: '0 10px 36px rgba(37,99,235,0.35)', pointerEvents: 'none',
+            color: '#fff', boxSizing: 'border-box',
+          }}>
+            <p style={{ margin: '0 0 3px', fontWeight: 800, fontSize: 12 }}>+ Create Offer</p>
+            <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.9)' }}>
+              Create a new P2P buy or sell offer to trade Bitcoin, USDT, or Gift Cards on your terms.
+            </p>
+          </div>
+        )}
+        <Link to="/create-offer"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: `linear-gradient(135deg, ${C.gold}, #FBBF24)`,
+            color: '#0D1F14', borderRadius: 999, padding: '9px 18px',
+            fontSize: '13.5px', fontWeight: 900,
+            textDecoration: 'none', whiteSpace: 'nowrap',
+            boxShadow: '0 4px 14px rgba(244,164,34,0.4)',
+            transition: 'all 0.2s',
+          }}>
+          <Plus size={15} strokeWidth={3} />
+          Create Offer
+        </Link>
+      </div>
     </div>
   );
 
@@ -434,48 +475,31 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
                 <div className="prq-dropdown" style={{
                   position: 'absolute', top: 'calc(100% + 8px)', right: 0,
                   transformOrigin: 'top right',
-                  width: 260, maxWidth: 'calc(100vw - 16px)', background: '#fff', borderRadius: 16,
+                  width: 240, background: '#fff', borderRadius: 16,
                   boxShadow: '0 20px 60px rgba(0,0,0,0.18)', border: `1px solid ${C.g100}`,
                   overflow: 'hidden', zIndex: 50,
                 }}>
-                  {/* User header — doubles as a compact profile+balance card rather than just
-                      repeating the trigger button's avatar/name, so it earns its own space
-                      instead of reading as a near-duplicate directly beneath it. */}
-                  <Link to="/profile" onClick={() => setProfileDrop(false)}
-                    style={{ display: 'block', padding: '14px 16px', borderBottom: `1px solid ${C.g100}`, background: C.mist, textDecoration: 'none' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{
-                        width: 40, height: 40, borderRadius: 12, overflow: 'hidden', flexShrink: 0,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontWeight: 900, fontSize: 15,
-                        background: `linear-gradient(135deg, ${C.gold}, #FBBF24)`,
-                      }}>
-                        {displayUser?.avatar_url
-                          ? <img src={displayUser.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          : <span style={{ color: C.dark }}>{displayUser?.username?.charAt(0)?.toUpperCase() || 'U'}</span>}
-                      </div>
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <p style={{ margin: 0, fontWeight: 900, fontSize: 13, color: C.forest, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {displayUser?.username || 'User'}
-                        </p>
-                        <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: C.g400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {displayUser?.email || ''}
-                        </p>
-                      </div>
-                      <ChevronDown size={14} color={C.g400} style={{ transform: 'rotate(-90deg)', flexShrink: 0 }} />
-                    </div>
+                  {/* User header */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${C.g100}`, background: C.mist }}>
                     <div style={{
-                      marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      background: '#fff', border: `1px solid #c8e6d4`, borderRadius: 10, padding: '7px 10px',
+                      width: 36, height: 36, borderRadius: 10, overflow: 'hidden', flexShrink: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontWeight: 900, fontSize: 14,
+                      background: `linear-gradient(135deg, ${C.gold}, #FBBF24)`,
                     }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: C.g500 }}>
-                        <Wallet size={12} color={C.forest} /> Balance
-                      </span>
-                      <span style={{ fontSize: 13, fontWeight: 900, color: C.forest }}>
-                        {showBal ? `${localCode} ${sym}${fmt(totalLocal, 2)}` : '••••••'}
-                      </span>
+                      {displayUser?.avatar_url
+                        ? <img src={displayUser.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : <span style={{ color: C.dark }}>{displayUser?.username?.charAt(0)?.toUpperCase() || 'U'}</span>}
                     </div>
-                  </Link>
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ margin: 0, fontWeight: 900, fontSize: 13, color: C.forest, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {displayUser?.username || 'User'}
+                      </p>
+                      <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: C.g400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {displayUser?.email || ''}
+                      </p>
+                    </div>
+                  </div>
 
                   {/* P2P Trade row */}
                   <Link to="/buy-bitcoin" onClick={() => setProfileDrop(false)}

@@ -547,14 +547,16 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
           }}>
           <Info size={14} style={{color: ft ? ft.border : C.g400}}/>
         </button>
-        <button onClick={onBuy}
-          className="flex-1 h-9 rounded-xl text-white font-black text-sm flex items-center justify-center gap-1.5 hover:opacity-90 active:scale-[0.98] transition"
-          style={{
-            background: ft ? ft.btnGradient : C.forest,
-            boxShadow: ft ? ft.btnShadow : undefined,
-          }}>
-          BUY BTC <ArrowRight size={14}/>
-        </button>
+        <div style={{ position:'relative', flex:1 }}>
+          <button onClick={onBuy}
+            className="w-full h-9 rounded-xl text-white font-black text-sm flex items-center justify-center gap-1.5 hover:opacity-90 active:scale-[0.98] transition"
+            style={{
+              background: ft ? ft.btnGradient : C.forest,
+              boxShadow: ft ? ft.btnShadow : undefined,
+            }}>
+            BUY BTC <ArrowRight size={14}/>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1053,7 +1055,7 @@ export default function BuyBitcoin({user}) {
   // If users are all null the cache is stale/bad — skip it and force a fresh fetch.
   const _hasUsers  = (data) => Array.isArray(data) && data.some(l => l.users && (l.users.id || l.users.username));
   const _cacheAll  = () => { try { const c=JSON.parse(localStorage.getItem('praqen_market_all')||'null'); if(!c||Date.now()-c.ts>1800000||!_hasUsers(c.data)) return null; return c?.data||null; } catch { return null; } };
-  const _sellNow   = () => { const a=_cacheAll(); return a?a.filter(l=>(l.asset||'BTC')==='BTC'&&(l.listing_type==='SELL'||l.listing_type==='SELL_BITCOIN')):[]; };
+  const _sellNow   = () => { const a=_cacheAll(); return a?a.filter(l=>(l.listing_type==='SELL'||l.listing_type==='SELL_BITCOIN')):[]; };
   const [listings,     setListings]     = useState(()=>_sellNow());
   const [loading,      setLoading]      = useState(()=>_sellNow().length===0);
   const [loadError,    setLoadError]    = useState(false);
@@ -1068,6 +1070,8 @@ export default function BuyBitcoin({user}) {
   const [showPayment,   setShowPayment]   = useState(false);
   const [showBuyMenu, setShowBuyMenu] = useState(false);
   const [showSellMenu, setShowSellMenu] = useState(false);
+  const [cryptoFilter, setCryptoFilter] = useState('ALL'); // 'ALL' | 'BTC' | 'USDT'
+  const [showCryptoMenu, setShowCryptoMenu] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [sortBy,       setSortBy]       = useState('rate_low');
   const [modal,        setModal]        = useState(null);
@@ -1089,26 +1093,77 @@ export default function BuyBitcoin({user}) {
   const countryRef  = useRef(null);
   const paymentRef  = useRef(null);
   const sortRef     = useRef(null);
+  const [activeGuide, setActiveGuide] = useState(null);
+  const guideTimer   = useRef(null);
+
+  function handleGuideEnter(id) { clearTimeout(guideTimer.current); setActiveGuide(id); }
+  function handleGuideLeave()   { guideTimer.current = setTimeout(() => setActiveGuide(null), 140); }
+
+  const GUIDE_TOTAL = 4;
+  function MarketGuide({ id, icon: Icon, title, body, example, guideStep }) {
+    if (activeGuide !== id) return null;
+    const isTab = id.startsWith('tab_');
+    const isRightTab = id.includes('crypto') || id.includes('giftcards');
+
+    const posStyle = isTab
+      ? {
+          top: 'calc(100% + 8px)',
+          ...(isRightTab ? { right: 0, left: 'auto' } : { left: 0 }),
+        }
+      : { bottom: 'calc(100% + 8px)', left: 0 };
+
+    return (
+      <div style={{
+        position: 'absolute',
+        ...posStyle,
+        zIndex: 10000,
+        width: 'min(300px, calc(100vw - 32px))',
+        background: 'linear-gradient(135deg,#1E40AF 0%,#2563EB 100%)',
+        borderRadius: 14, padding: '11px 13px',
+        boxShadow: '0 10px 36px rgba(37,99,235,0.30),0 2px 8px rgba(0,0,0,0.08)',
+        animation: isTab ? 'marketGuideFadeDown 0.2s ease both' : 'marketGuideFadeUp 0.2s ease both',
+        pointerEvents: 'none',
+        boxSizing: 'border-box', color: '#fff',
+      }}>
+        <style>{`
+          @keyframes marketGuideFadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+          @keyframes marketGuideFadeDown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+        `}</style>
+        {guideStep && (
+          <div style={{ marginBottom: 7 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 3 }}>
+              <span style={{ background:'rgba(255,255,255,0.25)', borderRadius:20, padding:'1px 8px', fontSize:10, fontWeight:800, color:'#fff', letterSpacing:0.5, textTransform:'uppercase' }}>Step {guideStep} of {GUIDE_TOTAL}</span>
+              <span style={{ fontSize:10, color:'rgba(255,255,255,0.6)', fontWeight:600 }}>{Math.round((guideStep/GUIDE_TOTAL)*100)}%</span>
+            </div>
+            <div style={{ height:3, background:'rgba(255,255,255,0.18)', borderRadius:2, overflow:'hidden' }}>
+              <div style={{ width:`${(guideStep/GUIDE_TOTAL)*100}%`, height:'100%', background:'rgba(255,255,255,0.75)', borderRadius:2 }} />
+            </div>
+          </div>
+        )}
+        <div style={{ display:'flex', alignItems:'flex-start', gap:9 }}>
+          <div style={{ width:24, height:24, borderRadius:'50%', background:'rgba(255,255,255,0.22)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            {guideStep ? <span style={{ fontWeight:900, fontSize:11, color:'#fff' }}>{guideStep}</span> : <Icon size={12} style={{ color:'#fff' }} />}
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <p style={{ margin:'0 0 3px', fontWeight:800, fontSize:12, color:'#fff', lineHeight:1.3 }}>{title}</p>
+            <p style={{ margin:'0 0 5px', fontSize:11, color:'rgba(255,255,255,0.9)', lineHeight:1.45 }}>{body}</p>
+            {example && <div style={{ fontSize:10, color:'rgba(255,255,255,0.68)', fontStyle:'italic', background:'rgba(255,255,255,0.12)', borderRadius:6, padding:'2px 8px', display:'inline-block' }}>💡 {example}</div>}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (contextBtcUsd > 0) setBtcPrice(contextBtcUsd);
   }, [contextBtcUsd]);
 
-  // Country/currency intentionally start on "All" (COUNTRIES[0] / CURRENCIES[0]) and are no
-  // longer auto-set from the user's profile or IP on load — selCountry/selCurrency double as
-  // active filters here (see getFiltered below), so silently applying a detected country meant
-  // the market opened already narrowed to one country/currency, hiding every other seller's
-  // offers until the visitor noticed and manually reset the filter. The market should show
-  // everything live first; picking a country/currency is something the user opts into via the
-  // dropdowns (which already sync both together — see their onClick handlers below).
-
   const loadListings = async (attempt = 1, force = false) => {
-    // Skip fetch if cache is fresh (< 5 minutes) and this is not a forced refresh
     if (attempt === 1 && !force) {
       try {
         const c = JSON.parse(localStorage.getItem('praqen_market_all') || 'null');
         if (c && Date.now() - c.ts < 300000 && _hasUsers(c.data)) {
-          const sellOffers = (c.data || []).filter(l => (l.asset || 'BTC') === 'BTC' && (l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN'));
+          const sellOffers = (c.data || []).filter(l => (l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN'));
           if (sellOffers.length > 0) {
             setListings(sellOffers);
             setLoading(false);
@@ -1122,29 +1177,26 @@ export default function BuyBitcoin({user}) {
     try {
       const r = await axios.get(`${API_URL}/listings`, { timeout: 20000 });
       const all = (r.data.listings || []).map(l => ({...l, users: Array.isArray(l.users) ? l.users[0] : l.users}));
-      const sellOffers = all.filter(l => (l.asset || 'BTC') === 'BTC' && (l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN'));
+      const sellOffers = all.filter(l => (l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN'));
       if (sellOffers.length > 0) {
         setListings(sellOffers);
         setLastSynced(new Date());
         try { localStorage.setItem('praqen_market_all', JSON.stringify({ data: all, ts: Date.now() })); } catch {}
-      } else if (!listings.length) {
-        // Truly empty marketplace — show empty state but don't cache
+      } else {
         setListings([]);
         setLastSynced(new Date());
       }
     } catch (err) {
-      // 503 = DB temporarily down; longer retry delay so we don't spam the server
       const retryDelay = err?.response?.status === 503 ? 5000 : 1000;
       if (attempt < 3) {
         setRetrying(true);
         setTimeout(() => loadListings(attempt + 1, force), retryDelay);
       } else {
         setRetrying(false);
-        // All retries failed — fall back to any stale localStorage cache (no TTL check)
         try {
           const stale = JSON.parse(localStorage.getItem('praqen_market_all') || 'null');
           if (stale && _hasUsers(stale.data)) {
-            const sellOffers = (stale.data || []).filter(l => (l.asset || 'BTC') === 'BTC' && (l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN'));
+            const sellOffers = (stale.data || []).filter(l => (l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN'));
             if (sellOffers.length > 0) {
               setListings(sellOffers);
               toast.warn('Showing cached offers — server is busy. Prices may be slightly outdated.', { autoClose: 6000 });
@@ -1164,12 +1216,11 @@ export default function BuyBitcoin({user}) {
     return () => clearInterval(interval);
   }, []);
 
-  // Poll fresh last_seen_at for all visible sellers every 30s — keeps online dots accurate
   const fetchOnlineStatus = (currentListings) => {
     const ids = [...new Set((currentListings || listings).map(l => l.users?.id).filter(Boolean))];
     if (ids.length === 0) return;
     axios.get(`${API_URL}/users/online-status?ids=${ids.join(',')}`)
-      .then(r => { if (r.data?.status) setLiveStatus(r.data.status); })
+      .then(res => { if (res.data?.status) setLiveStatus(res.data.status); })
       .catch(() => {});
   };
 
@@ -1177,7 +1228,7 @@ export default function BuyBitcoin({user}) {
     if (listings.length > 0) fetchOnlineStatus(listings);
     const iv = setInterval(() => fetchOnlineStatus(), 30000);
     return () => clearInterval(iv);
-  }, [listings.length > 0]); // re-run when listings first populate
+  }, [listings]);
 
   useEffect(() => {
     const fetchBoard = () => {
@@ -1272,6 +1323,8 @@ export default function BuyBitcoin({user}) {
 
   const getFiltered = () => {
     let list = [...listings];
+    if (cryptoFilter === 'BTC') list = list.filter(l => (l.asset || 'BTC').toUpperCase() === 'BTC');
+    if (cryptoFilter === 'USDT') list = list.filter(l => (l.asset || 'BTC').toUpperCase() === 'USDT');
     // Offers with no country set are treated as global — always visible regardless of country filter
     if (selCountry.code !== 'ALL') list = list.filter(l => {
       const offerCountry = (l.country_code || l.country || '').toUpperCase();
@@ -1396,75 +1449,72 @@ export default function BuyBitcoin({user}) {
       {/* ══ 2. TAB NAVIGATION ══════════════════════════════════ */}
       <div className="bg-white border-b sticky z-30 flex-shrink-0" style={{top:'var(--navbar-h)',borderColor:C.g200}}>
         <div className="flex w-full">
-          <div className="flex-1 relative">
-            <button onClick={()=>setShowBuyMenu(v=>!v)}
-              className="w-full text-center py-3 text-xs font-black border-b-2 transition-all flex items-center justify-center gap-1"
+          <div className="flex-1">
+            <button
+              className="w-full text-center py-3 text-xs font-black border-b-2 transition-all"
               style={{borderColor:C.forest, color:C.forest, backgroundColor:`${C.forest}18`}}>
-              Buy BTC <ChevronDown size={12} className={`transition-transform ${showBuyMenu?'rotate-180':''}`}/>
+              Buy
             </button>
-            {showBuyMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={()=>setShowBuyMenu(false)}/>
-                <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-52 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white"
-                  style={{borderColor:C.g200}}>
-                  <button onClick={()=>setShowBuyMenu(false)}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition"
-                    style={{backgroundColor:'rgba(247,147,26,0.08)'}}>
-                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
-                      style={{background:'linear-gradient(135deg,#F7931A,#e8830a)'}}>₿</span>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-xs font-black" style={{color:C.g800}}>Bitcoin</span>
-                      <span className="block text-[10px] font-semibold" style={{color:C.g400}}>BTC · you're here</span>
-                    </span>
-                    <CheckCircle size={14} style={{color:'#e8830a', flexShrink:0}}/>
-                  </button>
-                  <button onClick={()=>{setShowBuyMenu(false); navigate('/buy-usdt');}}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition border-t"
-                    style={{borderColor:C.g100}}>
-                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
-                      style={{background:'#26A17B'}}>₮</span>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-xs font-black" style={{color:C.g800}}>Tether</span>
-                      <span className="block text-[10px] font-semibold" style={{color:C.g400}}>USDT</span>
-                    </span>
-                    <ArrowRight size={13} style={{color:C.g300}}/>
-                  </button>
-                </div>
-              </>
-            )}
           </div>
 
-          <div className="flex-1 relative">
-            <button onClick={()=>setShowSellMenu(v=>!v)}
-              className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1"
+          <div className="flex-1">
+            <button onClick={()=>navigate('/sell-bitcoin')}
+              className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all"
               style={{color:C.g400}}>
-              Sell <ChevronDown size={12} className={`transition-transform ${showSellMenu?'rotate-180':''}`}/>
+              Sell
             </button>
-            {showSellMenu && (
+          </div>
+
+          {/* ── 3rd Dropdown: Crypto Filter (All Crypto / BTC / USDT) ── */}
+          <div className="flex-1 relative">
+            <button onClick={() => setShowCryptoMenu(v => !v)}
+              className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1.5"
+              style={{ color: cryptoFilter === 'ALL' ? C.forest : C.g700 }}>
+              {cryptoFilter === 'ALL' && <span className="text-xs">🪙</span>}
+              {cryptoFilter === 'BTC' && <span className="w-4 h-4 rounded-full flex items-center justify-center font-black text-[10px] text-white" style={{background:'linear-gradient(135deg,#F7931A,#e8830a)'}}>₿</span>}
+              {cryptoFilter === 'USDT' && <span className="w-4 h-4 rounded-full flex items-center justify-center font-black text-[10px] text-white" style={{background:'#26A17B'}}>₮</span>}
+              <span>{cryptoFilter === 'ALL' ? 'All Crypto' : cryptoFilter}</span>
+              <ChevronDown size={12} className={`transition-transform ${showCryptoMenu ? 'rotate-180' : ''}`} />
+            </button>
+            {showCryptoMenu && (
               <>
-                <div className="fixed inset-0 z-40" onClick={()=>setShowSellMenu(false)}/>
-                <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-52 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white"
-                  style={{borderColor:C.g200}}>
-                  <button onClick={()=>{setShowSellMenu(false); navigate('/sell-bitcoin');}}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition">
+                <div className="fixed inset-0 z-40" onClick={() => setShowCryptoMenu(false)} />
+                <div className="absolute right-0 sm:left-1/2 sm:-translate-x-1/2 top-full mt-1.5 w-56 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white"
+                  style={{ borderColor: C.g200 }}>
+                  <button onClick={() => { setCryptoFilter('ALL'); setShowCryptoMenu(false); }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition"
+                    style={{ backgroundColor: cryptoFilter === 'ALL' ? 'rgba(27,67,50,0.06)' : 'transparent' }}>
                     <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
-                      style={{background:'linear-gradient(135deg,#F7931A,#e8830a)'}}>₿</span>
+                      style={{ background: 'linear-gradient(135deg, #1B4332, #40916C)' }}>🌐</span>
                     <span className="flex-1 min-w-0">
-                      <span className="block text-xs font-black" style={{color:C.g800}}>Bitcoin</span>
-                      <span className="block text-[10px] font-semibold" style={{color:C.g400}}>BTC</span>
+                      <span className="block text-xs font-black" style={{ color: C.g800 }}>All Crypto</span>
+                      <span className="block text-[10px] font-semibold" style={{ color: C.g400 }}>Show both BTC & USDT offers</span>
                     </span>
-                    <ArrowRight size={13} style={{color:C.g300}}/>
+                    {cryptoFilter === 'ALL' && <CheckCircle size={14} style={{ color: C.forest, flexShrink: 0 }} />}
                   </button>
-                  <button onClick={()=>{setShowSellMenu(false); navigate('/sell-usdt');}}
+
+                  <button onClick={() => { setCryptoFilter('BTC'); setShowCryptoMenu(false); }}
                     className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition border-t"
-                    style={{borderColor:C.g100}}>
+                    style={{ borderColor: C.g100, backgroundColor: cryptoFilter === 'BTC' ? 'rgba(247,147,26,0.08)' : 'transparent' }}>
                     <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
-                      style={{background:'#26A17B'}}>₮</span>
+                      style={{ background: 'linear-gradient(135deg,#F7931A,#e8830a)' }}>₿</span>
                     <span className="flex-1 min-w-0">
-                      <span className="block text-xs font-black" style={{color:C.g800}}>Tether</span>
-                      <span className="block text-[10px] font-semibold" style={{color:C.g400}}>USDT</span>
+                      <span className="block text-xs font-black" style={{ color: C.g800 }}>Bitcoin</span>
+                      <span className="block text-[10px] font-semibold" style={{ color: C.g400 }}>BTC offers only</span>
                     </span>
-                    <ArrowRight size={13} style={{color:C.g300}}/>
+                    {cryptoFilter === 'BTC' && <CheckCircle size={14} style={{ color: '#e8830a', flexShrink: 0 }} />}
+                  </button>
+
+                  <button onClick={() => { setCryptoFilter('USDT'); setShowCryptoMenu(false); }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition border-t"
+                    style={{ borderColor: C.g100, backgroundColor: cryptoFilter === 'USDT' ? 'rgba(38,161,123,0.08)' : 'transparent' }}>
+                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
+                      style={{ background: '#26A17B' }}>₮</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-xs font-black" style={{ color: C.g800 }}>Tether</span>
+                      <span className="block text-[10px] font-semibold" style={{ color: C.g400 }}>USDT offers only</span>
+                    </span>
+                    {cryptoFilter === 'USDT' && <CheckCircle size={14} style={{ color: '#26A17B', flexShrink: 0 }} />}
                   </button>
                 </div>
               </>
@@ -1518,7 +1568,12 @@ export default function BuyBitcoin({user}) {
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
 
-            <div>
+            <div style={{ position:'relative' }}
+              onMouseEnter={()=>handleGuideEnter('buy_amount')} onMouseLeave={handleGuideLeave}>
+              <MarketGuide id="buy_amount" icon={Bitcoin} guideStep={1}
+                title="Trade Amount"
+                body="Enter how much you want to spend in your local currency. The list will instantly show only sellers whose minimum–maximum range covers your amount."
+                example="Type 500 to see all offers accepting ₵500 GHS" />
               <p className="text-xs font-black mb-1 tracking-wide" style={{color:C.g500}}>AMOUNT</p>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black pointer-events-none select-none"
@@ -1540,7 +1595,12 @@ export default function BuyBitcoin({user}) {
               </div>
             </div>
 
-            <div className="relative" ref={currencyRef}>
+            <div className="relative" ref={currencyRef}
+              onMouseEnter={()=>handleGuideEnter('buy_currency')} onMouseLeave={handleGuideLeave}>
+              <MarketGuide id="buy_currency" icon={CreditCard} guideStep={2}
+                title="Currency"
+                body="Select your local currency. Prices shown on all offer cards will switch to this currency so you can compare rates at a glance."
+                example="GHS for Ghana · NGN for Nigeria · KES for Kenya · USD for global" />
               <p className="text-xs font-black mb-1 tracking-wide" style={{color:C.g500}}>CURRENCY</p>
               <button
                 onClick={()=>{setShowCurrency(!showCurrency);setShowCountry(false);setShowPayment(false);}}
@@ -1584,7 +1644,12 @@ export default function BuyBitcoin({user}) {
               )}
             </div>
 
-            <div className="relative" ref={paymentRef}>
+            <div className="relative" ref={paymentRef}
+              onMouseEnter={()=>handleGuideEnter('buy_payment')} onMouseLeave={handleGuideLeave}>
+              <MarketGuide id="buy_payment" icon={Smartphone} guideStep={3}
+                title="Payment Method"
+                body="Filter by how you want to pay. Only sellers who accept your chosen payment method will be shown. Leave on 'All Methods' to see every offer."
+                example="MTN MoMo · Bank Transfer · PayPal · M-Pesa · WeChat Pay" />
               <p className="text-xs font-black mb-1 tracking-wide" style={{color:C.g500}}>PAYMENT</p>
               <button
                 onClick={()=>{setShowPayment(!showPayment);setShowCurrency(false);setShowCountry(false);}}
@@ -1638,7 +1703,12 @@ export default function BuyBitcoin({user}) {
               )}
             </div>
 
-            <div className="relative" ref={countryRef}>
+            <div className="relative" ref={countryRef}
+              onMouseEnter={()=>handleGuideEnter('buy_country')} onMouseLeave={handleGuideLeave}>
+              <MarketGuide id="buy_country" icon={Globe} guideStep={4}
+                title="Country"
+                body="Filter sellers by their country. Sellers in your country usually offer the best local rates and the fastest payment methods."
+                example="Ghana · Nigeria · Kenya · South Africa · All Countries" />
               <p className="text-xs font-black mb-1 tracking-wide" style={{color:C.g500}}>COUNTRY</p>
               <button
                 onClick={()=>{setShowCountry(!showCountry);setShowCurrency(false);setShowPayment(false);}}
