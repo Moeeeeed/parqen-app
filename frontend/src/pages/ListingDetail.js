@@ -250,11 +250,21 @@ const loadAll = useCallback(async (isBackground = false) => {
   const sellerRateLocal = sellerRateUSD * usdRate;
 
   const minLocal = listing.min_limit_local || (listing.min_limit_usd ? listing.min_limit_usd * usdRate : 10 * usdRate);
-  // Use effective_max_usd (based on seller's live wallet) when available, else fall back to listing max
-  const effectiveMaxUsd = listing.effective_max_usd || listing.max_limit_usd || 0;
-  const maxLocal = listing.max_limit_local
-    || (effectiveMaxUsd ? effectiveMaxUsd * usdRate : listing.max_limit_usd ? listing.max_limit_usd * usdRate : 1000 * usdRate);
-  const sellerHasLowBalance = listing.seller_balance_btc !== undefined && listing.seller_balance_btc < (listing.min_limit_usd || 10) / (listing.bitcoin_price || 88000);
+  const rawMaxLocal = listing.max_limit_local
+    || (listing.max_limit_usd ? listing.max_limit_usd * usdRate : 1000 * usdRate);
+  // effective_max_usd reflects the seller's live wallet capacity for balance-capped listing
+  // types (SELL / SELL_BITCOIN / BUY_GIFT_CARD). It must actually cap maxLocal here — previously
+  // `listing.max_limit_local || (...)` short-circuited past this whenever max_limit_local was
+  // set (i.e. always), so the amount input silently allowed more than the seller could deliver
+  // and the trade only failed after submit.
+  const maxLocal = listing.effective_max_usd
+    ? Math.min(rawMaxLocal, listing.effective_max_usd * usdRate)
+    : rawMaxLocal;
+  // Compare against the seller's balance in whatever asset this listing is actually
+  // denominated in — a USDT offer's seller can hold $0 BTC and still easily cover it.
+  const sellerHasLowBalance = listing.asset === 'USDT'
+    ? listing.seller_balance_usdt !== undefined && listing.seller_balance_usdt < (listing.min_limit_usd || 10)
+    : listing.seller_balance_btc !== undefined && listing.seller_balance_btc < (listing.min_limit_usd || 10) / (listing.bitcoin_price || 88000);
   // Backend flags this when the seller's live balance can't cover the listing's own minimum —
   // in that case maxLocal can end up below minLocal (e.g. MIN $50 / MAX $10), which is untradeable.
   const sellerCantFulfillMin = listing.seller_can_fulfill_min === false || maxLocal < minLocal;

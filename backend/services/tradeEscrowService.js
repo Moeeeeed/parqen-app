@@ -503,13 +503,28 @@ class TradeEscrowService {
         throw new Error('Escrow was refunded (trade cancelled) — cannot release.');
     }
     if (currentLock.status === 'RELEASING') {
-        // Stuck from a previous failed attempt — reset to LOCKED so the RPC can claim it
+        // Stuck from a previous failed attempt — reset to LOCKED so this attempt can claim it
         console.warn(`[Escrow] Lock ${currentLock.id} stuck in RELEASING — resetting to LOCKED for trade ${tradeId.slice(0,8)}`);
         const { error: resetErr } = await supabaseAdmin
             .from('escrow_locks')
             .update({ status: 'LOCKED' })
             .eq('id', currentLock.id);
         if (resetErr) throw new Error(`Failed to reset stuck escrow lock: ${resetErr.message}`);
+    }
+
+    // ── Atomically claim the escrow (LOCKED → RELEASING) BEFORE crediting anything ──
+    // The status checks above are read-then-branch, not atomic — two concurrent
+    // release calls (a retried request racing the original, a double-click, an
+    // auto-release racing a manual one) could both pass them and both credit the
+    // receiver below. This claim ensures only one caller proceeds past this point.
+    const { data: claimedLock } = await supabaseAdmin
+        .from('escrow_locks')
+        .update({ status: 'RELEASING' })
+        .eq('trade_id', tradeId)
+        .eq('status', 'LOCKED')
+        .select('id');
+    if (!claimedLock || claimedLock.length === 0) {
+        throw new Error('Escrow release already in progress or completed for this trade.');
     }
 
     // ── Field names depend on currency ────────────────────────────────────────
@@ -544,7 +559,7 @@ class TradeEscrowService {
       // Mark escrow released + trade completed
       await supabaseAdmin.from('escrow_locks')
         .update({ status: 'RELEASED', released_at: new Date().toISOString() })
-        .eq('trade_id', tradeId);
+        .eq('trade_id', tradeId).eq('status', 'RELEASING');
       await supabaseAdmin.from('trades')
         .update({ status: 'COMPLETED', buyer_btc_txhash: releaseTxHash })
         .eq('id', tradeId);
@@ -570,7 +585,7 @@ class TradeEscrowService {
       const { error: lockErr } = await supabaseAdmin
         .from('escrow_locks')
         .update({ status: 'RELEASED', released_at: new Date().toISOString() })
-        .eq('trade_id', tradeId).eq('status', 'LOCKED');
+        .eq('trade_id', tradeId).eq('status', 'RELEASING');
       if (lockErr) console.error(`[Escrow] escrow_locks mark-released failed: ${lockErr.message}`);
 
       await supabaseAdmin.from('trades')
@@ -790,6 +805,16 @@ class TradeEscrowService {
       .eq('trade_id', tradeId)
       .eq('status', 'LOCKED')
       .select('*');
+
+    // A lock row existed but we didn't win the claim — another concurrent call
+    // (the exact manual-cancel-vs-auto-cancel-cron race this claim exists to
+    // stop) already grabbed it. Bail out instead of refunding a second time.
+    // lockCheck being null (no escrow row at all) is the legitimate fallback
+    // case below and must still proceed.
+    if (lockCheck && (!claimedEscrow || claimedEscrow.length === 0)) {
+      console.warn(`[cancelTrade] Escrow lock for trade ${tradeId.slice(0,8)} already claimed by another process — skipping duplicate refund`);
+      return { success: false, message: 'This trade was already cancelled or resolved.' };
+    }
 
     // ── 4. Determine who gets the refund ──────────────────────────────────────
     // escrow_locks.seller_id is set to btcProviderId at lock time — always the

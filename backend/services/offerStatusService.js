@@ -259,4 +259,4 @@ async function deactivateStaleOffers() {
   }
 }
 
-module.exports = { updateOfferStatus, syncAllOfferStatuses, deactivateStaleOffers, setCacheBuster };
+module.exports = { updateOfferStatus, syncAllOfferStatuses, deactivateStaleOffers, setCacheBuster, setBtcPriceGetter };

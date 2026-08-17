@@ -715,6 +715,13 @@ export default function CreateOffer() {
   const maxExceedsWallet = isSellSide && !!maxLimit && walletCapacityLocal > 0 && parseFloat(maxLimit) > walletCapacityLocal;
   const minUSDVal = minLimit ? parseFloat(minLimit) / localRate : 0;
   const gcMinVal = gcCardValues.length ? Math.min(...gcCardValues) : 0;
+  // gc_buy offers pay gift-card sellers straight out of this wallet, same as a
+  // regular SELL offer — the backend requires >= $10 AND enough to cover the
+  // offer's own minimum card value, or it gets auto-paused a few minutes later
+  // by the balance sync sweep. Mirror both checks here so the form blocks early.
+  const isGcBuySide = offerType === 'gc_buy';
+  const gcWalletTooLow = isGcBuySide && walletUsdValue < 10;
+  const gcMinExceedsWallet = isGcBuySide && gcCardValues.length > 0 && gcMinVal > walletUsdValue;
 
   // Grouped payment methods for dropdown
   const matchesPay = (m) => {
@@ -734,7 +741,7 @@ export default function CreateOffer() {
   const canNext = () => {
     if (step === 1) return !!offerType;
     if (isGC) {
-      if (step === 2) return gcCardValues.length > 0 && !!gcBrand;
+      if (step === 2) return gcCardValues.length > 0 && !!gcBrand && (!isGcBuySide || (!gcWalletTooLow && !gcMinExceedsWallet));
       if (step === 3) return !!country && !!currencyCode;
       if (step === 4) return pricingType === 'fixed' ? !!fixedPrice : true;
       if (step === 5) return true;
@@ -765,6 +772,14 @@ export default function CreateOffer() {
 
   const handleSubmit = async () => {
     if (!canNext() || submitting) return;
+    // canNext() only gates step 2 while stepping through — re-check here since Submit
+    // is reachable from the final review step, which doesn't re-run that guard.
+    if (isGcBuySide && (gcWalletTooLow || gcMinExceedsWallet)) {
+      toast.error(gcWalletTooLow
+        ? `You need at least $10 worth of ${assetLabel} in your wallet to create this offer.`
+        : `Your wallet balance can't cover this offer's $${gcMinVal} minimum card value.`);
+      return;
+    }
     setSubmitting(true);
     setDupOfferWarning(null);
     try {
@@ -782,10 +797,13 @@ export default function CreateOffer() {
         asset,
         margin:              pricingType === 'market' ? margin : null,
         bitcoin_price:       pricingType === 'fixed' && fixedPrice ? parseFloat(fixedPrice) : assetLocal,
-        min_limit_local:     !isGC && minLimit ? parseFloat(minLimit) : (isGC ? gcMinVal : null),
-        max_limit_local:     !isGC && maxLimit ? parseFloat(maxLimit) : (isGC ? Math.max(...gcCardValues, gcMinVal) : null),
-        min_limit_usd:       !isGC && minLimit ? minUSDVal : null,
-        max_limit_usd:       !isGC && maxLimit ? parseFloat(maxLimit) / localRate : null,
+        // gcCardValues are USD face values (e.g. a "$50" gift card) — the local-currency
+        // min/max must be that amount converted at the local rate, not the raw USD number,
+        // or the trade range shown/enforced for non-USD listings is off by the FX rate.
+        min_limit_local:     !isGC && minLimit ? parseFloat(minLimit) : (isGC ? gcMinVal * localRate : null),
+        max_limit_local:     !isGC && maxLimit ? parseFloat(maxLimit) : (isGC ? Math.max(...gcCardValues, gcMinVal) * localRate : null),
+        min_limit_usd:       !isGC && minLimit ? minUSDVal : (isGC ? gcMinVal : null),
+        max_limit_usd:       !isGC && maxLimit ? parseFloat(maxLimit) / localRate : (isGC ? Math.max(...gcCardValues, gcMinVal) : null),
         time_limit:          timeLimit,
         trade_instructions:  instructions,
         listing_terms:       terms,
@@ -1143,6 +1161,18 @@ export default function CreateOffer() {
                       </p>
                       <p className="text-xs" style={{ color: C.g400 }}>at min ${gcMinVal}</p>
                     </div>
+                  </div>
+                )}
+
+                {isGcBuySide && gcCardValues.length > 0 && (gcWalletTooLow || gcMinExceedsWallet) && (
+                  <div className="mt-3 p-3 rounded-xl flex items-start gap-2"
+                    style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
+                    <AlertTriangle size={14} style={{ color: '#B45309', flexShrink: 0, marginTop: 1 }} />
+                    <p className="text-xs font-semibold" style={{ color: '#92400E' }}>
+                      {gcWalletTooLow
+                        ? `Your ${assetLabel} wallet balance is too low to back this offer — top up at least $10 worth of ${assetLabel} first.`
+                        : `Your wallet only covers ~$${fmt(walletUsdValue, 0)} — below your $${gcMinVal} minimum card value. Lower the minimum or top up your wallet, or this offer will show as unavailable to buyers.`}
+                    </p>
                   </div>
                 )}
               </div>
