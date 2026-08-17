@@ -5138,7 +5138,18 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
       const { data: extra } = await supabaseAdmin.from('users')
         .select('email_verified, is_phone_verified, phone_verified, kyc_verified, kyc_status, id_type, kyc_submitted_at, id_front_url, id_back_url, selfie_url, kyc_rejection_reason, username_changed, preferred_currency, preferred_language, timezone, hide_full_name, name_display, city, country_name, last_seen_location, referral_code, total_referrals, referral_earnings_btc, p2p_migrated_platform, p2p_migrated_username, p2p_migrated_feedback, p2p_migration_approved_at')
         .eq('id', req.userId).single();
-      if (extra) extraFields = extra;
+      if (extra) {
+        extraFields = extra;
+        // Auto-generate missing referral code for legacy users if they view their profile
+        if (!extraFields.referral_code) {
+          try {
+            const newRefCode = await generateUniqueReferralCode(data.username);
+            await supabaseAdmin.from('users').update({ referral_code: newRefCode }).eq('id', req.userId);
+            extraFields.referral_code = newRefCode;
+            console.log(`[profile load] Generated missing referral code for ${data.username}: ${newRefCode}`);
+          } catch (e) { console.error('[profile load] referral code gen failed:', e.message); }
+        }
+      }
     } catch { }
 
     // Balance — non-critical, silently ignored on error
