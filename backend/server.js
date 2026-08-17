@@ -376,12 +376,22 @@ async function validateEmailForRegistration(email) {
 
   try {
     const dns = require('dns').promises;
-    const mxRecords = await dns.resolveMx(domain);
+    // Bounded timeout — an unbounded DNS lookup could otherwise hang the whole
+    // registration request indefinitely on a slow/unresponsive resolver.
+    const mxRecords = await Promise.race([
+      dns.resolveMx(domain),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('MX lookup timed out')), 4000)),
+    ]);
     if (!mxRecords || mxRecords.length === 0) {
       return { valid: false, error: 'This email domain does not appear to accept mail. Please check your email address.' };
     }
   } catch (e) {
-    return { valid: false, error: 'This email domain could not be verified. Please check your email address.' };
+    // A DNS error/timeout here means we couldn't verify the domain — it does NOT mean
+    // the domain is invalid. Blocking registration on a transient resolver hiccup would
+    // reject real users with valid emails; the disposable-domain check above plus the
+    // email verification-code step later in the flow already guard against fake/dead
+    // addresses, so fail open here instead of fail closed.
+    console.warn(`[validateEmailForRegistration] MX lookup failed for ${domain}: ${e.message} — allowing registration to proceed`);
   }
 
   return { valid: true };
@@ -3845,7 +3855,7 @@ app.post('/api/auth/send-action-code', otpLimiter, verifyToken, async (req, res)
 
     const code = await actionCodeService.generate(req.userId, action);
 
-    const actionLabels = { release_btc: 'Release Bitcoin', send_btc: 'Send Bitcoin', enable_2fa: 'Enable Two-Factor Authentication' };
+    const actionLabels = { release_btc: 'Release Bitcoin', send_btc: 'Send Bitcoin', send_usdt: 'Send USDT', enable_2fa: 'Enable Two-Factor Authentication' };
     const label = actionLabels[action] || action;
 
     await sendVerificationEmail(user.email, code,
@@ -11287,15 +11297,22 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
     }
 
     // ── Step 4: Record withdrawal transaction (user) + fee credit (company) ──
+    // Each leg needs its own unique tx_hash (wallet_transactions has a UNIQUE constraint
+    // on tx_hash) — these two rows previously both used the bare on-chain txid, so whichever
+    // insert lost the race silently vanished (Supabase resolves with {error} rather than
+    // rejecting, so the .catch() below never caught it). In practice this meant the user's
+    // own WITHDRAWAL record was missing from their transaction history nearly every time,
+    // even though the send succeeded — same _OUT/_IN suffixing already used for internal
+    // transfers elsewhere in this file.
     const txNow = new Date().toISOString();
-    await Promise.all([
+    const [withdrawalLog, feeLog] = await Promise.all([
       supabaseAdmin.from('wallet_transactions').insert({
         user_id: req.userId,
         type: 'WITHDRAWAL',
         currency: 'USDT',
         amount_usdt: sendAmount,
         status: 'CONFIRMED',
-        tx_hash: txResult.txid,
+        tx_hash: `${txResult.txid}_OUT`,
         notes: `USDT withdrawal to ${toAddress.slice(0, 16)}…${toAddress.slice(-4)} | fee: ${feeLabel}`,
         created_at: txNow,
       }),
@@ -11305,11 +11322,13 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
         currency: 'USDT',
         amount_usdt: withdrawalFee,
         status: 'CONFIRMED',
-        tx_hash: txResult.txid,
+        tx_hash: `${txResult.txid}_FEE`,
         notes: `USDT withdrawal fee (${feeLabel}) from user ${req.userId.slice(0, 8)} — sent ₮${sendAmount.toFixed(2)} to ${toAddress.slice(0, 10)}…`,
         created_at: txNow,
       }),
-    ]).catch(e => console.error('[USDT Send] tx log error (non-fatal):', e.message));
+    ]);
+    if (withdrawalLog.error) console.error('[USDT Send] WITHDRAWAL log error:', withdrawalLog.error.message);
+    if (feeLog.error) console.error('[USDT Send] FEE log error:', feeLog.error.message);
 
     // ── Step 5: Notify user ───────────────────────────────────────────────
     await supabaseAdmin.from('notifications').insert({

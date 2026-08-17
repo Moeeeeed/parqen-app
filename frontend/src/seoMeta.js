@@ -5,12 +5,12 @@
 
 const PAGE_META = {
   '/': {
-    title: 'PRAQEN | Buy & Sell Bitcoin & USDT P2P Worldwide | MTN MoMo, M-Pesa & Bank Transfer',
-    description: "PRAQEN is the world's most trusted P2P Bitcoin, USDT & gift card trading platform. Buy or sell Bitcoin and USDT instantly with MTN Mobile Money, Airtel, M-Pesa & bank transfer. Escrow-protected, 0.5% flat fee, 180+ countries. No hidden charges.",
+    title: 'PRAQEN | Noones Alternative — Buy & Sell Bitcoin & USDT P2P Worldwide',
+    description: "Looking for a Noones alternative? PRAQEN is a trusted P2P Bitcoin, USDT & gift card trading platform — bring your trading reputation with you. Buy or sell Bitcoin and USDT instantly with MTN Mobile Money, Airtel, M-Pesa & bank transfer. Escrow-protected, 0.5% flat fee, 180+ countries.",
     ogTitle: 'PRAQEN — Buy & Sell Bitcoin & USDT P2P Worldwide',
-    ogDesc: "The world's #1 peer-to-peer Bitcoin & USDT trading platform. Escrow-protected trades, 0.5% flat fee, pay with Mobile Money, M-Pesa or bank transfer. Instant & secure.",
+    ogDesc: "A trusted Noones & LocalBitcoins alternative for peer-to-peer Bitcoin & USDT trading. Escrow-protected trades, 0.5% flat fee, pay with Mobile Money, M-Pesa or bank transfer.",
     h1: 'PRAQEN — Buy & Sell Bitcoin & USDT P2P Worldwide',
-    intro: "The world's most trusted peer-to-peer Bitcoin, USDT and gift card trading platform. Buy or sell Bitcoin instantly with MTN Mobile Money, Airtel Money, M-Pesa, and bank transfer. Deposit, withdraw, send and instantly swap USDT (TRC-20) in your wallet. Escrow-protected. 0.5% flat fee. 180+ countries. No hidden charges.",
+    intro: "A trusted peer-to-peer Bitcoin, USDT and gift card trading platform — and a straightforward alternative if you're moving on from Noones or LocalBitcoins. Buy or sell Bitcoin instantly with MTN Mobile Money, Airtel Money, M-Pesa, and bank transfer. Deposit, withdraw, send and instantly swap USDT (TRC-20) in your wallet. Escrow-protected. 0.5% flat fee. 180+ countries. No hidden charges.",
   },
   '/buy-bitcoin': {
     title: 'Buy Bitcoin Worldwide with Mobile Money | PRAQEN P2P',
@@ -46,11 +46,11 @@ const PAGE_META = {
   },
   '/register': {
     title: 'Create Free Account | PRAQEN Global P2P Bitcoin & USDT Trading',
-    description: 'Join PRAQEN and start trading Bitcoin & USDT P2P worldwide. Free account, instant verification, escrow-protected trades. MTN MoMo, M-Pesa, bank transfer supported.',
+    description: 'Join PRAQEN and start trading Bitcoin & USDT P2P worldwide. Moving from Noones or another P2P platform? Bring your trade history and feedback with you. Free account, instant verification, escrow-protected trades.',
     ogTitle: 'Sign Up Free — PRAQEN P2P Bitcoin & USDT Trading',
-    ogDesc: 'Create your free PRAQEN account and start buying or selling Bitcoin & USDT worldwide today.',
+    ogDesc: 'Create your free PRAQEN account and start buying or selling Bitcoin & USDT worldwide today. Migrating from Noones? We carry your reputation over.',
     h1: 'Create Your Free PRAQEN Account',
-    intro: 'Join the world\'s most trusted P2P Bitcoin & USDT marketplace. Free account, instant email or phone verification, no bank account required. Start trading in minutes.',
+    intro: 'Join a trusted P2P Bitcoin & USDT marketplace. Moving from Noones or another platform? Submit your trade history and PRAQEN will migrate your feedback so you don\'t start from zero. Free account, instant email or phone verification, no bank account required.',
   },
   '/privacy': {
     title: 'Privacy Policy | PRAQEN',

@@ -11,7 +11,15 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
 
-const FROM_ADDRESS = `PRAQEN <${process.env.SMTP_FROM || process.env.EMAIL_USER || 'support@praqen.com'}>`;
+// EMAIL_USER is the Gmail credential used by the separate deposit-alert transporter in
+// depositMonitor.js (a personal Gmail address, e.g. the dev's own inbox) — it was being used
+// here as a fallback "From" address too. Sending "from" a Gmail address through Brevo's relay
+// isn't a domain Brevo can authenticate on this account, so Brevo silently rewrote the visible
+// sender to <local-part>@<account-id>.brevosend.com to stay DMARC-compliant — which is exactly
+// the "kendevdash@11171618.brevosend.com" users were seeing instead of a praqen.com address.
+// Never fall back to EMAIL_USER here; only SMTP_FROM (if explicitly set for this purpose) or
+// the praqen.com default.
+const FROM_ADDRESS = `PRAQEN <${process.env.SMTP_FROM || 'noreply@praqen.com'}>`;
 
 // Pooled, reused connection — nodemailer's defaults (no pooling, connectionTimeout
 // 2min, socketTimeout 10min) meant every single email paid a fresh TCP+TLS

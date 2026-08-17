@@ -249,11 +249,14 @@ class TradeEscrowService {
       currency,
       locked_at:      new Date().toISOString(),
     };
-    if (isUsdt) {
-      escrowRow.amount_usdt = parsedAmount;
-    } else {
-      escrowRow.amount_btc  = parsedAmount;
-    }
+    // escrow_locks.amount_btc is NOT NULL at the schema level (a leftover from before
+    // USDT support was added) — leaving it unset on a USDT row fails the insert with a
+    // "null value in column amount_btc violates not-null constraint" error. That failure
+    // was being caught by the generic error handler in server.js and surfaced to users as
+    // "insufficient funds", which was never the actual problem: it silently broke EVERY
+    // USDT trade at the escrow step, regardless of the seller's real balance.
+    escrowRow.amount_btc = isUsdt ? 0 : parsedAmount;
+    if (isUsdt) escrowRow.amount_usdt = parsedAmount;
 
     const { error: lockErr } = await supabaseAdmin.from('escrow_locks').insert(escrowRow);
 

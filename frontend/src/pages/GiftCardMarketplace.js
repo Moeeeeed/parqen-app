@@ -301,9 +301,19 @@ const getLastSeen = (u) => {
   if (s < 86400) { const h = ~~(s / 3600); return { label: `${h} ${h === 1 ? 'hr' : 'hrs'} ago`, online: false }; }
   const dy = ~~(s / 86400); return { label: `${dy} ${dy === 1 ? 'day' : 'days'} ago`, online: false };
 };
+// A USDT-asset listing's rate is ~$1 (the peg), not the BTC/USD price — using btcPrice
+// unconditionally here made every USDT offer's "you receive" amount come out ~88,000x too
+// small, and the `> 100` fixed-price sanity check (valid for BTC, which is always in the
+// tens of thousands) silently rejected any legitimate USDT fixed price (necessarily close
+// to 1). Same fix as ListingDetail.js's basePriceUSD.
 const getRateUSD = (l, btcPrice) => {
-  if (l.pricing_type === 'fixed') { const s = parseFloat(l.bitcoin_price || 0); if (s > 100) return s; }
-  return btcPrice * (1 + parseFloat(l.margin || 0) / 100);
+  const isUsdt = l.asset === 'USDT';
+  if (l.pricing_type === 'fixed') {
+    const s = parseFloat(l.bitcoin_price || 0);
+    if (isUsdt && s > 0) return s;
+    if (!isUsdt && s > 100) return s;
+  }
+  return (isUsdt ? 1 : btcPrice) * (1 + parseFloat(l.margin || 0) / 100);
 };
 const getBrand = (l) => l.gift_card_brand || l.giftCardBrand || l.card_brand || 'Gift Card';
 const getFaceVal = (l) => { const v = l.face_value || l.card_value || l.amount_usd; return v ? parseFloat(v) : null; };
@@ -381,9 +391,12 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
     if (cardRange.length === 1) return { val: `$${cardRange[0]}`, sub: 'USD card' };
     return { val: `$${cardRange[0]}`, sub: 'USD starting' };
   })();
+  const isUsdtCard = listing.asset === 'USDT';
   const refUSD = cardRange ? (cardRange[0]?.isRange ? cardRange[0].min : cardRange[0]) : (fv || 1);
   const btcOut = refUSD / rateUSD;
-  const receiveUSD = btcOut * btcPriceUSD;
+  // btcOut is already USD-equivalent for a USDT card (rateUSD ≈ 1) — multiplying by the BTC
+  // price again inflated the displayed dollar-equivalent ~88,000x for USDT offers.
+  const receiveUSD = btcOut * (isUsdtCard ? 1 : btcPriceUSD);
 
   const rangeLabel = !cardRange ? 'Any value'
     : cardRange[0]?.isRange ? `$${cardRange[0].min} – $${cardRange[0].max}`
@@ -525,7 +538,7 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
           </p>
           <div className="flex items-center gap-1.5 mt-0.5">
             <p className="text-[10px] font-semibold" style={{ color: C.g500 }}>
-              ≈ {fBtc(btcOut)} BTC
+              ≈ {isUsdtCard ? btcOut.toFixed(2) : fBtc(btcOut)} {isUsdtCard ? 'USDT' : 'BTC'}
             </p>
           </div>
         </div>

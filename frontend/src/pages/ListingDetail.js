@@ -261,10 +261,20 @@ const loadAll = useCallback(async (isBackground = false) => {
   const margin   = parseFloat(listing.margin || 0);
 
   // Logic Sync: Calculate base price exactly as backend quotes endpoint should.
-  // If fixed, use the fixed price. If market, use live btcPrice.
-  const basePriceUSD    = (listing.pricing_type === 'fixed' && parseFloat(listing.bitcoin_price||0) > 100)
-    ? parseFloat(listing.bitcoin_price) 
-    : btcPrice;
+  // If fixed, use the fixed price. If market, use live btcPrice — but only for BTC-asset
+  // listings. A USDT-asset listing's "price" is ~$1 (the peg), not the BTC/USD rate; using
+  // btcPrice unconditionally here made every USDT trade's amount come out ~88,000x too small
+  // (e.g. a real $50 trade computing as 0.0006 USDT instead of $50 USDT), and the `> 100`
+  // fixed-price sanity check — a valid heuristic for BTC, always tens of thousands — silently
+  // rejected any legitimate USDT fixed price (which is necessarily close to 1).
+  const isUsdtAsset      = listing.asset === 'USDT';
+  const basePriceUSD    = isUsdtAsset
+    ? ((listing.pricing_type === 'fixed' && parseFloat(listing.bitcoin_price || 0) > 0)
+        ? parseFloat(listing.bitcoin_price)
+        : 1)
+    : ((listing.pricing_type === 'fixed' && parseFloat(listing.bitcoin_price||0) > 100)
+        ? parseFloat(listing.bitcoin_price)
+        : btcPrice);
   
   const sellerRateUSD   = basePriceUSD * (1 + margin / 100);
   const sellerRateLocal = sellerRateUSD * usdRate;
@@ -855,15 +865,17 @@ const loadAll = useCallback(async (isBackground = false) => {
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: C.gold, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <span style={{ color: '#fff', fontWeight: 900, fontSize: 13 }}>₿</span>
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: isUsdtAsset ? '#26A17B' : C.gold, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <span style={{ color: '#fff', fontWeight: 900, fontSize: 13 }}>{isUsdtAsset ? '₮' : '₿'}</span>
                   </div>
                   <div>
                     <div style={{ fontSize: 22, fontWeight: 900, color: T.primary, lineHeight: 1 }}>
                       {fiatEquivalent > 0 ? `${sym}${fmt(fiatEquivalent, 2)} ${cur}` : <span style={{ color: C.g300 }}>0.00 {cur}</span>}
                     </div>
                     <div style={{ fontSize: 11, color: C.g400, fontWeight: 600, marginTop: 2 }}>
-                      ₿ {btcAfterFee > 0 ? fmtBtc(btcAfterFee) : '0.00000000'}
+                      {isUsdtAsset
+                        ? `₮ ${btcAfterFee > 0 ? btcAfterFee.toFixed(2) : '0.00'} USDT`
+                        : `₿ ${btcAfterFee > 0 ? fmtBtc(btcAfterFee) : '0.00000000'}`}
                     </div>
                   </div>
                   {quoteFetching && <RefreshCw size={13} color={C.g300} style={{ marginLeft: 'auto' }} className="animate-spin" />}
