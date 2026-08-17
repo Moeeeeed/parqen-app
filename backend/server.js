@@ -5479,6 +5479,12 @@ app.post('/api/listings', verifyToken, async (req, res) => {
     const isGiftCard = listingType === 'BUY_GIFT_CARD' || listingType === 'SELL_GIFT_CARD' || listingType === 'GIFT_CARD';
     const verifCount = [hasEmail, hasPhone, hasKyc].filter(Boolean).length;
 
+    const FOREIGN_CURRENCIES_LIST = ['USD', 'GBP', 'CAD', 'EUR', 'AUD', 'SGD', 'CHF', 'SEK', 'NOK', 'DKK', 'NZD', 'JPY', 'HKD', 'PLN', 'BRL', 'MXN'];
+    if (isGiftCard && !FOREIGN_CURRENCIES_LIST.includes((b.currency || '').toUpperCase())) {
+      b.currency = 'USD';
+      b.currency_symbol = '$';
+    }
+
     // Very large offers ($10k+) still require KYC (identity) verification
     if (maxUSD >= 10000 && !hasKyc) {
       return res.status(403).json({
@@ -6039,24 +6045,37 @@ app.post('/api/listings/:id/view', optionalAuth, async (req, res) => {
 
     const sellerId = row?.seller_id;
 
-    // Notify seller — skip self-views only
+    // Notify seller — skip self-views, throttle to max 1 notification per viewer per listing per 1 hour
     if (sellerId && String(viewerId) !== String(sellerId)) {
-      let viewerLabel = 'Someone';
-      let viewerProfilePath = null;
-      if (viewerId) {
-        const { data: vUser } = await supabaseAdmin
-          .from('users').select('username').eq('id', viewerId).maybeSingle();
-        if (vUser?.username) {
-          viewerLabel = vUser.username;
-          viewerProfilePath = `/profile/${viewerId}`;
+      const actionPath = viewerId ? `/profile/${viewerId}` : `/listing/${listingId}`;
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const { data: alreadyNotified } = await supabaseAdmin
+        .from('notifications')
+        .select('id')
+        .eq('user_id', sellerId)
+        .eq('type', 'offer_view')
+        .eq('action', actionPath)
+        .gte('created_at', oneHourAgo)
+        .maybeSingle();
+
+      if (!alreadyNotified) {
+        let viewerLabel = 'Someone';
+        let viewerProfilePath = null;
+        if (viewerId) {
+          const { data: vUser } = await supabaseAdmin
+            .from('users').select('username').eq('id', viewerId).maybeSingle();
+          if (vUser?.username) {
+            viewerLabel = vUser.username;
+            viewerProfilePath = `/profile/${viewerId}`;
+          }
         }
+        await createNotification(
+          sellerId, 'offer_view',
+          '👀 Someone Viewed Your Offer',
+          `${viewerLabel} just viewed your offer`,
+          viewerProfilePath || `/listing/${listingId}`
+        );
       }
-      await createNotification(
-        sellerId, 'offer_view',
-        '👀 Someone Viewed Your Offer',
-        `${viewerLabel} just viewed your offer`,
-        viewerProfilePath || `/listing/${listingId}`
-      );
     }
 
     res.json({ success: true, views: next });
@@ -6248,24 +6267,37 @@ app.post('/api/offers/:id/view', optionalAuth, async (req, res) => {
 
     const sellerId = row?.seller_id;
 
-    // Notify seller — skip self-views only
+    // Notify seller — skip self-views, throttle to max 1 notification per viewer per listing per 1 hour
     if (sellerId && String(viewerId) !== String(sellerId)) {
-      let viewerLabel = 'Someone';
-      let viewerProfilePath = null;
-      if (viewerId) {
-        const { data: vUser } = await supabaseAdmin
-          .from('users').select('username').eq('id', viewerId).maybeSingle();
-        if (vUser?.username) {
-          viewerLabel = vUser.username;
-          viewerProfilePath = `/profile/${viewerId}`;
+      const actionPath = viewerId ? `/profile/${viewerId}` : `/listing/${listingId}`;
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const { data: alreadyNotified } = await supabaseAdmin
+        .from('notifications')
+        .select('id')
+        .eq('user_id', sellerId)
+        .eq('type', 'offer_view')
+        .eq('action', actionPath)
+        .gte('created_at', oneHourAgo)
+        .maybeSingle();
+
+      if (!alreadyNotified) {
+        let viewerLabel = 'Someone';
+        let viewerProfilePath = null;
+        if (viewerId) {
+          const { data: vUser } = await supabaseAdmin
+            .from('users').select('username').eq('id', viewerId).maybeSingle();
+          if (vUser?.username) {
+            viewerLabel = vUser.username;
+            viewerProfilePath = `/profile/${viewerId}`;
+          }
         }
+        await createNotification(
+          sellerId, 'offer_view',
+          '👀 Someone Viewed Your Offer',
+          `${viewerLabel} just viewed your offer`,
+          viewerProfilePath || `/listing/${listingId}`
+        );
       }
-      await createNotification(
-        sellerId, 'offer_view',
-        '👀 Someone Viewed Your Offer',
-        `${viewerLabel} just viewed your offer`,
-        viewerProfilePath || `/listing/${listingId}`
-      );
     }
 
     res.json({ success: true, views: next });
@@ -7269,10 +7301,10 @@ app.post('/api/trades', verifyToken, requireEmailVerified, async (req, res) => {
       const localDisp = tradeLocalAmt > 0 && tradeCur
         ? `${tradeSym || ''}${fmtN(tradeLocalAmt)} ${tradeCur}`
         : `$${fmtN(tradeAmountUsd)} USD`;
-      const pmDisp = paymentMethod || listing.payment_method || 'Mobile Money';
-      const isGiftCardListing = (listing.listing_type || '').toUpperCase() === 'BUY_GIFT_CARD';
-      const assetLabel = isGiftCardListing && listing.gift_card_brand
-        ? `${listing.gift_card_brand} Gift Card` : 'Bitcoin';
+      const isGiftCardListing = (listing.listing_type || '').toUpperCase().includes('GIFT_CARD');
+      const gcBrandField = isGiftCardListing ? (listing.gift_card_brand || null) : null;
+      const pmDisp = gcBrandField || paymentMethod || listing.payment_method || 'Mobile Money';
+      const assetLabel = gcBrandField ? `${gcBrandField} Gift Card` : 'Bitcoin';
       const btcDisp = `₿${parseFloat(trade[0].amount_btc || 0).toFixed(8)}`;
 
       const tradeUUID = trade[0].id;
@@ -7280,11 +7312,11 @@ app.post('/api/trades', verifyToken, requireEmailVerified, async (req, res) => {
         createNotification(sellerId, 'trade', '💰 New Trade Request',
           `${buyerName} wants to buy ${assetLabel} · ${btcDisp} · ${localDisp} via ${pmDisp}`,
           `/trade/${tradeUUID}`,
-          { actor_id: buyerId, direction: 'sell', trade_id: tradeUUID, payment_method: pmDisp }),
+          { actor_id: buyerId, direction: 'sell', trade_id: tradeUUID, payment_method: pmDisp, gift_card_brand: gcBrandField }),
         createNotification(buyerId, 'trade', '🔒 Trade Started',
           `Your trade with ${sellerName} is now open · ${btcDisp} · ${localDisp} via ${pmDisp}`,
           `/trade/${tradeUUID}`,
-          { actor_id: sellerId, direction: 'buy', trade_id: tradeUUID, payment_method: pmDisp }),
+          { actor_id: sellerId, direction: 'buy', trade_id: tradeUUID, payment_method: pmDisp, gift_card_brand: gcBrandField }),
         sendTradeAlert(sellerId, trade[0], 'new_trade').catch(() => { }),
         sendTradeAlert(buyerId, trade[0], 'new_trade').catch(() => { }),
       ]);
@@ -8601,8 +8633,9 @@ app.get('/api/notifications', verifyToken, async (req, res) => {
     // Extract trade lookup keys from every notification:
     // 1. UUID from action URL  2. data.trade_id  3. any path segment after /trade/
     const tradeSelect = `id, status, trade_type, amount_btc, amount_usd, amount_local,
-                 local_currency, currency_symbol, payment_method, trade_ref,
+                 local_currency, currency_symbol, currency, amount_usdt, payment_method, gift_card_brand, trade_ref,
                  buyer_id, seller_id, created_at, completed_at, cancelled_at, cancel_reason,
+                 listing:listing_id(id, listing_type, gift_card_brand, payment_method),
                  buyer:buyer_id(id, username, avatar_url, country),
                  seller:seller_id(id, username, avatar_url, country)`;
 

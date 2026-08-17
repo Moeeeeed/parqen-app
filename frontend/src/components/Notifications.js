@@ -5,7 +5,7 @@ import axios from 'axios';
 import {
   Bell, X, CheckCheck, ArrowRight,
   Megaphone, Eye, UserCircle, MessageCircle, Send, ChevronLeft, Globe,
-  Gift, Crown, Link, Lock, CheckCircle, XCircle, DollarSign,
+  Crown, Link, Lock, CheckCircle, XCircle, DollarSign,
 } from 'lucide-react';
 import CountryFlag from './CountryFlag';
 
@@ -324,6 +324,67 @@ const tradeTimeStr = (ts) => {
     : d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' }) + ', ' + hm;
 };
 
+const KNOWN_GC_BRANDS = [
+  'Apple / iTunes', 'iTunes Denmark', 'iTunes', 'Apple', 'Amazon', 'Google Play',
+  'Steam', 'eBay', 'Walmart', 'Target', 'Visa Gift Card', 'Mastercard GC',
+  'Amex Gift Card', 'Netflix', 'Spotify', 'Xbox', 'PlayStation', 'Nintendo',
+  'Razer Gold', 'Nike Gift Card', 'MoneyPak', 'PostePay', 'PLS Gift Card',
+  'Vanilla Card', 'Roblox', 'Fortnite V-Bucks', 'Starbucks', 'Sephora'
+];
+
+// ── Brand sanity guards ──────────────────────────────────────────────────────
+// Never let a currency figure ("$10 USD", "kr50 DKK") or filler words ("via",
+// "with", "buy") masquerade as a gift card brand. Real brands come from
+// structured data (trade.gift_card_brand / listing.gift_card_brand / notification
+// data) — the message fallbacks below only accept text that passes these checks.
+const CURRENCY_CODE_RE = /\b(?:USD|GBP|CAD|EUR|AUD|SGD|CHF|SEK|NOK|DKK|NZD|JPY|HKD|PLN|BRL|MXN|GHS|NGN|KES|ZAR|UGX|TZS|XAF|XOF)\b/i;
+const FILLER_WORDS_RE = /^(?:a|an|the|to|for|via|with|by|on|at|in|of|and|or|your|my|you|wants|want|buys|buy|sells|sell|buying|selling|paid|open|started|new|trade|gift|card)$/i;
+const INVALID_BRAND_RE = /bitcoin|gift card|^gift$/i;
+const isAmountLike = (s) => /\d|[$€£¥₵₦₹₩₮]/u.test(s) || CURRENCY_CODE_RE.test(s);
+const isSaneBrandText = (s) => {
+  const t = (s || '').trim();
+  if (!t || INVALID_BRAND_RE.test(t) || isAmountLike(t)) return false;
+  return !t.split(/\s+/).some(w => FILLER_WORDS_RE.test(w));
+};
+
+function resolveGiftCardBrand(n, trade) {
+  const candidates = [
+    trade?.gift_card_brand,
+    trade?.giftCardBrand,
+    trade?.listing?.gift_card_brand,
+    trade?.listings?.gift_card_brand,
+    n?.gift_card_brand,
+    n?.giftCardBrand,
+    n?.trade?.gift_card_brand,
+    n?.trade?.giftCardBrand,
+    n?.trade?.listing?.gift_card_brand,
+    n?.trade?.listings?.gift_card_brand,
+    n?.data?.gift_card_brand,
+    n?.data?.giftCardBrand,
+  ];
+  for (const c of candidates) {
+    if (isSaneBrandText(c)) return c.trim();
+  }
+
+  const combined = `${n?.title || ''} ${n?.message || ''} ${trade?.description || ''} ${trade?.trade_instructions || ''}`;
+  // 1) Exact known brands — the safest match
+  for (const brand of KNOWN_GC_BRANDS) {
+    const escaped = brand.replace(/[/\\^$*+?.()|[\]{}]/g, '\\$&');
+    if (new RegExp(`\\b${escaped}\\b`, 'i').test(combined)) {
+      return brand;
+    }
+  }
+
+  // 2) "X Gift Card" pattern — limited to a few words, must look like a brand
+  //    name (no digits / currency codes / symbols / filler words)
+  const gcMatch = combined.match(/([A-Za-z][A-Za-z0-9/&.\- ]*?)\s+(?:Gift Card|GC|Voucher)\b/i);
+  if (gcMatch && isSaneBrandText(gcMatch[1])) {
+    return gcMatch[1].trim();
+  }
+
+  return null;
+}
+
 function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
   const isBuyer  = String(userId) === String(trade.buyer_id);
   const cpRaw    = isBuyer ? trade.seller : trade.buyer;
@@ -340,7 +401,10 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
   const sym      = trade.currency_symbol || CUR_SYM[cur] || '';
   const btcRaw   = parseFloat(trade.amount_btc || 0);
   const btcStr   = btcRaw.toFixed(8);
-  const pm       = trade.payment_method || '—';
+  const gcBrand  = resolveGiftCardBrand(n, trade);
+  const pm       = (gcBrand && gcBrand.toLowerCase() !== 'bitcoin' && gcBrand.toLowerCase() !== 'gift card')
+    ? gcBrand
+    : (trade.payment_method && trade.payment_method !== 'Gift Card' ? trade.payment_method : (gcBrand || 'Gift Card'));
   const st         = (trade.status || '').toUpperCase();
   const status     = getStatusStyle(st, trade.cancel_reason);
   const dateStr    = tradeTimeStr(trade.created_at || n.created_at);
@@ -348,9 +412,13 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
 
   // Detect gift card trade via trade_type or known gift card brand in payment method
   const GIFT_BRANDS = /amazon|itunes|apple|google.?play|steam|walmart|ebay|target|playstation|xbox|netflix|spotify|visa gift|mastercard gift|best buy/i;
-  const isGiftCard = /gift/i.test(trade.trade_type || '') || GIFT_BRANDS.test(pm);
+  const isGiftCard = /gift/i.test(trade.trade_type || '') || Boolean(gcBrand && gcBrand.toLowerCase() !== 'bitcoin') || GIFT_BRANDS.test(pm);
 
-  const dirLabel = isBuyer ? 'Buy BTC' : 'Sell BTC';
+  // Asset-aware direction label + header logo (₿ BTC / ₮ USDT)
+  const isUsdt = String(trade.currency || '').toUpperCase() === 'USDT'
+    || (trade.amount_usdt && parseFloat(trade.amount_usdt) > 0)
+    || /USDT/i.test(trade.asset || '');
+  const dirLabel = `${isBuyer ? 'Buy' : 'Sell'} ${isUsdt ? 'USDT' : 'BTC'}`;
 
   // USD equivalent of BTC (from amount_usd field, already in DB)
   const usdRaw   = parseFloat(trade.amount_usd || 0);
@@ -363,27 +431,34 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
   //   • Buyer: sees what they PAY first (fiat), then what they GET (BTC)
   const basePay     = isDone ? 'You paid'     : 'You pay';
   const baseReceive = isDone ? 'You received' : 'You receive';
-  const baseProvide = isDone ? 'You provided' : 'You provide';
 
   let leftLabel, leftStr, leftSubStr, rightLabel, rightStr, rightSubStr;
 
   if (isGiftCard) {
-    if (!isBuyer) {
-      // Gift card seller  →  LEFT: what they RECEIVE (BTC + local equiv)  |  RIGHT: what they provide (card + face value)
-      leftLabel   = baseReceive;
-      leftStr     = `${btcStr} BTC`;
-      leftSubStr  = fiatStr || usdEqStr;   // local currency first, USD fallback
-      rightLabel  = baseProvide;
-      rightStr    = pm;
-      rightSubStr = fiatStr;
-    } else {
-      // Gift card buyer  →  LEFT: what they pay (fiat)  |  RIGHT: what they receive (card)
+    // The gift card brand is already shown once at the top of the card — the
+    // amount row shows the card's VALUE (fiat), not the brand again. Both
+    // columns follow the regular trade card format: currency value as the
+    // primary bold line, BTC amount below in gray parentheses.
+    const fiatPrimary = fiatStr || usdEqStr || `${btcStr} BTC`;
+    const btcParen    = fiatStr ? `(${btcStr} BTC)` : null;
+    if (isBuyer) {
+      // Gift card buyer (paying with gift card to buy BTC):
+      // LEFT: You pay/paid (card value)  |  RIGHT: You receive/received (value + BTC equiv)
       leftLabel   = basePay;
-      leftStr     = fiatStr || `${btcStr} BTC`;
+      leftStr     = fiatPrimary;
       leftSubStr  = null;
       rightLabel  = baseReceive;
-      rightStr    = pm;
-      rightSubStr = fiatStr;
+      rightStr    = fiatPrimary;
+      rightSubStr = btcParen;
+    } else {
+      // Gift card seller (selling BTC to receive gift card):
+      // LEFT: You pay/paid (value + BTC equiv)  |  RIGHT: You receive/received (card value)
+      leftLabel   = basePay;
+      leftStr     = fiatPrimary;
+      leftSubStr  = btcParen;
+      rightLabel  = baseReceive;
+      rightStr    = fiatPrimary;
+      rightSubStr = null;
     }
   } else {
     if (!isBuyer) {
@@ -412,9 +487,9 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
       {/* Header: coin icon + direction/role + date + status */}
       <div style={{ padding: '14px 16px 12px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>
-          {isGiftCard ? (
-            <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg,#059669,#047857)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 6px rgba(5,150,105,0.4)' }}>
-              <Gift size={16} color="#fff" />
+          {isUsdt ? (
+            <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg,#0D9488,#0F766E)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 6px rgba(13,148,136,0.4)' }}>
+              <span style={{ fontSize: 17, color: '#fff', fontWeight: 900 }}>₮</span>
             </div>
           ) : (
             <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg,#F7931A,#E8790A)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 6px rgba(247,147,26,0.4)' }}>
@@ -574,9 +649,16 @@ function BasicCard({ n, userId, onNavigate }) {
       : 'ACTIVE'
     );
 
-    // Parse payment method: enriched field first, then parse from message
+    // Parse payment method: enriched gift_card_brand first, then enriched payment_method, then parse from message
+    const basicGcBrand = resolveGiftCardBrand(n, n?.trade);
     const pmM = msg.match(/\bvia\s+([^·\n]+?)(?:\s*·\s*|\s*$)/i);
-    const parsedPm = n.payment_method || pmM?.[1]?.trim() || '—';
+    const pmViaRaw = pmM?.[1]?.trim();
+    // Only trust the "via …" capture if it looks like a real method/brand —
+    // never a currency amount like "10 USD" or "kr50 DKK"
+    const pmViaOk = pmViaRaw && isSaneBrandText(pmViaRaw);
+    const parsedPm = (basicGcBrand && basicGcBrand.toLowerCase() !== 'bitcoin' && basicGcBrand.toLowerCase() !== 'gift card')
+      ? basicGcBrand
+      : (n.payment_method && n.payment_method !== 'Gift Card' ? n.payment_method : (pmViaOk ? pmViaRaw : (basicGcBrand || 'Gift Card')));
 
     // BTC amount (₿ prefix in message)
     const btcM = msg.match(/[₿]([\d.]+)/);
@@ -594,57 +676,61 @@ function BasicCard({ n, userId, onNavigate }) {
 
     // Gift card detection for BasicCard (uses parsed payment method from message)
     const GIFT_BRANDS_RE = /amazon|itunes|apple|google.?play|steam|walmart|ebay|target|playstation|xbox|netflix|spotify|visa gift|mastercard gift|best buy/i;
-    const basicIsGiftCard = GIFT_BRANDS_RE.test(parsedPm) || /gift.?card/i.test(msg);
+    const basicIsGiftCard = Boolean(basicGcBrand && basicGcBrand.toLowerCase() !== 'bitcoin') || GIFT_BRANDS_RE.test(parsedPm) || /gift.?card/i.test(msg);
 
-    // Direction — priority: enriched field → message keywords → type hints
+    // Direction — priority: enriched field → message keywords → type hints.
+    // Label + header logo are asset-aware (₿ BTC / ₮ USDT), never the gift icon.
     const wantsBuy  = /wants to buy/i.test(msg);
     const wantsSell = /wants to sell/i.test(msg);
     const enrichedDir = n.direction || n.data?.direction;
+    const isUsdt = (n.trade && (String(n.trade.currency || '').toUpperCase() === 'USDT'
+      || (n.trade.amount_usdt && parseFloat(n.trade.amount_usdt) > 0)))
+      || /\bUSDT\b|₮/i.test(msg);
+    const assetTag = isUsdt ? 'USDT' : 'BTC';
     let dirLabel = 'Trade';
-    if (basicIsGiftCard) {
-      if (enrichedDir === 'buy')       dirLabel = 'Buy BTC';
-      else if (enrichedDir === 'sell') dirLabel = 'Sell BTC';
-      else if (wantsBuy)               dirLabel = 'Sell BTC';
-      else if (wantsSell)              dirLabel = 'Buy BTC';
-      else                             dirLabel = 'Sell BTC';
-    } else {
-      if (enrichedDir === 'buy')          dirLabel = 'Buy BTC';
-      else if (enrichedDir === 'sell')    dirLabel = 'Sell BTC';
-      else if (wantsBuy)                  dirLabel = 'Sell BTC';
-      else if (wantsSell)                 dirLabel = 'Buy BTC';
-      else if (/\bbuy\b/i.test(type) && !/sell/i.test(type)) dirLabel = 'Buy BTC';
-      else if (/\bsell\b/i.test(type) && !/buy/i.test(type)) dirLabel = 'Sell BTC';
-    }
+    if (enrichedDir === 'buy')          dirLabel = `Buy ${assetTag}`;
+    else if (enrichedDir === 'sell')    dirLabel = `Sell ${assetTag}`;
+    else if (wantsBuy)                  dirLabel = `Sell ${assetTag}`;
+    else if (wantsSell)                 dirLabel = `Buy ${assetTag}`;
+    else if (/\bbuy\b/i.test(type) && !/sell/i.test(type)) dirLabel = `Buy ${assetTag}`;
+    else if (/\bsell\b/i.test(type) && !/buy/i.test(type)) dirLabel = `Sell ${assetTag}`;
 
     // Past tense for completed trades
     const isDone = isCompleted;
     const basePay2     = isDone ? 'You paid'     : 'You pay';
     const baseReceive2 = isDone ? 'You received' : 'You receive';
-    const baseProvide2 = isDone ? 'You provided' : 'You provide';
 
     // isSeller = true when we can detect the current user is selling BTC
-    const isSeller = wantsBuy || n.direction === 'sell';
-    const isBuyerB = wantsSell || n.direction === 'buy';
+    const isSeller = wantsBuy || enrichedDir === 'sell';
+    const isBuyerB = wantsSell || enrichedDir === 'buy';
 
     // Build left/right layout using same seller-first rule as TradeNotifCard
     let bLeftLabel, bLeftStr, bLeftSubStr, bRightLabel, bRightStr, bRightSubStr;
 
     if (basicIsGiftCard) {
-      if (isSeller || (!isBuyerB)) {
-        // Gift card seller: LEFT = receive BTC + local equiv  |  RIGHT = provide card
-        bLeftLabel   = baseReceive2;
-        bLeftStr     = btcAmtStr || parsedLocalStr || 'BTC';
-        bLeftSubStr  = btcAmtStr && parsedLocalStr ? parsedLocalStr : null;
-        bRightLabel  = baseProvide2;
-        bRightStr    = parsedPm !== '—' ? parsedPm : 'Gift Card';
-        bRightSubStr = null;
-      } else {
-        // Gift card buyer: LEFT = pay fiat  |  RIGHT = receive card
+      // The gift card brand is already shown once at the top of the card — the
+      // amount row shows the card's VALUE (fiat), not the brand again. Both
+      // columns follow the regular trade card format: currency value as the
+      // primary bold line, BTC amount below in gray parentheses.
+      const bFiatPrimary = parsedLocalStr || btcAmtStr || 'BTC';
+      const bBtcParen    = parsedLocalStr && btcAmtStr ? `(${btcAmtStr})` : null;
+      if (isBuyerB || (!isSeller)) {
+        // Gift card buyer (paying with gift card to buy BTC):
+        // LEFT: You pay/paid (card value)  |  RIGHT: You receive/received (value + BTC equiv)
         bLeftLabel   = basePay2;
-        bLeftStr     = parsedLocalStr || btcAmtStr || 'BTC';
+        bLeftStr     = bFiatPrimary;
         bLeftSubStr  = null;
         bRightLabel  = baseReceive2;
-        bRightStr    = parsedPm !== '—' ? parsedPm : 'Gift Card';
+        bRightStr    = bFiatPrimary;
+        bRightSubStr = bBtcParen;
+      } else {
+        // Gift card seller (selling BTC to receive gift card):
+        // LEFT: You pay/paid (value + BTC equiv)  |  RIGHT: You receive/received (card value)
+        bLeftLabel   = basePay2;
+        bLeftStr     = bFiatPrimary;
+        bLeftSubStr  = bBtcParen;
+        bRightLabel  = baseReceive2;
+        bRightStr    = bFiatPrimary;
         bRightSubStr = null;
       }
     } else if (isSeller) {
@@ -678,20 +764,20 @@ function BasicCard({ n, userId, onNavigate }) {
 
     // Extra direction hint: if actor username contains "buyer" → they buy → I sell, and vice versa
     if (dirLabel === 'Trade' && parsedActorName) {
-      if (/buyer/i.test(parsedActorName))  dirLabel = 'Sell BTC';
-      if (/seller/i.test(parsedActorName)) dirLabel = 'Buy BTC';
+      if (/buyer/i.test(parsedActorName))  dirLabel = `Sell ${assetTag}`;
+      if (/seller/i.test(parsedActorName)) dirLabel = `Buy ${assetTag}`;
     }
 
-    const roleTag = dirLabel === 'Buy BTC' ? 'Buyer' : dirLabel === 'Sell BTC' ? 'Seller' : null;
+    const roleTag = dirLabel.startsWith('Buy') ? 'Buyer' : dirLabel.startsWith('Sell') ? 'Seller' : null;
 
     return (
       <NCard n={n} onNavigate={onNavigate}>
         {/* Header: coin icon + direction/role + date + status */}
         <div style={{ padding: '14px 16px 12px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>
-            {basicIsGiftCard ? (
-              <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg,#059669,#047857)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 6px rgba(5,150,105,0.4)' }}>
-                <Gift size={16} color="#fff" />
+            {isUsdt ? (
+              <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg,#0D9488,#0F766E)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 6px rgba(13,148,136,0.4)' }}>
+                <span style={{ fontSize: 17, color: '#fff', fontWeight: 900 }}>₮</span>
               </div>
             ) : (
               <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg,#F7931A,#E8790A)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 6px rgba(247,147,26,0.35)' }}>
@@ -1048,10 +1134,15 @@ export default function Notifications({ user }) {
         // First load: show toasts for unread notifications created in the last 30 seconds
         // so a page-refresh or remount doesn't swallow recent trade/cancel alerts.
         const cutoff = Date.now() - 30_000;
-        incoming
-          .filter(n => !n.is_read && new Date(n.created_at).getTime() > cutoff)
-          .slice(0, 3)
-          .forEach(showToast);
+        const recentUnread = incoming.filter(n => !n.is_read && new Date(n.created_at).getTime() > cutoff);
+        const toastedKeys = new Set();
+        recentUnread.slice(0, 3).forEach(n => {
+          const key = `${n.title || ''}:${n.message || ''}`;
+          if (!toastedKeys.has(key)) {
+            toastedKeys.add(key);
+            showToast(n);
+          }
+        });
       } else {
         // Subsequent polls: toast anything that is new since the last poll, and briefly
         // highlight those cards so the latest activity visibly "pops in" at the top.
@@ -1060,7 +1151,15 @@ export default function Notifications({ user }) {
           setJustArrivedIds(new Set(freshIds));
           setTimeout(() => setJustArrivedIds(new Set()), 2600);
         }
-        incoming.filter(n => !n.is_read && freshIds.includes(n.id)).slice(0, 3).forEach(showToast);
+        const freshUnread = incoming.filter(n => !n.is_read && freshIds.includes(n.id));
+        const toastedKeys = new Set();
+        freshUnread.slice(0, 3).forEach(n => {
+          const key = `${n.title || ''}:${n.message || ''}`;
+          if (!toastedKeys.has(key)) {
+            toastedKeys.add(key);
+            showToast(n);
+          }
+        });
       }
       seenIdsRef.current = new Set(incoming.map(n => n.id));
       setNotifs(incoming);

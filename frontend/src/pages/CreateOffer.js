@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRates } from '../contexts/RatesContext';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -75,6 +75,11 @@ const COUNTRIES = [
 const CURRENCIES_LIST = [...new Map(
   COUNTRIES.map(c => [c.currency, { code: c.currency, symbol: c.symbol }])
 ).values()];
+
+const FOREIGN_CURRENCY_CODES = [
+  'USD', 'GBP', 'CAD', 'EUR', 'AUD', 'SGD', 'CHF', 'SEK', 'NOK', 'DKK',
+  'NZD', 'JPY', 'HKD', 'PLN', 'BRL', 'MXN'
+];
 
 // USD_RATES is now provided by RatesContext — do NOT define a static object here
 
@@ -618,6 +623,14 @@ export default function CreateOffer() {
   const isGC = offerType === 'gc_buy' || offerType === 'gc_sell';
   const steps = isGC ? GC_STEPS : BTC_STEPS;
 
+  // Restrict currency to foreign currencies when offerType is gift card
+  useEffect(() => {
+    if (isGC && !FOREIGN_CURRENCY_CODES.includes(currencyCode)) {
+      setCurrencyCode('USD');
+      setCurrencySymbol('$');
+    }
+  }, [offerType, isGC, currencyCode]);
+
   // Fetch seller deposit status once the user picks "Sell Gift Card"
   useEffect(() => {
     if (offerType !== 'gc_sell' || depositStatus !== null) return;
@@ -738,11 +751,11 @@ export default function CreateOffer() {
   const selectedPay = PAYMENT_METHODS.find(m => m.id === payMethod);
 
   // ── Step validation ──────────────────────────────────────────────────────
-  const canNext = () => {
+ const canNext = () => {
     if (step === 1) return !!offerType;
     if (isGC) {
-      if (step === 2) return gcCardValues.length > 0 && !!gcBrand && (!isGcBuySide || (!gcWalletTooLow && !gcMinExceedsWallet));
-      if (step === 3) return !!country && !!currencyCode;
+      if (step === 2) return gcCardValues.length > 0 && !!gcBrand && (isGcBuySide || (!gcWalletTooLow && !gcMinExceedsWallet));
+      if (step === 3) return !!country && !!currencyCode && FOREIGN_CURRENCY_CODES.includes(currencyCode);
       if (step === 4) return pricingType === 'fixed' ? !!fixedPrice : true;
       if (step === 5) return true;
     } else {
@@ -758,7 +771,7 @@ export default function CreateOffer() {
       if (step === 5) return true;
     }
     return true;
-  };
+};
 
   const back = () => setStep(s => Math.max(1, s - 1));
   const next = () => {
@@ -1295,7 +1308,20 @@ export default function CreateOffer() {
                 <SearchableSelect
                   items={COUNTRIES}
                   value={country}
-                  onChange={(val) => { setCountry(val); setCountrySearch(''); }}
+                  onChange={(val) => {
+                    setCountry(val);
+                    setCountrySearch('');
+                    const c = COUNTRIES.find(x => x.code === val);
+                    if (c) {
+                      if (!isGC) {
+                        setCurrencyCode(c.currency);
+                        setCurrencySymbol(c.symbol);
+                      } else if (FOREIGN_CURRENCY_CODES.includes(c.currency)) {
+                        setCurrencyCode(c.currency);
+                        setCurrencySymbol(c.symbol);
+                      }
+                    }
+                  }}
                   searchValue={countrySearch}
                   onSearchChange={setCountrySearch}
                   placeholder="Search & select your country…"
@@ -1332,10 +1358,12 @@ export default function CreateOffer() {
                   Currency
                 </label>
                 <p className="text-sm mb-2" style={{ color: C.g500 }}>
-                  Auto-set from country — change independently if needed.
+                  {isGC
+                    ? 'Restricted to foreign currencies for gift card trades.'
+                    : 'Auto-set from country — change independently if needed.'}
                 </p>
                 <SearchableSelect
-                  items={CURRENCIES_LIST}
+                  items={isGC ? CURRENCIES_LIST.filter(c => FOREIGN_CURRENCY_CODES.includes(c.code)) : CURRENCIES_LIST}
                   value={currencyCode}
                   onChange={(val) => {
                     const c = CURRENCIES_LIST.find(x => x.code === val);
