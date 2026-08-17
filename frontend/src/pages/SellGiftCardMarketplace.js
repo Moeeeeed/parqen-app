@@ -203,6 +203,17 @@ export default function SellGiftCardMarketplace({ user }) {
   });
   const [activeTrades, setActiveTrades] = useState([]);
   const [showAllTrades, setShowAllTrades] = useState(false);
+  const [cryptoFilter, setCryptoFilter] = useState('ALL'); // 'ALL' | 'BTC' | 'USDT'
+  const [showCryptoMenu, setShowCryptoMenu] = useState(false);
+  const cryptoRef = React.useRef(null);
+
+  useEffect(() => {
+    const h = e => {
+      if (cryptoRef.current && !cryptoRef.current.contains(e.target)) setShowCryptoMenu(false);
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
 
   useEffect(() => { loadBuyOffers(); }, []);
   useEffect(() => {
@@ -237,6 +248,8 @@ export default function SellGiftCardMarketplace({ user }) {
 
   const getFilteredOffers = () => {
     let filtered = [...buyOffers];
+    if (cryptoFilter === 'BTC') filtered = filtered.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'BTC');
+    if (cryptoFilter === 'USDT') filtered = filtered.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'USDT');
     
     if (searchTerm) {
       filtered = filtered.filter(l => 
@@ -332,6 +345,82 @@ export default function SellGiftCardMarketplace({ user }) {
     <div className="min-h-screen" style={{ backgroundColor: PRAQEN.lightBg }}>
       <div className="max-w-7xl mx-auto px-3 py-4 md:px-4 md:py-6">
         
+        {/* ── TAB NAVIGATION ── */}
+        <div className="bg-white border sticky z-30 mb-6 rounded-xl overflow-hidden shadow-sm border-gray-200">
+          <div className="flex w-full">
+            <div className="flex-1 relative">
+              <button onClick={() => navigate('/gift-cards')}
+                className="w-full text-center py-3 text-xs font-bold border-b-2 border-transparent transition-all flex items-center justify-center gap-1 text-gray-500">
+                Buy
+              </button>
+            </div>
+
+            <div className="flex-1 relative">
+              <button onClick={() => navigate('/sell-gift-card')}
+                className="w-full text-center py-3 text-xs font-bold border-b-2 transition-all flex items-center justify-center gap-1"
+                style={{ borderColor: '#2D5F4F', color: '#2D5F4F', backgroundColor: 'rgba(45,95,79,0.08)' }}>
+                Sell
+              </button>
+            </div>
+
+            {/* ── Crypto Filter ── */}
+            <div className="flex-1 relative" ref={cryptoRef}>
+              <button onClick={() => setShowCryptoMenu(v => !v)}
+                className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1.5"
+                style={{ color: cryptoFilter === 'ALL' ? '#2D5F4F' : PRAQEN.gray[700] }}>
+                {cryptoFilter === 'ALL' && <span className="text-xs">🪙</span>}
+                {cryptoFilter === 'BTC' && <span className="w-4 h-4 rounded-full flex items-center justify-center font-black text-[10px] text-white" style={{background:'linear-gradient(135deg,#F7931A,#e8830a)'}}>₿</span>}
+                {cryptoFilter === 'USDT' && <span className="w-4 h-4 rounded-full flex items-center justify-center font-black text-[10px] text-white" style={{background:'#26A17B'}}>₮</span>}
+                <span>{cryptoFilter === 'ALL' ? 'All Crypto' : cryptoFilter}</span>
+                <ChevronDown size={12} className={`transition-transform ${showCryptoMenu ? 'rotate-180' : ''}`} />
+              </button>
+              {showCryptoMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowCryptoMenu(false)} />
+                  <div className="absolute right-0 sm:left-1/2 sm:-translate-x-1/2 top-full mt-1.5 w-56 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white"
+                    style={{ borderColor: PRAQEN.gray[200] }}>
+                    <button onClick={() => { setCryptoFilter('ALL'); setShowCryptoMenu(false); }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition"
+                      style={{ backgroundColor: cryptoFilter === 'ALL' ? 'rgba(45,95,79,0.06)' : 'transparent' }}>
+                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
+                        style={{ background: 'linear-gradient(135deg, #2D5F4F, #1a3a2a)' }}>🌐</span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-xs font-black" style={{ color: PRAQEN.gray[800] }}>All Crypto</span>
+                        <span className="block text-[10px] font-semibold" style={{ color: PRAQEN.gray[400] }}>Show both BTC & USDT offers</span>
+                      </span>
+                      {cryptoFilter === 'ALL' && <CheckCircle size={14} style={{ color: '#2D5F4F', flexShrink: 0 }} />}
+                    </button>
+
+                    <button onClick={() => { setCryptoFilter('BTC'); setShowCryptoMenu(false); }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition border-t"
+                      style={{ borderColor: PRAQEN.gray[100], backgroundColor: cryptoFilter === 'BTC' ? 'rgba(247,147,26,0.08)' : 'transparent' }}>
+                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
+                        style={{ background: 'linear-gradient(135deg,#F7931A,#e8830a)' }}>₿</span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-xs font-black" style={{ color: PRAQEN.gray[800] }}>Bitcoin</span>
+                        <span className="block text-[10px] font-semibold" style={{ color: PRAQEN.gray[400] }}>BTC offers only</span>
+                      </span>
+                      {cryptoFilter === 'BTC' && <CheckCircle size={14} style={{ color: '#e8830a', flexShrink: 0 }} />}
+                    </button>
+
+                    <button onClick={() => { setCryptoFilter('USDT'); setShowCryptoMenu(false); }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition border-t"
+                      style={{ borderColor: PRAQEN.gray[100], backgroundColor: cryptoFilter === 'USDT' ? 'rgba(38,161,123,0.08)' : 'transparent' }}>
+                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
+                        style={{ background: '#26A17B' }}>₮</span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-xs font-black" style={{ color: PRAQEN.gray[800] }}>Tether</span>
+                        <span className="block text-[10px] font-semibold" style={{ color: PRAQEN.gray[400] }}>USDT offers only</span>
+                      </span>
+                      {cryptoFilter === 'USDT' && <CheckCircle size={14} style={{ color: '#26A17B', flexShrink: 0 }} />}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Hero Section */}
         <div className="rounded-xl overflow-hidden mb-6 shadow-md" style={{ background: `linear-gradient(135deg, ${PRAQEN.primary}, ${PRAQEN.darkBg})` }}>
           <div className="p-5">

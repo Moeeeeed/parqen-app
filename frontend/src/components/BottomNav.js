@@ -33,6 +33,9 @@ export default function BottomNav({ user }) {
   if (location.pathname.startsWith('/trade/')) return null;
 
   const isActive = (to) => {
+    if (to === '/gift-cards') {
+      return location.pathname.startsWith('/gift-cards') || location.pathname.startsWith('/sell-gift-card');
+    }
     return location.pathname.startsWith(to);
   };
 
