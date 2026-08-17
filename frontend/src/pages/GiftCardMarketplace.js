@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRates } from '../contexts/RatesContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import SEO from '../components/SEO';
 import axios from 'axios';
 import {
@@ -11,7 +11,7 @@ import {
   ChevronDown, CreditCard, ThumbsUp, ThumbsDown, Repeat2,
   Phone, Mail, Ban, ArrowUp, ArrowDown,
   Zap, Users, TrendingUp, Award, Sparkles, ShieldCheck,
-  Crown, Star, MessageSquare, Wifi, Trophy, Globe, Coins
+  Crown, Star, MessageSquare, Wifi, Coins, Trophy, Globe
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
@@ -282,16 +282,6 @@ const GC_BRANDS = GC_BRAND_GROUPS.flatMap(g => g.items);
 
 const GC_FACE_VALUES = [10, 20, 25, 50, 100, 200, 500, 1000];
 
-// Asset choices shown in the Sell/Buy tab dropdowns — same pattern as the P2P Buy BTC / Sell
-// tabs, adapted for a single page: picking one sets both the tab's mode and the asset filter.
-// Icons match the badges used elsewhere in the app (Bitcoin / Coins from lucide-react) rather
-// than the ₿ / ₮ text glyphs, which don't render consistently across phone fonts.
-const ASSET_CHOICES = [
-  { code: 'ALL',  label: 'All Assets', sub: 'Bitcoin & Tether', icon: Wallet,  bg: C.g400 },
-  { code: 'BTC',  label: 'Bitcoin',    sub: 'BTC',               icon: Bitcoin, bg: 'linear-gradient(135deg,#F7931A,#e8830a)' },
-  { code: 'USDT', label: 'Tether',     sub: 'USDT · TRC-20',     icon: Coins,   bg: '#26A17B' },
-];
-
 const fmt = (n, d = 0) => new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: d }).format(n || 0);
 const fBtc = (n) => parseFloat(n || 0).toFixed(8);
 
@@ -308,19 +298,9 @@ const getLastSeen = (u) => {
   if (s < 86400) { const h = ~~(s / 3600); return { label: `${h} ${h === 1 ? 'hr' : 'hrs'} ago`, online: false }; }
   const dy = ~~(s / 86400); return { label: `${dy} ${dy === 1 ? 'day' : 'days'} ago`, online: false };
 };
-// A USDT-asset listing's rate is ~$1 (the peg), not the BTC/USD price — using btcPrice
-// unconditionally here made every USDT offer's "you receive" amount come out ~88,000x too
-// small, and the `> 100` fixed-price sanity check (valid for BTC, which is always in the
-// tens of thousands) silently rejected any legitimate USDT fixed price (necessarily close
-// to 1). Same fix as ListingDetail.js's basePriceUSD.
 const getRateUSD = (l, btcPrice) => {
-  const isUsdt = l.asset === 'USDT';
-  if (l.pricing_type === 'fixed') {
-    const s = parseFloat(l.bitcoin_price || 0);
-    if (isUsdt && s > 0) return s;
-    if (!isUsdt && s > 100) return s;
-  }
-  return (isUsdt ? 1 : btcPrice) * (1 + parseFloat(l.margin || 0) / 100);
+  if (l.pricing_type === 'fixed') { const s = parseFloat(l.bitcoin_price || 0); if (s > 100) return s; }
+  return btcPrice * (1 + parseFloat(l.margin || 0) / 100);
 };
 const getBrand = (l) => l.gift_card_brand || l.giftCardBrand || l.card_brand || 'Gift Card';
 const getFaceVal = (l) => { const v = l.face_value || l.card_value || l.amount_usd; return v ? parseFloat(v) : null; };
@@ -398,12 +378,9 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
     if (cardRange.length === 1) return { val: `$${cardRange[0]}`, sub: 'USD card' };
     return { val: `$${cardRange[0]}`, sub: 'USD starting' };
   })();
-  const isUsdtCard = listing.asset === 'USDT';
   const refUSD = cardRange ? (cardRange[0]?.isRange ? cardRange[0].min : cardRange[0]) : (fv || 1);
   const btcOut = refUSD / rateUSD;
-  // btcOut is already USD-equivalent for a USDT card (rateUSD ≈ 1) — multiplying by the BTC
-  // price again inflated the displayed dollar-equivalent ~88,000x for USDT offers.
-  const receiveUSD = btcOut * (isUsdtCard ? 1 : btcPriceUSD);
+  const receiveUSD = btcOut * btcPriceUSD;
 
   const rangeLabel = !cardRange ? 'Any value'
     : cardRange[0]?.isRange ? `$${cardRange[0].min} – $${cardRange[0].max}`
@@ -545,7 +522,7 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
           </p>
           <div className="flex items-center gap-1.5 mt-0.5">
             <p className="text-[10px] font-semibold" style={{ color: C.g500 }}>
-              ≈ {isUsdtCard ? btcOut.toFixed(2) : fBtc(btcOut)} {isUsdtCard ? 'USDT' : 'BTC'}
+              ≈ {fBtc(btcOut)} BTC
             </p>
           </div>
         </div>
@@ -633,14 +610,16 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
           }}>
           <Info size={14} style={{ color: ft ? ft.border : C.g400 }} />
         </button>
-        <button onClick={onTrade}
-          className="flex-1 h-9 rounded-xl text-white font-black text-sm flex items-center justify-center gap-1.5 hover:opacity-90 active:scale-[0.98] transition"
-          style={{
-            background: ft ? ft.btnGradient : C.forest,
-            boxShadow: ft ? ft.btnShadow : undefined,
-          }}>
-          TRADE <ArrowRight size={14} />
-        </button>
+        <div style={{ position: 'relative', flex: 1 }}>
+          <button onClick={onTrade}
+            className="w-full h-9 rounded-xl text-white font-black text-sm flex items-center justify-center gap-1.5 hover:opacity-90 active:scale-[0.98] transition"
+            style={{
+              background: ft ? ft.btnGradient : C.forest,
+              boxShadow: ft ? ft.btnShadow : undefined,
+            }}>
+            TRADE <ArrowRight size={14} />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1120,24 +1099,17 @@ export default function GiftCards({ user }) {
   const [selCurrency, setSelCurrency] = useState(CURRENCIES.find(c => c.code === 'USD') || CURRENCIES[0]);
   const [selBrand, setSelBrand] = useState('All Brands');
   const [selCountry, setSelCountry] = useState(COUNTRIES[0]);
-  // 'ALL' shows every gift card offer regardless of which asset it's priced in — same
-  // "show everything until the user opts in to narrow it down" default as the other filters.
-  const [selAsset, setSelAsset] = useState('ALL');
   const [amountInput, setAmountInput] = useState('');
   const [sortBy, setSortBy] = useState('rate_low');
   const [traderSearch, setTraderSearch] = useState('');
   const [showCurrency, setShowCurrency] = useState(false);
   const [showBrand, setShowBrand] = useState(false);
   const [showCountry, setShowCountry] = useState(false);
-  // Asset selection lives in the top Sell/Buy tabs (chevron dropdown on each, same pattern as
-  // the P2P Buy BTC / Sell tabs) rather than the filter bar, so it gets the same prominence.
-  const [showSellGcAssetMenu, setShowSellGcAssetMenu] = useState(false);
-  const [showBuyGcAssetMenu, setShowBuyGcAssetMenu] = useState(false);
-  // 'sell' = visitor sends a gift card to a vendor for crypto (browses BUY_GIFT_CARD listings —
-  // vendors offering to buy cards). 'buy' = visitor buys a card from a vendor (browses
-  // SELL_GIFT_CARD listings). Named after what the visitor does, same convention as the
-  // Buy BTC / Sell tabs used to use on this page.
-  const [gcMode, setGcMode] = useState('sell');
+  const [showAssetMenu, setShowAssetMenu] = useState(false);
+  const [showSellAssetMenu, setShowSellAssetMenu] = useState(false);
+  const [cryptoFilter, setCryptoFilter] = useState('ALL'); // 'ALL' | 'BTC' | 'USDT'
+  const [showCryptoMenu, setShowCryptoMenu] = useState(false);
+  const [gcMode, setGcMode] = useState('buy'); // 'buy' | 'sell'
   const [modal, setModal] = useState(null);
   const [activeTrades, setActiveTrades] = useState([]);
   const [showAllTrades, setShowAllTrades] = useState(false);
@@ -1148,6 +1120,67 @@ export default function GiftCards({ user }) {
   const currencyRef = useRef(null);
   const brandRef = useRef(null);
   const countryRef = useRef(null);
+  const cryptoRef = useRef(null);
+  const [activeGuide, setActiveGuide] = useState(null);
+  const guideTimer = useRef(null);
+
+  function handleGuideEnter(id) { clearTimeout(guideTimer.current); setActiveGuide(id); }
+  function handleGuideLeave() { guideTimer.current = setTimeout(() => setActiveGuide(null), 140); }
+
+  const GUIDE_TOTAL = 4;
+  function MarketGuide({ id, icon: Icon = Info, title, body, example, guideStep }) {
+    if (activeGuide !== id) return null;
+    const isTab = id.startsWith('tab_');
+    const isRightTab = id.includes('giftcards') || id.includes('crypto');
+
+    const posStyle = isTab
+      ? {
+          top: 'calc(100% + 8px)',
+          ...(isRightTab ? { right: 0, left: 'auto' } : { left: 0 }),
+        }
+      : { bottom: 'calc(100% + 8px)', left: 0 };
+
+    return (
+      <div style={{
+        position: 'absolute',
+        ...posStyle,
+        zIndex: 10000,
+        width: 'min(300px, calc(100vw - 32px))',
+        background: 'linear-gradient(135deg,#1E40AF 0%,#2563EB 100%)',
+        borderRadius: 14, padding: '11px 13px',
+        boxShadow: '0 10px 36px rgba(37,99,235,0.30),0 2px 8px rgba(0,0,0,0.08)',
+        animation: isTab ? 'gcGuideFadeDown 0.2s ease both' : 'gcGuideFadeUp 0.2s ease both',
+        pointerEvents: 'none',
+        boxSizing: 'border-box', color: '#fff',
+      }}>
+        <style>{`
+          @keyframes gcGuideFadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+          @keyframes gcGuideFadeDown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+        `}</style>
+        {guideStep && (
+          <div style={{ marginBottom: 7 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+              <span style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 20, padding: '1px 8px', fontSize: 10, fontWeight: 800, color: '#fff', letterSpacing: 0.5, textTransform: 'uppercase' }}>Step {guideStep} of {GUIDE_TOTAL}</span>
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>{Math.round((guideStep / GUIDE_TOTAL) * 100)}%</span>
+            </div>
+            <div style={{ height: 3, background: 'rgba(255,255,255,0.18)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ width: `${(guideStep / GUIDE_TOTAL) * 100}%`, height: '100%', background: 'rgba(255,255,255,0.75)', borderRadius: 2 }} />
+            </div>
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+          <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            {guideStep ? <span style={{ fontWeight: 900, fontSize: 11, color: '#fff' }}>{guideStep}</span> : <Icon size={12} style={{ color: '#fff' }} />}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: '0 0 3px', fontWeight: 800, fontSize: 12, color: '#fff', lineHeight: 1.3 }}>{title}</p>
+            <p style={{ margin: '0 0 5px', fontSize: 11, color: 'rgba(255,255,255,0.9)', lineHeight: 1.45 }}>{body}</p>
+            {example && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.68)', fontStyle: 'italic', background: 'rgba(255,255,255,0.12)', borderRadius: 6, padding: '2px 8px', display: 'inline-block' }}>💡 {example}</div>}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => { if (contextBtcUsd > 0) setBtcPrice(contextBtcUsd); }, [contextBtcUsd]);
   useEffect(() => {
@@ -1182,16 +1215,11 @@ export default function GiftCards({ user }) {
       if (currencyRef.current && !currencyRef.current.contains(e.target)) { setShowCurrency(false); setCurrencySearch(''); }
       if (brandRef.current && !brandRef.current.contains(e.target)) { setShowBrand(false); setBrandSearch(''); }
       if (countryRef.current && !countryRef.current.contains(e.target)) { setShowCountry(false); setCountrySearch(''); }
+      if (cryptoRef.current && !cryptoRef.current.contains(e.target)) { setShowCryptoMenu(false); }
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
-  useEffect(() => {
-    axios.get(`${API_URL}/referral/leaderboard`).then(r => {
-      if (r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0, 3));
-    }).catch(() => { });
-  }, []);
-
   const loadListings = async (attempt = 1, force = false) => {
     // Skip fetch if cache is fresh (< 5 minutes) and not forced
     if (attempt === 1 && !force) {
@@ -1243,13 +1271,26 @@ export default function GiftCards({ user }) {
     finally { if (attempt === 1 || attempt >= 3) setLoading(false); }
   };
 
- const getFiltered = () => {
+useEffect(() => {
+      loadListings();
+      const interval = setInterval(() => loadListings(1, true), 60000);
+      return () => clearInterval(interval);
+    }, []);
 
-  const wantedType = gcMode === 'sell' ? 'BUY_GIFT_CARD' : 'SELL_GIFT_CARD';
-  let list = listings.filter(l => l.listing_type === wantedType);
-  list = list.filter(isForeignListing);
-  if (selAsset !== 'ALL') list = list.filter(l => (l.asset || 'BTC') === selAsset);
+    useEffect(() => {
+      axios.get(`${API_URL}/referral/leaderboard`).then(r => {
+        if (r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0, 3));
+      }).catch(() => { });
+    }, []);
 
+    const getFiltered = () => {
+      let list = [...listings];
+      // Filter by buy/sell mode
+      if (gcMode === 'buy') list = list.filter(l => l.listing_type === 'BUY_GIFT_CARD');
+      if (gcMode === 'sell') list = list.filter(l => l.listing_type === 'SELL_GIFT_CARD');
+      list = list.filter(isForeignListing);
+      if (cryptoFilter === 'BTC') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'BTC');
+      if (cryptoFilter === 'USDT') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'USDT');
     if (selBrand !== 'All Brands') list = list.filter(l => (getBrand(l) || '').toLowerCase().includes(selBrand.toLowerCase()));
     const amt = parseFloat(amountInput);
     if (!isNaN(amt) && amt > 0) list = list.filter(l => {
@@ -1294,9 +1335,6 @@ export default function GiftCards({ user }) {
   };
 
   const filtered = getFiltered();
-  // Posting from the "Sell Your Card" tab means becoming a vendor who buys cards (gc_buy),
-  // and vice versa — the new offer should land in the same tab the user was browsing.
-  const createOfferType = gcMode === 'sell' ? 'gc_buy' : 'gc_sell';
   const cur = selCurrency.code || 'GHS';
   const sym = selCurrency.symbol || '₵';
   const usdRate = USD_RATES[cur] || 1;
@@ -1305,34 +1343,33 @@ export default function GiftCards({ user }) {
   const sellerCount = new Set(listings.map(l => l.seller_id)).size;
 
   // Fast Responder of the Week — pinned by username, stable for 1 week
-  const FAST_RESPONDER_USERNAME = 'kingkong79-pro';
-  const fastResponderListingId = filtered.find(l =>
-    (l.users?.username || '').toLowerCase() === FAST_RESPONDER_USERNAME
+  const ACTIVE_TRADER_USERNAME = 'kingkong79-pro';
+  const activeTraderListingId = listings.find(l =>
+    (l.users?.username || '').toLowerCase() === ACTIVE_TRADER_USERNAME &&
+    getCardRange(l)
   )?.id || null;
-  const hasFilters = amountInput.trim() !== '' || selBrand !== 'All Brands' || selCountry.code !== 'ALL' || selAsset !== 'ALL' || traderSearch.trim() !== '' || sortBy !== 'rate_low';
+  const hasFilters = amountInput.trim() !== '' || selBrand !== 'All Brands' || selCountry.code !== 'ALL' || traderSearch.trim() !== '' || sortBy !== 'rate_low';
 
   return (
-    <div className="min-h-screen flex flex-col"
-      style={{ backgroundColor: C.g100, fontFamily: "'DM Sans',sans-serif" }}>
-      <SEO />
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: C.g100, fontFamily: "'DM Sans',sans-serif" }}>
+      <SEO title="Gift Card Marketplace | Buy & Sell Gift Cards with Crypto | PRAQEN"
+        description="Trade iTunes, Amazon, Steam, Google Play gift cards for BTC and USDT safely with P2P escrow." />
       <style>{`
-        @keyframes slideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}
-        @keyframes fastResponderPulse{0%,100%{box-shadow:0 0 0 3px rgba(79,70,229,0.28),0 8px 32px rgba(79,70,229,0.18)}50%{box-shadow:0 0 0 6px rgba(79,70,229,0.52),0 16px 48px rgba(79,70,229,0.34)}}
-        @keyframes featuredPulse{0%,100%{box-shadow:0 0 0 3px rgba(217,119,6,0.28),0 8px 32px rgba(217,119,6,0.18)}50%{box-shadow:0 0 0 6px rgba(217,119,6,0.52),0 16px 48px rgba(217,119,6,0.34)}}
-        @keyframes shimmer{0%{transform:translateX(-130%)}100%{transform:translateX(130%)}}
+        @keyframes slideUp { from{transform:translateY(100%);opacity:0} to{transform:translateY(0);opacity:1} }
+        @keyframes featuredPulse { 0%,100%{box-shadow:0 0 0 3px rgba(13,148,136,0.25),0 8px 32px rgba(13,148,136,0.15)} 50%{box-shadow:0 0 0 6px rgba(13,148,136,0.45),0 16px 48px rgba(13,148,136,0.28)} }
+        @keyframes shimmer { 0%{transform:translateX(-130%)} 100%{transform:translateX(130%)} }
         input[type=number]::-webkit-inner-spin-button,
-        input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
-        *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}
-        html,body{overscroll-behavior:none}
-        .dropdown-panel{max-width:calc(100vw - 24px)}
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
+        * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+        html, body { overscroll-behavior: none; }
       `}</style>
 
       {/* ══════════════════════════════════════════════════
           1. RATE BAR
       ══════════════════════════════════════════════════ */}
-      <div style={{ backgroundColor: C.forest }} className="w-full">
-        <div className="max-w-7xl mx-auto px-4 py-3.5">
-          <div className="flex items-center justify-between gap-4">
+      <div style={{ backgroundColor: C.forest }} className="w-full flex-shrink-0">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2 sm:py-2.5">
+          <div className="flex items-center justify-between gap-3">
             <div className="flex-1 min-w-0">
               <p className="text-base sm:text-xl md:text-3xl font-black text-white leading-tight mb-1.5">
                 Gift Card <span style={{ color: C.gold }}>Marketplace</span>
@@ -1359,66 +1396,89 @@ export default function GiftCards({ user }) {
       </div>
 
       {/* ══════════════════════════════════════════════════
-          2. SELL / BUY GIFT CARD TABS
-          This page is reached from the "Gift Cards" bottom-nav icon, so it only
-          needs to show gift-card offers — no Buy BTC / Sell / Gift Cards market
-          switcher here (that lives on the P2P pages instead). Named after what
-          the visitor does, same convention the P2P Buy BTC / Sell tabs used:
-          "Sell" browses BUY_GIFT_CARD listings (vendors offering to buy your
-          card); "Buy" browses SELL_GIFT_CARD listings (vendors offering to
-          sell you a card).
+          2. TAB NAVIGATION
       ══════════════════════════════════════════════════ */}
       <div className="bg-white border-b sticky z-30 flex-shrink-0" style={{ top: 'var(--navbar-h)', borderColor: C.g200 }}>
         <div className="flex w-full">
-          {[
-            { mode: 'sell', label: 'Sell Your Card', show: showSellGcAssetMenu, setShow: setShowSellGcAssetMenu, align: 'left' },
-            { mode: 'buy',  label: 'Buy a Card',      show: showBuyGcAssetMenu,  setShow: setShowBuyGcAssetMenu,  align: 'right' },
-          ].map(tab => {
-            const activeAsset = ASSET_CHOICES.find(a => a.code === selAsset);
-            return (
-            <div key={tab.mode} className="flex-1 relative min-w-0">
-              <button onClick={() => { setGcMode(tab.mode); tab.setShow(v => !v); }}
-                className="w-full text-center py-3 text-xs font-black border-b-2 transition-all flex items-center justify-center gap-1 px-1"
-                style={{
-                  borderColor: gcMode === tab.mode ? C.accent : 'transparent',
-                  color: gcMode === tab.mode ? C.accent : C.g400,
-                  backgroundColor: gcMode === tab.mode ? `${C.accent}12` : 'transparent',
-                }}>
-                <span className="truncate">{tab.label}</span>
-                {gcMode === tab.mode && selAsset !== 'ALL' && activeAsset && (
-                  <activeAsset.icon size={11} strokeWidth={2.5} className="flex-shrink-0" />
-                )}
-                <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${tab.show ? 'rotate-180' : ''}`} />
-              </button>
-              {tab.show && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => tab.setShow(false)} />
-                  {/* Anchored to the outer edge of each tab (not centered) — centering a
-                      224px-wide panel under a ~half-screen-wide tab pushed it off-screen on
-                      narrow phones. maxWidth is a second guard for very narrow devices. */}
-                  <div className={`absolute top-full mt-1.5 w-56 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white ${tab.align === 'left' ? 'left-0' : 'right-0'}`}
-                    style={{ borderColor: C.g200, maxWidth: 'calc(100vw - 24px)' }}>
-                    {ASSET_CHOICES.map((a, i) => (
-                      <button key={a.code}
-                        onClick={() => { setGcMode(tab.mode); setSelAsset(a.code); tab.setShow(false); }}
-                        className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition ${i > 0 ? 'border-t' : ''}`}
-                        style={{ borderColor: C.g100, backgroundColor: (gcMode === tab.mode && selAsset === a.code) ? `${C.accent}08` : 'transparent' }}>
-                        <span className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-white"
-                          style={{ background: a.bg }}>
-                          <a.icon size={16} strokeWidth={2.5} />
-                        </span>
-                        <span className="flex-1 min-w-0">
-                          <span className="block text-xs font-bold" style={{ color: C.g800 }}>{a.label}</span>
-                          <span className="block text-[11px] font-semibold" style={{ color: C.g400 }}>{a.sub}</span>
-                        </span>
-                        {gcMode === tab.mode && selAsset === a.code && <CheckCircle size={14} style={{ color: C.green, flexShrink: 0 }} />}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          );})}
+          <div className="flex-1 relative">
+            <button onClick={() => setGcMode('buy')}
+              className="w-full text-center py-3 text-xs font-bold border-b-2 transition-all flex items-center justify-center gap-1"
+              style={{
+                borderColor: gcMode === 'buy' ? '#0D9488' : 'transparent',
+                color: gcMode === 'buy' ? '#0D9488' : C.g400,
+                backgroundColor: gcMode === 'buy' ? 'rgba(13,148,136,0.08)' : 'transparent',
+              }}>
+              Buy
+            </button>
+          </div>
+
+          <div className="flex-1 relative">
+            <button onClick={() => setGcMode('sell')}
+              className="w-full text-center py-3 text-xs font-bold border-b-2 transition-all flex items-center justify-center gap-1"
+              style={{
+                borderColor: gcMode === 'sell' ? C.forest : 'transparent',
+                color: gcMode === 'sell' ? C.forest : C.g400,
+                backgroundColor: gcMode === 'sell' ? `${C.forest}18` : 'transparent',
+              }}>
+              Sell
+            </button>
+          </div>
+
+          {/* ── 3rd Dropdown: Crypto Filter (All Crypto / BTC / USDT) ── */}
+          <div className="flex-1 relative" ref={cryptoRef}>
+            <button onClick={() => setShowCryptoMenu(v => !v)}
+              className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1.5"
+              style={{ color: cryptoFilter === 'ALL' ? '#0D9488' : C.g700 }}>
+              {cryptoFilter === 'ALL' && <span className="text-xs">🪙</span>}
+              {cryptoFilter === 'BTC' && <span className="w-4 h-4 rounded-full flex items-center justify-center font-black text-[10px] text-white" style={{background:'linear-gradient(135deg,#F7931A,#e8830a)'}}>₿</span>}
+              {cryptoFilter === 'USDT' && <span className="w-4 h-4 rounded-full flex items-center justify-center font-black text-[10px] text-white" style={{background:'#26A17B'}}>₮</span>}
+              <span>{cryptoFilter === 'ALL' ? 'All Crypto' : cryptoFilter}</span>
+              <ChevronDown size={12} className={`transition-transform ${showCryptoMenu ? 'rotate-180' : ''}`} />
+            </button>
+            {showCryptoMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowCryptoMenu(false)} />
+                <div className="absolute right-0 sm:left-1/2 sm:-translate-x-1/2 top-full mt-1.5 w-56 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white"
+                  style={{ borderColor: C.g200 }}>
+                  <button onClick={() => { setCryptoFilter('ALL'); setShowCryptoMenu(false); }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition"
+                    style={{ backgroundColor: cryptoFilter === 'ALL' ? 'rgba(13,148,136,0.06)' : 'transparent' }}>
+                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
+                      style={{ background: 'linear-gradient(135deg, #0D9488, #0f766e)' }}>🌐</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-xs font-black" style={{ color: C.g800 }}>All Crypto</span>
+                      <span className="block text-[10px] font-semibold" style={{ color: C.g400 }}>Show both BTC & USDT offers</span>
+                    </span>
+                    {cryptoFilter === 'ALL' && <CheckCircle size={14} style={{ color: '#0D9488', flexShrink: 0 }} />}
+                  </button>
+
+                  <button onClick={() => { setCryptoFilter('BTC'); setShowCryptoMenu(false); }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition border-t"
+                    style={{ borderColor: C.g100, backgroundColor: cryptoFilter === 'BTC' ? 'rgba(247,147,26,0.08)' : 'transparent' }}>
+                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
+                      style={{ background: 'linear-gradient(135deg,#F7931A,#e8830a)' }}>₿</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-xs font-black" style={{ color: C.g800 }}>Bitcoin</span>
+                      <span className="block text-[10px] font-semibold" style={{ color: C.g400 }}>BTC offers only</span>
+                    </span>
+                    {cryptoFilter === 'BTC' && <CheckCircle size={14} style={{ color: '#e8830a', flexShrink: 0 }} />}
+                  </button>
+
+                  <button onClick={() => { setCryptoFilter('USDT'); setShowCryptoMenu(false); }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition border-t"
+                    style={{ borderColor: C.g100, backgroundColor: cryptoFilter === 'USDT' ? 'rgba(38,161,123,0.08)' : 'transparent' }}>
+                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
+                      style={{ background: '#26A17B' }}>₮</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-xs font-black" style={{ color: C.g800 }}>Tether</span>
+                      <span className="block text-[10px] font-semibold" style={{ color: C.g400 }}>USDT offers only</span>
+                    </span>
+                    {cryptoFilter === 'USDT' && <CheckCircle size={14} style={{ color: '#26A17B', flexShrink: 0 }} />}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1457,7 +1517,12 @@ export default function GiftCards({ user }) {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
 
             {/* ── AMOUNT ── */}
-            <div>
+            <div style={{ position: 'relative' }}
+              onMouseEnter={() => handleGuideEnter('gc_amount')} onMouseLeave={handleGuideLeave}>
+              <MarketGuide id="gc_amount" icon={Gift} guideStep={1}
+                title="Card Value / Amount"
+                body="Enter the card amount in USD or local currency. The list will automatically filter to show vendors who trade cards within this value range."
+                example="Type 50 to find vendors accepting $50 gift cards" />
               <p className="text-xs font-bold mb-1 tracking-wide" style={{ color: C.g500 }}>AMOUNT</p>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold pointer-events-none select-none"
@@ -1485,7 +1550,12 @@ export default function GiftCards({ user }) {
             </div>
 
             {/* ── CURRENCY ── */}
-            <div>
+            <div style={{ position: 'relative' }}
+              onMouseEnter={() => handleGuideEnter('gc_currency')} onMouseLeave={handleGuideLeave}>
+              <MarketGuide id="gc_currency" icon={CreditCard} guideStep={2}
+                title="Currency"
+                body="Filter by the currency of the gift card or payment currency. All card values will update to show amounts in your chosen currency."
+                example="USD for US Cards · EUR for European Cards · GHS for Ghana" />
               <p className="text-xs font-bold mb-1 tracking-wide" style={{ color: C.g500 }}>CURRENCY</p>
               <div className="relative" ref={currencyRef}>
                 <button onClick={() => { setShowCurrency(!showCurrency); setCurrencySearch(''); setShowBrand(false); setShowCountry(false); }}
@@ -1543,7 +1613,12 @@ export default function GiftCards({ user }) {
             </div>
 
             {/* ── PAYMENT (Gift Card Brand) ── */}
-            <div>
+            <div style={{ position: 'relative' }}
+              onMouseEnter={() => handleGuideEnter('gc_brand')} onMouseLeave={handleGuideLeave}>
+              <MarketGuide id="gc_brand" icon={Gift} guideStep={3}
+                title="Gift Card Brand"
+                body="Filter by the specific gift card brand you want to buy or sell. Pick Amazon, iTunes, Google Play, Steam, Razer Gold and more."
+                example="Amazon · Apple iTunes · Google Play · Steam · Razer Gold" />
               <p className="text-xs font-bold mb-1 tracking-wide" style={{ color: C.g500 }}>PAYMENT</p>
               <div className="relative" ref={brandRef}>
                 <button onClick={() => { setShowBrand(!showBrand); setBrandSearch(''); setShowCurrency(false); setShowCountry(false); }}
@@ -1604,7 +1679,12 @@ export default function GiftCards({ user }) {
             </div>
 
             {/* ── COUNTRY ── */}
-            <div>
+            <div style={{ position: 'relative' }}
+              onMouseEnter={() => handleGuideEnter('gc_country')} onMouseLeave={handleGuideLeave}>
+              <MarketGuide id="gc_country" icon={Globe} guideStep={4}
+                title="Country / Region"
+                body="Filter vendors by country. Local vendors can complete trade verification and payouts faster in your country."
+                example="Ghana · Nigeria · Kenya · USA · All Countries" />
               <p className="text-xs font-bold mb-1 tracking-wide" style={{ color: C.g500 }}>COUNTRY</p>
               <div className="relative" ref={countryRef}>
                 <button onClick={() => { setShowCountry(!showCountry); setShowCurrency(false); setShowBrand(false); }}
@@ -1683,13 +1763,13 @@ export default function GiftCards({ user }) {
                 </button>
               )}
             </div>
-            <button onClick={() => navigate(`/create-offer?type=${createOfferType}`)}
+            <button onClick={() => navigate('/create-offer')}
               className="flex-shrink-0 flex items-center gap-1 px-2.5 py-2 rounded-xl text-white font-black text-xs transition hover:opacity-90 active:scale-[0.97]"
               style={{ backgroundColor: C.accent, whiteSpace: 'nowrap' }}>
               <PlusCircle size={12} /> Create
             </button>
             {hasFilters && (
-              <button onClick={() => { setAmountInput(''); setSelBrand('All Brands'); setSelCountry(COUNTRIES[0]); setSelAsset('ALL'); setTraderSearch(''); setSortBy('rate_low'); setCountrySearch(''); }}
+              <button onClick={() => { setAmountInput(''); setSelBrand('All Brands'); setSelCountry(COUNTRIES[0]); setTraderSearch(''); setSortBy('rate_low'); setCountrySearch(''); }}
                 className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl text-xs font-bold border-2 transition"
                 style={{ borderColor: C.danger, color: C.danger, backgroundColor: '#FEF2F2' }}>
                 ✕
@@ -1769,7 +1849,7 @@ export default function GiftCards({ user }) {
             </div>
             <p className="font-bold text-base mb-1" style={{ color: C.g800 }}>No gift card offers found</p>
             <p className="text-sm" style={{ color: C.g400 }}>Try a different brand or be the first to post</p>
-            <button onClick={() => navigate(`/create-offer?type=${createOfferType}`)}
+            <button onClick={() => navigate('/create-offer')}
               className="mt-4 px-6 py-2.5 rounded-xl text-white text-sm font-black hover:opacity-90 transition"
               style={{ backgroundColor: C.forest }}>
               Post Offer
@@ -1782,7 +1862,7 @@ export default function GiftCards({ user }) {
                 key={l.id}
                 listing={l}
                 btcPriceUSD={btcPrice}
-                featuredType={l.id === fastResponderListingId ? 'fast_responder' : undefined}
+                featuredType={l.id === activeTraderListingId ? 'fast_responder' : undefined}
                 onViewSeller={() => setModal({ seller: l.users || {}, listing: l })}
                 onTrade={() => handleTrade(l.id)}
               />
@@ -1942,7 +2022,6 @@ export default function GiftCards({ user }) {
             Free to join · No minimum payout · Lifetime commission
           </p>
         </div>
-
       </div>
 
       {/* ══════════════════════════════════════════════════
