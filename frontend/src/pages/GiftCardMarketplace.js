@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRates } from '../contexts/RatesContext';
 import { useNavigate, Link } from 'react-router-dom';
 import SEO from '../components/SEO';
@@ -210,6 +210,13 @@ const CURRENCIES = [
   { code: 'AUD', symbol: 'A$', name: 'Australian Dollar', region: 'Oceania' },
   { code: 'NZD', symbol: 'NZ$', name: 'New Zealand Dollar', region: 'Oceania' },
 ];
+
+const FOREIGN_CURRENCY_CODES = [
+  'USD', 'GBP', 'CAD', 'EUR', 'AUD', 'SGD', 'CHF', 'SEK', 'NOK', 'DKK',
+  'NZD', 'JPY', 'HKD', 'PLN', 'BRL', 'MXN'
+];
+
+const GC_FILTER_CURRENCIES = CURRENCIES.filter(c => FOREIGN_CURRENCY_CODES.includes(c.code));
 
 const PAYMENT_OPTIONS = [
   'All Payments', 'MTN Mobile Money', 'Vodafone Cash', 'AirtelTigo Money',
@@ -1079,7 +1086,8 @@ export default function GiftCards({ user }) {
   const { rates: USD_RATES, btcUsd: contextBtcUsd } = useRates();
   const _hasUsers = (data) => Array.isArray(data) && data.some(l => l.users && (l.users.id || l.users.username));
   const _cacheAll = () => { try { const c = JSON.parse(localStorage.getItem('praqen_market_all') || 'null'); if (!c || Date.now() - c.ts > 1800000 || !_hasUsers(c.data)) return null; return c?.data || null; } catch { return null; } };
-  const _gcNow = () => { const a = _cacheAll(); return a ? a.filter(l => l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD') : []; };
+  const isForeignListing = (l) => FOREIGN_CURRENCY_CODES.includes((l.currency || 'USD').toUpperCase());
+  const _gcNow = () => { const a = _cacheAll(); return a ? a.filter(l => (l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD') && isForeignListing(l)) : []; };
   const [listings, setListings] = useState(() => _gcNow());
   const [loading, setLoading] = useState(() => _gcNow().length === 0);
   const [loadError, setLoadError] = useState(false);
@@ -1157,7 +1165,7 @@ export default function GiftCards({ user }) {
       try {
         const c = JSON.parse(localStorage.getItem('praqen_market_all') || 'null');
         if (c && Date.now() - c.ts < 300000 && _hasUsers(c.data)) {
-          const gcOffers = (c.data || []).filter(l => l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD');
+          const gcOffers = (c.data || []).filter(l => (l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD') && isForeignListing(l));
           if (gcOffers.length > 0) {
             setListings(gcOffers);
             setLoading(false);
@@ -1171,7 +1179,7 @@ export default function GiftCards({ user }) {
     try {
       const r = await axios.get(`${API_URL}/listings`, { timeout: 20000 });
       const all = (r.data.listings || []).map(l => ({ ...l, users: Array.isArray(l.users) ? l.users[0] : l.users }));
-      const data = all.filter(l => l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD');
+      const data = all.filter(l => (l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD') && isForeignListing(l));
       // Only update if we got real data — never blank out the list on an empty response
       if (data.length > 0) {
         setListings(data);
@@ -1185,7 +1193,7 @@ export default function GiftCards({ user }) {
         axios.get(`${API_URL}/my-listings`, { headers: { Authorization: `Bearer ${tk}` } })
           .then(myR => {
             const myPaused = (myR.data.listings || []).filter(l =>
-              l.status === 'PAUSED' && (l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD')
+              l.status === 'PAUSED' && (l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD') && isForeignListing(l)
             );
             setPausedOffer(myPaused.length > 0);
           }).catch(() => { });
@@ -1203,7 +1211,7 @@ export default function GiftCards({ user }) {
   };
 
   const getFiltered = () => {
-    let list = [...listings];
+    let list = listings.filter(isForeignListing);
     if (selBrand !== 'All Brands') list = list.filter(l => (getBrand(l) || '').toLowerCase().includes(selBrand.toLowerCase()));
     const amt = parseFloat(amountInput);
     if (!isNaN(amt) && amt > 0) list = list.filter(l => {
@@ -1501,7 +1509,7 @@ export default function GiftCards({ user }) {
                     <div style={{ maxHeight: 260, overflowY: 'auto' }}>
                       {(() => {
                         const q = currencySearch.toLowerCase();
-                        const filtered = CURRENCIES.filter(c => !q || c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q));
+                        const filtered = GC_FILTER_CURRENCIES.filter(c => !q || c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q));
                         let lastRegion = null;
                         return filtered.map(c => {
                           const regionHdr = !q && c.region !== lastRegion

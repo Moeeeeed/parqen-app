@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabaseClient';
 import {
   Copy, Bitcoin, RefreshCw, CheckCircle,
   ArrowDownLeft, ArrowUpRight, Shield, AlertTriangle,
-  Clock, Eye, EyeOff, Zap, Download, Send, ArrowLeftRight,
+  Clock, Eye, EyeOff, Zap, Download, Upload, Send, ArrowLeftRight,
   ChevronRight, ChevronDown, X, Wallet, Users, Search,
   Link2, DollarSign, Ban, Lock, Mail, Check, Gift,
   Flame, Smartphone, Landmark,
@@ -42,6 +42,22 @@ const fmtDate = d => {
   const date = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const time = dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
   return { date, time };
+};
+
+// ── Trade id-prefix → counterparty-username map for escrow receipts ─────────
+// /hd-wallet/wallet does not include the trade partner's username, so this map
+// is built up-front from the user's own trades and passed to the receipt modal;
+// the modal then resolves the counterparty synchronously on first render (no
+// async fetch on open → no flash of the raw trade reference).
+const buildTradePartyMap = (trades, userId) => {
+  const map = {};
+  for (const t of (trades || [])) {
+    if (!t?.id) continue;
+    // The logged-in user is one side of the trade — the counterparty is the other.
+    const other = String(t.seller_id) === String(userId) ? t.buyer : t.seller;
+    map[String(t.id).slice(0, 8).toLowerCase()] = other?.username || null;
+  }
+  return map;
 };
 
 // ─── Withdraw Modal ────────────────────────────────────────────────────────────
@@ -591,60 +607,142 @@ const normalizeNotes = (notes) => {
   return notes;
 };
 
+// ─── Resolve From/To display values for the receipt ─────────────────────────
+// The /hd-wallet/wallet API returns only { id, type, status, amount_btc,
+// tx_hash, notes, created_at } — there are NO dedicated sender / recipient /
+// reference columns. Counterparty identity therefore comes from the notes text
+// (the same convention TxRow uses) plus, for escrow trades, the counterparty
+// username resolved from the user's own trades. The user's own side of the
+// transfer shows the logged-in user's name (passed in as `self`);
+// 'External Wallet' appears ONLY when the payload has no counterpart data.
+const resolveReceiptParties = (tx, { self, counterparty } = {}) => {
+  const type     = (tx.type || '').toUpperCase();
+  const isSend   = type === 'WITHDRAWAL' || type === 'SEND' || type === 'TRANSFER_OUT';
+  const notes    = tx.notes || tx.description || '';
+  const selfName = self || 'Your Wallet';
+
+  // Explicit fields — present on some payloads; absent from the current
+  // /hd-wallet/wallet response.
+  const explicitSender    = tx.sender_username || tx.senderName || tx.sender_name || tx.sender
+    || tx.from_user || tx.fromUser || tx.from_username || tx.from_name;
+  const explicitRecipient = tx.recipient_username || tx.recipientName || tx.recipient_name || tx.recipient
+    || tx.to_user || tx.toUser || tx.to_username || tx.to_name;
+  const counterpartyField = tx.counterparty || tx.counterparty_name || tx.counterparty_username
+    || tx.tradePartner || tx.trade_partner || tx.partner || tx.partner_username
+    || tx.peer || tx.peer_username;
+
+  // Counterparty usernames in notes always carry an '@' prefix.
+  const fromUser = notes.match(/(?:received from|from)\s+@([A-Za-z0-9_.]+)/i);
+  const toUser   = notes.match(/(?:→|sent to|transfer to|\bto)\s+@([A-Za-z0-9_.]+)/i);
+  const withUser = notes.match(/(?:trade with|escrow with|\bwith)\s+@([A-Za-z0-9_.]+)/i);
+  const tradeRef = notes.match(/#([A-Z0-9]{4,12})/i);
+  const notesFrom = fromUser ? fromUser[1] : null;
+  const notesTo   = toUser   ? toUser[1]   : null;
+  const notesWith = withUser ? withUser[1] : null;
+
+  // Escrow: the user's wallet is always one endpoint; the trade partner is the
+  // other. The resolved `counterparty` username takes precedence over the
+  // truncated trade reference stored in the notes.
+  if (type.includes('ESCROW')) {
+    const out   = type === 'ESCROW_LOCK';
+    const party = counterparty || (tradeRef ? `Trade #${tradeRef[1]}` : null) || 'PRAQEN Escrow';
+    return {
+      from: out ? (explicitSender || counterpartyField || selfName) : (explicitSender || notesFrom || notesWith || counterpartyField || party),
+      to:   out ? (explicitRecipient || notesTo || notesWith || counterpartyField || party) : (explicitRecipient || counterpartyField || selfName),
+    };
+  }
+
+  // Security deposits: funds are held by / returned from PRAQEN.
+  if (type.includes('SECURITY_DEPOSIT')) {
+    const out = type === 'SECURITY_DEPOSIT_LOCK' || type === 'SECURITY_DEPOSIT_SEIZED';
+    return {
+      from: out ? (explicitSender || counterpartyField || selfName) : (explicitSender || notesFrom || notesWith || counterpartyField || 'PRAQEN'),
+      to:   out ? (explicitRecipient || notesTo || notesWith || counterpartyField || 'PRAQEN') : (explicitRecipient || counterpartyField || selfName),
+    };
+  }
+
+  // Outgoing — WITHDRAWAL / SEND / TRANSFER_OUT
+  if (isSend) {
+    return {
+      from: explicitSender || counterpartyField || selfName,
+      to:   explicitRecipient || notesTo || notesWith || counterpartyField || tx.to_address || tx.toAddress || 'External Wallet',
+    };
+  }
+
+  // Incoming — DEPOSIT / TRANSFER_IN / other credits
+  return {
+    from: explicitSender || notesFrom || notesWith || counterpartyField || tx.from_address || tx.fromAddress || 'External Wallet',
+    to:   explicitRecipient || counterpartyField || selfName,
+  };
+};
+
 // ─── Transaction Receipt Modal ─────────────────────────────────────────────────
-function TxReceiptModal({ tx, onClose, onRepeat, btcPrice }) {
+function TxReceiptModal({ tx, onClose, onRepeat, btcPrice, user, tradeParties }) {
   const type       = (tx.type || '').toUpperCase();
   const isSend     = type === 'WITHDRAWAL' || type === 'SEND' || type === 'TRANSFER_OUT';
+  // Direction for amount color / sign / header icon — the SAME shared verdict the
+  // transaction history list (TxRow) uses, so the receipt always matches the list.
+  const isOutgoing = isOutgoingTx(tx);
   const isInternal = type === 'TRANSFER_IN' || type === 'TRANSFER_OUT';
   const isTrade    = type === 'TRADE' || type === 'ESCROW';
   const isOnChain  = type === 'WITHDRAWAL' || type === 'SEND' || type === 'DEPOSIT';
   const isPending  = tx.status === 'PENDING' || tx.status === 'pending';
-  const color      = isSend ? C.danger : C.success;
-
-  // Extract counterpart username from notes for internal transfers
-  const counterpartMatch = isInternal && tx.notes
-    ? (tx.notes.match(/from @(\S+)/i) || tx.notes.match(/→ @(\S+)/i) || tx.notes.match(/to @(\S+)/i))
-    : null;
-  const counterpart = counterpartMatch ? counterpartMatch[1].replace(/\s*[·\-].*$/, '').trim() : null;
-
-  const label = type === 'TRANSFER_OUT' ? 'PRAQEN Send'
-    : type === 'TRANSFER_IN'  ? 'PRAQEN Received'
+  // Internal platform transactions (P2P transfers, escrow trades, security
+  // deposits) show the "Internally" subtitle under the type; on-chain ones do not.
+  const isInternalTx = type.includes('TRANSFER') || type.includes('ESCROW') || type.includes('SECURITY_DEPOSIT');
+  const label = type === 'TRANSFER_OUT' ? 'Send-out'
+    : type === 'TRANSFER_IN'  ? 'Received'
     : type === 'WITHDRAWAL'   ? 'Bitcoin Sent'
     : type === 'DEPOSIT'      ? 'Bitcoin Received'
     : isTrade                 ? 'Trade'
-    : isSend                  ? 'Sent'
+    : isSend                  ? 'Send-out'
     : 'Received';
 
-  const walletType = isInternal ? 'PRAQEN Internal Transfer'
-    : isTrade       ? 'PRAQEN Escrow'
-    : 'On-chain Bitcoin';
-
   const txHash = tx.tx_hash || tx.txHash;
-  const fullDate = tx.created_at
-    ? new Date(tx.created_at).toLocaleString('en-US', {
-        year: 'numeric', month: 'short', day: 'numeric',
-        hour: '2-digit', minute: '2-digit',
-      })
+  const refId  = tx.id ? `#${String(tx.id).slice(0, 16).toUpperCase()}` : '—';
+
+  const amountBtc = Math.abs(tx.amount_btc || tx.amount || 0);
+  const price     = btcPrice || 88000;
+  const rawUsdVal = (amountBtc * price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Date & Time split into bold date line and smaller gray time subtitle
+  const txDateObj = (tx.created_at || tx.date) ? new Date(tx.created_at || tx.date) : null;
+  const dateFormatted = txDateObj && !isNaN(txDateObj.getTime())
+    ? txDateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
     : '—';
-  const refId = tx.id ? `#${String(tx.id).slice(0, 16).toUpperCase()}` : '—';
+  const timeFormatted = txDateObj && !isNaN(txDateObj.getTime())
+    ? txDateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+    : '';
 
-  const amountBtc = Math.abs(tx.amount_btc || 0);
-  const price = btcPrice || 88000;
-  const amountUsd = (amountBtc * price).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Logged-in user's own identity — shown on the "your" side of From/To
+  // instead of the generic "Your Wallet" label.
+  const selfName = user?.username || user?.name || 'Your Wallet';
 
-  const rows = [
-    { label: 'Type',         value: label },
-    { label: 'Wallet',       value: walletType },
-    { label: 'Amount',       value: `${isSend ? '−' : '+'}₿${fmt(amountBtc)} (≈ ${amountUsd})`, colored: true },
-    tx.fee_btc ? { label: 'Fee',         value: `₿${fmt(tx.fee_btc)}` }       : null,
-    { label: 'Status',       value: isPending ? 'Pending' : 'Confirmed',        statusBadge: true },
-    { label: 'Date & Time',  value: fullDate },
-    tx.to_address   ? { label: 'To Address',   value: tx.to_address,   mono: true } : null,
-    tx.from_address ? { label: 'From Address', value: tx.from_address, mono: true } : null,
-    txHash          ? { label: 'TX Hash',      value: txHash, mono: true,
-                        link: isInternal ? null : `https://mempool.space/tx/${txHash}` } : null,
-    tx.notes        ? { label: 'Notes',        value: normalizeNotes(tx.notes), isNotes: true } : null,
-    { label: 'Reference',    value: refId, mono: true },
+  // Escrow trades carry only a truncated trade reference in the notes; the
+  // counterparty username is resolved SYNCHRONOUSLY from the map prefetched by
+  // the wallet page (tradeParties prop) — no async fetch on open, so the raw
+  // trade reference never flashes before the real name.
+  const escrowRef = type.includes('ESCROW') ? ((tx.notes || tx.description || '').match(/#([A-Z0-9]{4,12})/i) || [])[1] : null;
+  const tradeParty = escrowRef ? ((tradeParties || {})[String(escrowRef).slice(0, 8).toLowerCase()] || null) : null;
+
+  // From / To — resolved from the actual payload fields (notes text + tx type),
+  // with 'External Wallet' used ONLY when the payload genuinely carries no
+  // counterpart identity for this transaction.
+  const { from: fromVal, to: toVal } = resolveReceiptParties(tx, { self: selfName, counterparty: tradeParty });
+  const counterpart = (isSend ? toVal : fromVal)?.replace(/^@/, '') || null;
+
+  // Assumption: check for dedicated reference field (tx.reference / tx.tx_ref / tx.ref_id) before falling back to notes or refId
+  const referenceVal = tx.reference || tx.tx_ref || tx.ref_id || (tx.notes ? normalizeNotes(tx.notes) : refId);
+
+  const detailRows = [
+    { label: 'Type',        primary: label, subtitle: isInternalTx ? 'Internally' : null },
+    { label: 'From',        primary: fromVal },
+    { label: 'To',          primary: toVal },
+    { label: 'Amount',      primary: `${isOutgoing ? '−' : '+'}${fmt(amountBtc)} BTC`, subtitle: `${rawUsdVal} USD`, primaryColor: isOutgoing ? C.danger : C.success },
+    { label: 'Status',      primary: isPending ? 'Pending' : 'Completed', primaryColor: isPending ? C.warn : C.success },
+    { label: 'Date',        primary: dateFormatted, subtitle: timeFormatted },
+    { label: 'TX Hash', primary: txHash || (escrowRef ? `Trade #${escrowRef}` : null) || refId },
+    { label: 'Reference',   primary: referenceVal, isNotes: typeof referenceVal === 'string' && /confirmed twice|risky wallet/i.test(referenceVal) },
   ].filter(Boolean);
 
   return (
@@ -652,75 +750,61 @@ function TxReceiptModal({ tx, onClose, onRepeat, btcPrice }) {
       style={{ backgroundColor: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)' }}>
       <div className="bg-white w-full md:max-w-sm rounded-t-3xl md:rounded-3xl overflow-hidden shadow-2xl">
 
-        {/* Receipt header — green gradient (screenshot branding) */}
-        <div className="relative" style={{ background: `linear-gradient(135deg,${C.forest} 0%,${C.green} 100%)` }}>
-          <div className="px-5 pt-5 pb-10 text-center">
+        {/* Receipt header — green */}
+        <div className="relative" style={{ backgroundColor: '#0B6638' }}>
+          <div className="px-5 pt-4 pb-8 text-center relative">
             {/* Close button */}
             <button onClick={onClose}
-              className="absolute top-4 right-4 w-7 h-7 rounded-xl flex items-center justify-center"
-              style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}>
-              <X size={13} className="text-white" />
+              className="absolute top-4 right-4 p-1 text-white hover:opacity-80 transition"
+              aria-label="Close">
+              <X size={18} className="text-white" strokeWidth={2.5} />
             </button>
 
-            <p className="text-white/50 text-xs font-black tracking-widest mb-0.5">PRAQEN</p>
-            <p className="text-white font-black text-base">Transaction Receipt</p>
+            <p className="text-white/70 text-xs font-black tracking-widest mb-1 uppercase">PRAQEN</p>
+            <p className="text-white font-bold text-lg">Transaction Receipt</p>
 
-            <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mt-4"
-              style={{
-                backgroundColor: isPending ? 'rgba(245,158,11,0.25)' : isSend ? 'rgba(239,68,68,0.25)' : 'rgba(16,185,129,0.25)',
-                border: `2px solid ${isPending ? C.warn : isSend ? C.danger : C.success}50`,
-              }}>
-              {isPending
-                ? <Clock size={24} style={{ color: C.warn }} />
-                : isSend
-                  ? <ArrowUpRight size={24} style={{ color: C.danger }} />
-                  : <ArrowDownLeft size={24} style={{ color: C.success }} />}
+            {/* Header Icon: rounded square (green #16A360 + Download for incoming, red C.danger + Upload for outgoing) with Bitcoin badge */}
+            <div className="relative w-12 h-12 mx-auto mt-3 flex-shrink-0">
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center"
+                style={{ backgroundColor: isOutgoing ? C.danger : '#16A360' }}>
+                {isOutgoing
+                  ? <Upload size={20} color="#fff" strokeWidth={2.5} />
+                  : <Download size={20} color="#fff" strokeWidth={2.5} />}
+              </div>
+              <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center"
+                style={{ backgroundColor: '#F7931A', border: '1.5px solid #fff' }}>
+                <span style={{ color: '#fff', fontSize: 10, fontWeight: 900, lineHeight: 1 }}>₿</span>
+              </div>
             </div>
 
-            <p className="text-white font-black text-2xl mt-3">
-              {isSend ? '−' : '+'}₿{fmt(amountBtc)}
+            {/* Amount display */}
+            <p className="text-white font-black text-2xl mt-3 tracking-tight">
+              {isOutgoing ? '−' : '+'}{fmt(amountBtc)} BTC
             </p>
-            <p className="font-bold text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.65)' }}>
-              ≈ {isSend ? '−' : '+'}{amountUsd}
+            <p className="font-semibold text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.8)' }}>
+              {rawUsdVal} USD
             </p>
-            {counterpart && (
-              <p className="text-white font-black text-sm mt-1 tracking-wide">
-                {type === 'TRANSFER_IN' ? 'From' : 'To'}{' '}
-                <span style={{ color: '#6EE7B7' }}>@{counterpart}</span>
-              </p>
-            )}
-            <span className="text-xs font-black px-3 py-1 rounded-full mt-2 inline-flex items-center gap-1"
-              style={{
-                backgroundColor: isPending ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.3)',
-                color: isPending ? '#FDE68A' : '#6EE7B7',
-              }}>
-              {isPending ? <><Clock size={11} /> PENDING</> : <><CheckCircle size={11} /> CONFIRMED</>}
-            </span>
           </div>
           {/* Wave cut */}
           <div className="h-5 bg-white" style={{ borderRadius: '50% 50% 0 0 / 100% 100% 0 0', marginTop: -1 }} />
         </div>
 
         {/* Receipt rows */}
-        <div className="px-5 pb-2 overflow-y-auto" style={{ maxHeight: '40vh' }}>
-          <div className="border-t-2 border-dashed mb-3" style={{ borderColor: C.g200 }} />
-          {rows.map(({ label, value, colored, mono, link, statusBadge, isNotes }) => {
+        <div className="px-6 pb-2">
+          {detailRows.map(({ label, primary, subtitle, primaryColor, isMono, isLink, linkUrl, isNotes }) => {
             if (isNotes) {
-              const isRisky = /confirmed twice|risky wallet/i.test(value);
-              const feeMatch = value.match(/Fee \(₿([\d.]+)\)/);
+              const isRisky = typeof primary === 'string' && /confirmed twice|risky wallet/i.test(primary);
+              const feeMatch = typeof primary === 'string' ? primary.match(/Fee \(₿([\d.]+)\)/) : null;
               const feeAmt = feeMatch ? feeMatch[1] : null;
               return (
-                <div key={label} className="py-3 border-b" style={{ borderColor: C.g100 }}>
-                  <p className="text-xs font-black mb-2" style={{ color: C.g400 }}>Notes</p>
+                <div key={label} className="py-2.5">
+                  <p className="text-sm font-semibold mb-1" style={{ color: '#6B7280' }}>{label}</p>
                   {isRisky ? (
                     <div className="rounded-2xl overflow-hidden border" style={{ borderColor: `${C.warn}40` }}>
-                      {/* Header strip */}
-                      <div className="px-3 py-2 flex items-center gap-2"
-                        style={{ backgroundColor: `${C.warn}18` }}>
+                      <div className="px-3 py-2 flex items-center gap-2" style={{ backgroundColor: `${C.warn}18` }}>
                         <AlertTriangle size={13} style={{ color: C.warn, flexShrink: 0 }} />
                         <p className="text-xs font-black" style={{ color: C.warn }}>Risky Wallet Warning</p>
                       </div>
-                      {/* Bullet points */}
                       <div className="px-3 py-3 space-y-2.5" style={{ backgroundColor: '#FFFDF5' }}>
                         {[
                           { icon: <CheckCircle size={13} style={{ color: C.success }} />, text: 'User confirmed twice before sending' },
@@ -736,40 +820,37 @@ function TxReceiptModal({ tx, onClose, onRepeat, btcPrice }) {
                       </div>
                     </div>
                   ) : (
-                    <p className="text-xs font-semibold leading-relaxed" style={{ color: C.g700 }}>{value}</p>
+                    <p className="text-sm font-bold break-all" style={{ color: '#111827' }}>{primary}</p>
                   )}
                 </div>
               );
             }
+
             return (
-            <div key={label} className="flex justify-between items-center py-2 border-b last:border-0"
-              style={{ borderColor: C.g100 }}>
-              <p className="text-xs font-bold flex-shrink-0 mr-4" style={{ color: C.g400 }}>{label}</p>
-              {link ? (
-                <a href={link} target="_blank" rel="noopener noreferrer"
-                  className="text-xs font-mono hover:underline text-right"
-                  style={{ color: C.paid }}>
-                  {value.slice(0, 18)}…↗
-                </a>
-              ) : statusBadge ? (
-                <span className="text-xs font-black px-2 py-0.5 rounded-full"
-                  style={{
-                    backgroundColor: value === 'Pending' ? `${C.warn}20` : `${C.success}15`,
-                    color: value === 'Pending' ? C.warn : C.success,
-                  }}>
-                  {value}
-                </span>
-              ) : (
-                <p className={`text-xs text-right break-all ${mono ? 'font-mono' : 'font-semibold'}`}
-                  style={{ color: colored ? color : C.g700, maxWidth: '60%' }}>
-                  {mono && value.length > 22 ? `${value.slice(0, 22)}…` : value}
-                </p>
-              )}
-            </div>
+              <div key={label} className="flex justify-between items-start py-2.5">
+                <p className="text-sm font-semibold flex-shrink-0 mr-4" style={{ color: '#6B7280' }}>{label}</p>
+                <div className="text-right min-w-0 flex-1">
+                  {isLink ? (
+                    <a href={linkUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-bold hover:underline inline-block truncate" style={{ color: primaryColor || C.paid }}>
+                      {primary}
+                    </a>
+                  ) : (
+                    <p className="text-sm font-bold break-all" style={{ color: primaryColor || '#111827' }}>
+                      {primary}
+                    </p>
+                  )}
+                  {subtitle && (
+                    <p className="text-xs font-semibold mt-0.5" style={{ color: '#6B7280' }}>
+                      {subtitle}
+                    </p>
+                  )}
+                </div>
+              </div>
             );
           })}
+
           {isOnChain && (
-            <div className="border-t-2 border-dashed mt-3 pt-3 text-center">
+            <div className="border-t border-gray-100 mt-2 pt-3 text-center">
               <p className="text-xs font-semibold flex items-center justify-center gap-1.5" style={{ color: C.g400 }}>
                 <Link2 size={12} /> Blockchain External Wallet Send-Out
               </p>
@@ -781,30 +862,17 @@ function TxReceiptModal({ tx, onClose, onRepeat, btcPrice }) {
         </div>
 
         {/* Action buttons */}
-        <div className="px-5 pt-3 pb-5 space-y-2">
+        <div className="px-6 pt-2 pb-6 space-y-2">
           {txHash && isOnChain && (
             <a href={`https://mempool.space/tx/${txHash}`} target="_blank" rel="noopener noreferrer"
-              className="w-full py-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 hover:bg-gray-50"
+              className="w-full py-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 hover:bg-gray-50"
               style={{ borderColor: C.g200, color: C.g600 }}>
               View on Mempool Explorer ↗
             </a>
           )}
-          {isInternal && counterpart && onRepeat && (
-            <button onClick={() => onRepeat(counterpart)}
-              className="w-full py-3 rounded-xl text-white font-black text-sm flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition"
-              style={{ background: `linear-gradient(135deg,${C.forest} 0%,${C.green} 100%)`, boxShadow: '0 4px 14px rgba(27,67,50,0.35)' }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/>
-              </svg>
-              Repeat Transfer to @{counterpart}
-            </button>
-          )}
           <button onClick={onClose}
-            className="w-full py-3 rounded-xl font-black text-sm flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition border"
-            style={{ borderColor: C.g200, color: C.g600, backgroundColor: C.g50 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>
-            </svg>
+            className="w-full py-3 rounded-2xl font-bold text-sm flex items-center justify-center border border-gray-300 shadow-sm transition hover:bg-gray-100 active:scale-[0.98]"
+            style={{ backgroundColor: '#E5E7EB', color: '#0B6638' }}>
             Back to Wallet
           </button>
         </div>
@@ -812,78 +880,259 @@ function TxReceiptModal({ tx, onClose, onRepeat, btcPrice }) {
     </div>
   );
 }
+// ═══════════════════════════════════════════════════════════════════════════
+// RECENT ACTIVITY SECTION — extracted from Wallet.js
+// Includes: helper functions, TxRow component, and the JSX block that renders
+// the "Recent Activity" card inside the main WalletPage component.
+// ═══════════════════════════════════════════════════════════════════════════
 
-// ─── Transaction Row ───────────────────────────────────────────────────────────
-function TxRow({ tx, onClick }) {
-  const type      = (tx.type || '').toUpperCase();
-  const isSend    = type === 'WITHDRAWAL' || type === 'SEND' || type === 'TRANSFER_OUT';
-  const isInternal = type === 'TRANSFER_IN' || type === 'TRANSFER_OUT';
-  const isPending = tx.status === 'PENDING'  || tx.status === 'pending';
-  const color     = isSend ? C.danger : C.success;
-  const label     = type === 'TRANSFER_OUT' ? 'PRAQEN Send'
-    : type === 'TRANSFER_IN'  ? 'PRAQEN Received'
-    : isSend                  ? 'Sent'
-    : type === 'DEPOSIT'      ? 'Received'
-    : 'Trade';
-  const txHash    = tx.tx_hash || tx.txHash;
-  const explorerBase = 'https://mempool.space/tx';
+
+// ─── Helper: format a transaction's date/time ──────────────────────────────
+const fmtTxDate = d => {
+  if (!d) return '—';
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return '—';
+  const pad = n => String(n).padStart(2, '0');
+  const day = pad(dt.getDate());
+  const month = pad(dt.getMonth() + 1);
+  const year = String(dt.getFullYear()).slice(-2);
+  const time = dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  return `${day}/${month}/${year} · ${time}`;
+};
+
+// ─── Helper: determine if a transaction is outgoing (Sent) or incoming (Received) ──
+const isOutgoingTx = (tx) => {
+  if (!tx) return false;
+  const type = (tx.type || '').toUpperCase();
+  const amt = parseFloat(tx.amount_btc || tx.amount || 0);
+  if (amt < 0) return true;
+  if (['WITHDRAWAL', 'SEND', 'TRANSFER_OUT', 'ESCROW_LOCK', 'ESCROW_RELEASE', 'SECURITY_DEPOSIT_LOCK', 'SECURITY_DEPOSIT_SEIZED', 'FEE'].includes(type)) return true;
+  if (['DEPOSIT', 'TRANSFER_IN', 'ESCROW_REFUND', 'ESCROW_RETURNED', 'SECURITY_DEPOSIT_RELEASE', 'SECURITY_DEPOSIT_CREDIT'].includes(type)) return false;
+  if (/send|sent|withdraw|out/i.test(type)) return true;
+  return false;
+};
+
+// ─── Helper: resolve label, subtitle, and colors for a transaction row ──
+// NOTE: icon is intentionally the same Bitcoin coin glyph for every row type,
+// to match the approved PDF design — do not branch icon by type here.
+// Colors reuse the existing C.gold token (muted peach/gold), not a bright
+// orange, to match the approved mockup exactly.
+const BTC_ICON_BG    = '#F7931A';
+const BTC_ICON_COLOR = '#FFFFFF';
+
+const getTxVisualDetails = (tx) => {
+  const type = (tx.type || '').toUpperCase();
+  const notes = tx.notes || tx.description || '';
+  const isSend = isOutgoingTx(tx);
+
+  const withBtcIcon = (details) => ({
+    ...details,
+    icon: Bitcoin,
+    bg: BTC_ICON_BG,
+    iconColor: BTC_ICON_COLOR,
+  });
+
+  if (type.includes('ESCROW')) {
+    let sub = 'Reserved';
+    if (type.includes('RELEASE')) sub = 'Release';
+    else if (type.includes('REFUND') || type.includes('RETURN')) sub = 'Returned';
+    else if (type.includes('LOCK')) sub = 'Reserved';
+
+    return withBtcIcon({ primary: 'Escrow', secondary: sub });
+  }
+
+  if (type === 'TRANSFER_OUT' || type === 'TRANSFER_IN') {
+    const isOut = type === 'TRANSFER_OUT';
+    return withBtcIcon({ primary: isOut ? 'Send out' : 'Received', secondary: 'Internal' });
+  }
+
+  if (type === 'WITHDRAWAL' || type === 'SEND') {
+    return withBtcIcon({ primary: 'Send out', secondary: 'External' });
+  }
+
+  if (type === 'DEPOSIT' || type === 'RECEIVE') {
+    return withBtcIcon({ primary: 'Received', secondary: 'External' });
+  }
+
+  if (type.includes('GIFT') || type.includes('SECURITY_DEPOSIT')) {
+    let sub = 'Gift Card';
+    if (type.includes('LOCK')) sub = 'Reserved';
+    else if (type.includes('RELEASE')) sub = 'Release';
+    else if (type.includes('CREDIT') || type.includes('REFUND')) sub = 'Returned';
+
+    return withBtcIcon({ primary: type.includes('SECURITY') ? 'Security Deposit' : 'Gift Card', secondary: sub });
+  }
+
+  if (type === 'TRADE' || type === 'P2P_TRADE') {
+    return withBtcIcon({ primary: 'Trade', secondary: normalizeNotes(notes) || 'P2P Market' });
+  }
+
+  return withBtcIcon({
+    primary: isSend ? 'Send out' : 'Received',
+    secondary: normalizeNotes(notes) || (tx.tx_hash || tx.txHash ? `${(tx.tx_hash || tx.txHash).slice(0, 12)}…` : 'Bitcoin Activity'),
+  });
+};
+
+// ─── Transaction Row Component ─────────────────────────────────────────────
+function TxRow({ tx, onClick, btcPrice }) {
+  const isPending = tx.status === 'PENDING' || tx.status === 'pending';
+  const isSend = isOutgoingTx(tx);
+  const color = isSend ? C.danger : C.success;
+  const sign = isSend ? '−' : '+';
+
+  const { primary, secondary, icon: IconComponent, bg, iconColor } = getTxVisualDetails(tx);
+
+  const absBtc = Math.abs(tx.amount_btc || tx.amount || 0);
+  const absUsd = absBtc * (btcPrice || 88000);
+  const dateStr = fmtTxDate(tx.created_at || tx.date);
 
   return (
     <div
-      className="flex items-center gap-3 py-3 border-b last:border-0 cursor-pointer hover:bg-gray-50 rounded-xl px-2 -mx-2 transition"
+      className="flex items-center justify-between gap-3 py-3.5 px-3 -mx-3 border-b last:border-0 cursor-pointer hover:bg-slate-50 rounded-2xl transition"
       style={{ borderColor: C.g100 }}
       onClick={onClick}
     >
-      <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-        style={{ backgroundColor: isInternal ? `${C.paid}15` : `${color}10` }}>
-        {isInternal
-          ? <Users size={15} style={{ color: C.paid }} />
-          : isSend
-            ? <ArrowUpRight size={16} style={{ color }} />
-            : <ArrowDownLeft size={16} style={{ color }} />}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <p className="text-sm font-bold" style={{ color: C.g800 }}>{label}</p>
-          {isInternal && (
-            <span className="text-xs font-black px-1.5 py-0.5 rounded-full"
-              style={{ backgroundColor: `${C.paid}15`, color: C.paid }}>FREE</span>
-          )}
-          {isPending && (
-            <span className="text-xs font-black px-1.5 py-0.5 rounded-full"
-              style={{ backgroundColor: `${C.warn}20`, color: C.warn }}>PENDING</span>
-          )}
+      <div className="flex items-center gap-3 min-w-0 flex-1">
+        <div
+          className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+          style={{ backgroundColor: bg }}
+        >
+          <IconComponent size={22} strokeWidth={2.75} style={{ color: iconColor }} />
         </div>
-        <div className="flex items-center gap-1">
-          <p className="text-xs truncate" style={{ color: C.g400 }}>
-            {normalizeNotes(tx.notes) || (txHash ? `${txHash.slice(0, 14)}…` : fmtAge(tx.created_at))}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-bold truncate" style={{ color: C.g800 }}>
+              {primary}
+            </p>
+            {isPending && (
+              <span
+                className="text-[10px] font-black px-1.5 py-0.5 rounded-full flex-shrink-0"
+                style={{ backgroundColor: `${C.warn}20`, color: C.warn }}
+              >
+                PENDING
+              </span>
+            )}
+          </div>
+          <p className="text-xs truncate font-medium mt-0.5" style={{ color: C.g400 }}>
+            {secondary}
           </p>
-          {txHash && !isInternal && (
-            <a href={`${explorerBase}/${txHash}`} target="_blank" rel="noopener noreferrer"
-              onClick={e => e.stopPropagation()}
-              className="text-xs font-bold flex-shrink-0 hover:underline"
-              style={{ color: C.paid }}>↗</a>
-          )}
         </div>
       </div>
-      <div className="text-right flex-shrink-0 min-w-0">
-        <p className="text-sm font-black" style={{ color }}>
-          {isSend ? '−' : '+'}₿{fmt(Math.abs(tx.amount_btc || 0))}
-        </p>
-        {tx.created_at && (() => {
-          const { date, time } = fmtDate(tx.created_at);
-          return (
-            <>
-              <p className="text-xs font-semibold" style={{ color: C.g600 }}>{date}</p>
-              <p className="text-xs" style={{ color: C.g400 }}>{time} · {fmtAge(tx.created_at)}</p>
-            </>
-          );
-        })()}
+
+      <div className="flex items-center gap-2">
+        <div className="text-right flex-shrink-0 min-w-0">
+          <p className="text-sm font-black tracking-tight" style={{ color }}>
+            {sign}{fmt(absBtc)} BTC
+          </p>
+          <p className="text-xs font-semibold mt-0.5" style={{ color: C.g500 }}>
+            {sign}{absUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+          </p>
+          <p className="text-[11px] font-medium mt-0.5" style={{ color: C.g400 }}>
+            {dateStr}
+          </p>
+        </div>
+        <ChevronRight size={16} style={{ color: C.g300 }} />
       </div>
-      <ChevronRight size={13} style={{ color: C.g300, flexShrink: 0 }} />
     </div>
   );
 }
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Inside WalletPage — related state
+// ═══════════════════════════════════════════════════════════════════════════
+
+// const [activityFilter, setActivityFilter] = useState('All');
+// const [filterOpen,     setFilterOpen]     = useState(false);
+//
+// useEffect(() => {
+//   if (!filterOpen) return;
+//   const handleKeyDown = (e) => {
+//     if (e.key === 'Escape') setFilterOpen(false);
+//   };
+//   window.addEventListener('keydown', handleKeyDown);
+//   return () => window.removeEventListener('keydown', handleKeyDown);
+// }, [filterOpen]);
+//
+// const filteredTransactions = transactions.filter(tx => {
+//   if (activityFilter === 'Sent out') return isOutgoingTx(tx);
+//   if (activityFilter === 'Received in') return !isOutgoingTx(tx);
+//   return true;
+// });
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Inside WalletPage — JSX block (the actual "Recent Activity" card)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/*
+<div className="bg-white rounded-2xl border shadow-sm overflow-hidden" style={{ borderColor: C.g100 }}>
+  <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: C.g100 }}>
+    <p className="font-black text-sm" style={{ color: C.g800 }}>Recent Activity</p>
+    <div className="relative">
+      <button
+        onClick={() => setFilterOpen(o => !o)}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition hover:bg-slate-200/60"
+        style={{ backgroundColor: C.g100, color: C.g700 }}
+      >
+        <span>{activityFilter}</span>
+        <ChevronDown size={13} style={{ color: C.g500, transform: filterOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+      </button>
+      {filterOpen && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setFilterOpen(false)} />
+          <div
+            className="absolute right-0 top-full mt-2 w-40 rounded-xl shadow-xl border overflow-hidden z-20 py-1.5"
+            style={{ backgroundColor: C.g50, borderColor: C.g200 }}
+          >
+            {['All', 'Sent out', 'Received in'].map(opt => (
+              <button
+                key={opt}
+                onClick={() => {
+                  setActivityFilter(opt);
+                  setFilterOpen(false);
+                }}
+                className="w-full text-left px-4 py-2.5 text-xs font-semibold flex items-center justify-between transition hover:bg-slate-200/50"
+                style={{
+                  color: activityFilter === opt ? C.g800 : C.g600,
+                  backgroundColor: activityFilter === opt ? 'rgba(0,0,0,0.04)' : 'transparent',
+                }}
+              >
+                <span className={activityFilter === opt ? 'font-black' : 'font-semibold'}>{opt}</span>
+                {activityFilter === opt && <Check size={13} style={{ color: C.forest }} />}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  </div>
+  <div className="px-5">
+    {filteredTransactions.length === 0 ? (
+      <div className="text-center py-12">
+        <Clock size={36} className="mx-auto mb-3" style={{ color: C.g300 }} />
+        <p className="font-bold text-sm" style={{ color: C.g500 }}>
+          {transactions.length === 0 ? 'No transactions yet' : `No ${activityFilter.toLowerCase()} transactions`}
+        </p>
+        <p className="text-xs mt-1" style={{ color: C.g400 }}>
+          {transactions.length === 0 ? 'Deposits and trades appear here' : 'Try selecting a different filter'}
+        </p>
+        {transactions.length === 0 && (
+          <button onClick={() => navigate('/buy-bitcoin')}
+            className="mt-4 flex items-center gap-1.5 px-4 py-2 rounded-xl text-white font-black text-xs mx-auto"
+            style={{ backgroundColor: C.green }}>
+            <Bitcoin size={12} /> Start Trading
+          </button>
+        )}
+      </div>
+    ) : (
+      filteredTransactions.map((tx, i) => (
+        <TxRow key={tx.id || i} tx={tx} onClick={() => setSelectedTx(tx)} btcPrice={btcPrice} />
+      ))
+    )}
+  </div>
+</div>
+*/
 
 const CURRENCY_SYMBOLS = { USD:'$', GBP:'£', EUR:'€', GHS:'₵', NGN:'₦', KES:'KSh ', ZAR:'R ' };
 
@@ -2510,6 +2759,24 @@ export default function WalletPage({ user }) {
   const [selectedTx,       setSelectedTx]       = useState(null);
   const [displayCurrency,  setDisplayCurrency]  = useState(localStorage.getItem('praqen_currency') || 'USD');
   const [userVerif,        setUserVerif]        = useState(null);
+  const [activityFilter,   setActivityFilter]   = useState('All');
+  const [filterOpen,       setFilterOpen]       = useState(false);
+  const [tradeParties,     setTradeParties]     = useState({});
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setFilterOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [filterOpen]);
+
+  const filteredTransactions = transactions.filter(tx => {
+    if (activityFilter === 'Sent out') return isOutgoingTx(tx);
+    if (activityFilter === 'Received in') return !isOutgoingTx(tx);
+    return true;
+  });
 
   // USDT + Swap state — SWAP_FEE_PERCENT mirrors backend swapService.js
   const SWAP_FEE_PERCENT = 0.005; // 0.5%
@@ -2683,15 +2950,26 @@ export default function WalletPage({ user }) {
     } catch { /* silent */ }
   };
 
+  // ── Load trade → counterparty-username map (used by the receipt modal) ──────
+  // Prefetched with the wallet so escrow receipts resolve the counterparty
+  // synchronously instead of flashing the raw trade reference while a fetch
+  // resolves after the modal opens.
+  const loadTradeParties = async () => {
+    try {
+      const r = await axios.get(`${API_URL}/my-trades?page=1&limit=50`, { headers: authH() });
+      setTradeParties(buildTradePartyMap(r.data.trades, user?.id));
+    } catch { /* silent — receipt falls back to the trade reference */ }
+  };
+
   useEffect(() => {
     if (!user) { navigate('/login'); return; }
     const init = async () => {
       setLoading(true);
-      await Promise.all([loadWallet(), loadBtcPrice(), loadUsdtWallet()]);
+      await Promise.all([loadWallet(), loadBtcPrice(), loadUsdtWallet(), loadTradeParties()]);
       setLoading(false);
     };
     init();
-  }, [user]);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-poll every 15 s while the tab is visible ─────────────────────────
   const prevBalRef = useRef(null);
@@ -2719,6 +2997,10 @@ export default function WalletPage({ user }) {
         setLockedBtc(r.data.locked_btc || 0);
         setTransactions(r.data.transactions || []);
         if (r.data.btc_price && r.data.btc_price > 0) setBtcPrice(p => p > 0 ? p : r.data.btc_price);
+        // Keep the trade counterparty map fresh alongside the wallet
+        axios.get(`${API_URL}/my-trades?page=1&limit=50`, { headers: authH() })
+          .then(r2 => setTradeParties(buildTradePartyMap(r2.data.trades, user?.id)))
+          .catch(() => {});
       } catch { /* silent — avoid toast spam on network blip */ }
     }, 15000);
     return () => clearInterval(poll);
@@ -2740,12 +3022,13 @@ export default function WalletPage({ user }) {
         // Refresh on any wallet-related or system notification (covers TRANSFER_IN, deposits, etc.)
         if (t === 'wallet' || t === 'system' || /received|sent|transfer|deposit/i.test(title)) {
           await loadWallet();
+          loadTradeParties(); // keep the escrow counterparty map fresh for new receipts
           toast.success(title || '₿ Wallet updated!', { autoClose: 5000 });
         }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [user?.id]);
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load USDT / swap data when tab switches ────────────────────────────────
   useEffect(() => {
@@ -3153,26 +3436,65 @@ export default function WalletPage({ user }) {
         <div className="bg-white rounded-2xl border shadow-sm overflow-hidden" style={{ borderColor: C.g100 }}>
           <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: C.g100 }}>
             <p className="font-black text-sm" style={{ color: C.g800 }}>Recent Activity</p>
-            <span className="text-xs font-black px-2 py-0.5 rounded-full"
-              style={{ backgroundColor: C.g100, color: C.g500 }}>
-              {transactions.length} records
-            </span>
+            <div className="relative">
+              <button
+                onClick={() => setFilterOpen(o => !o)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition hover:bg-slate-200/60"
+                style={{ backgroundColor: C.g100, color: C.g700 }}
+              >
+                <span>{activityFilter}</span>
+                <ChevronDown size={13} style={{ color: C.g500, transform: filterOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+              </button>
+              {filterOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setFilterOpen(false)} />
+                  <div
+                    className="absolute right-0 top-full mt-2 w-40 rounded-xl shadow-xl border overflow-hidden z-20 py-1.5"
+                    style={{ backgroundColor: C.g50, borderColor: C.g200 }}
+                  >
+                    {['All', 'Sent out', 'Received in'].map(opt => (
+                      <button
+                        key={opt}
+                        onClick={() => {
+                          setActivityFilter(opt);
+                          setFilterOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-xs font-semibold flex items-center justify-between transition hover:bg-slate-200/50"
+                        style={{
+                          color: activityFilter === opt ? C.g800 : C.g600,
+                          backgroundColor: activityFilter === opt ? 'rgba(0,0,0,0.04)' : 'transparent',
+                        }}
+                      >
+                        <span className={activityFilter === opt ? 'font-black' : 'font-semibold'}>{opt}</span>
+                        {activityFilter === opt && <Check size={13} style={{ color: C.forest }} />}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
           <div className="px-5">
-            {transactions.length === 0 ? (
+            {filteredTransactions.length === 0 ? (
               <div className="text-center py-12">
                 <Clock size={36} className="mx-auto mb-3" style={{ color: C.g300 }} />
-                <p className="font-bold text-sm" style={{ color: C.g500 }}>No transactions yet</p>
-                <p className="text-xs mt-1" style={{ color: C.g400 }}>Deposits and trades appear here</p>
-                <button onClick={() => navigate('/buy-bitcoin')}
-                  className="mt-4 flex items-center gap-1.5 px-4 py-2 rounded-xl text-white font-black text-xs mx-auto"
-                  style={{ backgroundColor: C.green }}>
-                  <Bitcoin size={12} /> Start Trading
-                </button>
+                <p className="font-bold text-sm" style={{ color: C.g500 }}>
+                  {transactions.length === 0 ? 'No transactions yet' : `No ${activityFilter.toLowerCase()} transactions`}
+                </p>
+                <p className="text-xs mt-1" style={{ color: C.g400 }}>
+                  {transactions.length === 0 ? 'Deposits and trades appear here' : 'Try selecting a different filter'}
+                </p>
+                {transactions.length === 0 && (
+                  <button onClick={() => navigate('/buy-bitcoin')}
+                    className="mt-4 flex items-center gap-1.5 px-4 py-2 rounded-xl text-white font-black text-xs mx-auto"
+                    style={{ backgroundColor: C.green }}>
+                    <Bitcoin size={12} /> Start Trading
+                  </button>
+                )}
               </div>
             ) : (
-              transactions.map((tx, i) => (
-                <TxRow key={tx.id || i} tx={tx} onClick={() => setSelectedTx(tx)} />
+              filteredTransactions.map((tx, i) => (
+                <TxRow key={tx.id || i} tx={tx} onClick={() => setSelectedTx(tx)} btcPrice={btcPrice} />
               ))
             )}
           </div>
@@ -3676,7 +3998,7 @@ export default function WalletPage({ user }) {
         </div>
       </footer>
 
-      {selectedTx && <TxReceiptModal tx={selectedTx} btcPrice={btcPrice} onClose={() => setSelectedTx(null)}
+      {selectedTx && <TxReceiptModal tx={selectedTx} btcPrice={btcPrice} user={user} tradeParties={tradeParties} onClose={() => setSelectedTx(null)}
           onRepeat={(username) => { setSelectedTx(null); setRepeatUsername(username); setShowInternal(true); }} />}
       {showSend && <WithdrawModal balance={availableBal} btcPrice={btcPrice} onClose={() => setShowSend(false)} onSend={sendBitcoin} kycStatus={userVerif} twoFactorEnabled={user?.two_factor_enabled} onSwitchToInternal={() => { setShowSend(false); setShowInternal(true); }} />}
       {showUsdtSend && <UsdtWithdrawModal balance={usdtData?.balance_usdt || 0} onClose={() => setShowUsdtSend(false)} onSend={sendUsdt} kycStatus={userVerif} twoFactorEnabled={user?.two_factor_enabled} onSwitchToInternal={() => { setShowUsdtSend(false); setShowUsdtInternal(true); }} />}
