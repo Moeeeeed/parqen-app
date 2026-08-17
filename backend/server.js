@@ -6715,7 +6715,7 @@ app.post('/api/seller-deposit/withdraw-request', verifyToken, async (req, res) =
 // GET /api/admin/seller-deposits — list all deposits + running total locked
 app.get('/api/admin/seller-deposits', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
 
     const statusFilter = req.query.status;
     let query = supabaseAdmin.from('seller_deposits')
@@ -6740,7 +6740,7 @@ app.get('/api/admin/seller-deposits', verifyToken, async (req, res) => {
 // POST /api/admin/seller-deposits/:userId/approve-withdrawal
 app.post('/api/admin/seller-deposits/:userId/approve-withdrawal', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const targetUserId = req.params.userId;
 
     const { data: deposit } = await supabaseAdmin
@@ -6808,7 +6808,7 @@ app.post('/api/admin/seller-deposits/:userId/approve-withdrawal', verifyToken, a
 // POST /api/admin/seller-deposits/:userId/reject-withdrawal — reverts to LOCKED, no funds move
 app.post('/api/admin/seller-deposits/:userId/reject-withdrawal', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const targetUserId = req.params.userId;
     const { reason } = req.body;
 
@@ -6833,7 +6833,7 @@ app.post('/api/admin/seller-deposits/:userId/reject-withdrawal', verifyToken, as
 // to a wronged buyer, following a dispute resolved against this seller.
 app.post('/api/admin/seller-deposits/:userId/seize', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const targetUserId = req.params.userId;
     const { amount, trade_id, buyer_id, reason } = req.body;
 
@@ -9047,10 +9047,22 @@ app.post('/api/admin/send-welcome-emails', verifyToken, async (req, res) => {
 // ADMIN — COMPREHENSIVE MANAGEMENT ROUTES
 // ============================================================
 
-// Helper: verify admin access
+// Helper: verify admin OR moderator access — for the small set of read-only /
+// team-support endpoints the Team Portal (TeamDashboard.js) actually calls
+// (stats, trades/all, users search, reviews, top-traders, support tickets).
 async function requireAdmin(req, res) {
   const { data: u } = await supabaseAdmin.from('users').select('is_admin, is_moderator, email').eq('id', req.userId).single();
   const ok = u?.is_admin || u?.is_moderator || u?.email === ADMIN_EMAIL;
+  if (!ok) { res.status(403).json({ error: 'Admin access required' }); return null; }
+  return u;
+}
+
+// Helper: verify TRUE admin access only — moderators/team members never pass this.
+// Reserved for endpoints that can move funds, ban/delete accounts, grant admin,
+// or broadcast to the whole user base — none of which the Team Portal exposes.
+async function requireFullAdmin(req, res) {
+  const { data: u } = await supabaseAdmin.from('users').select('is_admin, email').eq('id', req.userId).single();
+  const ok = !!(u?.is_admin || u?.email === ADMIN_EMAIL);
   if (!ok) { res.status(403).json({ error: 'Admin access required' }); return null; }
   return u;
 }
@@ -9166,7 +9178,7 @@ app.get('/api/admin/users', verifyToken, async (req, res) => {
 // PUT /api/admin/users/:id — update user (ban, make admin, verify, etc.)
 app.put('/api/admin/users/:id', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const allowed = ['account_status', 'is_admin', 'is_moderator', 'is_id_verified', 'is_email_verified', 'badge', 'kyc_status'];
     const updates = {};
     for (const k of allowed) { if (req.body[k] !== undefined) updates[k] = req.body[k]; }
@@ -9189,7 +9201,7 @@ app.put('/api/admin/users/:id', verifyToken, async (req, res) => {
 // DELETE /api/admin/users/:id — delete user account
 app.delete('/api/admin/users/:id', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     if (req.params.id === req.userId) return res.status(400).json({ error: 'Cannot delete your own account' });
     const { error } = await supabaseAdmin.from('users').delete().eq('id', req.params.id);
     if (error) return res.status(400).json({ error: error.message });
@@ -9217,7 +9229,7 @@ app.get('/api/admin/trades/all', verifyToken, async (req, res) => {
 // PUT /api/admin/trades/:id — force update trade status
 app.put('/api/admin/trades/:id', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { status, notes } = req.body;
     if (!status) return res.status(400).json({ error: 'status required' });
     const updates = { status, admin_notes: notes, updated_at: new Date() };
@@ -9232,7 +9244,7 @@ app.put('/api/admin/trades/:id', verifyToken, async (req, res) => {
 // GET /api/admin/kyc — pending KYC submissions (resilient to missing columns)
 app.get('/api/admin/kyc', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { status = 'pending' } = req.query;
 
     let query = supabaseAdmin.from('users')
@@ -9271,7 +9283,7 @@ app.get('/api/admin/kyc', verifyToken, async (req, res) => {
 // POST /api/admin/backfill-kyc — set kyc_status='pending' for legacy users who uploaded docs
 app.post('/api/admin/backfill-kyc', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { data, error } = await supabaseAdmin.from('users')
       .update({ kyc_status: 'pending', updated_at: new Date() })
       .not('id_front_url', 'is', null)
@@ -9285,7 +9297,7 @@ app.post('/api/admin/backfill-kyc', verifyToken, async (req, res) => {
 // PUT /api/admin/kyc/:userId/approve
 app.put('/api/admin/kyc/:userId/approve', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { data: updated, error } = await supabaseAdmin.from('users')
       .update({ kyc_status: 'approved', is_id_verified: true, kyc_approved_at: new Date(), updated_at: new Date() })
       .eq('id', req.params.userId)
@@ -9305,7 +9317,7 @@ app.put('/api/admin/kyc/:userId/approve', verifyToken, async (req, res) => {
 // PUT /api/admin/kyc/:userId/reject
 app.put('/api/admin/kyc/:userId/reject', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { reason = 'Documents unclear or invalid' } = req.body;
     const { data: updated, error } = await supabaseAdmin.from('users')
       .update({ kyc_status: 'rejected', is_id_verified: false, kyc_rejection_reason: reason, updated_at: new Date() })
@@ -9324,7 +9336,7 @@ app.put('/api/admin/kyc/:userId/reject', verifyToken, async (req, res) => {
 // GET /api/admin/kyc/:userId/image?type=front|back
 app.get('/api/admin/kyc/:userId/image', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { userId } = req.params;
     const { type = 'front' } = req.query;
 
@@ -9395,7 +9407,7 @@ app.get('/api/admin/kyc/:userId/image', verifyToken, async (req, res) => {
 // GET /api/admin/p2p-migration?status=pending|approved|rejected|all
 app.get('/api/admin/p2p-migration', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { status = 'pending' } = req.query;
 
     let query = supabaseAdmin.from('p2p_migration_requests')
@@ -9415,7 +9427,7 @@ app.get('/api/admin/p2p-migration', verifyToken, async (req, res) => {
 // PUT /api/admin/p2p-migration/:id/approve
 app.put('/api/admin/p2p-migration/:id/approve', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { usernameSeen = null, feedbackCount = null, notes = null } = req.body;
     const { data: updated, error } = await supabaseAdmin.from('p2p_migration_requests')
       .update({
@@ -9465,7 +9477,7 @@ app.put('/api/admin/p2p-migration/:id/approve', verifyToken, async (req, res) =>
 // PUT /api/admin/p2p-migration/:id/reject
 app.put('/api/admin/p2p-migration/:id/reject', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { notes = null } = req.body;
     const { data: updated, error } = await supabaseAdmin.from('p2p_migration_requests')
       .update({
@@ -9486,7 +9498,7 @@ app.put('/api/admin/p2p-migration/:id/reject', verifyToken, async (req, res) => 
 // GET /api/admin/listings/all — all listings
 app.get('/api/admin/listings/all', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { status = '', page = 1, limit = 50 } = req.query;
     let query = supabaseAdmin.from('listings')
       .select('*, seller:seller_id(id, username, email)', { count: 'exact' })
@@ -9533,7 +9545,7 @@ app.get('/api/admin/listings/all', verifyToken, async (req, res) => {
 // PUT /api/admin/listings/:id — update listing (pause/activate)
 app.put('/api/admin/listings/:id', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { status } = req.body;
     const { data, error } = await supabaseAdmin.from('listings').update({ status, updated_at: new Date() }).eq('id', req.params.id).select().single();
     if (error) return res.status(400).json({ error: error.message });
@@ -9544,7 +9556,7 @@ app.put('/api/admin/listings/:id', verifyToken, async (req, res) => {
 // DELETE /api/admin/listings/:id — delete listing
 app.delete('/api/admin/listings/:id', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { error } = await supabaseAdmin.from('listings').delete().eq('id', req.params.id);
     if (error) return res.status(400).json({ error: error.message });
     res.json({ success: true });
@@ -9554,7 +9566,7 @@ app.delete('/api/admin/listings/:id', verifyToken, async (req, res) => {
 // POST /api/admin/broadcast — send in-app + push notification to all users
 app.post('/api/admin/broadcast', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { title, message, type = 'system', url } = req.body;
     if (!title || !message) return res.status(400).json({ error: 'title and message required' });
 
@@ -9579,7 +9591,7 @@ app.post('/api/admin/broadcast', verifyToken, async (req, res) => {
 // POST /api/admin/broadcast-email — send email broadcast to all users
 app.post('/api/admin/broadcast-email', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { subject, htmlBody, broadcastType = 'broadcast' } = req.body;
     if (!subject || !htmlBody) return res.status(400).json({ error: 'subject and htmlBody required' });
 
@@ -9600,7 +9612,7 @@ app.post('/api/admin/broadcast-email', verifyToken, async (req, res) => {
 // POST /api/admin/broadcast/eid-bonus — send personalised Eid Mubarak + $2 bonus email to all users
 app.post('/api/admin/broadcast/eid-bonus', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
 
     // Count eligible users first so we can respond immediately
     const { count, error: countErr } = await supabaseAdmin
@@ -9673,7 +9685,7 @@ app.post('/api/admin/broadcast/eid-bonus', verifyToken, async (req, res) => {
 // POST /api/admin/broadcast/usdt-announcement — send personalised "USDT Wallet is Live" + $2 bonus email to all users
 app.post('/api/admin/broadcast/usdt-announcement', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
 
     const { count, error: countErr } = await supabaseAdmin
       .from('users')
@@ -9741,7 +9753,7 @@ app.post('/api/admin/broadcast/usdt-announcement', verifyToken, async (req, res)
 // GET /api/admin/revenue — revenue over time
 app.get('/api/admin/revenue', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { data: profits } = await supabaseAdmin.from('company_profits').select('*').order('collected_at', { ascending: false }).limit(200);
     const { data: affiliates } = await supabaseAdmin.from('affiliate_earnings').select('commission_btc, commission_usd, status, created_at').order('created_at', { ascending: false }).limit(100);
     const totalRevBtc = (profits || []).reduce((s, p) => s + parseFloat(p.profit_btc || 0), 0);
@@ -9754,7 +9766,7 @@ app.get('/api/admin/revenue', verifyToken, async (req, res) => {
 // GET /api/admin/transfers — internal + external transfer activity + escrow wallet balance
 app.get('/api/admin/transfers', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
 
     const [
@@ -9820,7 +9832,7 @@ app.get('/api/admin/transfers', verifyToken, async (req, res) => {
 // PUT /api/admin/users/:id/verify-email — manually verify email
 app.put('/api/admin/users/:id/verify-email', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { data, error } = await supabaseAdmin.from('users').update({ is_email_verified: true, updated_at: new Date() }).eq('id', req.params.id).select().single();
     if (error) return res.status(400).json({ error: error.message });
     logAdminAction(req, 'VERIFY_EMAIL', req.params.id, null).catch(() => { });
@@ -9832,7 +9844,7 @@ app.put('/api/admin/users/:id/verify-email', verifyToken, async (req, res) => {
 // PUT /api/admin/users/:id/verify-phone — manually verify phone (legacy button in Users panel)
 app.put('/api/admin/users/:id/verify-phone', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { data, error } = await supabaseAdmin.from('users').update({ is_phone_verified: true, phone_verified: true, updated_at: new Date() }).eq('id', req.params.id).select().single();
     if (error) return res.status(400).json({ error: error.message });
     logAdminAction(req, 'VERIFY_PHONE', req.params.id, null).catch(() => { });
@@ -9851,7 +9863,7 @@ app.put('/api/admin/users/:id/verify-phone', verifyToken, async (req, res) => {
 // GET /api/admin/phone-verifications/pending — list all requests with user info
 app.get('/api/admin/phone-verifications/pending', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { status = 'pending', page = 1, limit = 50 } = req.query;
     const from = (parseInt(page) - 1) * parseInt(limit);
     const to = from + parseInt(limit) - 1;
@@ -9886,7 +9898,7 @@ app.get('/api/admin/phone-verifications/pending', verifyToken, async (req, res) 
 // PUT /api/admin/phone-verifications/:id/approve — approve a phone request
 app.put('/api/admin/phone-verifications/:id/approve', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
 
     const { data: request, error: fetchErr } = await supabaseAdmin
       .from('phone_verification_requests')
@@ -9923,7 +9935,7 @@ app.put('/api/admin/phone-verifications/:id/approve', verifyToken, async (req, r
 // PUT /api/admin/phone-verifications/:id/reject — reject a phone request
 app.put('/api/admin/phone-verifications/:id/reject', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { reason = 'Phone number could not be verified' } = req.body;
 
     const { data: request, error: fetchErr } = await supabaseAdmin
@@ -9959,7 +9971,7 @@ app.put('/api/admin/phone-verifications/:id/reject', verifyToken, async (req, re
 // GET /api/admin/phone/pending — users who have a phone but are not yet verified
 app.get('/api/admin/phone/pending', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
 
     // Fetch pending users and their submission timestamps in parallel
     const [usersRes, reqsRes] = await Promise.all([
@@ -10004,7 +10016,7 @@ app.get('/api/admin/phone/pending', verifyToken, async (req, res) => {
 // POST /api/admin/phone/approve — approve a user's phone number by userId
 app.post('/api/admin/phone/approve', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { userId } = req.body;
     if (!userId) return res.status(400).json({ error: 'userId required' });
 
@@ -10050,7 +10062,7 @@ app.post('/api/admin/phone/approve', verifyToken, async (req, res) => {
 // POST /api/admin/phone/reject — reject a user's phone (clears it so they can re-submit)
 app.post('/api/admin/phone/reject', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { userId, reason = 'Phone number could not be verified' } = req.body;
     if (!userId) return res.status(400).json({ error: 'userId required' });
 
@@ -10081,7 +10093,7 @@ app.post('/api/admin/phone/reject', verifyToken, async (req, res) => {
 // PUT /api/admin/users/:id/ban — ban a user
 app.put('/api/admin/users/:id/ban', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { reason = '' } = req.body;
     if (req.params.id === req.userId) return res.status(400).json({ error: 'Cannot ban your own account' });
     const { data, error } = await supabaseAdmin.from('users').update({ account_status: 'banned', updated_at: new Date() }).eq('id', req.params.id).select().single();
@@ -10095,7 +10107,7 @@ app.put('/api/admin/users/:id/ban', verifyToken, async (req, res) => {
 // PUT /api/admin/users/:id/unban — reinstate a banned user
 app.put('/api/admin/users/:id/unban', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { data, error } = await supabaseAdmin.from('users').update({ account_status: 'active', updated_at: new Date() }).eq('id', req.params.id).select().single();
     if (error) return res.status(400).json({ error: error.message });
     logAdminAction(req, 'UNBAN', req.params.id, null).catch(() => { });
@@ -10107,7 +10119,7 @@ app.put('/api/admin/users/:id/unban', verifyToken, async (req, res) => {
 // PUT /api/admin/users/:id/make-admin — toggle admin role
 app.put('/api/admin/users/:id/make-admin', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const isFullAdmin = admin.is_admin || admin.email === ADMIN_EMAIL;
     if (!isFullAdmin) return res.status(403).json({ error: 'Only a full admin can change admin role.' });
     const { data: cur } = await supabaseAdmin.from('users').select('is_admin').eq('id', req.params.id).single();
@@ -10122,7 +10134,7 @@ app.put('/api/admin/users/:id/make-admin', verifyToken, async (req, res) => {
 // GET /api/admin/users/new — users who joined in the last 7 days
 app.get('/api/admin/users/new', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const { data, error, count } = await supabaseAdmin.from('users')
       .select('id, email, username, full_name, avatar_url, account_status, is_email_verified, is_phone_verified, is_id_verified, total_trades, country, country_name, city, phone, created_at, last_login', { count: 'exact' })
@@ -10137,7 +10149,7 @@ app.get('/api/admin/users/new', verifyToken, async (req, res) => {
 // GET /api/admin/reports — feedback and dispute reports
 app.get('/api/admin/reports', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const [feedbackR, disputesR] = await Promise.all([
       supabaseAdmin.from('trade_feedback')
         .select('id, rating, comment, created_at, reviewer:reviewer_id(username, email), reviewed:reviewed_id(username, email), trade:trade_id(id, trade_ref, status, amount_usd)')
@@ -10214,7 +10226,7 @@ app.get('/api/admin/top-traders', verifyToken, async (req, res) => {
 // GET /api/admin/activity — recent user activity logs
 app.get('/api/admin/activity', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { data, error } = await supabaseAdmin.from('users')
       .select('id, username, email, last_login, last_seen_at, created_at, total_trades, account_status, country, city, phone, is_email_verified, is_phone_verified, is_id_verified')
       .not('last_seen_at', 'is', null)
@@ -10340,7 +10352,7 @@ app.post('/api/suggestions/:id/vote', verifyToken, async (req, res) => {
 // GET /api/admin/suggestions — admin: all suggestions with filters
 app.get('/api/admin/suggestions', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { sort = 'votes', category = '', status = '', page = 1, limit = 50 } = req.query;
     const offset = (page - 1) * limit;
 
@@ -10362,7 +10374,7 @@ app.get('/api/admin/suggestions', verifyToken, async (req, res) => {
 // PUT /api/admin/suggestions/:id — update status / reply / pin
 app.put('/api/admin/suggestions/:id', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { status, admin_reply, is_pinned } = req.body;
     const updates = { updated_at: new Date() };
     if (status !== undefined) updates.status = status;
@@ -10394,7 +10406,7 @@ app.put('/api/admin/suggestions/:id', verifyToken, async (req, res) => {
 // DELETE /api/admin/suggestions/:id
 app.delete('/api/admin/suggestions/:id', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { error } = await supabaseAdmin.from('suggestions').delete().eq('id', req.params.id);
     if (error) return res.status(400).json({ error: error.message });
     res.json({ success: true });
@@ -11843,7 +11855,7 @@ app.post('/api/admin/hot-wallet/collect-fees', verifyToken, async (req, res) => 
 // PlatformWalletsCard + Transfer Activity view in the admin Finance tab.
 app.get('/api/admin/usdt-wallet', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
 
     const [
       status,
@@ -11924,7 +11936,7 @@ app.get('/api/admin/usdt-wallet', verifyToken, async (req, res) => {
 // cold storage). Real on-chain funds move immediately; there is no undo.
 app.post('/api/admin/hot-wallet/send-usdt', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
 
     const { toAddress, amountUsdt, note } = req.body;
     const amount = parseFloat(amountUsdt);

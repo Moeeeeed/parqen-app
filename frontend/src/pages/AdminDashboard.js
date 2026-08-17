@@ -275,7 +275,7 @@ function AdminLogin({ onAuth }) {
       const r = await axios.post(`${API_URL}/auth/login`, { email, password });
       const { token, user } = r.data;
       if (!token) throw new Error('No token returned');
-      if (user?.email !== ADMIN_EMAIL && !user?.is_admin && !user?.is_moderator) {
+      if (user?.email !== ADMIN_EMAIL && !user?.is_admin) {
         throw new Error('This account does not have admin access');
       }
       localStorage.setItem('adminToken', token);
@@ -4699,7 +4699,7 @@ export default function AdminDashboard({ user: appUser, onLogin }) {
   // Check existing admin token on mount
   useEffect(() => {
     // Main app user takes priority — their token is always fresh
-    if (appUser && (appUser.email === ADMIN_EMAIL || appUser.is_admin || appUser.is_moderator)) {
+    if (appUser && (appUser.email === ADMIN_EMAIL || appUser.is_admin)) {
       const mainToken = localStorage.getItem('token');
       if (mainToken) axios.defaults.headers.common['Authorization'] = `Bearer ${mainToken}`;
       setAdminUser(appUser);
@@ -4711,7 +4711,7 @@ export default function AdminDashboard({ user: appUser, onLogin }) {
     if (token && stored) {
       try {
         const u = JSON.parse(stored);
-        if (u?.email === ADMIN_EMAIL || u?.is_admin || u?.is_moderator) {
+        if (u?.email === ADMIN_EMAIL || u?.is_admin) {
           axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
           setAdminUser(u);
         }
