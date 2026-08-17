@@ -68,12 +68,28 @@ async function sendEmail({ userId, to, subject, html, text, type, metadata }) {
   if (process.env.SMTP_USER && process.env.SMTP_PASS) {
     try {
       const transporter = getTransporter();
-      const info = await transporter.sendMail({ from: FROM_ADDRESS, to, subject, html, text: text || '' });
+      // Pooled connections (pool:true, maxConnections:5) can occasionally end up in a
+      // half-dead state on a long-running process — the remote end closed it but
+      // nodemailer hasn't noticed yet — where nodemailer's own connectionTimeout /
+      // socketTimeout don't reliably kick in because a connection was already
+      // established. A caller-side timeout guarantees this always falls through to
+      // the Resend fallback within a bounded time instead of the promise never
+      // settling, which would otherwise strand a fire-and-forget send (e.g.
+      // forgot-password) with no visible failure to the user or the logs.
+      const info = await Promise.race([
+        transporter.sendMail({ from: FROM_ADDRESS, to, subject, html, text: text || '' }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP send timed out after 15s')), 15000)),
+      ]);
       console.log(`[Email] ✅ Brevo SMTP ${type} → ${to} (${info.messageId})`);
       logEmail({ userId, email: to, subject, type, status: 'sent', messageId: info.messageId, metadata });
       return { success: true, messageId: info.messageId };
     } catch (smtpErr) {
       console.error(`[Email] ⚠️ Brevo SMTP failed for ${type} → ${to}: ${smtpErr.message} — trying Resend fallback`);
+      // A stuck/broken pooled connection stays stuck for every subsequent send —
+      // drop it so the next attempt (this fallback's Resend call doesn't reuse it,
+      // but the *next* sendEmail() call otherwise would) opens a fresh one instead
+      // of retrying the same bad socket.
+      if (_transporter) { try { _transporter.close(); } catch (_) {} _transporter = null; }
     }
   } else {
     console.warn(`[Email] Brevo SMTP not configured — skipping to Resend for ${type} → ${to}`);

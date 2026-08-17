@@ -420,12 +420,35 @@ export default function Profile({ userId: propUserId }) {
     } finally { setLoading(false); }
   };
 
+  // Avatars only ever render at ~36-60px in the UI, but the raw file was being uploaded
+  // as-is (just capped at 2MB) — a normal phone photo at full resolution, base64-encoded,
+  // easily ran 1-3MB and got embedded in EVERY listing that seller has, which is what made
+  // the Buy/Sell/Gift Card marketplace pages so slow to load. Downscale to a small square
+  // thumbnail before upload instead.
+  const compressAvatar = (file, maxPx = 400, quality = 0.85) =>
+    new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image load failed')); };
+      img.src = url;
+    });
+
   const upload = async (e) => {
     const f = e.target.files[0]; if (!f || !f.type.startsWith('image/')) return;
-    if (f.size > 2 * 1024 * 1024) { toast.error('Image must be under 2MB'); return; }
+    if (f.size > 8 * 1024 * 1024) { toast.error('Image must be under 8MB'); return; }
     setUploading(true);
     try {
-      const b64 = await new Promise((res, rej) => { const rd = new FileReader(); rd.onload = () => res(rd.result); rd.onerror = rej; rd.readAsDataURL(f); });
+      const b64 = await compressAvatar(f);
       const tk = localStorage.getItem('token');
       const r = await axios.post(`${API_URL}/users/upload-avatar`, { image: b64, userId }, { headers: { Authorization: `Bearer ${tk}` } });
       if (r.data.success) { const url = r.data.avatar_url; if (url) { setUser(p => ({ ...p, avatar_url: url })); const cu = JSON.parse(localStorage.getItem('user') || '{}'); cu.avatar_url = url; localStorage.setItem('user', JSON.stringify(cu)); window.dispatchEvent(new Event('userUpdated')); } toast.success('Photo updated!'); }

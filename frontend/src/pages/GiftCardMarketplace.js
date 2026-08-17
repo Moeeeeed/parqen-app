@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect, useRef } from 'react';
 import { useRates } from '../contexts/RatesContext';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import SEO from '../components/SEO';
 import axios from 'axios';
 import {
@@ -11,7 +11,7 @@ import {
   ChevronDown, CreditCard, ThumbsUp, ThumbsDown, Repeat2,
   Phone, Mail, Ban, ArrowUp, ArrowDown,
   Zap, Users, TrendingUp, Award, Sparkles, ShieldCheck,
-  Crown, Star, MessageSquare, Wifi, Coins, Trophy, Globe
+  Crown, Star, MessageSquare, Wifi, Trophy, Globe, Coins
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
@@ -274,6 +274,16 @@ const GC_BRAND_GROUPS = [
 const GC_BRANDS = GC_BRAND_GROUPS.flatMap(g => g.items);
 
 const GC_FACE_VALUES = [10, 20, 25, 50, 100, 200, 500, 1000];
+
+// Asset choices shown in the Sell/Buy tab dropdowns — same pattern as the P2P Buy BTC / Sell
+// tabs, adapted for a single page: picking one sets both the tab's mode and the asset filter.
+// Icons match the badges used elsewhere in the app (Bitcoin / Coins from lucide-react) rather
+// than the ₿ / ₮ text glyphs, which don't render consistently across phone fonts.
+const ASSET_CHOICES = [
+  { code: 'ALL',  label: 'All Assets', sub: 'Bitcoin & Tether', icon: Wallet,  bg: C.g400 },
+  { code: 'BTC',  label: 'Bitcoin',    sub: 'BTC',               icon: Bitcoin, bg: 'linear-gradient(135deg,#F7931A,#e8830a)' },
+  { code: 'USDT', label: 'Tether',     sub: 'USDT · TRC-20',     icon: Coins,   bg: '#26A17B' },
+];
 
 const fmt = (n, d = 0) => new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: d }).format(n || 0);
 const fBtc = (n) => parseFloat(n || 0).toFixed(8);
@@ -1089,14 +1099,24 @@ export default function GiftCards({ user }) {
   const [selCurrency, setSelCurrency] = useState(CURRENCIES.find(c => c.code === 'USD') || CURRENCIES[0]);
   const [selBrand, setSelBrand] = useState('All Brands');
   const [selCountry, setSelCountry] = useState(COUNTRIES[0]);
+  // 'ALL' shows every gift card offer regardless of which asset it's priced in — same
+  // "show everything until the user opts in to narrow it down" default as the other filters.
+  const [selAsset, setSelAsset] = useState('ALL');
   const [amountInput, setAmountInput] = useState('');
   const [sortBy, setSortBy] = useState('rate_low');
   const [traderSearch, setTraderSearch] = useState('');
   const [showCurrency, setShowCurrency] = useState(false);
   const [showBrand, setShowBrand] = useState(false);
   const [showCountry, setShowCountry] = useState(false);
-  const [showAssetMenu, setShowAssetMenu] = useState(false);
-  const [showSellAssetMenu, setShowSellAssetMenu] = useState(false);
+  // Asset selection lives in the top Sell/Buy tabs (chevron dropdown on each, same pattern as
+  // the P2P Buy BTC / Sell tabs) rather than the filter bar, so it gets the same prominence.
+  const [showSellGcAssetMenu, setShowSellGcAssetMenu] = useState(false);
+  const [showBuyGcAssetMenu, setShowBuyGcAssetMenu] = useState(false);
+  // 'sell' = visitor sends a gift card to a vendor for crypto (browses BUY_GIFT_CARD listings —
+  // vendors offering to buy cards). 'buy' = visitor buys a card from a vendor (browses
+  // SELL_GIFT_CARD listings). Named after what the visitor does, same convention as the
+  // Buy BTC / Sell tabs used to use on this page.
+  const [gcMode, setGcMode] = useState('sell');
   const [modal, setModal] = useState(null);
   const [activeTrades, setActiveTrades] = useState([]);
   const [showAllTrades, setShowAllTrades] = useState(false);
@@ -1203,7 +1223,9 @@ export default function GiftCards({ user }) {
   };
 
   const getFiltered = () => {
-    let list = [...listings];
+    const wantedType = gcMode === 'sell' ? 'BUY_GIFT_CARD' : 'SELL_GIFT_CARD';
+    let list = listings.filter(l => l.listing_type === wantedType);
+    if (selAsset !== 'ALL') list = list.filter(l => (l.asset || 'BTC') === selAsset);
     if (selBrand !== 'All Brands') list = list.filter(l => (getBrand(l) || '').toLowerCase().includes(selBrand.toLowerCase()));
     const amt = parseFloat(amountInput);
     if (!isNaN(amt) && amt > 0) list = list.filter(l => {
@@ -1248,6 +1270,9 @@ export default function GiftCards({ user }) {
   };
 
   const filtered = getFiltered();
+  // Posting from the "Sell Your Card" tab means becoming a vendor who buys cards (gc_buy),
+  // and vice versa — the new offer should land in the same tab the user was browsing.
+  const createOfferType = gcMode === 'sell' ? 'gc_buy' : 'gc_sell';
   const cur = selCurrency.code || 'GHS';
   const sym = selCurrency.symbol || '₵';
   const usdRate = USD_RATES[cur] || 1;
@@ -1260,7 +1285,7 @@ export default function GiftCards({ user }) {
   const fastResponderListingId = filtered.find(l =>
     (l.users?.username || '').toLowerCase() === FAST_RESPONDER_USERNAME
   )?.id || null;
-  const hasFilters = amountInput.trim() !== '' || selBrand !== 'All Brands' || selCountry.code !== 'ALL' || traderSearch.trim() !== '' || sortBy !== 'rate_low';
+  const hasFilters = amountInput.trim() !== '' || selBrand !== 'All Brands' || selCountry.code !== 'ALL' || selAsset !== 'ALL' || traderSearch.trim() !== '' || sortBy !== 'rate_low';
 
   return (
     <div className="min-h-screen flex flex-col"
@@ -1310,104 +1335,66 @@ export default function GiftCards({ user }) {
       </div>
 
       {/* ══════════════════════════════════════════════════
-          2. TAB NAVIGATION
+          2. SELL / BUY GIFT CARD TABS
+          This page is reached from the "Gift Cards" bottom-nav icon, so it only
+          needs to show gift-card offers — no Buy BTC / Sell / Gift Cards market
+          switcher here (that lives on the P2P pages instead). Named after what
+          the visitor does, same convention the P2P Buy BTC / Sell tabs used:
+          "Sell" browses BUY_GIFT_CARD listings (vendors offering to buy your
+          card); "Buy" browses SELL_GIFT_CARD listings (vendors offering to
+          sell you a card).
       ══════════════════════════════════════════════════ */}
       <div className="bg-white border-b sticky z-30 flex-shrink-0" style={{ top: 'var(--navbar-h)', borderColor: C.g200 }}>
-        {/* 3 equal tabs — always fits any phone */}
         <div className="flex w-full">
-          <div className="flex-1 relative">
-            <button onClick={() => setShowAssetMenu(v => !v)}
-              className="w-full text-center py-3 text-xs font-bold border-b-2 border-transparent transition-all flex items-center justify-center gap-1"
-              style={{ color: C.g400 }}>
-              Buy BTC <ChevronDown size={12} className={`transition-transform ${showAssetMenu ? 'rotate-180' : ''}`} />
-            </button>
-            {showAssetMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowAssetMenu(false)} />
-                <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-52 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white"
-                  style={{ borderColor: C.g200 }}>
-                  <button onClick={() => { setShowAssetMenu(false); navigate('/buy-bitcoin'); }}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition">
-                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-white"
-                      style={{ background: 'linear-gradient(135deg,#F7931A,#e8830a)' }}>
-                      <Bitcoin size={13} strokeWidth={2.5} />
-                    </span>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-xs font-bold" style={{ color: C.g800 }}>Bitcoin</span>
-                      <span className="block text-[11px] font-semibold" style={{ color: C.g400 }}>BTC</span>
-                    </span>
-                    <ArrowRight size={13} style={{ color: C.g300 }} />
-                  </button>
-                  <button onClick={() => { setShowAssetMenu(false); navigate('/buy-usdt'); }}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition border-t"
-                    style={{ borderColor: C.g100 }}>
-                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-white"
-                      style={{ background: '#26A17B' }}>
-                      <Coins size={13} strokeWidth={2.5} />
-                    </span>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-xs font-bold" style={{ color: C.g800 }}>Tether</span>
-                      <span className="block text-[11px] font-semibold" style={{ color: C.g400 }}>USDT · TRC-20</span>
-                    </span>
-                    <ArrowRight size={13} style={{ color: C.g300 }} />
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-          <div className="flex-1 relative">
-            <button onClick={() => setShowSellAssetMenu(v => !v)}
-              className="w-full text-center py-3 text-xs font-bold border-b-2 border-transparent transition-all flex items-center justify-center gap-1"
-              style={{ color: C.g400 }}>
-              Sell <ChevronDown size={12} className={`transition-transform ${showSellAssetMenu ? 'rotate-180' : ''}`} />
-            </button>
-            {showSellAssetMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowSellAssetMenu(false)} />
-                <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-52 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white"
-                  style={{ borderColor: C.g200 }}>
-                  <button onClick={() => { setShowSellAssetMenu(false); navigate('/sell-bitcoin'); }}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition">
-                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-white"
-                      style={{ background: 'linear-gradient(135deg,#F7931A,#e8830a)' }}>
-                      <Bitcoin size={13} strokeWidth={2.5} />
-                    </span>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-xs font-bold" style={{ color: C.g800 }}>Bitcoin</span>
-                      <span className="block text-[11px] font-semibold" style={{ color: C.g400 }}>BTC</span>
-                    </span>
-                    <ArrowRight size={13} style={{ color: C.g300 }} />
-                  </button>
-                  <button onClick={() => { setShowSellAssetMenu(false); navigate('/sell-usdt'); }}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition border-t"
-                    style={{ borderColor: C.g100 }}>
-                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-white"
-                      style={{ background: '#26A17B' }}>
-                      <Coins size={13} strokeWidth={2.5} />
-                    </span>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-xs font-bold" style={{ color: C.g800 }}>Tether</span>
-                      <span className="block text-[11px] font-semibold" style={{ color: C.g400 }}>USDT · TRC-20</span>
-                    </span>
-                    <ArrowRight size={13} style={{ color: C.g300 }} />
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
           {[
-            { label: 'Gift Cards', path: '/gift-cards', active: true, color: '#0D9488' },
-          ].map(tab => (
-            <Link key={tab.path} to={tab.path}
-              className="flex-1 text-center py-3 text-xs font-bold border-b-2 transition-all"
-              style={{
-                borderColor: tab.active ? tab.color : 'transparent',
-                color: tab.active ? tab.color : C.g400,
-                backgroundColor: tab.active ? tab.color + '18' : 'transparent',
-              }}>
-              {tab.label}
-            </Link>
-          ))}
+            { mode: 'sell', label: 'Sell Your Card', show: showSellGcAssetMenu, setShow: setShowSellGcAssetMenu, align: 'left' },
+            { mode: 'buy',  label: 'Buy a Card',      show: showBuyGcAssetMenu,  setShow: setShowBuyGcAssetMenu,  align: 'right' },
+          ].map(tab => {
+            const activeAsset = ASSET_CHOICES.find(a => a.code === selAsset);
+            return (
+            <div key={tab.mode} className="flex-1 relative min-w-0">
+              <button onClick={() => { setGcMode(tab.mode); tab.setShow(v => !v); }}
+                className="w-full text-center py-3 text-xs font-black border-b-2 transition-all flex items-center justify-center gap-1 px-1"
+                style={{
+                  borderColor: gcMode === tab.mode ? C.accent : 'transparent',
+                  color: gcMode === tab.mode ? C.accent : C.g400,
+                  backgroundColor: gcMode === tab.mode ? `${C.accent}12` : 'transparent',
+                }}>
+                <span className="truncate">{tab.label}</span>
+                {gcMode === tab.mode && selAsset !== 'ALL' && activeAsset && (
+                  <activeAsset.icon size={11} strokeWidth={2.5} className="flex-shrink-0" />
+                )}
+                <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${tab.show ? 'rotate-180' : ''}`} />
+              </button>
+              {tab.show && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => tab.setShow(false)} />
+                  {/* Anchored to the outer edge of each tab (not centered) — centering a
+                      224px-wide panel under a ~half-screen-wide tab pushed it off-screen on
+                      narrow phones. maxWidth is a second guard for very narrow devices. */}
+                  <div className={`absolute top-full mt-1.5 w-56 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white ${tab.align === 'left' ? 'left-0' : 'right-0'}`}
+                    style={{ borderColor: C.g200, maxWidth: 'calc(100vw - 24px)' }}>
+                    {ASSET_CHOICES.map((a, i) => (
+                      <button key={a.code}
+                        onClick={() => { setGcMode(tab.mode); setSelAsset(a.code); tab.setShow(false); }}
+                        className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition ${i > 0 ? 'border-t' : ''}`}
+                        style={{ borderColor: C.g100, backgroundColor: (gcMode === tab.mode && selAsset === a.code) ? `${C.accent}08` : 'transparent' }}>
+                        <span className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-white"
+                          style={{ background: a.bg }}>
+                          <a.icon size={16} strokeWidth={2.5} />
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-xs font-bold" style={{ color: C.g800 }}>{a.label}</span>
+                          <span className="block text-[11px] font-semibold" style={{ color: C.g400 }}>{a.sub}</span>
+                        </span>
+                        {gcMode === tab.mode && selAsset === a.code && <CheckCircle size={14} style={{ color: C.green, flexShrink: 0 }} />}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          );})}
         </div>
       </div>
 
@@ -1672,13 +1659,13 @@ export default function GiftCards({ user }) {
                 </button>
               )}
             </div>
-            <button onClick={() => navigate('/create-offer')}
+            <button onClick={() => navigate(`/create-offer?type=${createOfferType}`)}
               className="flex-shrink-0 flex items-center gap-1 px-2.5 py-2 rounded-xl text-white font-black text-xs transition hover:opacity-90 active:scale-[0.97]"
               style={{ backgroundColor: C.accent, whiteSpace: 'nowrap' }}>
               <PlusCircle size={12} /> Create
             </button>
             {hasFilters && (
-              <button onClick={() => { setAmountInput(''); setSelBrand('All Brands'); setSelCountry(COUNTRIES[0]); setTraderSearch(''); setSortBy('rate_low'); setCountrySearch(''); }}
+              <button onClick={() => { setAmountInput(''); setSelBrand('All Brands'); setSelCountry(COUNTRIES[0]); setSelAsset('ALL'); setTraderSearch(''); setSortBy('rate_low'); setCountrySearch(''); }}
                 className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl text-xs font-bold border-2 transition"
                 style={{ borderColor: C.danger, color: C.danger, backgroundColor: '#FEF2F2' }}>
                 ✕
@@ -1758,7 +1745,7 @@ export default function GiftCards({ user }) {
             </div>
             <p className="font-bold text-base mb-1" style={{ color: C.g800 }}>No gift card offers found</p>
             <p className="text-sm" style={{ color: C.g400 }}>Try a different brand or be the first to post</p>
-            <button onClick={() => navigate('/create-offer')}
+            <button onClick={() => navigate(`/create-offer?type=${createOfferType}`)}
               className="mt-4 px-6 py-2.5 rounded-xl text-white text-sm font-black hover:opacity-90 transition"
               style={{ backgroundColor: C.forest }}>
               Post Offer

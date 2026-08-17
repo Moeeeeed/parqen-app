@@ -1094,40 +1094,13 @@ export default function BuyBitcoin({user}) {
     if (contextBtcUsd > 0) setBtcPrice(contextBtcUsd);
   }, [contextBtcUsd]);
 
-  // Auto-detect country + currency on first load
-  useEffect(() => {
-    const applyCountry = (cc) => {
-      const code = (cc || '').toUpperCase().slice(0, 2);
-      const matched = COUNTRIES.find(c => c.code === code);
-      if (!matched || matched.code === 'ALL') return false;
-      setSelCountry(matched);
-      const cur = CURRENCIES.find(c => c.code === matched.currency);
-      if (cur) setSelCurrency(cur);
-      return true;
-    };
-
-    // 1. Use logged-in user's profile country
-    if (user) {
-      const cc = user.country_code || (user.country?.length <= 3 ? user.country : null) || '';
-      if (applyCountry(cc)) return;
-    }
-
-    // 2. Fallback: IP-based detection for guests
-    fetch('https://ipapi.co/json/')
-      .then(r => r.json())
-      .then(data => {
-        if (data?.country_code) {
-          const cc = data.country_code.toUpperCase();
-          const matched = COUNTRIES.find(c => c.code === cc);
-          if (matched && matched.code !== 'ALL') {
-            setSelCountry(matched);
-            const cur = CURRENCIES.find(c => c.code === (data.currency || matched.currency));
-            if (cur) setSelCurrency(cur);
-          }
-        }
-      })
-      .catch(() => {});
-  }, []);
+  // Country/currency intentionally start on "All" (COUNTRIES[0] / CURRENCIES[0]) and are no
+  // longer auto-set from the user's profile or IP on load — selCountry/selCurrency double as
+  // active filters here (see getFiltered below), so silently applying a detected country meant
+  // the market opened already narrowed to one country/currency, hiding every other seller's
+  // offers until the visitor noticed and manually reset the filter. The market should show
+  // everything live first; picking a country/currency is something the user opts into via the
+  // dropdowns (which already sync both together — see their onClick handlers below).
 
   const loadListings = async (attempt = 1, force = false) => {
     // Skip fetch if cache is fresh (< 5 minutes) and this is not a forced refresh

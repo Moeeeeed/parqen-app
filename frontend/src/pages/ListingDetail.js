@@ -37,10 +37,30 @@ function fmtAge(d) {
   return `${~~(s/86400)}d ago`;
 }
 
+// Bulk marketplace responses cap out oversized avatar_url values (see server.js capAvatar) so
+// this page can't just trust it's present — lazy-fetch from GET /api/users/:id/avatar when the
+// listing/seller payload omitted it, same pattern as the Avatar component on BuyBitcoin.js and
+// GiftCardMarketplace.js.
+const _avatarCache = {}; // userId → Promise<url> | url-string | null
 function Avatar({ user, size=48 }) {
   const [err, setErr] = useState(false);
-  if (user?.avatar_url && !err) return (
-    <img src={user.avatar_url} alt={user.username||'user'} onError={()=>setErr(true)}
+  const [lazyUrl, setLazyUrl] = useState(null);
+  useEffect(() => {
+    const stored = user?.avatar_url;
+    const id = user?.id;
+    if (stored || !id || err) return;
+    const hit = _avatarCache[id];
+    if (hit instanceof Promise) { hit.then(v => { if (v) setLazyUrl(v); }); return; }
+    if (hit !== undefined) { setLazyUrl(hit); return; }
+    const p = axios.get(`${API_URL}/users/${id}/avatar`)
+      .then(r => r.data?.avatar_url || null)
+      .catch(() => null)
+      .then(v => { _avatarCache[id] = v; if (v) setLazyUrl(v); return v; });
+    _avatarCache[id] = p;
+  }, [user?.id, user?.avatar_url, err]);
+  const url = user?.avatar_url || lazyUrl;
+  if (url && !err) return (
+    <img src={url} alt={user.username||'user'} onError={()=>setErr(true)}
       className="object-cover flex-shrink-0 rounded-2xl" style={{width:size,height:size}}/>
   );
   return (

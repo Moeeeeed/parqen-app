@@ -198,6 +198,19 @@ function computeDisplayName(user) {
   return user.username || '';
 }
 
+// avatar_url is sometimes a raw base64 data: URI (legacy uploads, before the frontend
+// compressed images before sending) — some are multi-MB. Embedding that inline in every
+// listing a seller has made bulk marketplace responses balloon to tens of MB, which is
+// the dominant cause of slow load times on the Buy/Sell/Gift Card pages. Cap it here so
+// bulk/list responses never inline an oversized avatar; the frontend's <Avatar> component
+// already lazy-fetches the real image per-card from GET /api/users/:id/avatar when the
+// bulk response omits it, so this doesn't lose the photo — it just stops shipping it 50x
+// over on every marketplace load.
+const MAX_INLINE_AVATAR_CHARS = 20000; // ~15KB decoded — generous for a compressed thumbnail
+function capAvatar(url) {
+  return (typeof url === 'string' && url.length > MAX_INLINE_AVATAR_CHARS) ? null : (url || null);
+}
+
 // ── 5. Express ─────────────────────────────────────────────────────────────
 const app = express();
 
@@ -2529,74 +2542,6 @@ app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
     res.status(500).json({ error: 'Failed to reset password. Please try again.' });
   }
 });
-
-
-// ── Password Reset Email Template ────────────────────────────────────────────
-function buildPasswordResetEmailHtml(resetUrl) {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PRAQEN Password Reset</title></head>
-<body style="margin:0;padding:0;background:#F0FAF5;font-family:'Segoe UI',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F0FAF5;padding:32px 0;">
-    <tr><td align="center">
-      <table width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(27,67,50,0.10);">
-        <tr><td style="background:linear-gradient(135deg,#1B4332 0%,#2D6A4F 100%);padding:32px 40px;text-align:center;">
-          <div style="display:inline-block;width:56px;height:56px;background:#F4A422;border-radius:14px;line-height:56px;font-size:28px;font-weight:900;color:#1B4332;font-family:Georgia,serif;text-align:center;">P</div>
-          <p style="margin:12px 0 0;color:#ffffff;font-size:20px;font-weight:800;letter-spacing:3px;font-family:Georgia,serif;">PRAQEN</p>
-          <p style="margin:4px 0 0;color:rgba(255,255,255,0.65);font-size:12px;letter-spacing:1px;">Password Reset Request</p>
-        </td></tr>
-        <tr><td style="padding:40px 40px 32px;text-align:center;">
-          <p style="margin:0 0 8px;font-size:16px;font-weight:600;color:#334155;">Reset Your Password</p>
-          <p style="margin:0 0 24px;font-size:13px;color:#64748B;line-height:1.6;">We received a request to reset the password for your PRAQEN account. Click the button below to set a new password. This link expires in <strong>1 hour</strong>.</p>
-          <a href="${resetUrl}" style="display:inline-block;background:linear-gradient(135deg,#1B4332,#2D6A4F);color:#ffffff;text-decoration:none;font-size:15px;font-weight:800;padding:14px 36px;border-radius:10px;letter-spacing:0.5px;">Reset Password →</a>
-          <p style="margin:24px 0 8px;font-size:12px;color:#94A3B8;">If you didn't request this, you can safely ignore this email.</p>
-          <p style="margin:0;font-size:12px;color:#94A3B8;">Never share this link with anyone — PRAQEN will never ask for it.</p>
-        </td></tr>
-        <tr><td style="padding:0 40px 24px;">
-          <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:10px;padding:14px 18px;text-align:center;">
-            <p style="margin:0;font-size:12px;font-weight:700;color:#92400E;">⚠️ Always trade within PRAQEN — never outside our platform</p>
-          </div>
-        </td></tr>
-        <tr><td style="background:#F8FAFC;padding:20px 40px;text-align:center;border-top:1px solid #E2E8F0;">
-          <p style="margin:0 0 4px;font-size:12px;color:#94A3B8;">Need help? Contact us at <a href="mailto:support@praqen.com" style="color:#2D6A4F;font-weight:700;">support@praqen.com</a></p>
-          <p style="margin:0;font-size:11px;color:#CBD5E1;">© 2025 PRAQEN · The World's Most Trusted P2P Bitcoin Marketplace</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
-}
-
-// ── Send password reset email (reuses same working emailService pipeline as welcome/verification emails) ──
-async function sendPasswordResetEmail(email, resetUrl) {
-  const html = buildPasswordResetEmailHtml(resetUrl);
-  const subject = 'PRAQEN - Password Reset Request';
-  console.log(`📧 Sending password reset to ${email}`);
-
-  // Use emailService.sendEmail() — Brevo SMTP (primary) → Resend (fallback),
-  // same pipeline that successfully sends welcome/verification emails.
-  // emailService.js logs the actual error from each provider attempt.
-  const result = await emailService.sendEmail({
-    to: email,
-    subject,
-    html,
-    type: 'password_reset',
-    metadata: { reset_requested_at: new Date().toISOString() },
-  });
-
-  if (result.success) {
-    console.log(`✅ Password reset email sent via emailService to ${email} (${result.messageId})`);
-    return true;
-  }
-
-  // result.error contains the actual error from Brevo SMTP or Resend fallback
-  console.error('[sendPasswordResetEmail] emailService returned failure:', {
-    error: result.error,
-    providerChain: 'Brevo SMTP → Resend fallback',
-  });
-  throw new Error(`Email delivery failed: ${result.error || 'Unknown error'}`);
-}
 
 // ── Team portal: explicit email allowlist ────────────────────────────────────
 // Deliberately a hand-maintained list of exact addresses, not a domain check.
@@ -5291,6 +5236,13 @@ app.post('/api/users/upload-avatar', verifyToken, async (req, res) => {
     const { image } = req.body;
     if (!image) return res.status(400).json({ error: 'No image provided' });
     if (!image.startsWith('data:image/')) return res.status(400).json({ error: 'Invalid image format' });
+    // The frontend now resizes to a small thumbnail before upload — this cap is a backstop
+    // against any client that skips that step (old cached bundle, future upload path, etc.),
+    // since an uncompressed avatar embedded in every one of a seller's listings is what made
+    // marketplace loads balloon to tens of MB.
+    if (image.length > 400000) {
+      return res.status(400).json({ error: 'Image is too large. Please use a smaller photo.' });
+    }
     const { data, error } = await supabaseAdmin.from('users')
       .update({ avatar_url: image, updated_at: new Date().toISOString() })
       .eq('id', req.userId).select('id, username, avatar_url').single();
@@ -5611,7 +5563,7 @@ app.get('/api/featured-offers', async (req, res) => {
       ]);
       console.log('[featured] sellerIds:', allSellerIds.length, '| profilesResult count:', (profilesResult.data || []).length, '| err:', profilesResult.error?.message);
       (profilesResult.data || []).forEach(u => { userMap[u.id] = u; });
-      (avatarResult.data || []).forEach(u => { if (userMap[u.id]) userMap[u.id].avatar_url = u.avatar_url || null; });
+      (avatarResult.data || []).forEach(u => { if (userMap[u.id]) userMap[u.id].avatar_url = capAvatar(u.avatar_url); });
     }
 
     const enriched = listings.map(l => ({ ...l, users: userMap[l.seller_id] || {} }));
@@ -5751,7 +5703,7 @@ app.get('/api/listings', async (req, res) => {
         else console.warn('[/api/listings] Users query returned 0 rows for', sellerIdSet.length, 'seller IDs. Timed out or RLS blocking. Returning 503.');
         return res.status(503).json({ error: 'Could not load seller profiles. Please retry in a moment.' });
       }
-      (usersResult.data || []).forEach(u => { userMap[u.id] = u; });
+      (usersResult.data || []).forEach(u => { userMap[u.id] = { ...u, avatar_url: capAvatar(u.avatar_url) }; });
       walletRows = walletsResult.data || [];
       // Only a never-seized (amount_usdt === remaining_amount) LOCKED deposit counts as "secured"
       depositedSellerIds = new Set(
@@ -5881,7 +5833,7 @@ app.get('/api/listings/:id', async (req, res) => {
       ]);
       if (sellerResult?.data?.id) {
         const { password_hash: _ph, email: _em, phone_number: _pn, bitcoin_wallet_address: _bwa, ...sellerSafe } = sellerResult.data;
-        seller = sellerSafe;
+        seller = { ...sellerSafe, avatar_url: capAvatar(sellerSafe.avatar_url) };
       }
       sellerBalanceBtc = parseFloat(walletResult?.data?.balance_btc || 0);
       sellerBalanceUsdt = parseFloat(walletResult?.data?.balance_usdt || 0);

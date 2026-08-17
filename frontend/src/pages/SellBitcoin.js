@@ -1047,40 +1047,13 @@ export default function SellBitcoin({user}) {
 
   useEffect(()=>{ if(contextBtcUsd>0) setBtcPrice(contextBtcUsd); },[contextBtcUsd]);
 
-  // Auto-detect country + currency on first load
-  useEffect(() => {
-    const applyCountry = (cc) => {
-      const code = (cc || '').toUpperCase().slice(0, 2);
-      const matched = COUNTRIES.find(c => c.code === code);
-      if (!matched || matched.code === 'ALL') return false;
-      setSelCountry(matched);
-      const cur = CURRENCIES.find(c => c.code === matched.currency);
-      if (cur) setSelCurrency(cur);
-      return true;
-    };
-
-    // 1. Use logged-in user's profile country
-    if (user) {
-      const cc = user.country_code || (user.country?.length <= 3 ? user.country : null) || '';
-      if (applyCountry(cc)) return;
-    }
-
-    // 2. Fallback: IP-based detection for guests
-    fetch('https://ipapi.co/json/')
-      .then(r => r.json())
-      .then(data => {
-        if (data?.country_code) {
-          const cc = data.country_code.toUpperCase();
-          const matched = COUNTRIES.find(c => c.code === cc);
-          if (matched && matched.code !== 'ALL') {
-            setSelCountry(matched);
-            const cur = CURRENCIES.find(c => c.code === (data.currency || matched.currency));
-            if (cur) setSelCurrency(cur);
-          }
-        }
-      })
-      .catch(() => {});
-  }, []);
+  // Country/currency intentionally start on "All" (COUNTRIES[0] / CURRENCIES[0]) and are no
+  // longer auto-set from the user's profile or IP on load — selCountry doubles as an active
+  // filter here (see getFiltered below: `list.filter(l=>l.country===selCountry.code)`), so
+  // silently applying a detected country meant the market opened already narrowed to one
+  // country, hiding every other seller's offers until the visitor noticed and manually reset
+  // the filter. The market should show everything live first; picking a country is something
+  // the user opts into via the dropdown.
   useEffect(()=>{
     loadOffers();
     const interval = setInterval(() => loadOffers(1, true), 60000);

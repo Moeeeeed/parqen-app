@@ -140,14 +140,11 @@ const PAYMENT_METHODS = [
   { id: 'eth_pay', name: 'Ethereum (ETH)', icon: Hexagon, cat: 'Crypto', countries: [] },
   { id: 'luno', name: 'Luno Wallet', icon: Moon, cat: 'Crypto', countries: [] },
   { id: 'yellow_card', name: 'Yellow Card Wallet', icon: Star, cat: 'Crypto', countries: [] },
-  // Gift Card / Voucher payment
-  { id: 'pls_gc', name: 'PLS Gift Card', icon: Gift, cat: 'Gift Card Pay', countries: [] },
-  { id: 'vanilla', name: 'Vanilla Card', icon: Gift, cat: 'Gift Card Pay', countries: [] },
-  { id: 'razer_gold', name: 'Razer Gold Gift Card', icon: Gamepad2, cat: 'Gift Card Pay', countries: [] },
-  { id: 'moneypak', name: 'MoneyPak', icon: Package, cat: 'Gift Card Pay', countries: ['US'] },
-  { id: 'postepay', name: 'PostePay', icon: Circle, cat: 'Gift Card Pay', countries: ['IT'] },
-  { id: 'walmart_w2w', name: 'Walmart to Walmart', icon: ShoppingCart, cat: 'Gift Card Pay', countries: ['US'] },
-  { id: 'psn_pay', name: 'PlayStation Gift Card', icon: Gamepad2, cat: 'Gift Card Pay', countries: [] },
+  // Note: gift-card-as-payment (MoneyPak, Vanilla, PLS, etc.) is deliberately NOT in this list
+  // as individual brands — trading against a gift card goes through the dedicated gc_buy /
+  // gc_sell flow (brand catalog, denominations, regions, deposit/balance checks), not a plain
+  // payment_method string on a SELL/BUY listing. See the pinned "Gift Card" entry at the top
+  // of PayDropdown below, which hands off into that flow.
 ];
 
 const CAT_COLORS = {
@@ -158,7 +155,6 @@ const CAT_COLORS = {
   'Bank': '#7C3AED',
   'Cash': C.gold,
   'Crypto': '#F97316',
-  'Gift Card Pay': '#EC4899',
 };
 
 // ── Gift card brands ──────────────────────────────────────────────────────────
@@ -574,8 +570,12 @@ export default function CreateOffer() {
   const [loadingPrice, setLoadingPrice] = useState(true);
   const [walletBal, setWalletBal] = useState({ btc: 0, usdt: 0, usd: 0 });
 
-  // Step 1
-  const [offerType, setOfferType] = useState('sell'); // sell | buy | gc_buy | gc_sell
+  // Step 1 — preselect from ?type= when deep-linked (e.g. the gift card marketplace's
+  // "Create" button, which links here with the type matching the tab the user was on).
+  const [offerType, setOfferType] = useState(() => {
+    const t = new URLSearchParams(window.location.search).get('type');
+    return ['sell', 'buy', 'gc_buy', 'gc_sell'].includes(t) ? t : 'sell';
+  }); // sell | buy | gc_buy | gc_sell
 
   // Seller security deposit (gc_sell only)
   const [depositStatus, setDepositStatus] = useState(null);
@@ -860,6 +860,33 @@ export default function CreateOffer() {
         </div>
       </div>
       <div className="overflow-y-auto flex-1 thin-scroll">
+        {/* Pinned at the top, always — trading against a gift card is common enough that it
+            shouldn't be buried, and it isn't a plain payment_method string like the rest of
+            this list: picking it hands off to the dedicated gift card flow (brand catalog,
+            denominations, regions, deposit/balance checks) so the resulting offer actually
+            shows up on the Gift Cards market page instead of getting lost as a SELL/BUY. */}
+        {(!paySearch || 'gift card'.includes(paySearch.toLowerCase())) && (
+          <button
+            type="button"
+            onClick={() => {
+              setShowPayMenu(false); setPaySearch('');
+              setOfferType(isSellSide ? 'gc_buy' : 'gc_sell');
+              setStep(2); // GC_STEPS[1] = 'Card' — the Gift Card Details step
+            }}
+            className="w-full flex items-center gap-3 px-3 py-3 text-left transition hover:brightness-105 border-b-2"
+            style={{ borderColor: `${C.purple}30`, background: `linear-gradient(135deg, ${C.purple}1c, #EC489918)` }}
+          >
+            <span className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-sm"
+              style={{ background: `linear-gradient(135deg, ${C.purple}, #EC4899)` }}>
+              <Gift size={20} />
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-black" style={{ color: C.purple }}>Gift Card</p>
+              <p className="text-xs font-semibold" style={{ color: C.g600 }}>Pick a brand, denominations & regions</p>
+            </div>
+            <ArrowRight size={16} strokeWidth={2.5} style={{ color: C.purple, flexShrink: 0 }} />
+          </button>
+        )}
         {localMethods.length === 0 && otherMethods.length === 0 ? (
           <div className="py-8 text-center">
             <p className="text-xs" style={{ color: C.g400 }}>No results found</p>
@@ -1006,7 +1033,11 @@ export default function CreateOffer() {
               </div>
 
               <div className="space-y-2">
-                {OFFER_TYPES.map(({ id, title, desc, icon: Icon }) => (
+                {/* gc_buy / gc_sell stay out of this step-1 picker — they're reached from the
+                    "Gift Card" entry in the Payment Method dropdown (step 2) now, which routes
+                    straight into the Gift Card Details step. The two entries still exist in
+                    OFFER_TYPES for title/desc lookups later in the flow (preview, review). */}
+                {OFFER_TYPES.filter(({ id }) => id === 'sell' || id === 'buy').map(({ id, title, desc, icon: Icon }) => (
                   <button
                     key={id}
                     onClick={() => setOfferType(id)}
