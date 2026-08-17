@@ -1791,6 +1791,16 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
     // 2FA login gate removed — Settings > Security "Enable 2FA" toggle still
     // exists and is stored, it just no longer blocks login with a second code.
 
+    // Auto-generate missing referral code for legacy accounts
+    if (!userToAuth.referral_code) {
+      try {
+        const newRefCode = await generateUniqueReferralCode(userToAuth.username);
+        await supabaseAdmin.from('users').update({ referral_code: newRefCode }).eq('id', userToAuth.id);
+        userToAuth.referral_code = newRefCode;
+        console.log(`[Google Auth] Generated missing referral code for ${userToAuth.username}: ${newRefCode}`);
+      } catch (e) { console.error('[Google Auth] referral code gen failed:', e.message); }
+    }
+
     // 5. Sign JWT
     const token = jwt.sign(
       { userId: userToAuth.id, email: userToAuth.email },
@@ -2080,8 +2090,15 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       }
       if (!data) return res.status(404).json({ error: 'No account found for this phone number. Please register first.' });
 
-      // 2FA login gate removed — Settings > Security "Enable 2FA" toggle still
-      // exists and is stored, it just no longer blocks login with a second code.
+      // Auto-generate missing referral code for legacy accounts
+      if (!data.referral_code) {
+        try {
+          const newRefCode = await generateUniqueReferralCode(data.username);
+          await supabaseAdmin.from('users').update({ referral_code: newRefCode }).eq('id', data.id);
+          data.referral_code = newRefCode;
+          console.log(`[phone login] Generated missing referral code for ${data.username}: ${newRefCode}`);
+        } catch (e) { console.error('[phone login] referral code gen failed:', e.message); }
+      }
       const token = jwt.sign({ userId: data.id, email: data.email }, JWT_SECRET, { expiresIn: '7d' });
       const nowPhone = new Date().toISOString();
       await supabaseAdmin.from('users').update({ last_login: nowPhone, last_seen_at: nowPhone }).eq('id', data.id);
@@ -2160,6 +2177,16 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
 
     // 2FA login gate removed — Settings > Security "Enable 2FA" toggle still
     // exists and is stored, it just no longer blocks login with a second code.
+
+    // Auto-generate missing referral code for legacy accounts
+    if (!data.referral_code) {
+      try {
+        const newRefCode = await generateUniqueReferralCode(data.username);
+        await supabaseAdmin.from('users').update({ referral_code: newRefCode }).eq('id', data.id);
+        data.referral_code = newRefCode;
+        console.log(`[verify-login-otp] Generated missing referral code for ${data.username}: ${newRefCode}`);
+      } catch (e) { console.error('[verify-login-otp] referral code gen failed:', e.message); }
+    }
 
     // ── Issue real JWT ──────────────────────────────────────────────────────
     const token = jwt.sign({ userId: data.id, email: data.email }, JWT_SECRET, { expiresIn: '7d' });
@@ -2271,9 +2298,15 @@ app.post('/api/auth/verify-2fa-login', authLimiter, async (req, res) => {
       return res.status(400).json({ error: '2FA verification failed. Please try again.' });
     }
 
-    // Issue real JWT
-    const { data } = await supabaseAdmin.from('users').select('*').eq('id', decoded.userId).single();
-    if (!data) return res.status(404).json({ error: 'User not found' });
+    // Auto-generate missing referral code for legacy accounts
+    if (!data.referral_code) {
+      try {
+        const newRefCode = await generateUniqueReferralCode(data.username);
+        await supabaseAdmin.from('users').update({ referral_code: newRefCode }).eq('id', data.id);
+        data.referral_code = newRefCode;
+        console.log(`[verify-2fa] Generated missing referral code for ${data.username}: ${newRefCode}`);
+      } catch (e) { console.error('[verify-2fa] referral code gen failed:', e.message); }
+    }
 
     const token = jwt.sign({ userId: data.id, email: data.email }, JWT_SECRET, { expiresIn: '7d' });
     const now = new Date().toISOString();
@@ -5031,7 +5064,18 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
       const { data: extra } = await supabaseAdmin.from('users')
         .select('email_verified, is_phone_verified, phone_verified, kyc_verified, kyc_status, id_type, kyc_submitted_at, id_front_url, id_back_url, selfie_url, kyc_rejection_reason, username_changed, preferred_currency, preferred_language, timezone, hide_full_name, name_display, city, country_name, last_seen_location, referral_code, total_referrals, referral_earnings_btc, p2p_migrated_platform, p2p_migrated_username, p2p_migrated_feedback, p2p_migration_approved_at')
         .eq('id', req.userId).single();
-      if (extra) extraFields = extra;
+      if (extra) {
+        extraFields = extra;
+        // Auto-generate missing referral code for legacy users if they view their profile
+        if (!extraFields.referral_code) {
+          try {
+            const newRefCode = await generateUniqueReferralCode(data.username);
+            await supabaseAdmin.from('users').update({ referral_code: newRefCode }).eq('id', req.userId);
+            extraFields.referral_code = newRefCode;
+            console.log(`[profile load] Generated missing referral code for ${data.username}: ${newRefCode}`);
+          } catch (e) { console.error('[profile load] referral code gen failed:', e.message); }
+        }
+      }
     } catch { }
 
     // Balance — non-critical, silently ignored on error
