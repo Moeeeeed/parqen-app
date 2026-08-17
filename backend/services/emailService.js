@@ -1,6 +1,6 @@
 // backend/services/emailService.js
 // PRAQEN Complete Email Notification Service
-// Primary: Brevo SMTP  |  Logged to: email_logs table
+// Primary: Resend API  |  Fallback: Brevo SMTP  |  Logged to: email_logs table
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const nodemailer = require('nodemailer');
@@ -67,43 +67,16 @@ async function logEmail({ userId, email, subject, type, status, messageId, error
   }
 }
 
-// ── Core send — tries Brevo SMTP first, falls back to Resend API ──────────────
+// ── Core send — tries Resend API first, falls back to Brevo SMTP ──────────────
+// Resend's praqen.com domain has verified SPF/DKIM; Brevo's does not, which was
+// causing Brevo-relayed mail to get silently dropped/spam-boxed by receiving
+// providers even though Brevo itself accepted the SMTP transaction (a "success"
+// log that didn't mean actual delivery). Resend goes first now for that reason.
 // The DB log write is intentionally not awaited — it's a fire-and-forget audit
 // trail with its own internal try/catch, so it should never add its own
 // round-trip to a caller waiting on the actual send result.
 async function sendEmail({ userId, to, subject, html, text, type, metadata }) {
-  // ── Attempt 1: Brevo SMTP ────────────────────────────────────────────────
-  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-    try {
-      const transporter = getTransporter();
-      // Pooled connections (pool:true, maxConnections:5) can occasionally end up in a
-      // half-dead state on a long-running process — the remote end closed it but
-      // nodemailer hasn't noticed yet — where nodemailer's own connectionTimeout /
-      // socketTimeout don't reliably kick in because a connection was already
-      // established. A caller-side timeout guarantees this always falls through to
-      // the Resend fallback within a bounded time instead of the promise never
-      // settling, which would otherwise strand a fire-and-forget send (e.g.
-      // forgot-password) with no visible failure to the user or the logs.
-      const info = await Promise.race([
-        transporter.sendMail({ from: FROM_ADDRESS, to, subject, html, text: text || '' }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP send timed out after 15s')), 15000)),
-      ]);
-      console.log(`[Email] ✅ Brevo SMTP ${type} → ${to} (${info.messageId})`);
-      logEmail({ userId, email: to, subject, type, status: 'sent', messageId: info.messageId, metadata });
-      return { success: true, messageId: info.messageId };
-    } catch (smtpErr) {
-      console.error(`[Email] ⚠️ Brevo SMTP failed for ${type} → ${to}: ${smtpErr.message} — trying Resend fallback`);
-      // A stuck/broken pooled connection stays stuck for every subsequent send —
-      // drop it so the next attempt (this fallback's Resend call doesn't reuse it,
-      // but the *next* sendEmail() call otherwise would) opens a fresh one instead
-      // of retrying the same bad socket.
-      if (_transporter) { try { _transporter.close(); } catch (_) {} _transporter = null; }
-    }
-  } else {
-    console.warn(`[Email] Brevo SMTP not configured — skipping to Resend for ${type} → ${to}`);
-  }
-
-  // ── Attempt 2: Resend API fallback ───────────────────────────────────────
+  // ── Attempt 1: Resend API ────────────────────────────────────────────────
   const resendKey  = process.env.RESEND_API_KEY;
   const resendFrom = process.env.RESEND_FROM || 'PRAQEN <onboarding@resend.dev>';
   if (resendKey) {
@@ -116,15 +89,45 @@ async function sendEmail({ userId, to, subject, html, text, type, metadata }) {
       });
       const data = await response.json();
       if (data.id) {
-        console.log(`[Email] ✅ Resend fallback ${type} → ${to} (${data.id})`);
+        console.log(`[Email] ✅ Resend ${type} → ${to} (${data.id})`);
         logEmail({ userId, email: to, subject, type, status: 'sent', messageId: data.id, metadata });
         return { success: true, messageId: data.id };
       }
       throw new Error(JSON.stringify(data));
     } catch (resendErr) {
-      console.error(`[Email] ❌ Resend fallback also failed for ${type} → ${to}: ${resendErr.message}`);
-      logEmail({ userId, email: to, subject, type, status: 'failed', errorMessage: `SMTP: failed, Resend: ${resendErr.message}`, metadata });
-      return { success: false, error: resendErr.message };
+      console.error(`[Email] ⚠️ Resend failed for ${type} → ${to}: ${resendErr.message} — trying Brevo fallback`);
+    }
+  } else {
+    console.warn(`[Email] Resend not configured — skipping to Brevo for ${type} → ${to}`);
+  }
+
+  // ── Attempt 2: Brevo SMTP fallback ───────────────────────────────────────
+  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+    try {
+      const transporter = getTransporter();
+      // Pooled connections (pool:true, maxConnections:5) can occasionally end up in a
+      // half-dead state on a long-running process — the remote end closed it but
+      // nodemailer hasn't noticed yet — where nodemailer's own connectionTimeout /
+      // socketTimeout don't reliably kick in because a connection was already
+      // established. A caller-side timeout guarantees this always fails within a
+      // bounded time instead of the promise never settling, which would otherwise
+      // strand a fire-and-forget send (e.g. forgot-password) with no visible
+      // failure to the user or the logs.
+      const info = await Promise.race([
+        transporter.sendMail({ from: FROM_ADDRESS, to, subject, html, text: text || '' }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP send timed out after 15s')), 15000)),
+      ]);
+      console.log(`[Email] ✅ Brevo SMTP fallback ${type} → ${to} (${info.messageId})`);
+      logEmail({ userId, email: to, subject, type, status: 'sent', messageId: info.messageId, metadata });
+      return { success: true, messageId: info.messageId };
+    } catch (smtpErr) {
+      console.error(`[Email] ❌ Brevo SMTP fallback also failed for ${type} → ${to}: ${smtpErr.message}`);
+      // A stuck/broken pooled connection stays stuck for every subsequent send —
+      // drop it so the next sendEmail() call opens a fresh one instead of retrying
+      // the same bad socket.
+      if (_transporter) { try { _transporter.close(); } catch (_) {} _transporter = null; }
+      logEmail({ userId, email: to, subject, type, status: 'failed', errorMessage: `Resend: failed, SMTP: ${smtpErr.message}`, metadata });
+      return { success: false, error: smtpErr.message };
     }
   }
 

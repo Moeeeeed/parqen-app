@@ -2144,11 +2144,20 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       userId: data.id,
     });
 
-    // Send OTP email (non-blocking — but we await to catch send failures)
-    emailService.sendLoginOtpEmail(
-      { id: data.id, email: data.email, username: data.username },
-      loginOtp
-    ).catch(err => console.error('[login-otp] email send failed:', err.message));
+    // Send OTP email — this comment used to claim "we await to catch send failures" while the
+    // code right below it did the opposite (fire-and-forget, catch() with no await). That meant
+    // the response always claimed success even when delivery failed outright, leaving the user
+    // stuck waiting for a code that was never coming with zero indication why. Actually await it.
+    try {
+      await emailService.sendLoginOtpEmail(
+        { id: data.id, email: data.email, username: data.username },
+        loginOtp
+      );
+    } catch (sendErr) {
+      console.error('[login-otp] email send failed:', sendErr.message);
+      emailLoginOtpStore.delete(normalizedLoginEmail);
+      return res.status(500).json({ error: 'Could not send your login code right now. Please try again in a moment.' });
+    }
 
     return res.json({ success: true, requiresOtp: true, email: data.email });
 
@@ -2592,10 +2601,16 @@ app.post('/api/team/login', authLimiter, async (req, res) => {
       expires: Date.now() + 10 * 60 * 1000,
       userId: data.id,
     });
-    emailService.sendLoginOtpEmail(
-      { id: data.id, email: data.email, username: data.username },
-      loginOtp
-    ).catch(err => console.error('[team-login-otp] email send failed:', err.message));
+    try {
+      await emailService.sendLoginOtpEmail(
+        { id: data.id, email: data.email, username: data.username },
+        loginOtp
+      );
+    } catch (sendErr) {
+      console.error('[team-login-otp] email send failed:', sendErr.message);
+      emailLoginOtpStore.delete(email);
+      return res.status(500).json({ error: 'Could not send your login code right now. Please try again in a moment.' });
+    }
 
     return res.json({ success: true, requiresOtp: true, email: data.email });
   } catch (err) {
