@@ -1092,8 +1092,8 @@ export default function GiftCards({ user }) {
   const { rates: USD_RATES, btcUsd: contextBtcUsd } = useRates();
   const _hasUsers = (data) => Array.isArray(data) && data.some(l => l.users && (l.users.id || l.users.username));
   const _cacheAll = () => { try { const c = JSON.parse(localStorage.getItem('praqen_market_all') || 'null'); if (!c || Date.now() - c.ts > 1800000 || !_hasUsers(c.data)) return null; return c?.data || null; } catch { return null; } };
-  const isForeignListing = (l) => FOREIGN_CURRENCY_CODES.includes((l.currency || 'USD').toUpperCase());
-  const _gcNow = () => { const a = _cacheAll(); return a ? a.filter(l => (l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD') && isForeignListing(l)) : []; };
+  const isGcListing = (l) => l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD';
+  const _gcNow = () => { const a = _cacheAll(); return a ? a.filter(isGcListing) : []; };
   const [listings, setListings] = useState(() => _gcNow());
   const [loading, setLoading] = useState(() => _gcNow().length === 0);
   const [loadError, setLoadError] = useState(false);
@@ -1232,7 +1232,7 @@ export default function GiftCards({ user }) {
       try {
         const c = JSON.parse(localStorage.getItem('praqen_market_all') || 'null');
         if (c && Date.now() - c.ts < 300000 && _hasUsers(c.data)) {
-          const gcOffers = (c.data || []).filter(l => (l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD') && isForeignListing(l));
+          const gcOffers = (c.data || []).filter(isGcListing);
           if (gcOffers.length > 0) {
             setListings(gcOffers);
             setLoading(false);
@@ -1246,7 +1246,7 @@ export default function GiftCards({ user }) {
     try {
       const r = await axios.get(`${API_URL}/listings`, { timeout: 20000 });
       const all = (r.data.listings || []).map(l => ({ ...l, users: Array.isArray(l.users) ? l.users[0] : l.users }));
-      const data = all.filter(l => (l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD') && isForeignListing(l));
+      const data = all.filter(isGcListing);
       // Only update if we got real data — never blank out the list on an empty response
       if (data.length > 0) {
         setListings(data);
@@ -1260,7 +1260,7 @@ export default function GiftCards({ user }) {
         axios.get(`${API_URL}/my-listings`, { headers: { Authorization: `Bearer ${tk}` } })
           .then(myR => {
             const myPaused = (myR.data.listings || []).filter(l =>
-              l.status === 'PAUSED' && (l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD') && isForeignListing(l)
+              l.status === 'PAUSED' && isGcListing(l)
             );
             setPausedOffer(myPaused.length > 0);
           }).catch(() => { });
@@ -1300,7 +1300,7 @@ useEffect(() => {
       } else if (gcMode === 'sell') {
         list = list.filter(l => l.listing_type === 'SELL_GIFT_CARD');
       }
-      list = list.filter(isForeignListing);
+
       if (cryptoFilter === 'BTC') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'BTC');
       if (cryptoFilter === 'USDT') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'USDT');
     if (selBrand !== 'All Brands') list = list.filter(l => (getBrand(l) || '').toLowerCase().includes(selBrand.toLowerCase()));
