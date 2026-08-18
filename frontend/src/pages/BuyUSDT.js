@@ -1219,6 +1219,16 @@ export default function BuyUSDT({user}) {
     return () => document.removeEventListener('mousedown', h);
   }, []);
 
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await loadListings(1, true);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   // ── Live presence polling ──────────────────────────────────────────────────
   useEffect(() => {
     if (listings.length === 0) return;

@@ -376,24 +376,23 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   // which direction this listing runs.
   const cardSide = (() => {
     if (!cardRange) { const ml = listing.min_limit_local || (fv ? fv * usdRate : 0); return { val: `${sym}${fmt(ml)}`, sub: cur }; }
-    if (cardRange[0]?.isRange) return { val: `$${cardRange[0].min}`, sub: 'USD starting' };
-    if (cardRange.length === 1) return { val: `$${cardRange[0]}`, sub: 'USD card' };
-    return { val: `$${cardRange[0]}`, sub: 'USD starting' };
+    if (cardRange[0]?.isRange) return { val: `${sym}${fmt(cardRange[0].min)}`, sub: `${cur} starting` };
+    if (cardRange.length === 1) return { val: `${sym}${fmt(cardRange[0])}`, sub: `${cur} card` };
+    return { val: `${sym}${fmt(cardRange[0])}`, sub: `${cur} starting` };
   })();
   const refUSD = cardRange ? (cardRange[0]?.isRange ? cardRange[0].min : cardRange[0]) : (fv || 1);
   const btcOut = refUSD / rateUSD;
   const receiveUSD = btcOut * btcPriceUSD;
-  // SELL_GIFT_CARD listings are posted by someone selling their card, so trading against
-  // one makes the viewer the BUYER (matches ListingDetail.js's trade_type assignment) —
-  // they give crypto and receive the card, the reverse of a BUY_GIFT_CARD listing.
-  const viewerIsBuyingCard = listing.listing_type === 'SELL_GIFT_CARD';
+  // BUY_GIFT_CARD listings are posted by vendors selling crypto for gift cards, so trading against
+  // one under the "Buy" tab means the viewer is BUYING crypto with their gift card.
+  const viewerIsBuyingCard = listing.listing_type === 'BUY_GIFT_CARD';
   const cryptoSide = { val: `$${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}`, sub: `≈ ${fBtc(btcOut)} BTC` };
-  const youGive    = viewerIsBuyingCard ? cryptoSide : cardSide;
-  const youReceive = viewerIsBuyingCard ? cardSide   : cryptoSide;
+  const youGive    = viewerIsBuyingCard ? cardSide   : cryptoSide;
+  const youReceive = viewerIsBuyingCard ? cryptoSide : cardSide;
 
   const rangeLabel = !cardRange ? 'Any value'
-    : cardRange[0]?.isRange ? `$${cardRange[0].min} – $${cardRange[0].max}`
-    : cardRange.map(v => `$${v}`).join(' | ');
+    : cardRange[0]?.isRange ? `${sym}${fmt(cardRange[0].min)} – ${sym}${fmt(cardRange[0].max)}`
+    : cardRange.map(v => `${sym}${fmt(v)}`).join(' | ');
 
   const pos = parseInt(u.positive_feedback || 0);
   const neg = parseInt(u.negative_feedback || 0);
@@ -622,7 +621,7 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
               background: ft ? ft.btnGradient : C.forest,
               boxShadow: ft ? ft.btnShadow : undefined,
             }}>
-            {viewerIsBuyingCard ? 'BUY GIFT CARD' : 'SELL GIFT CARD'} <ArrowRight size={14} />
+            {viewerIsBuyingCard ? 'BUY' : 'SELL'} <ArrowRight size={14} />
           </button>
         </div>
       </div>
@@ -1093,8 +1092,8 @@ export default function GiftCards({ user }) {
   const { rates: USD_RATES, btcUsd: contextBtcUsd } = useRates();
   const _hasUsers = (data) => Array.isArray(data) && data.some(l => l.users && (l.users.id || l.users.username));
   const _cacheAll = () => { try { const c = JSON.parse(localStorage.getItem('praqen_market_all') || 'null'); if (!c || Date.now() - c.ts > 1800000 || !_hasUsers(c.data)) return null; return c?.data || null; } catch { return null; } };
-  const isForeignListing = (l) => FOREIGN_CURRENCY_CODES.includes((l.currency || 'USD').toUpperCase());
-  const _gcNow = () => { const a = _cacheAll(); return a ? a.filter(l => (l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD') && isForeignListing(l)) : []; };
+  const isGcListing = (l) => l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD';
+  const _gcNow = () => { const a = _cacheAll(); return a ? a.filter(isGcListing) : []; };
   const [listings, setListings] = useState(() => _gcNow());
   const [loading, setLoading] = useState(() => _gcNow().length === 0);
   const [loadError, setLoadError] = useState(false);
@@ -1114,7 +1113,7 @@ export default function GiftCards({ user }) {
   const [showSellAssetMenu, setShowSellAssetMenu] = useState(false);
   const [cryptoFilter, setCryptoFilter] = useState('ALL'); // 'ALL' | 'BTC' | 'USDT'
   const [showCryptoMenu, setShowCryptoMenu] = useState(false);
-  const [gcMode, setGcMode] = useState('all'); // 'all' | 'sell'
+  const [gcMode, setGcMode] = useState('buy'); // 'buy' | 'sell' | 'all'
   const [modal, setModal] = useState(null);
   const [activeTrades, setActiveTrades] = useState([]);
   const [showAllTrades, setShowAllTrades] = useState(false);
@@ -1233,7 +1232,7 @@ export default function GiftCards({ user }) {
       try {
         const c = JSON.parse(localStorage.getItem('praqen_market_all') || 'null');
         if (c && Date.now() - c.ts < 300000 && _hasUsers(c.data)) {
-          const gcOffers = (c.data || []).filter(l => (l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD') && isForeignListing(l));
+          const gcOffers = (c.data || []).filter(isGcListing);
           if (gcOffers.length > 0) {
             setListings(gcOffers);
             setLoading(false);
@@ -1247,7 +1246,7 @@ export default function GiftCards({ user }) {
     try {
       const r = await axios.get(`${API_URL}/listings`, { timeout: 20000 });
       const all = (r.data.listings || []).map(l => ({ ...l, users: Array.isArray(l.users) ? l.users[0] : l.users }));
-      const data = all.filter(l => (l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD') && isForeignListing(l));
+      const data = all.filter(isGcListing);
       // Only update if we got real data — never blank out the list on an empty response
       if (data.length > 0) {
         setListings(data);
@@ -1261,7 +1260,7 @@ export default function GiftCards({ user }) {
         axios.get(`${API_URL}/my-listings`, { headers: { Authorization: `Bearer ${tk}` } })
           .then(myR => {
             const myPaused = (myR.data.listings || []).filter(l =>
-              l.status === 'PAUSED' && (l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD') && isForeignListing(l)
+              l.status === 'PAUSED' && isGcListing(l)
             );
             setPausedOffer(myPaused.length > 0);
           }).catch(() => { });
@@ -1296,8 +1295,12 @@ useEffect(() => {
       // where the viewer sells their own card (BUY_GIFT_CARD listings — people requesting
       // to buy one). This matches ListingDetail.js's role assignment (trade_type:
       // SELL_GIFT_CARD -> viewer BUYs) and the Buy/Sell Bitcoin page convention.
-      if (gcMode === 'sell') list = list.filter(l => l.listing_type === 'BUY_GIFT_CARD');
-      list = list.filter(isForeignListing);
+      if (gcMode === 'buy') {
+        list = list.filter(l => l.listing_type === 'BUY_GIFT_CARD');
+      } else if (gcMode === 'sell') {
+        list = list.filter(l => l.listing_type === 'SELL_GIFT_CARD');
+      }
+
       if (cryptoFilter === 'BTC') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'BTC');
       if (cryptoFilter === 'USDT') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'USDT');
     if (selBrand !== 'All Brands') list = list.filter(l => (getBrand(l) || '').toLowerCase().includes(selBrand.toLowerCase()));
@@ -1410,24 +1413,24 @@ useEffect(() => {
       <div className="bg-white border-b sticky z-30 flex-shrink-0" style={{ top: 'var(--navbar-h)', borderColor: C.g200 }}>
         <div className="flex w-full">
           <div className="flex-1 relative">
-            <button onClick={() => setGcMode('all')}
-              className="w-full text-center py-3 text-xs font-bold border-b-2 transition-all flex items-center justify-center gap-1"
+            <button onClick={() => setGcMode('buy')}
+              className="w-full text-center py-3 text-xs font-black border-b-2 transition-all flex items-center justify-center gap-1"
               style={{
-                borderColor: gcMode === 'all' ? C.gold : 'transparent',
-                color: gcMode === 'all' ? C.gold : C.g400,
-                backgroundColor: gcMode === 'all' ? 'rgba(244,164,34,0.08)' : 'transparent',
+                borderColor: gcMode === 'buy' ? C.forest : 'transparent',
+                color: gcMode === 'buy' ? C.forest : C.g400,
+                backgroundColor: gcMode === 'buy' ? `${C.forest}18` : 'transparent',
               }}>
-              All
+              Buy
             </button>
           </div>
 
           <div className="flex-1 relative">
             <button onClick={() => setGcMode('sell')}
-              className="w-full text-center py-3 text-xs font-bold border-b-2 transition-all flex items-center justify-center gap-1"
+              className="w-full text-center py-3 text-xs font-black border-b-2 transition-all flex items-center justify-center gap-1"
               style={{
-                borderColor: gcMode === 'sell' ? C.forest : 'transparent',
-                color: gcMode === 'sell' ? C.forest : C.g400,
-                backgroundColor: gcMode === 'sell' ? `${C.forest}18` : 'transparent',
+                borderColor: gcMode === 'sell' ? C.gold : 'transparent',
+                color: gcMode === 'sell' ? C.gold : C.g400,
+                backgroundColor: gcMode === 'sell' ? 'rgba(244,164,34,0.08)' : 'transparent',
               }}>
               Sell
             </button>
