@@ -75,3 +75,1266 @@
 [DepositMonitor] Using API: https://blockstream.info/api
 [BalanceIntegrity] ⚠️  MISMATCH user cc618725: wallets=0.00037470 user_balances=0.00000000 diff=0.00037470
 [BalanceIntegrity] ⚠️  MISMATCH user e8d3d037: wallets=0.00125474 user_balances=0.00097261 diff=0.00028213
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64710 usd=235.69
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[BalanceIntegrity] ⚠️  MISMATCH user a76658d4: wallets=0.00000000 user_balances=0.00057466 diff=0.00057466
+[BalanceIntegrity] ⚠️  MISMATCH user 5c0eb1cc: wallets=0.00000000 user_balances=0.00354526 diff=0.00354526
+[RealtimeDeposit] Disconnected (code 1006) — reconnecting in 5s
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,754
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64710 usd=0
+[RealtimeDeposit] Reconnecting...
+[RealtimeDeposit] Connected to mempool.space WebSocket
+[RealtimeDeposit] Subscribed to 942 address(es)
+[USDTMonitor] Previous cycle still running — skipping this tick
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[BTC] live price: $64,771
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64771 usd=235.91
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64771 usd=235.91
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64771 usd=235.91
+
+[SweepService] ⏱  Cycle start 2026-08-18T14:44:47.654Z
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[SweepService] Scanning 943 address(es)...
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[SweepService] bc1qqh5gkd0j08q5934s… has 9847 sats but after fee (1200 sats) only 8647 sats remain — below minimum, skipping
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64771 usd=0
+[BTC] live price: $64,771
+[BalanceIntegrity] ⚠️  MISMATCH user 461802f0: wallets=0.00147931 user_balances=0.00000000 diff=0.00147931
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64771 usd=235.91
+[BTC] live price: $64,753
+[USDTMonitor] Previous cycle still running — skipping this tick
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,753
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64753 usd=0
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64753 usd=235.85
+[BalanceIntegrity] ⚠️  MISMATCH user 8b1c5675: wallets=0.00000000 user_balances=0.00020364 diff=0.00020364
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[BTC] live price: $64,761
+[BTC] live price: $64,761
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64753 usd=235.85
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64753 usd=0
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+✅ [BalanceIntegrity] Done in 261139ms — checked: 940, corrected: 7, errors: 0
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[USDTMonitor] Previous cycle still running — skipping this tick
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] ✅ Cycle done in 310942ms
+
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,743
+[BTC] live price: $64,743
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64743 usd=235.81
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64743 usd=0
+[FX] rates refreshed — GHS:11.0292 NGN:1360.58
+[USDTMonitor] Previous cycle still running — skipping this tick
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,745
+[BTC] live price: $64,745
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64743 usd=0
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64743 usd=235.81
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64743 usd=235.81
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64743 usd=235.81
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,735
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64735 usd=0
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[BTC] live price: $64,727
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64735 usd=235.78
+[USDTMonitor] Previous cycle still running — skipping this tick
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[BTC] live price: $64,727
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,727
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64735 usd=0
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64735 usd=235.78
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64735 usd=235.78
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64750 usd=235.84
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[BTC] live price: $64,750
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64750 usd=235.84
+[USDTMonitor] Previous cycle still running — skipping this tick
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64750 usd=0
+[BTC] live price: $64,750
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64750 usd=235.84
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[BTC] live price: $64,770
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64770 usd=235.91
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[syncAllOfferStatuses] ✅ All offer statuses are already correct.
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64770 usd=0
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64770 usd=235.91
+[USDTMonitor] Previous cycle still running — skipping this tick
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[FX] rates refreshed — GHS:11.0292 NGN:1360.58
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64770 usd=235.91
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,760
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64760 usd=0
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64760 usd=205.87
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[BTC] live price: $64,694
+[USDTMonitor] Previous cycle still running — skipping this tick
+[USDTMonitor] ✅ Cycle done in 722675ms
+
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64760 usd=205.87
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,694
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64760 usd=0
+[apiGet] https://mempool.space/api/address/bc1q47gez4pju29apvnwuqlvlg725p9f6p7j5aeeja/utxo failed: Request failed with status code 429
+[apiGet] https://blockstream.info/api/address/bc1q47gez4pju29apvnwuqlvlg725p9f6p7j5aeeja/utxo failed: Request failed with status code 429
+[hdWalletService] Switching primary API to: https://mempool.emzy.de/api
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64656 usd=205.54
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64656 usd=205.54
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64656 usd=205.54
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[BTC] live price: $64,656
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64656 usd=205.54
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64656 usd=205.54
+
+[USDTMonitor] ⏱  Cycle start 2026-08-18T14:56:17.694Z
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] No wallet row for user 65830906-297b-4eb5-8c60-ed0e9a4aac82: undefined
+[Wallet] No wallet row for user 65830906-297b-4eb5-8c60-ed0e9a4aac82: undefined
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] No wallet row for user 65830906-297b-4eb5-8c60-ed0e9a4aac82: Could not query the database for the schema cache. Retrying.
+[ensureWalletExists] wallets insert failed for 65830906-297b-4eb5-8c60-ed0e9a4aac82: Could not query the database for the schema cache. Retrying.
+[USDTMonitor] user_wallets fetch failed: Could not query the database for the schema cache. Retrying.
+[USDTMonitor] ✅ Cycle done in 42899ms
+
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64656 usd=0
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64656 usd=0
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64695 usd=205.67
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,695
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64695 usd=0
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64695 usd=205.67
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64695 usd=205.67
+
+[DepositMonitor] ⏱  Cycle start 2026-08-18T14:57:47.630Z
+
+[USDTMonitor] ⏱  Cycle start 2026-08-18T14:57:47.698Z
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[USDTMonitor] Scanning 933 Tron address(es)...
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[DepositMonitor] Scanning 946 wallet address(es)...
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[BTC] live price: $64,690
+[BTC] live price: $64,690
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64695 usd=0
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64695 usd=205.67
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[apiGet] https://mempool.emzy.de/api/address/bc1q8y0e60x8ehkzekc563vjnjqraraa68efaxvu7e/utxo failed: timeout of 15000ms exceeded
+[DepositMonitor] All APIs unreachable for bc1qapyzec5r… — will retry next cycle
+[apiGet] https://mempool.space/api/address/bc1q8y0e60x8ehkzekc563vjnjqraraa68efaxvu7e/utxo failed: getaddrinfo ENOTFOUND mempool.space
+[DepositMonitor] Error checking bc1q0j8etd5m…: timeout of 14000ms exceeded
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[apiGet] https://blockstream.info/api/address/bc1q8y0e60x8ehkzekc563vjnjqraraa68efaxvu7e/utxo failed: timeout of 15000ms exceeded
+[getUTXOs] Error for bc1q8y0e60x8ehkzekc563vjnjqraraa68efaxvu7e: All blockchain APIs unreachable: timeout of 15000ms exceeded
+[FX] open.er-api failed, trying exchangerate.host: This operation was aborted
+[FX] open.er-api failed, trying exchangerate.host: This operation was aborted
+[FX] all FX sources failed: The operation was aborted due to timeout
+[FX] all FX sources failed: The operation was aborted due to timeout
+[USDTMonitor] Previous cycle still running — skipping this tick
+[Wallet] No wallet row for user 65830906-297b-4eb5-8c60-ed0e9a4aac82: TypeError: fetch failed
+[ensureWalletExists] wallets insert failed for 5b03e900-0800-43e0-ae64-dbf126f3b1e2: TypeError: fetch failed
+[Wallet] No wallet row for user 5b03e900-0800-43e0-ae64-dbf126f3b1e2: TypeError: fetch failed
+[ensureWalletExists] wallets insert failed for 65830906-297b-4eb5-8c60-ed0e9a4aac82: TypeError: fetch failed
+[DepositMonitor] Error checking bc1qvahnn6c4…: timeout of 14000ms exceeded
+[DepositMonitor] Error checking bc1q95eg29jp…: timeout of 14000ms exceeded
+[DepositMonitor] Error checking bc1qx8w80h54…: timeout of 14000ms exceeded
+[DepositMonitor] Error checking bc1qsyyrx0tx…: timeout of 14000ms exceeded
+[DepositMonitor] Error checking bc1qrg74qmad…: timeout of 14000ms exceeded
+[apiGet] https://mempool.emzy.de/api/address/bc1qh9mcxl64zs93v7pxthp5tuttrs4cpl3hd4adyg/utxo failed: timeout of 15000ms exceeded
+[hdWalletService] Switching primary API to: https://mempool.space/api
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[USDTMonitor] Error for TCveeSjfBN4T…: TronGrid API error for TCveeSjfBN4T…: timeout of 30000ms exceeded
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[apiGet] https://mempool.space/api/address/bc1qgcwjum0kv75g6t4sdyj7m67hdxddu98v6t54lu/utxo failed: socket hang up
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[FX] rates refreshed — GHS:11.0292 NGN:1360.58
+[BTC] live price: $64,690
+[FX] rates refreshed — GHS:11.0292 NGN:1360.58
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[hdWalletService] Switching primary API to: https://mempool.emzy.de/api
+[BTC] live price: $64,690
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64690 usd=0
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64695 usd=205.67
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[USDTMonitor] Previous cycle still running — skipping this tick
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,695
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64695 usd=0
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64695 usd=205.67
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64695 usd=205.67
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64695 usd=205.67
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[DepositMonitor] Rate limited — will retry next cycle
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64695 usd=205.67
+[DepositMonitor] Rate limited — will retry next cycle
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64676 usd=0
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[USDTMonitor] Previous cycle still running — skipping this tick
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64676 usd=205.61
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Using API: https://mempool.space/api
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[syncAllOfferStatuses] ✅ All offer statuses are already correct.
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[BTC] live price: $64,708
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64676 usd=0
+[BTC] live price: $64,708
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64676 usd=205.61
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[USDTMonitor] Previous cycle still running — skipping this tick
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,708
+[BTC] live price: $64,708
+[Wallet] user=65830906 avail=0.00317902 locked=0 total=0.00317902 price=64708 usd=205.71
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64708 usd=0
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle

@@ -1593,7 +1593,7 @@ export default function TradeDetail({user}) {
                   style={{background:'linear-gradient(135deg,#4C1D95,#7C3AED)'}}>
                   <Shield size={20} className="mx-auto mb-1"/>
                   <p className="font-bold text-sm">Dispute Under Review</p>
-                  <p className="text-xs text-white/70 mt-0.5">PRAQEN Moderator reviewing within 24h</p>
+                  <p className="text-xs mt-0.5" style={{color:'#EDE9FE'}}>PRAQEN Moderator reviewing within 24h</p>
                 </div>
               )}
             </div>
@@ -1749,10 +1749,10 @@ export default function TradeDetail({user}) {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-sm font-semibold"
-                    style={{color: isCompleted ? '#16A34A' : isPaid ? '#16A34A' : (cp?.is_online ?? true) ? '#22C55E' : C.g400}}>
+                    style={{color: isDisputed ? '#7C3AED' : isCompleted ? '#16A34A' : isPaid ? '#16A34A' : (cp?.is_online ?? true) ? '#22C55E' : C.g400}}>
                     <span className="w-2.5 h-2.5 rounded-full"
-                      style={{background: isCompleted ? '#16A34A' : isPaid ? '#16A34A' : (cp?.is_online ?? true) ? '#22C55E' : C.g400}}/>
-                    {isCompleted ? 'Trade completed' : isPaid ? 'Paid' : (cp?.is_online ?? true) ? 'Active' : fmtAge(cp?.last_seen_at)}
+                      style={{background: isDisputed ? '#7C3AED' : isCompleted ? '#16A34A' : isPaid ? '#16A34A' : (cp?.is_online ?? true) ? '#22C55E' : C.g400}}/>
+                    {isDisputed ? 'Disputed' : isCompleted ? 'Trade completed' : isPaid ? 'Paid' : (cp?.is_online ?? true) ? 'Active' : fmtAge(cp?.last_seen_at)}
                   </span>
                   {isEscrow && isActive && !isDisputed && (
                     <span
@@ -1783,32 +1783,51 @@ export default function TradeDetail({user}) {
                 </div>
               </div>
 
+              {/* ── Trade Summary Banner — pinned above the messages, never scrolls away ── */}
+              <div className="flex-shrink-0 flex items-center gap-2.5 px-4 py-2.5"
+                style={{ backgroundColor: isSeller ? C.danger : C.green }}>
+                <div className="flex-shrink-0 flex items-center justify-center"
+                  style={{
+                    width:26, height:26, borderRadius:'50%',
+                    border:'1.5px solid rgba(255,255,255,0.85)',
+                    backgroundColor:'rgba(255,255,255,0.14)',
+                    transform:'rotate(-8deg)',
+                    boxShadow:'0 0 0 2px rgba(255,255,255,0.18)',
+                  }}
+                  title="Verified escrow trade">
+                  <Stamp size={14} style={{color:'#fff'}}/>
+                </div>
+                <p className="text-xs leading-snug font-black uppercase tracking-wide" style={{color:'#fff'}}>
+                  {isBuyer
+                    ? `YOU ARE BUYING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
+                    : isSeller
+                      ? `YOU ARE SELLING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
+                      : `PAY ${userPays.toFixed(2)} (${cur}) VIA ${payMethod} FOR ${fmtBtc(btcReceived)} BTC`
+                  }
+                </p>
+              </div>
+
               {/* Messages */}
               <div ref={chatRef} className="flex-1 overflow-y-auto px-4 pb-4 pt-2 space-y-3" style={{backgroundColor:'#F9FAFB',minHeight:0,WebkitOverflowScrolling:'touch',touchAction:'pan-y'}}>
 
-                {/* ── Trade Summary Banner — scrolls away with the rest of the chat, not pinned ── */}
-                <div className="-mx-4 -mt-2 mb-3 flex items-center gap-2.5 px-4 py-2.5"
-                  style={{ backgroundColor: isSeller ? C.danger : C.green }}>
-                  <div className="flex-shrink-0 flex items-center justify-center"
-                    style={{
-                      width:26, height:26, borderRadius:'50%',
-                      border:'1.5px solid rgba(255,255,255,0.85)',
-                      backgroundColor:'rgba(255,255,255,0.14)',
-                      transform:'rotate(-8deg)',
-                      boxShadow:'0 0 0 2px rgba(255,255,255,0.18)',
-                    }}
-                    title="Verified escrow trade">
-                    <Stamp size={14} style={{color:'#fff'}}/>
-                  </div>
-                  <p className="text-xs leading-snug font-black uppercase tracking-wide" style={{color:'#fff'}}>
-                    {isBuyer
-                      ? `YOU ARE BUYING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
-                      : isSeller
-                        ? `YOU ARE SELLING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
-                        : `PAY ${userPays.toFixed(2)} (${cur}) VIA ${payMethod} FOR ${fmtBtc(btcReceived)} BTC`
-                    }
-                  </p>
-                </div>
+                {/* System message — trade opened notice. Stays visible for the life of the trade
+                    (paid, completed, cancelled, disputed, or expired) so either party can always
+                    scroll back and re-read the original terms. */}
+                {(isBuyer||isSeller) && (()=>{
+                  const openedRaw = trade.created_at;
+                  const openedDate = openedRaw ? new Date(/[Z+]/.test(openedRaw)?openedRaw:openedRaw+'Z') : new Date();
+                  const openedLabel = `${String(openedDate.getDate()).padStart(2,'0')}/${String(openedDate.getMonth()+1).padStart(2,'0')}/${openedDate.getFullYear()} ${String(openedDate.getHours()).padStart(2,'0')}:${String(openedDate.getMinutes()).padStart(2,'0')}`;
+                  const sysText = isBuyer
+                    ? `You are buying ${fmtBtc(btcReceived)} BTC (${sym}${fmt(btcValueInLocal,2)} ${cur}) for ${sym}${fmt(userPays,2)} ${cur} via ${payMethod}. It is now safe for you to pay. You will have ${timeLimit} minutes to make your payment and click on the "PAID" button before the trade expires.`
+                    : `You are selling ${fmtBtc(btcReceived)} BTC (${sym}${fmt(btcValueInLocal,2)} ${cur}) for ${sym}${fmt(userPays,2)} ${cur} via ${payMethod}. Wait for the buyer to send payment via ${payMethod}, then confirm it before releasing the Bitcoin. The buyer has ${timeLimit} minutes to pay before the trade expires.`;
+                  return(
+                    <div className="-mx-4 -mt-2 mb-3 px-4 py-3.5" style={{backgroundColor:'#F3F4F6'}}>
+                      <p className="text-sm font-black mb-1.5" style={{color:'#111827'}}>System message</p>
+                      <p className="text-sm leading-relaxed" style={{color:'#1F2937'}}>{sysText}</p>
+                      <p className="text-xs mt-2" style={{color:'#9CA3AF'}}>{openedLabel}</p>
+                    </div>
+                  );
+                })()}
 
                 {/* Proof images */}
                 {images.length>0&&(
@@ -1829,25 +1848,6 @@ export default function TradeDetail({user}) {
                     })}
                   </div>
                 )}
-
-                {/* System message — trade opened notice. Stays visible for the life of the trade
-                    (paid, completed, cancelled, disputed, or expired) so either party can always
-                    scroll back and re-read the original terms. */}
-                {(isBuyer||isSeller) && (()=>{
-                  const openedRaw = trade.created_at;
-                  const openedDate = openedRaw ? new Date(/[Z+]/.test(openedRaw)?openedRaw:openedRaw+'Z') : new Date();
-                  const openedLabel = `${String(openedDate.getDate()).padStart(2,'0')}/${String(openedDate.getMonth()+1).padStart(2,'0')}/${openedDate.getFullYear()} ${String(openedDate.getHours()).padStart(2,'0')}:${String(openedDate.getMinutes()).padStart(2,'0')}`;
-                  const sysText = isBuyer
-                    ? `You are buying ${fmtBtc(btcReceived)} BTC (${sym}${fmt(btcValueInLocal,2)} ${cur}) for ${sym}${fmt(userPays,2)} ${cur} via ${payMethod}. It is now safe for you to pay. You will have ${timeLimit} minutes to make your payment and click on the "PAID" button before the trade expires.`
-                    : `You are selling ${fmtBtc(btcReceived)} BTC (${sym}${fmt(btcValueInLocal,2)} ${cur}) for ${sym}${fmt(userPays,2)} ${cur} via ${payMethod}. Wait for the buyer to send payment via ${payMethod}, then confirm it before releasing the Bitcoin. The buyer has ${timeLimit} minutes to pay before the trade expires.`;
-                  return(
-                    <div className="-mx-4 -mt-2 mb-3 px-4 py-3.5" style={{backgroundColor:'#F3F4F6'}}>
-                      <p className="text-sm font-black mb-1.5" style={{color:'#111827'}}>System message</p>
-                      <p className="text-sm leading-relaxed" style={{color:'#1F2937'}}>{sysText}</p>
-                      <p className="text-xs mt-2" style={{color:'#9CA3AF'}}>{openedLabel}</p>
-                    </div>
-                  );
-                })()}
 
                 {/* Messages */}
                 {messages.length===0?(
@@ -2201,6 +2201,18 @@ export default function TradeDetail({user}) {
 
                 <div ref={msgEnd}/>
               </div>
+
+              {/* Dispute banner — pinned right above the composer, always visible while typing */}
+              {isDisputed && (
+                <div className="flex-shrink-0 flex items-center gap-2.5 px-4 py-2.5"
+                  style={{background:'linear-gradient(135deg,#4C1D95,#7C3AED)'}}>
+                  <Shield size={18} style={{color:'#fff',flexShrink:0}}/>
+                  <div>
+                    <p className="font-black text-sm" style={{color:'#fff'}}>Dispute Under Review</p>
+                    <p className="text-xs font-semibold" style={{color:'#EDE9FE'}}>PRAQEN Moderator reviewing within 24h — keep chatting here, it's logged for review.</p>
+                  </div>
+                </div>
+              )}
 
               {/* Input — floating pill composer */}
               {isActive?(

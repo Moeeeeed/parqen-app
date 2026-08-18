@@ -3254,37 +3254,6 @@ export default function WalletPage({ user }) {
           </div>
         </div>
 
-        {/* ── FUND-WALLET ALERT — always up top, above the fold, for anyone under the $10 threshold ── */}
-        {portfolioUsd < 10 && (
-          <div className="rounded-2xl overflow-hidden shadow-lg" style={{ border: '2px solid #B91C1C' }}>
-            <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: 'linear-gradient(135deg,#991B1B,#DC2626)' }}>
-              <AlertTriangle size={15} style={{ color: '#fff' }} />
-              <span className="text-xs sm:text-sm font-black text-white tracking-wide uppercase">
-                Action Required — Fund Your Wallet
-              </span>
-            </div>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-4" style={{ backgroundColor: '#FEF2F2' }}>
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#FEE2E2' }}>
-                <Wallet size={20} style={{ color: '#B91C1C' }} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-base font-black" style={{ color: '#7F1D1D' }}>Keep your wallet funded to stay active</p>
-                <p className="text-sm mt-1 leading-relaxed font-semibold" style={{ color: '#B91C1C' }}>
-                  Your Bitcoin wallet must have at least <strong>$10 and above</strong> for your buy and sell offers to appear in the marketplace — and to unlock your first bonus on your way to becoming a vendor.
-                  Current balance: <strong>{fmtLocal(portfolioUsd)}</strong>.
-                  Top up now to activate your offer.
-                </p>
-              </div>
-              <button
-                onClick={() => setAssetPicker({ type: 'receive' })}
-                className="flex-shrink-0 w-full sm:w-auto px-6 py-3 rounded-xl text-sm font-black text-white shadow-md hover:opacity-90 transition"
-                style={{ background: 'linear-gradient(135deg,#B91C1C,#DC2626)' }}>
-                Top Up Now →
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* ── SELLER SECURITY DEPOSIT — only shown to users who have (or had) one ── */}
         {depositStatus?.has_deposit && (
           <div className="rounded-2xl bg-white shadow-sm border p-4 sm:p-5" style={{ borderColor: C.g200 }}>
@@ -3322,61 +3291,6 @@ export default function WalletPage({ user }) {
                   </button>
                 )}
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── BECOME A GIFT-CARD VENDOR — shown once status has loaded and confirmed
-             this user has no active/pending deposit. Same $200 lock as the Create Offer
-             flow, just reachable straight from the Wallet too. ── */}
-        {depositStatus !== null && !depositStatus.has_deposit && (
-          <div className="rounded-2xl bg-white shadow-sm border p-4 sm:p-5" style={{ borderColor: C.g200 }}>
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: C.mist }}>
-                  <Shield size={18} style={{ color: C.forest }} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-black" style={{ color: C.g800 }}>
-                    Become a Gift-Card Vendor
-                  </p>
-                  <p className="text-xs mt-0.5" style={{ color: C.g500 }}>
-                    Lock a one-time $200 USDT security deposit to unlock unlimited gift-card listings.
-                  </p>
-                </div>
-              </div>
-              {usdtBal >= 200 ? (
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  <span className="text-xs font-bold" style={{ color: C.g500 }}>Balance: ₮{fmt(usdtBal, 2)}</span>
-                  <button
-                    onClick={lockSecurityDeposit}
-                    disabled={depositLockLoading}
-                    className="px-4 py-2 rounded-xl text-xs font-black text-white"
-                    style={{ backgroundColor: depositLockLoading ? C.g400 : C.green }}>
-                    {depositLockLoading ? 'Locking…' : 'Lock $200 Deposit'}
-                  </button>
-                </div>
-              ) : (
-                <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                  <span className="text-xs font-bold" style={{ color: C.danger }}>Balance: ₮{fmt(usdtBal, 2)} — need $200</span>
-                  <div className="flex items-center gap-2">
-                    {balance > 0 && (
-                      <button
-                        onClick={() => { setSwapFrom('BTC'); setSwapAmount(''); setActiveCoin('SWAP'); }}
-                        className="px-3 py-2 rounded-xl text-xs font-black"
-                        style={{ backgroundColor: C.mist, color: C.forest }}>
-                        Convert from BTC
-                      </button>
-                    )}
-                    <button
-                      onClick={() => openAssetModal('receive', 'USDT')}
-                      className="px-3 py-2 rounded-xl text-xs font-black text-white"
-                      style={{ backgroundColor: C.gold }}>
-                      Deposit USDT
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}

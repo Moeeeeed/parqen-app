@@ -205,7 +205,7 @@ export default function TradeChat({ user }) {
         <div className="flex-shrink-0 py-3 px-5 text-center text-white"
           style={{ background: 'linear-gradient(135deg,#4C1D95,#7C3AED)' }}>
           <p className="font-bold text-sm">Dispute Under Review</p>
-          <p className="text-xs text-white/70 mt-0.5">PRAQEN Moderator reviewing within 24h</p>
+          <p className="text-xs mt-0.5" style={{ color: '#EDE9FE' }}>PRAQEN Moderator reviewing within 24h</p>
         </div>
       )}
 
