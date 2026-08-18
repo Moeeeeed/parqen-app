@@ -6357,28 +6357,11 @@ app.post('/api/offers', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Missing payment_method' });
     }
 
-    // Sellers must hold an active, never-seized $200 USDT security deposit
-    // before listing a gift card for sale. Covers unlimited listings/trades
-    // until withdrawn; any seizure blocks new listings until re-locked.
-    if (mappedType === 'SELL_GIFT_CARD') {
-      const { data: activeDeposit } = await supabaseAdmin
-        .from('seller_deposits')
-        .select('remaining_amount, amount_usdt')
-        .eq('user_id', userId)
-        .eq('status', 'LOCKED')
-        .maybeSingle();
-
-      const hasCleanDeposit = activeDeposit &&
-        parseFloat(activeDeposit.remaining_amount) === parseFloat(activeDeposit.amount_usdt);
-
-      if (!hasCleanDeposit) {
-        return res.status(402).json({
-          error: 'A $200 USDT security deposit is required before creating gift-card sell listings.',
-          code: 'SECURITY_DEPOSIT_REQUIRED',
-          deposit_amount_required: 200,
-        });
-      }
-    }
+    // Security deposit requirement temporarily disabled to grow the pool of
+    // gift-card sellers. Was: sellers needed an active, never-seized $200 USDT
+    // deposit before listing a gift card for sale. Re-enable by restoring the
+    // check below (see git history for the original block).
+    // if (mappedType === 'SELL_GIFT_CARD') { ... }
 
     // Verify user has at least 1 verification
     const { data: listingUser, error: listingUserErr } = await supabaseAdmin
@@ -6654,8 +6637,10 @@ app.get('/api/seller-deposit/status', verifyToken, async (req, res) => {
       .eq('user_id', userId).in('status', ['PENDING_APPROVAL', 'LOCKED', 'PENDING_WITHDRAWAL'])
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
 
+    // Deposit requirement temporarily disabled (see /api/listings POST handler) —
+    // can_create_sell_listing is always true so sellers aren't blocked from listing.
     if (!deposit) {
-      return res.json({ has_deposit: false, can_create_sell_listing: false, pending_admin_approval: false });
+      return res.json({ has_deposit: false, can_create_sell_listing: true, pending_admin_approval: false });
     }
 
     const isClean = parseFloat(deposit.remaining_amount) === parseFloat(deposit.amount_usdt);
@@ -6666,7 +6651,7 @@ app.get('/api/seller-deposit/status', verifyToken, async (req, res) => {
 
     res.json({
       has_deposit: true,
-      can_create_sell_listing: deposit.status === 'LOCKED' && isClean,
+      can_create_sell_listing: true,
       pending_admin_approval: deposit.status === 'PENDING_APPROVAL',
       deposit,
       eligible_to_withdraw: eligibleToWithdraw,

@@ -321,7 +321,7 @@ const OFFER_TYPES = [
   { id: 'sell',   title: (a) => `Sell ${a}`,   desc: (a) => `Buyers pay you, you release ${a} from your wallet.`, icon: ArrowUpRight },
   { id: 'buy',    title: (a) => `Buy ${a}`,    desc: (a) => `You pay sellers to receive ${a} into your wallet.`, icon: ArrowDownRight },
   { id: 'gc_buy', title: (a) => `Buy ${a} with Gift Card`, desc: (a) => `Sellers send you a gift card, you send them ${a}.`, icon: Gift },
-  { id: 'gc_sell', title: (a) => `Sell Gift Card for ${a}`, desc: (a) => `You send a gift card, buyer sends you ${a}. Requires a $200 security deposit.`, icon: Gift },
+  { id: 'gc_sell', title: (a) => `Sell Gift Card for ${a}`, desc: (a) => `You send a gift card, buyer sends you ${a}.`, icon: Gift },
 ];
 
 // ── Reusable premium searchable select ────────────────────────────────────
@@ -867,6 +867,10 @@ export default function CreateOffer() {
 
       await axios.post(`${API_URL}/offers`, payload, { withCredentials: true });
       toast.success('Offer published!');
+      // Drop the shared market cache so the destination page fetches fresh data —
+      // otherwise it can serve a stale (<5min) snapshot that predates this offer,
+      // making the offer the user just created invisible for up to a minute.
+      try { localStorage.removeItem('praqen_market_all'); } catch {}
       // A "sell" offer (I have the asset) is found by buyers on the Buy page, and
       // vice versa — route to wherever this offer will actually show up.
       const destination = isGC

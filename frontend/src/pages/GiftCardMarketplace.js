@@ -1114,7 +1114,7 @@ export default function GiftCards({ user }) {
   const [showSellAssetMenu, setShowSellAssetMenu] = useState(false);
   const [cryptoFilter, setCryptoFilter] = useState('ALL'); // 'ALL' | 'BTC' | 'USDT'
   const [showCryptoMenu, setShowCryptoMenu] = useState(false);
-  const [gcMode, setGcMode] = useState('buy'); // 'buy' | 'sell'
+  const [gcMode, setGcMode] = useState('all'); // 'all' | 'sell'
   const [modal, setModal] = useState(null);
   const [activeTrades, setActiveTrades] = useState([]);
   const [showAllTrades, setShowAllTrades] = useState(false);
@@ -1292,12 +1292,10 @@ useEffect(() => {
 
     const getFiltered = () => {
       let list = [...listings];
-      // Filter by buy/sell mode — "Buy" means the viewer wants to buy a gift card, so it
-      // must show SELL_GIFT_CARD listings (people offering their cards for sale); "Sell"
-      // means the viewer wants to sell their own card, so it shows BUY_GIFT_CARD listings
-      // (people requesting to buy one). This matches ListingDetail.js's role assignment
-      // (trade_type: SELL_GIFT_CARD -> viewer BUYs) and the Buy/Sell Bitcoin page convention.
-      if (gcMode === 'buy') list = list.filter(l => l.listing_type === 'SELL_GIFT_CARD');
+      // Filter by mode — "All" shows every gift card offer; "Sell" narrows to offers
+      // where the viewer sells their own card (BUY_GIFT_CARD listings — people requesting
+      // to buy one). This matches ListingDetail.js's role assignment (trade_type:
+      // SELL_GIFT_CARD -> viewer BUYs) and the Buy/Sell Bitcoin page convention.
       if (gcMode === 'sell') list = list.filter(l => l.listing_type === 'BUY_GIFT_CARD');
       list = list.filter(isForeignListing);
       if (cryptoFilter === 'BTC') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'BTC');
@@ -1412,14 +1410,14 @@ useEffect(() => {
       <div className="bg-white border-b sticky z-30 flex-shrink-0" style={{ top: 'var(--navbar-h)', borderColor: C.g200 }}>
         <div className="flex w-full">
           <div className="flex-1 relative">
-            <button onClick={() => setGcMode('buy')}
+            <button onClick={() => setGcMode('all')}
               className="w-full text-center py-3 text-xs font-bold border-b-2 transition-all flex items-center justify-center gap-1"
               style={{
-                borderColor: gcMode === 'buy' ? '#0D9488' : 'transparent',
-                color: gcMode === 'buy' ? '#0D9488' : C.g400,
-                backgroundColor: gcMode === 'buy' ? 'rgba(13,148,136,0.08)' : 'transparent',
+                borderColor: gcMode === 'all' ? C.gold : 'transparent',
+                color: gcMode === 'all' ? C.gold : C.g400,
+                backgroundColor: gcMode === 'all' ? 'rgba(244,164,34,0.08)' : 'transparent',
               }}>
-              Buy
+              All
             </button>
           </div>
 

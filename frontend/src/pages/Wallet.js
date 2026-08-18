@@ -2779,7 +2779,7 @@ export default function WalletPage({ user }) {
   });
 
   // USDT + Swap state — SWAP_FEE_PERCENT mirrors backend swapService.js
-  const SWAP_FEE_PERCENT = 0.005; // 0.5%
+  const SWAP_FEE_PERCENT = 0.002; // 0.2%
   const [activeCoin,    setActiveCoin]    = useState('BTC');
   const [usdtData,      setUsdtData]      = useState(null);
   const [swapRate,      setSwapRate]      = useState(null);
@@ -4065,7 +4065,7 @@ export default function WalletPage({ user }) {
               © {new Date().getFullYear()} PRAQEN. All rights reserved.
             </p>
             <p className="text-xs flex items-center gap-1" style={{ color: 'rgba(255,255,255,0.3)' }}>
-              <Shield size={10} /> Self-Custodial HD Wallet · 0.5% fee on trades
+              <Shield size={10} /> Self-Custodial HD Wallet · 0.2% fee on trades
             </p>
           </div>
         </div>
