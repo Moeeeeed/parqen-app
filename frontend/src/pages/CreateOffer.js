@@ -1288,7 +1288,7 @@ export default function CreateOffer() {
               {/* Card Range (Min - Max inputs) */}
               <div>
                 <label className="block text-sm font-bold mb-1.5" style={{ color: C.g700 }}>
-                  Card Range ({gcCurrencyCode}) <span style={{ color: C.danger }}>*</span>
+                  Card Range <span style={{ color: C.danger }}>*</span>
                 </label>
                 <p className="text-xs mb-2.5" style={{ color: C.g500 }}>
                   Enter the minimum and maximum card value you accept.
@@ -1296,19 +1296,16 @@ export default function CreateOffer() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold mb-1" style={{ color: C.g600 }}>
-                      Minimum ({gcCurrencySymbol})
+                      Minimum
                     </label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-sm" style={{ color: C.g400 }}>
-                        {gcCurrencySymbol}
-                      </span>
                       <input
                         type="number"
                         min="1"
                         placeholder="e.g. 10"
                         value={gcMinRange}
                         onChange={(e) => setGcMinRange(e.target.value)}
-                        className="w-full pl-8 pr-3 py-2.5 rounded-xl border-2 font-bold text-sm focus:outline-none transition-all"
+                        className="w-full px-3 py-2.5 rounded-xl border-2 font-bold text-sm focus:outline-none transition-all"
                         style={{ borderColor: C.g200, color: C.g800 }}
                       />
                     </div>
@@ -1316,19 +1313,16 @@ export default function CreateOffer() {
 
                   <div>
                     <label className="block text-xs font-semibold mb-1" style={{ color: C.g600 }}>
-                      Maximum ({gcCurrencySymbol})
+                      Maximum
                     </label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-sm" style={{ color: C.g400 }}>
-                        {gcCurrencySymbol}
-                      </span>
                       <input
                         type="number"
                         min="1"
                         placeholder="e.g. 500"
                         value={gcMaxRange}
                         onChange={(e) => setGcMaxRange(e.target.value)}
-                        className="w-full pl-8 pr-3 py-2.5 rounded-xl border-2 font-bold text-sm focus:outline-none transition-all"
+                        className="w-full px-3 py-2.5 rounded-xl border-2 font-bold text-sm focus:outline-none transition-all"
                         style={{ borderColor: C.g200, color: C.g800 }}
                       />
                     </div>

@@ -1415,37 +1415,25 @@ useEffect(() => {
         <div className="flex w-full">
           <div className="flex-1 relative">
             <button onClick={() => setGcMode('buy')}
-              className="w-full text-center py-3 text-xs font-bold border-b-2 transition-all flex items-center justify-center gap-1"
+              className="w-full text-center py-3 text-xs font-black border-b-2 transition-all flex items-center justify-center gap-1"
               style={{
                 borderColor: gcMode === 'buy' ? C.forest : 'transparent',
                 color: gcMode === 'buy' ? C.forest : C.g400,
                 backgroundColor: gcMode === 'buy' ? `${C.forest}18` : 'transparent',
               }}>
-              Buy Gift Cards
+              Buy
             </button>
           </div>
 
           <div className="flex-1 relative">
             <button onClick={() => setGcMode('sell')}
-              className="w-full text-center py-3 text-xs font-bold border-b-2 transition-all flex items-center justify-center gap-1"
+              className="w-full text-center py-3 text-xs font-black border-b-2 transition-all flex items-center justify-center gap-1"
               style={{
                 borderColor: gcMode === 'sell' ? C.gold : 'transparent',
                 color: gcMode === 'sell' ? C.gold : C.g400,
                 backgroundColor: gcMode === 'sell' ? 'rgba(244,164,34,0.08)' : 'transparent',
               }}>
-              Sell Gift Cards
-            </button>
-          </div>
-
-          <div className="flex-1 relative">
-            <button onClick={() => setGcMode('all')}
-              className="w-full text-center py-3 text-xs font-bold border-b-2 transition-all flex items-center justify-center gap-1"
-              style={{
-                borderColor: gcMode === 'all' ? C.purple : 'transparent',
-                color: gcMode === 'all' ? C.purple : C.g400,
-                backgroundColor: gcMode === 'all' ? `${C.purple}12` : 'transparent',
-              }}>
-              All
+              Sell
             </button>
           </div>
 
