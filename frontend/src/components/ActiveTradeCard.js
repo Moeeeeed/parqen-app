@@ -11,7 +11,7 @@ const STATUS_CFG = {
   CREATED:      { label: 'Waiting for Escrow', icon: Clock,        statusColor: '#D97706', statusBg: '#FEF3C7' },
   FUNDS_LOCKED: { label: 'Active & Funded',     icon: CheckCircle2, statusColor: '#16A34A', statusBg: '#DCFCE7' },
   PAYMENT_SENT: { label: 'Payment Sent',        icon: CreditCard,   statusColor: '#2563EB', statusBg: '#DBEAFE' },
-  DISPUTED:     { label: 'In Dispute',          icon: AlertTriangle, statusColor: '#DC2626', statusBg: '#FEE2E2' },
+  DISPUTED:     { label: 'In Dispute',          icon: AlertTriangle, statusColor: '#7C3AED', statusBg: '#EDE9FE' },
 };
 
 // What market / page this trade belongs to
@@ -334,7 +334,7 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
             )}
             {trade.status === 'DISPUTED' && (
               <span className="inline-flex items-center gap-0.5 text-[9px] font-black px-2 py-0.5 rounded-full"
-                style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>
+                style={{ backgroundColor: '#EDE9FE', color: '#7C3AED' }}>
                 <Scale size={9} /> In Review
               </span>
             )}

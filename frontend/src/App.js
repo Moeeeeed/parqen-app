@@ -86,6 +86,7 @@ const Profile = lazy(() => import('./pages/Profile'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const ModeratorDashboard = lazy(() => import('./pages/ModeratorDashboard'));
 const TeamDashboard = lazy(() => import('./pages/TeamDashboard'));
+const CeoDashboard = lazy(() => import('./pages/CeoDashboard'));
 const EscrowVerification = lazy(() => import('./pages/EscrowVerification'));
 const WalletPage = lazy(() => import('./pages/Wallet'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -451,6 +452,7 @@ function App() {
               {/* ── TEAM PORTAL — completely standalone, no main chrome ── */}
               <Route path="/team" element={<TeamDashboard user={user} />} />
               <Route path="/moderator" element={<ModeratorDashboard user={user} />} />
+              <Route path="/ceo" element={<CeoDashboard user={user} />} />
 
               {/* ── ALL OTHER ROUTES — wrapped in main app chrome ── */}
               <Route path="*" element={

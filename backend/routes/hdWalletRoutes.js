@@ -9,6 +9,7 @@ const actionCodeService = require('../services/actionCodeService');
 const emailService           = require('../services/emailService');
 const hdWallet               = require('../services/hdWalletService');
 const depositMonitor         = require('../services/depositMonitor');
+const tronHotWallet          = require('../services/tronHotWallet');
 const realtimeDepositService = require('../services/realtimeDepositService');
 const { updateOfferStatus }  = require('../services/offerStatusService');
 const { createClient } = require('@supabase/supabase-js');
@@ -18,6 +19,11 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
+
+// Break-glass fallback for CEO-only withdrawal approvals — mirrors the
+// ADMIN_EMAIL fallback in server.js so the founder account is never locked
+// out of approvals even before is_ceo is set on any user row.
+const ADMIN_EMAIL = 'support@praqen.com';
 
 // On-chain sends are irreversible — cap attempts independent of balance checks,
 // which are vulnerable to a check-then-act race if hit rapidly in parallel.
@@ -413,12 +419,10 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
   // `const`/destructured bindings declared inside `try {}` are NOT visible inside
   // the paired `catch (error) {}` (separate block scopes); referencing them there
   // previously threw ReferenceError instead of returning the intended error JSON.
-  let toAddress, amount, force, available, sendUser, platformFee, platformFeeUsd,
-      feeLabel, amountUserReceives, deducted = false, broadcastSucceeded = false, newBalance;
-  const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
+  let toAddress, amount, available, sendUser, platformFee, platformFeeUsd,
+      feeLabel, amountUserReceives, deducted = false, newBalance;
   try {
     const { toAddress: rawAddress, amountBtc, actionCode } = req.body;
-    force = req.body.force;
     toAddress = (rawAddress || '').trim();
     const userId = req.userId;
 
@@ -649,150 +653,82 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
       supabaseAdmin.from('user_wallets').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
     ]);
 
-    // Attempt broadcast — hot wallet is NEVER touched if it has insufficient funds
-    let result;
-    try {
-      result = await hdWallet.sendWithdrawal(userId, toAddress, amountUserReceives);
-      broadcastSucceeded = true;
-    } catch (sendErr) {
-      // If hot wallet is low AND the user has force-confirmed, queue as PENDING — hot wallet stays safe.
-      // Balance was already deducted above (before the broadcast attempt); don't deduct again.
-      if (sendErr.message?.startsWith('HOT_WALLET_INSUFFICIENT') && force) {
-        console.log(`[hdWalletRoutes] Force-confirmed — queuing ₿${amountUserReceives} as PENDING_WITHDRAWAL for ${userId.slice(0,8)}`);
-        // Credit fee to PRAQEN immediately — fee is earned regardless of PENDING status
-        const { data: cw1 } = await supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', COMPANY_WALLET_ID).maybeSingle();
-        const ncb1 = parseFloat((parseFloat(cw1?.balance_btc || 0) + platformFee).toFixed(8));
-        const ts1  = new Date().toISOString();
-        await Promise.all([
-          hdWallet.setWalletBalance(COMPANY_WALLET_ID, ncb1),
-          supabaseAdmin.from('user_balances').upsert({ user_id: COMPANY_WALLET_ID, balance_btc: ncb1, updated_at: ts1 }, { onConflict: 'user_id' }),
-        ]);
-        await supabaseAdmin.from('wallet_transactions').insert([
-          {
-            user_id:             userId,
-            type:                'WITHDRAWAL',
-            amount_btc:          amountUserReceives,
-            status:              'PENDING',
-            destination_address: toAddress,
-            notes:               `User confirmed twice before sending. Warned of risky wallet and proceeded. ${feeLabel} (₿${platformFee.toFixed(8)} / $${platformFeeUsd}) held. PRAQEN is not responsible for any loss from this transaction.`,
-            created_at:          ts1,
-          },
-          {
-            user_id:    COMPANY_WALLET_ID,
-            type:       'FEE',
-            amount_btc: platformFee,
-            status:     'CONFIRMED',
-            notes:      `Blockchain fee (${feeLabel}) from user ${userId.slice(0, 8)} — PENDING withdrawal of ₿${amount.toFixed(8)}`,
-            created_at: ts1,
-          },
-        ]);
-        updateOfferStatus(userId).catch(() => {});
-        if (sendUser?.email) {
-          emailService.sendTxReceiptEmail(
-            { id: userId, email: sendUser.email, username: sendUser.username },
-            { type: 'WITHDRAWAL', amount_btc: amountUserReceives, status: 'PENDING',
-              destination_address: toAddress, fee_btc: platformFee,
-              notes: `User confirmed twice before sending. Warned of risky wallet and proceeded. ${feeLabel} (₿${platformFee.toFixed(8)} / $${platformFeeUsd}) held. PRAQEN is not responsible for any loss from this transaction.`,
-              created_at: new Date().toISOString() }
-          ).catch(() => {});
-        }
-        return res.json({
-          success:          true,
-          queued:           true,
-          amount_requested: amount,
-          amount_sent:      amountUserReceives,
-          platform_fee:     platformFee,
-          to:               toAddress,
-          new_balance:      newBalance,
-          message:          `₿${amountUserReceives.toFixed(8)} sent successfully.`,
-        });
-      }
-      throw sendErr;
-    }
-
-    // Balance was already deducted above (before the broadcast attempt) — no further deduction needed.
-
-    // Credit blockchain fee to PRAQEN company wallet — update all balance tables immediately
-    const { data: companyWallet } = await supabaseAdmin
-      .from('wallets').select('balance_btc').eq('user_id', COMPANY_WALLET_ID).maybeSingle();
-    const newCompanyBalance = parseFloat((parseFloat(companyWallet?.balance_btc || 0) + platformFee).toFixed(8));
-    const companyTs = new Date().toISOString();
-    const [feeR1, feeR2] = await Promise.all([
-      hdWallet.setWalletBalance(COMPANY_WALLET_ID, newCompanyBalance),
-      supabaseAdmin.from('user_balances').upsert(
-        { user_id: COMPANY_WALLET_ID, balance_btc: newCompanyBalance, updated_at: companyTs },
-        { onConflict: 'user_id' }
-      ),
-    ]);
-    if (feeR1.error) console.error('[hdWalletRoutes] CRITICAL: company wallets fee credit failed', feeR1.error);
-    if (feeR2.error) console.error('[hdWalletRoutes] CRITICAL: company user_balances fee credit failed', feeR2.error);
-
-    // Log both transactions for full audit trail
-    await supabaseAdmin.from('wallet_transactions').insert([
-      {
+    // ── CEO SECURITY REVIEW — funds are already reserved above; nothing is ──
+    // broadcast on-chain until a CEO-flagged account approves this request.
+    // This is the anti-scam gate: catches compromised accounts / social-
+    // engineered withdrawals before BTC actually leaves the platform.
+    const reviewTs = new Date().toISOString();
+    const { data: pendingRow, error: pendingErr } = await supabaseAdmin
+      .from('wallet_transactions')
+      .insert({
         user_id:             userId,
         type:                'WITHDRAWAL',
         amount_btc:          amountUserReceives,
-        status:              'CONFIRMED',
-        tx_hash:             result.txid,
+        platform_fee_btc:    platformFee,
+        status:              'PENDING_APPROVAL',
         destination_address: toAddress,
-        notes:               `Withdrawal — Blockchain fee: ${feeLabel} (₿${platformFee.toFixed(8)} / $${platformFeeUsd})`,
-        created_at:          new Date().toISOString(),
-      },
-      {
-        user_id:    COMPANY_WALLET_ID,
-        type:       'FEE',
-        amount_btc: platformFee,
-        status:     'CONFIRMED',
-        tx_hash:    result.txid,
-        notes:      `Blockchain fee (${feeLabel}) from user ${userId.slice(0, 8)} — withdrawal of ₿${amount.toFixed(8)}`,
-        created_at: new Date().toISOString(),
-      },
-    ]);
+        notes:               `Awaiting CEO security review. Blockchain fee: ${feeLabel} (₿${platformFee.toFixed(8)} / $${platformFeeUsd}).`,
+        created_at:          reviewTs,
+      })
+      .select('id')
+      .single();
 
-    console.log(`✅ [hdWalletRoutes] On-chain sent ₿${amountUserReceives} — TX: ${result.txid} | Fee ₿${platformFee} → company`);
+    if (pendingErr || !pendingRow) {
+      throw new Error(pendingErr?.message || 'Failed to queue withdrawal for review');
+    }
+
+    console.log(`[hdWalletRoutes] Withdrawal ${pendingRow.id} queued for CEO review — ₿${amountUserReceives} from ${userId.slice(0,8)} → ${toAddress}`);
+
+    // Notify every CEO-flagged account so review isn't blocked on one person checking
+    const { data: ceoUsers } = await supabaseAdmin
+      .from('users').select('id, email, username').or(`is_ceo.eq.true,email.eq.${ADMIN_EMAIL}`);
+    for (const ceoU of (ceoUsers || [])) {
+      if (ceoU.email) {
+        emailService.sendCeoApprovalRequestEmail(ceoU, {
+          requestId: pendingRow.id, amountBtc: amountUserReceives, toAddress,
+          fromUser: sendUser, fromUserId: userId,
+        }).catch(() => {});
+      }
+      supabaseAdmin.from('notifications').insert({
+        user_id: ceoU.id, type: 'ceo_approval',
+        title: '🔒 Withdrawal Awaiting Approval',
+        message: `${sendUser?.username || userId.slice(0,8)} wants to send ₿${amountUserReceives.toFixed(8)} to ${toAddress.slice(0,10)}… — review in CEO Approvals.`,
+        action: '/admin', is_read: false, created_at: reviewTs,
+      }).then(null, () => {});
+    }
 
     if (sendUser?.email) {
       emailService.sendTxReceiptEmail(
         { id: userId, email: sendUser.email, username: sendUser.username },
-        { type: 'WITHDRAWAL', amount_btc: amountUserReceives, status: 'CONFIRMED',
-          destination_address: toAddress, fee_btc: platformFee, tx_hash: result.txid,
-          notes: `Withdrawal — Blockchain fee: ${feeLabel} (₿${platformFee.toFixed(8)} / $${platformFeeUsd})`,
-          created_at: new Date().toISOString() }
+        { type: 'WITHDRAWAL', amount_btc: amountUserReceives, status: 'PENDING_APPROVAL',
+          destination_address: toAddress, fee_btc: platformFee,
+          notes: `Submitted for PRAQEN security review — you'll get an email once it's approved and sent.`,
+          created_at: reviewTs }
       ).catch(() => {});
     }
 
-    // Re-evaluate offer status after withdrawal reduces available balance
-    updateOfferStatus(userId).catch(() => {});
-
     res.json({
-      success:            true,
-      internal:           false,
-      txid:               result.txid,
-      amount_requested:   amount,
-      amount_sent:        amountUserReceives,
-      platform_fee:       platformFee,
-      fee_label:          `${feeLabel} — PRAQEN withdrawal fee`,
-      to:                 toAddress,
-      network_fee_sats:   result.fee_sats,
-      new_balance:        newBalance,
-      explorer:           result.explorer_url,
-      message:            `₿${amountUserReceives.toFixed(8)} sent successfully. Blockchain fee: ${feeLabel} (₿${platformFee.toFixed(8)}) applied.`,
+      success:           true,
+      pending:           true,
+      requestId:         pendingRow.id,
+      amount_requested:  amount,
+      amount_sent:       amountUserReceives,
+      platform_fee:      platformFee,
+      fee_label:         `${feeLabel} — PRAQEN withdrawal fee`,
+      to:                toAddress,
+      new_balance:       newBalance,
+      message:           `Withdrawal submitted for security review. ₿${amountUserReceives.toFixed(8)} will be sent to ${toAddress} once approved — you'll get an email confirmation.`,
     });
 
   } catch (error) {
     console.error('[hdWalletRoutes POST /send]', error.message);
     const userId = req.userId;
 
-    // Every branch below is a genuine failure (nothing broadcast, nothing queued)
-    // EXCEPT the INSUFFICIENT_UTXOS+force one, which deliberately keeps the
-    // deduction and records a PENDING withdrawal instead. Restore the reserved
-    // balance here so a failed send never leaves the user short — but only when
-    // the broadcast itself never succeeded; if it did and a later step (e.g. fee
-    // crediting) threw, the BTC already left the hot wallet and must NOT be
-    // credited back, or the user would get it twice.
-    const isQueueable = error.message?.startsWith('INSUFFICIENT_UTXOS') && force;
-    if (deducted && !broadcastSucceeded && !isQueueable) {
+    // Nothing is broadcast from this endpoint anymore — the balance is only ever
+    // reserved and queued for CEO review. So any failure here (e.g. the
+    // PENDING_APPROVAL insert itself failing) needs the reservation undone,
+    // or a failed request would leave the user short with nothing pending.
+    if (deducted) {
       const { error: restoreErr } = await supabaseAdmin
         .from('wallets').update({ balance_btc: available, updated_at: new Date().toISOString() }).eq('user_id', userId);
       if (restoreErr) {
@@ -805,80 +741,268 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
       }
     }
 
-    if (error.message?.startsWith('MEMPOOL_API_ERROR')) {
-      return res.status(503).json({
-        error: 'We are experiencing a brief network delay. Your funds are safe — please try again in a few minutes.',
-      });
-    }
-    if (error.message?.startsWith('HOT_WALLET_INSUFFICIENT')) {
-      return res.status(503).json({
-        error: 'Sorry for the delay. This is a blockchain issue because you are sending to a risky wallet. Please contact support to set your 2FA code — this is for your security.',
-      });
-    }
-    if (error.message?.startsWith('INSUFFICIENT_UTXOS')) {
-      if (force) {
-        // Queue as PENDING — hot wallet stays safe, user sees success.
-        // Balance was already deducted above (before the broadcast attempt); don't deduct again.
-        // Credit fee to PRAQEN immediately — fee is earned regardless of PENDING status
-        const { data: cw2 } = await supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', COMPANY_WALLET_ID).maybeSingle();
-        const ncb2 = parseFloat((parseFloat(cw2?.balance_btc || 0) + platformFee).toFixed(8));
-        const ts2  = new Date().toISOString();
-        await Promise.all([
-          hdWallet.setWalletBalance(COMPANY_WALLET_ID, ncb2),
-          supabaseAdmin.from('user_balances').upsert({ user_id: COMPANY_WALLET_ID, balance_btc: ncb2, updated_at: ts2 }, { onConflict: 'user_id' }),
-        ]);
-        await supabaseAdmin.from('wallet_transactions').insert([
-          {
-            user_id:             userId,
-            type:                'WITHDRAWAL',
-            amount_btc:          amountUserReceives,
-            status:              'PENDING',
-            destination_address: toAddress,
-            notes:               `User confirmed twice before sending. Warned of risky wallet and proceeded. ${feeLabel} (₿${platformFee.toFixed(8)} / $${platformFeeUsd}) held. PRAQEN is not responsible for any loss from this transaction.`,
-            created_at:          ts2,
-          },
-          {
-            user_id:    COMPANY_WALLET_ID,
-            type:       'FEE',
-            amount_btc: platformFee,
-            status:     'CONFIRMED',
-            notes:      `Blockchain fee (${feeLabel}) from user ${userId.slice(0, 8)} — PENDING withdrawal of ₿${amount.toFixed(8)}`,
-            created_at: ts2,
-          },
-        ]);
-        updateOfferStatus(userId).catch(() => {});
-        if (sendUser?.email) {
-          emailService.sendTxReceiptEmail(
-            { id: userId, email: sendUser.email, username: sendUser.username },
-            { type: 'WITHDRAWAL', amount_btc: amountUserReceives, status: 'PENDING',
-              destination_address: toAddress, fee_btc: platformFee,
-              notes: `User confirmed twice before sending. Warned of risky wallet and proceeded. ${feeLabel} (₿${platformFee.toFixed(8)} / $${platformFeeUsd}) held. PRAQEN is not responsible for any loss from this transaction.`,
-              created_at: new Date().toISOString() }
-          ).catch(() => {});
+    res.status(500).json({ error: 'Something went wrong while processing your withdrawal. Your funds are safe — please contact support if this continues.' });
+  }
+});
+
+// ============================================================
+// CEO WITHDRAWAL APPROVALS
+// Every external send lands in wallet_transactions as PENDING_APPROVAL
+// (see POST /send above). Only a CEO-flagged account (or ADMIN_EMAIL as a
+// break-glass fallback) can push it on-chain or send the funds back.
+// ============================================================
+async function requireCeo(req, res) {
+  const { data: u } = await supabaseAdmin
+    .from('users').select('id, is_ceo, email, username').eq('id', req.userId).single();
+  const ok = !!(u?.is_ceo || u?.email === ADMIN_EMAIL);
+  if (!ok) { res.status(403).json({ error: 'CEO access required' }); return null; }
+  return u;
+}
+
+// GET /api/hd-wallet/ceo/treasury
+// One-shot overview for the CEO dashboard: BTC hot wallet, Tron gas + USDT hot
+// wallet, the company/master wallet's BTC & USDT balances, and swap fee revenue.
+router.get('/ceo/treasury', verifyToken, async (req, res) => {
+  const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
+  try {
+    const ceo = await requireCeo(req, res); if (!ceo) return;
+
+    const [hotBtcR, tronR, companyR, swapFeesR, recentSwapsR] = await Promise.allSettled([
+      hdWallet.getHotWalletBalance(),
+      tronHotWallet.getStatus(),
+      supabaseAdmin.from('wallets')
+        .select('balance_btc, locked_balance_btc, balance_usdt, locked_balance_usdt')
+        .eq('user_id', COMPANY_WALLET_ID).maybeSingle(),
+      // Capped — fine at current volume; move to a DB-side aggregate (RPC) once
+      // swap_transactions grows large enough that this scan gets expensive.
+      supabaseAdmin.from('swap_transactions').select('fee_btc, fee_usdt, created_at').limit(5000),
+      supabaseAdmin.from('swap_transactions')
+        .select('user_id, from_currency, to_currency, from_amount, to_amount, fee_btc, fee_usdt, created_at')
+        .order('created_at', { ascending: false }).limit(20),
+    ]);
+
+    const hotWalletBtc = hotBtcR.status === 'fulfilled' ? hotBtcR.value : { error: hotBtcR.reason?.message || 'unavailable' };
+    const tron          = tronR.status === 'fulfilled' ? tronR.value : { error: tronR.reason?.message || 'unavailable' };
+    const companyRow    = companyR.status === 'fulfilled' ? companyR.value.data : null;
+
+    const now = Date.now();
+    const swapTotals = { totalFeeBtc: 0, totalFeeUsdt: 0, feeBtc24h: 0, feeUsdt24h: 0, count: 0 };
+    if (swapFeesR.status === 'fulfilled') {
+      for (const r of (swapFeesR.value.data || [])) {
+        const feeBtc  = parseFloat(r.fee_btc || 0);
+        const feeUsdt = parseFloat(r.fee_usdt || 0);
+        swapTotals.totalFeeBtc  += feeBtc;
+        swapTotals.totalFeeUsdt += feeUsdt;
+        if (now - new Date(r.created_at).getTime() < 86400000) {
+          swapTotals.feeBtc24h  += feeBtc;
+          swapTotals.feeUsdt24h += feeUsdt;
         }
-        return res.json({
-          success:      true,
-          queued:       true,
-          new_balance:  newBalance,
-          message:      `BTC sent successfully.`,
-        });
+        swapTotals.count++;
       }
-      return res.status(503).json({
-        error: 'Sorry for the delay. This is a blockchain issue because you are sending to a risky wallet. Please contact support to set your 2FA code — this is for your security.',
-      });
-    }
-    if (error.message?.includes('No UTXOs')) {
-      return res.status(503).json({
-        error: 'Your Bitcoin is still being confirmed on the blockchain. Please wait a few minutes and try again — your funds are safe.',
-      });
-    }
-    if (error.message?.includes('Broadcast failed') || error.message?.includes('Not enough to cover fee')) {
-      return res.status(502).json({
-        error: 'We could not complete the transaction at this time. Your funds are safe — please try again shortly or contact support.',
-      });
+      swapTotals.totalFeeBtc  = parseFloat(swapTotals.totalFeeBtc.toFixed(8));
+      swapTotals.totalFeeUsdt = parseFloat(swapTotals.totalFeeUsdt.toFixed(6));
+      swapTotals.feeBtc24h    = parseFloat(swapTotals.feeBtc24h.toFixed(8));
+      swapTotals.feeUsdt24h   = parseFloat(swapTotals.feeUsdt24h.toFixed(6));
     }
 
-    res.status(500).json({ error: 'Something went wrong while processing your withdrawal. Your funds are safe — please contact support if this continues.' });
+    res.json({
+      success: true,
+      hotWalletBtc,
+      tron: tron?.error ? tron : {
+        address:            tron.hot_wallet_address,
+        usdt:                tron.hot_wallet_usdt,
+        trx:                 tron.hot_wallet_trx,
+        trxStatus:           tron.trx_status,
+        minTrxReserve:       tron.min_trx_reserve,
+        companyWalletUsdt:   tron.company_wallet_usdt,
+        pendingSweeps:       tron.pending_sweeps,
+        sweptTodayUsdt:      tron.swept_today_usdt,
+        withdrawalFeeUsdt:   tron.withdrawal_fee_usdt,
+      },
+      companyWallet: {
+        balance_btc:         parseFloat(companyRow?.balance_btc || 0),
+        locked_balance_btc:  parseFloat(companyRow?.locked_balance_btc || 0),
+        balance_usdt:        parseFloat(companyRow?.balance_usdt || 0),
+        locked_balance_usdt: parseFloat(companyRow?.locked_balance_usdt || 0),
+      },
+      swapFees:    swapTotals,
+      recentSwaps: recentSwapsR.status === 'fulfilled' ? (recentSwapsR.value.data || []) : [],
+    });
+  } catch (error) {
+    console.error('[hdWalletRoutes GET /ceo/treasury]', error.message);
+    res.status(500).json({ error: 'Failed to load treasury overview.' });
+  }
+});
+
+// GET /api/hd-wallet/ceo-withdrawals?status=PENDING_APPROVAL
+router.get('/ceo-withdrawals', verifyToken, async (req, res) => {
+  try {
+    const ceo = await requireCeo(req, res); if (!ceo) return;
+    const status = req.query.status || 'PENDING_APPROVAL';
+
+    const { data: rows, error } = await supabaseAdmin
+      .from('wallet_transactions')
+      .select('id, user_id, amount_btc, platform_fee_btc, destination_address, status, notes, tx_hash, rejection_reason, reviewed_by, reviewed_at, created_at')
+      .eq('type', 'WITHDRAWAL')
+      .eq('status', status)
+      .order('created_at', { ascending: status === 'PENDING_APPROVAL' })
+      .limit(100);
+    if (error) throw error;
+
+    const userIds = [...new Set((rows || []).map(r => r.user_id))];
+    const { data: users } = userIds.length
+      ? await supabaseAdmin
+          .from('users')
+          .select('id, username, email, created_at, is_email_verified, email_verified, is_phone_verified, phone_verified, is_id_verified, kyc_verified')
+          .in('id', userIds)
+      : { data: [] };
+    const userMap = Object.fromEntries((users || []).map(u => [u.id, u]));
+
+    res.json({
+      success:     true,
+      withdrawals: (rows || []).map(r => ({ ...r, user: userMap[r.user_id] || null })),
+    });
+  } catch (error) {
+    console.error('[hdWalletRoutes GET /ceo-withdrawals]', error.message);
+    res.status(500).json({ error: 'Failed to load withdrawal requests.' });
+  }
+});
+
+// POST /api/hd-wallet/ceo-withdrawals/:id/approve
+router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
+  const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
+  try {
+    const ceo = await requireCeo(req, res); if (!ceo) return;
+    const { id } = req.params;
+    const force = !!req.body.force;
+
+    const { data: txRow } = await supabaseAdmin
+      .from('wallet_transactions').select('*').eq('id', id).eq('status', 'PENDING_APPROVAL').maybeSingle();
+    if (!txRow) return res.status(404).json({ error: 'No pending withdrawal found with that ID — it may have already been reviewed.' });
+
+    const platformFee = parseFloat(txRow.platform_fee_btc || 0);
+    const { data: targetUser } = await supabaseAdmin
+      .from('users').select('id, email, username').eq('id', txRow.user_id).single();
+
+    let result;
+    try {
+      result = await hdWallet.sendWithdrawal(txRow.user_id, txRow.destination_address, parseFloat(txRow.amount_btc));
+    } catch (sendErr) {
+      const lowHotWallet = sendErr.message?.startsWith('HOT_WALLET_INSUFFICIENT') || sendErr.message?.startsWith('INSUFFICIENT_UTXOS');
+      if (lowHotWallet && force) {
+        // CEO force-approved despite a low hot wallet — queue it (funds stay deducted from the
+        // user, fee is still earned) instead of broadcasting; the sweep/retry job picks it up.
+        const { data: cw } = await supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', COMPANY_WALLET_ID).maybeSingle();
+        const ncb = parseFloat((parseFloat(cw?.balance_btc || 0) + platformFee).toFixed(8));
+        const ts  = new Date().toISOString();
+        await Promise.all([
+          hdWallet.setWalletBalance(COMPANY_WALLET_ID, ncb),
+          supabaseAdmin.from('user_balances').upsert({ user_id: COMPANY_WALLET_ID, balance_btc: ncb, updated_at: ts }, { onConflict: 'user_id' }),
+        ]);
+        await supabaseAdmin.from('wallet_transactions').update({
+          status: 'PENDING', reviewed_by: ceo.id, reviewed_at: ts,
+          notes: `${txRow.notes || ''} — CEO-approved ${ts}; queued (hot wallet low, force-approved).`,
+        }).eq('id', id);
+        if (targetUser?.email) {
+          emailService.sendTxReceiptEmail(
+            { id: targetUser.id, email: targetUser.email, username: targetUser.username },
+            { type: 'WITHDRAWAL', amount_btc: parseFloat(txRow.amount_btc), status: 'PENDING',
+              destination_address: txRow.destination_address, fee_btc: platformFee,
+              notes: 'Approved by PRAQEN security review — broadcasting shortly.', created_at: ts }
+          ).catch(() => {});
+        }
+        return res.json({ success: true, queued: true, message: 'Approved — queued for broadcast (hot wallet is currently low).' });
+      }
+      throw sendErr;
+    }
+
+    // Broadcast succeeded — credit the platform fee and mark this reviewed + confirmed
+    const { data: companyWallet } = await supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', COMPANY_WALLET_ID).maybeSingle();
+    const newCompanyBalance = parseFloat((parseFloat(companyWallet?.balance_btc || 0) + platformFee).toFixed(8));
+    const ts = new Date().toISOString();
+    await Promise.all([
+      hdWallet.setWalletBalance(COMPANY_WALLET_ID, newCompanyBalance),
+      supabaseAdmin.from('user_balances').upsert({ user_id: COMPANY_WALLET_ID, balance_btc: newCompanyBalance, updated_at: ts }, { onConflict: 'user_id' }),
+    ]);
+    await supabaseAdmin.from('wallet_transactions').update({
+      status: 'CONFIRMED', tx_hash: result.txid, reviewed_by: ceo.id, reviewed_at: ts,
+      notes: `${txRow.notes || ''} — Approved by CEO review ${ts}.`,
+    }).eq('id', id);
+    await supabaseAdmin.from('wallet_transactions').insert({
+      user_id: COMPANY_WALLET_ID, type: 'FEE', amount_btc: platformFee, status: 'CONFIRMED',
+      tx_hash: result.txid, notes: `Blockchain fee from user ${txRow.user_id.slice(0, 8)} — CEO-approved withdrawal`, created_at: ts,
+    });
+
+    if (targetUser?.email) {
+      emailService.sendTxReceiptEmail(
+        { id: targetUser.id, email: targetUser.email, username: targetUser.username },
+        { type: 'WITHDRAWAL', amount_btc: parseFloat(txRow.amount_btc), status: 'CONFIRMED',
+          destination_address: txRow.destination_address, fee_btc: platformFee, tx_hash: result.txid,
+          notes: 'Approved by PRAQEN security review and sent.', created_at: ts }
+      ).catch(() => {});
+    }
+    supabaseAdmin.from('notifications').insert({
+      user_id: txRow.user_id, type: 'wallet', title: '✅ Withdrawal Approved & Sent',
+      message: `Your withdrawal of ₿${parseFloat(txRow.amount_btc).toFixed(8)} passed security review and is on its way.`,
+      action: '/wallet', is_read: false, created_at: ts,
+    }).then(null, () => {});
+
+    console.log(`✅ [CEO] Approved withdrawal ${id} — ₿${txRow.amount_btc} → ${txRow.destination_address} | TX ${result.txid} | by ${ceo.email}`);
+    res.json({ success: true, txid: result.txid, message: 'Withdrawal approved and broadcast.' });
+  } catch (error) {
+    console.error('[hdWalletRoutes POST /ceo-withdrawals/:id/approve]', error.message);
+    if (error.message?.startsWith('HOT_WALLET_INSUFFICIENT') || error.message?.startsWith('INSUFFICIENT_UTXOS')) {
+      return res.status(503).json({ error: 'Hot wallet has insufficient funds to broadcast this right now. Top it up, or retry with "force" to queue it for later.', hotWalletLow: true });
+    }
+    res.status(500).json({ error: 'Failed to approve withdrawal: ' + error.message });
+  }
+});
+
+// POST /api/hd-wallet/ceo-withdrawals/:id/reject  { reason }
+// Returns the full reserved amount (payout + fee) to the user — nothing was ever broadcast.
+router.post('/ceo-withdrawals/:id/reject', verifyToken, async (req, res) => {
+  try {
+    const ceo = await requireCeo(req, res); if (!ceo) return;
+    const { id } = req.params;
+    const reason = (req.body.reason || '').trim();
+    if (!reason) return res.status(400).json({ error: 'A rejection reason is required.' });
+
+    const { data: txRow } = await supabaseAdmin
+      .from('wallet_transactions').select('*').eq('id', id).eq('status', 'PENDING_APPROVAL').maybeSingle();
+    if (!txRow) return res.status(404).json({ error: 'No pending withdrawal found with that ID — it may have already been reviewed.' });
+
+    const refundAmount = parseFloat((parseFloat(txRow.amount_btc) + parseFloat(txRow.platform_fee_btc || 0)).toFixed(8));
+    const userId = txRow.user_id;
+    const ts = new Date().toISOString();
+
+    const { data: bal } = await supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', userId).single();
+    const newBalance = parseFloat((parseFloat(bal?.balance_btc || 0) + refundAmount).toFixed(8));
+
+    await Promise.all([
+      supabaseAdmin.from('wallets').update({ balance_btc: newBalance, updated_at: ts }).eq('user_id', userId),
+      supabaseAdmin.from('user_balances').update({ balance_btc: newBalance, updated_at: ts }).eq('user_id', userId),
+      supabaseAdmin.from('user_wallets').update({ balance_btc: newBalance, updated_at: ts }).eq('user_id', userId),
+    ]);
+
+    await supabaseAdmin.from('wallet_transactions').update({
+      status: 'REJECTED', reviewed_by: ceo.id, reviewed_at: ts, rejection_reason: reason,
+    }).eq('id', id);
+
+    const { data: targetUser } = await supabaseAdmin.from('users').select('id, email, username').eq('id', userId).single();
+    if (targetUser?.email) {
+      emailService.sendWithdrawalRejectedEmail(targetUser, parseFloat(txRow.amount_btc), reason).catch(() => {});
+    }
+    supabaseAdmin.from('notifications').insert({
+      user_id: userId, type: 'wallet', title: '⚠️ Withdrawal Declined',
+      message: `Your withdrawal of ₿${parseFloat(txRow.amount_btc).toFixed(8)} was declined during security review and the full amount (₿${refundAmount.toFixed(8)}) was returned to your wallet. Reason: ${reason}`,
+      action: '/wallet', is_read: false, created_at: ts,
+    }).then(null, () => {});
+
+    console.log(`⛔ [CEO] Rejected withdrawal ${id} — ₿${refundAmount} refunded to ${userId.slice(0,8)} | by ${ceo.email} | reason: ${reason}`);
+    res.json({ success: true, message: 'Withdrawal rejected and funds returned to the user.' });
+  } catch (error) {
+    console.error('[hdWalletRoutes POST /ceo-withdrawals/:id/reject]', error.message);
+    res.status(500).json({ error: 'Failed to reject withdrawal: ' + error.message });
   }
 });
 

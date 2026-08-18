@@ -427,14 +427,15 @@ function withdrawalAlertHtml(name, amountBtc, toAddress) {
 function txReceiptHtml(name, tx) {
   const isSend     = tx.type === 'WITHDRAWAL' || tx.type === 'SEND' || tx.type === 'TRANSFER_OUT';
   const isInternal = tx.type === 'TRANSFER_IN' || tx.type === 'TRANSFER_OUT';
-  const isPending  = tx.status === 'PENDING';
+  const isPending  = tx.status === 'PENDING' || tx.status === 'PENDING_APPROVAL';
+  const isReview   = tx.status === 'PENDING_APPROVAL';
   const amountSign  = isSend ? '−' : '+';
   const amountLabel = `${amountSign}₿${parseFloat(tx.amount_btc || 0).toFixed(8)}`;
   const amountColor = isSend ? '#EF4444' : '#10B981';
   const statusColor = isPending ? '#F59E0B' : '#10B981';
   const statusBg    = isPending ? '#FEF3C7' : '#D1FAE5';
   const statusText  = isPending ? '#92400E' : '#065F46';
-  const statusLabel = isPending ? '⏳ PENDING' : '✅ CONFIRMED';
+  const statusLabel = isReview ? '🔒 UNDER SECURITY REVIEW' : isPending ? '⏳ PENDING' : '✅ CONFIRMED';
 
   const dateStr = tx.created_at
     ? new Date(tx.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -717,6 +718,63 @@ async function sendWithdrawalAlertEmail(user, amountBtc, toAddress) {
     html:     withdrawalAlertHtml(user.username || 'Trader', amountBtc, toAddress),
     type:     'withdrawal_alert',
     metadata: { amount_btc: amountBtc, destination: toAddress },
+  });
+}
+
+function ceoApprovalRequestHtml(ceoName, info) {
+  return base('Withdrawal Awaiting Approval 🔒', `
+    <div style="text-align:center;margin-bottom:20px;">
+      <div style="font-size:48px;">🔒</div>
+      <h2 style="color:#B45309;font-size:22px;margin:8px 0;">Security Review Needed</h2>
+    </div>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hi ${ceoName}, a user has requested an external BTC withdrawal. Review it before it can be sent.</p>
+    ${infoBox(`
+      <tr><td style="padding:8px 0;color:#64748B;font-size:13px;font-weight:600;">Amount</td><td style="padding:8px 0;color:#059669;font-size:20px;font-weight:900;text-align:right;">₿ ${parseFloat(info.amountBtc || 0).toFixed(8)}</td></tr>
+      <tr><td style="padding:7px 0;color:#64748B;font-size:12px;font-weight:600;">From</td><td style="padding:7px 0;color:#1E293B;font-size:12px;text-align:right;">${info.fromUser?.username || info.fromUserId?.slice(0,8) || 'Unknown'} (${info.fromUser?.email || '—'})</td></tr>
+      <tr><td style="padding:7px 0;color:#64748B;font-size:12px;font-weight:600;">To Address</td><td style="padding:7px 0;color:#94A3B8;font-size:11px;text-align:right;word-break:break-all;">${info.toAddress}</td></tr>
+      <tr><td style="padding:7px 0;color:#64748B;font-size:12px;font-weight:600;">Request ID</td><td style="padding:7px 0;color:#94A3B8;font-size:11px;text-align:right;">${info.requestId}</td></tr>
+    `)}
+    <p style="color:#64748B;font-size:13px;margin:0 0 16px;">Log in to the admin dashboard's CEO Approvals section to check this user's account history and approve or decline the request.</p>
+    ${ctaButton('Review in CEO Approvals', 'https://praqen.com/admin')}
+  `);
+}
+
+async function sendCeoApprovalRequestEmail(ceoUser, info) {
+  return sendEmail({
+    userId:   ceoUser.id,
+    to:       ceoUser.email,
+    subject:  `🔒 Withdrawal Awaiting Approval — ₿${parseFloat(info.amountBtc || 0).toFixed(8)}`,
+    html:     ceoApprovalRequestHtml(ceoUser.username || 'there', info),
+    type:     'ceo_approval_request',
+    metadata: { request_id: info.requestId, amount_btc: info.amountBtc, destination: info.toAddress, from_user_id: info.fromUserId },
+  });
+}
+
+function withdrawalRejectedHtml(name, amountBtc, reason) {
+  return base('Withdrawal Declined ⚠️', `
+    <div style="text-align:center;margin-bottom:20px;">
+      <div style="font-size:48px;">⚠️</div>
+      <h2 style="color:#991B1B;font-size:22px;margin:8px 0;">Withdrawal Declined</h2>
+    </div>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>, your withdrawal request did not pass our security review. The full amount has been returned to your PRAQEN wallet — no funds were lost.</p>
+    ${infoBox(`
+      <tr><td style="padding:8px 0;color:#64748B;font-size:13px;font-weight:600;">Amount Returned</td><td style="padding:8px 0;color:#059669;font-size:20px;font-weight:900;text-align:right;">₿ ${parseFloat(amountBtc || 0).toFixed(8)}</td></tr>
+      <tr><td style="padding:7px 0;color:#64748B;font-size:12px;font-weight:600;">Reason</td><td style="padding:7px 0;color:#1E293B;font-size:12px;text-align:right;">${reason}</td></tr>
+    `)}
+    <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 16px;">
+      <p style="margin:0;font-size:13px;color:#991b1b;">If you believe this is a mistake, or need help verifying your destination wallet, contact <a href="mailto:support@praqen.com" style="color:#b45309;font-weight:700;">support@praqen.com</a></p>
+    </div>
+  `);
+}
+
+async function sendWithdrawalRejectedEmail(user, amountBtc, reason) {
+  return sendEmail({
+    userId:   user.id,
+    to:       user.email,
+    subject:  `⚠️ Withdrawal Declined — funds returned to your wallet`,
+    html:     withdrawalRejectedHtml(user.username || 'Trader', amountBtc, reason),
+    type:     'withdrawal_rejected',
+    metadata: { amount_btc: amountBtc, reason },
   });
 }
 
@@ -1215,6 +1273,8 @@ module.exports = {
   sendTradeCancelledEmail,
   sendDepositAlertEmail,
   sendWithdrawalAlertEmail,
+  sendCeoApprovalRequestEmail,
+  sendWithdrawalRejectedEmail,
   sendTxReceiptEmail,
   sendBroadcastToAllUsers,
   sendEidBonusEmail,

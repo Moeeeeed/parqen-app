@@ -49,6 +49,18 @@ async function runIntegrityCheck() {
       hasMore  = walletRows.length === PAGE_SIZE;
       offset  += PAGE_SIZE;
 
+      // Batch-fetch every user_balances row for this page in ONE query instead
+      // of one round trip per user. The old per-user select was why a 940-user
+      // check took 261s (~1900 sequential Supabase round trips) — that ran on
+      // every server startup and every 24h, competing with live traffic for
+      // the same connection/rate-limit budget right when things need to be fast.
+      const pageUserIds = walletRows.map(w => w.user_id);
+      const { data: ubRows, error: ubBatchErr } = pageUserIds.length
+        ? await supabaseAdmin.from('user_balances').select('user_id, balance_btc').in('user_id', pageUserIds)
+        : { data: [] };
+      if (ubBatchErr) console.error('[BalanceIntegrity] Could not batch-fetch user_balances for page:', ubBatchErr.message);
+      const ubMap = Object.fromEntries((ubRows || []).map(r => [r.user_id, r.balance_btc]));
+
       for (const walletRow of walletRows) {
         try {
           const userId        = walletRow.user_id;
@@ -66,16 +78,9 @@ async function runIntegrityCheck() {
 
           checked++;
 
-          // Read user_balances (secondary)
-          const { data: ubRow, error: ubErr } = await supabaseAdmin
-            .from('user_balances')
-            .select('balance_btc')
-            .eq('user_id', userId)
-            .maybeSingle();
+          if (ubBatchErr) { errors++; continue; } // batch fetch failed — can't verify this page
 
-          if (ubErr) { errors++; continue; }
-
-          const secondaryBtc = parseFloat(parseFloat(ubRow?.balance_btc || 0).toFixed(8));
+          const secondaryBtc = parseFloat(parseFloat(ubMap[userId] || 0).toFixed(8));
           const diff         = Math.abs(trueBtc - secondaryBtc);
 
           if (diff <= TOLERANCE_BTC) continue; // in sync — nothing to do

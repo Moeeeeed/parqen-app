@@ -137,8 +137,8 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
       if (riskyAttempt) {
         toast.info('Since you still want to send, you can proceed. Once sent, PRAQEN is not responsible for any loss.', { autoClose: 7000 });
       }
-      await onSend(address.trim(), btcAmt, codeInput, riskyAttempt);
-      toast.success('BTC Sent Successfully! Your transaction is on its way.', { autoClose: 6000 });
+      const r = await onSend(address.trim(), btcAmt, codeInput, riskyAttempt);
+      toast.success(r?.data?.message || 'Withdrawal submitted for security review.', { autoClose: 8000 });
       onClose();
     } catch (e) {
       const msg = e?.response?.data?.error || '';
@@ -686,7 +686,7 @@ function TxReceiptModal({ tx, onClose, onRepeat, btcPrice, user, tradeParties })
   const isInternal = type === 'TRANSFER_IN' || type === 'TRANSFER_OUT';
   const isTrade    = type === 'TRADE' || type === 'ESCROW';
   const isOnChain  = type === 'WITHDRAWAL' || type === 'SEND' || type === 'DEPOSIT';
-  const isPending  = tx.status === 'PENDING' || tx.status === 'pending';
+  const isPending  = tx.status === 'PENDING' || tx.status === 'pending' || tx.status === 'PENDING_APPROVAL';
   // Internal platform transactions (P2P transfers, escrow trades, security
   // deposits) show the "Internally" subtitle under the type; on-chain ones do not.
   const isInternalTx = type.includes('TRANSFER') || type.includes('ESCROW') || type.includes('SECURITY_DEPOSIT');
@@ -1009,7 +1009,7 @@ function TxRow({ tx, onClick, btcPrice }) {
                 className="text-[10px] font-black px-1.5 py-0.5 rounded-full flex-shrink-0"
                 style={{ backgroundColor: `${C.warn}20`, color: C.warn }}
               >
-                PENDING
+                {tx.status === 'PENDING_APPROVAL' ? 'UNDER REVIEW' : 'PENDING'}
               </span>
             )}
           </div>
