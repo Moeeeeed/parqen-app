@@ -239,13 +239,19 @@ function WithdrawalApprovals() {
   const [rows, setRows]       = useState([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId]   = useState(null);
+  const [loadErr, setLoadErr] = useState('');
 
   const load = useCallback(async (status) => {
     setLoading(true);
+    setLoadErr('');
     try {
       const r = await axios.get(`${API_URL}/hd-wallet/ceo-withdrawals`, { params: { status: status || tab }, headers: authH() });
       setRows(r.data.withdrawals || []);
-    } catch (e) { toast.error(e.response?.data?.error || 'Failed to load withdrawal requests'); }
+    } catch (e) {
+      const msg = e.response?.data?.error || 'Failed to load withdrawal requests';
+      setLoadErr(msg);
+      toast.error(msg);
+    }
     finally { setLoading(false); }
   }, [tab]);
 
@@ -310,7 +316,12 @@ function WithdrawalApprovals() {
         })}
       </div>
 
-      {loading ? <Spin /> : rows.length === 0 ? (
+      {loading ? <Spin /> : loadErr ? (
+        <div className="flex flex-col items-center py-14 gap-2">
+          <XCircle size={36} strokeWidth={1.5} style={{ color: C.danger }} />
+          <p className="text-sm font-semibold" style={{ color: C.danger }}>{loadErr}</p>
+        </div>
+      ) : rows.length === 0 ? (
         <div className="flex flex-col items-center py-14 gap-2">
           <ShieldCheck size={36} strokeWidth={1.5} style={{ color: C.g400 }} />
           <p className="text-sm font-semibold" style={{ color: C.g500 }}>Nothing here</p>
