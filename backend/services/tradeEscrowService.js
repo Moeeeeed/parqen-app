@@ -766,18 +766,42 @@ class TradeEscrowService {
     console.log(`\n❌ cancelTrade — Trade: ${tradeId.slice(0,8)}, Reason: ${reason}`);
 
     // ── 1. Fetch trade ────────────────────────────────────────────────────────
-    const { data: trade, error } = await supabaseAdmin
+    const { data: preTrade, error } = await supabaseAdmin
       .from('trades')
       .select('*')
       .eq('id', tradeId)
       .single();
 
-    if (error || !trade) throw new Error('Trade not found');
+    if (error || !preTrade) throw new Error('Trade not found');
 
     const cancellable = ['CREATED', 'FUNDS_LOCKED', 'ESCROW', 'ACTIVE', 'OPEN', 'PAYMENT_SENT', 'DISPUTED'];
-    if (!cancellable.includes(trade.status)) {
-      return { success: false, message: `Trade cannot be cancelled — status is ${trade.status}` };
+    if (!cancellable.includes(preTrade.status)) {
+      return { success: false, message: `Trade cannot be cancelled — status is ${preTrade.status}` };
     }
+
+    // ── 1b. Atomically claim the TRADE itself for cancellation ─────────────────
+    // Idempotency guard against duplicate refunds. The escrow_locks claim below
+    // (LOCKED→REFUNDING) only protects trades that have an escrow_locks row —
+    // trades that fall back to trade.escrow_amount/trade.amount_btc (no lock row)
+    // had NO concurrency protection at all, so two near-simultaneous callers
+    // (e.g. a user's manual cancel racing the 60s auto-expiry cron, or a dispute
+    // resolution firing at the same moment) could both sail past that guard and
+    // both credit the refund. Claiming here, at the trade level, closes that gap
+    // for every refund path: only one concurrent caller can flip a cancellable
+    // status → CANCELLING; every other caller sees 0 rows updated and bails out.
+    const { data: claimedTrades, error: claimTradeErr } = await supabaseAdmin
+      .from('trades')
+      .update({ status: 'CANCELLING' })
+      .eq('id', tradeId)
+      .in('status', cancellable)
+      .select('*');
+
+    if (claimTradeErr) throw new Error(`Failed to claim trade for cancellation: ${claimTradeErr.message}`);
+    if (!claimedTrades || claimedTrades.length === 0) {
+      console.warn(`[cancelTrade] Trade ${tradeId.slice(0,8)} already claimed/cancelled by another process — skipping duplicate refund`);
+      return { success: false, message: 'This trade was already cancelled or resolved.' };
+    }
+    const trade = claimedTrades[0];
 
     // ── 2. Recover any lock stuck in REFUNDING from a previous failed cancel ──
     // Mirrors the RELEASING recovery in releaseBitcoinToBuyer.

@@ -1,0 +1,202 @@
+[AT] Africa's Talking SMS initialized 🟢 LIVE
+🔑 ENV check:
+   SUPABASE_URL:               ✅ FOUND
+   SUPABASE_ANON_KEY:          ✅ FOUND
+   SUPABASE_SERVICE_ROLE_KEY:  ✅ FOUND
+✅ PRAQEN Backend running on http://localhost:5000
+📋 Routes: /api/auth, /api/users, /api/listings, /api/trades, /api/my-trades, /api/wallet, /api/hd-wallet, /api/notifications
+📱 OneSignal: ✅ Configured
+🔔 Push notifications: ✅ Ready
+✅ Tron Wallet Service initialized — MAINNET
+   USDT contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t
+
+🔥 PRAQEN USDT Hot Wallet Service
+   Hot wallet address  : TXeSskzYJnbaNwg6sJvkYsgUPss7hkzYUY
+   Company Tron address: TQPTEcUwGLKQ9qrbPTwYgpiEvbEX8nQUWV
+   Withdrawal fee      : ₮1 per withdrawal
+   Min TRX reserve     : 100 TRX
+   ⚠️  Fund hot wallet with TRX (min 100) and USDT before withdrawals go live
+
+🔕 Stale offer cron: pauses offers from sellers inactive 10+ days — checks every 6 hours
+⏸  Live mainnet services (deposit monitor, sweep, balance integrity) skipped — NODE_ENV is not "production"
+⏱  Expired trade cron: checks every 60 seconds — BTC auto-refunded to seller on expiry
+[deactivateStaleOffers] ✅ No stale sellers — all sellers active within 10 days.
+[syncAllOfferStatuses] ✅ All offer statuses are already correct.
+[Backfill] Populated country for 4 user(s) from phone prefix
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+✅ HD Wallet initialized — MAINNET
+📡 API: https://mempool.space/api
+[FX] open.er-api failed, trying exchangerate.host: This operation was aborted
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64316 usd=0
+[BTC] live price: $64,316
+[FX] rates refreshed — GHS:11.0292 NGN:1360.58
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64316 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,316
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64316 usd=0
+[BTC] live price: $64,316
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64316 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64316 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64316 usd=0
+[BTC] live price: $64,316
+[BTC] live price: $64,316
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64315 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,315
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64315 usd=0
+[BTC] live price: $64,315
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64315 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,317
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64317 usd=0
+[BTC] live price: $64,317
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64317 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64317 usd=0
+[BTC] live price: $64,315
+[BTC] live price: $64,315
+[FX] rates refreshed — GHS:11.0292 NGN:1360.58
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64321 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64321 usd=0
+[BTC] live price: $64,321
+[BTC] live price: $64,321
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64321 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,324
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64324 usd=0
+[BTC] live price: $64,324
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64324 usd=0
+[BTC] live price: $64,327
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,339
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64339 usd=0
+[BTC] live price: $64,339
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,339
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64339 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64339 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64339 usd=0
+[syncAllOfferStatuses] ✅ All offer statuses are already correct.
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,322
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64322 usd=0
+[BTC] live price: $64,322
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64322 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[FX] rates refreshed — GHS:11.0292 NGN:1360.58
+[BTC] live price: $64,312
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64322 usd=0
+[BTC] live price: $64,312
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64302 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,302
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64302 usd=0
+[BTC] live price: $64,302
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64302 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,302
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64302 usd=0
+[BTC] live price: $64,302
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64302 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64302 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64302 usd=0
+[BTC] live price: $64,305
+[BTC] live price: $64,305
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64302 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,302
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64302 usd=0
+[BTC] live price: $64,302
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64302 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[FX] rates refreshed — GHS:11.0292 NGN:1360.58
+[BTC] live price: $64,290
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64290 usd=0
+[BTC] live price: $64,290
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64290 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,285
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64290 usd=0
+[BTC] live price: $64,285
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64285 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,292
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64285 usd=0
+[BTC] live price: $64,292
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64292 usd=0
+[BTC] live price: $64,292
+[syncAllOfferStatuses] ✅ All offer statuses are already correct.
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,293
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64292 usd=0
+[BTC] live price: $64,293
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,294
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64294 usd=0
+[FX] rates refreshed — GHS:11.0292 NGN:1360.58
+[BTC] live price: $64,294
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64294 usd=0
+[BTC] live price: $64,295
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64295 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,295
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64295 usd=0
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[FX] open.er-api failed, trying exchangerate.host: This operation was aborted
+[FX] open.er-api failed, trying exchangerate.host: This operation was aborted
+[syncAllOfferStatuses] DB error: TypeError: fetch failed
+[FX] all FX sources failed: fetch failed
+[FX] all FX sources failed: fetch failed
+[ensureWalletExists] wallets insert failed for 5b03e900-0800-43e0-ae64-dbf126f3b1e2: TypeError: fetch failed
+[Wallet] No wallet row for user 5b03e900-0800-43e0-ae64-dbf126f3b1e2: TypeError: fetch failed
+[ensureWalletExists] user_wallets insert failed for 5b03e900-0800-43e0-ae64-dbf126f3b1e2: TypeError: fetch failed
+[GET /wallet/usdt] user_wallets update failed: TypeError: fetch failed
+[FX] open.er-api failed, trying exchangerate.host: fetch failed
+[FX] all FX sources failed: fetch failed
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[FX] open.er-api failed, trying exchangerate.host: fetch failed
+[FX] all FX sources failed: fetch failed
+[Wallet] No wallet row for user 5b03e900-0800-43e0-ae64-dbf126f3b1e2: TypeError: fetch failed
+[ensureWalletExists] wallets insert failed for 5b03e900-0800-43e0-ae64-dbf126f3b1e2: TypeError: fetch failed
+[ensureWalletExists] user_wallets insert failed for 5b03e900-0800-43e0-ae64-dbf126f3b1e2: TypeError: fetch failed
+[GET /wallet/usdt] user_wallets update failed: TypeError: fetch failed
+[FX] open.er-api failed, trying exchangerate.host: fetch failed
+[FX] all FX sources failed: fetch failed
+[FX] open.er-api failed, trying exchangerate.host: fetch failed
+[FX] all FX sources failed: fetch failed
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[Wallet] No wallet row for user 5b03e900-0800-43e0-ae64-dbf126f3b1e2: TypeError: fetch failed
+[ensureWalletExists] wallets insert failed for 5b03e900-0800-43e0-ae64-dbf126f3b1e2: TypeError: fetch failed
+[ensureWalletExists] user_wallets insert failed for 5b03e900-0800-43e0-ae64-dbf126f3b1e2: TypeError: fetch failed
+[GET /wallet/usdt] user_wallets update failed: TypeError: fetch failed
+[FX] rates refreshed — GHS:11.0292 NGN:1360.58
+[BTC] live price: $64,239
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,238
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64238 usd=0

@@ -13,7 +13,7 @@ import {
   CreditCard, Smartphone, Waves, Circle, Send, Apple, Diamond, Globe,
   Building2, Landmark, LinkIcon, Layers, Sparkles, Banknote, Hexagon,
   Moon, Rocket, Star, Search, SearchX, Hourglass, ServerCrash,
-  Siren, MessageSquare, ShieldCheck, Leaf,
+  MessageSquare, ShieldCheck, Leaf,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
@@ -1527,42 +1527,6 @@ export default function BuyBitcoin({user}) {
 
       {/* Getting-started guide — shown to logged-in users who haven't funded their wallet yet */}
       {user && userBtcBalance * btcPrice < 10 && <GettingStartedSteps userId={user.id} />}
-
-      {/* Low-balance reminder — shown to logged-in sellers whose BTC is below $10 */}
-      {user && userBtcBalance * btcPrice < 10 && (
-        <div className="flex-shrink-0 px-3 pt-3">
-          <div className="max-w-7xl mx-auto rounded-2xl overflow-hidden shadow-lg"
-            style={{border:'2px solid #B91C1C'}}>
-            <div className="flex items-center gap-2 px-4 py-2.5"
-              style={{background:'linear-gradient(135deg,#991B1B,#DC2626)'}}>
-              <Siren size={18} className="text-white flex-shrink-0"/>
-              <span className="text-xs sm:text-sm font-black text-white tracking-wide uppercase">
-                Action Required — Your Offer Is Not Visible To Buyers
-              </span>
-            </div>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-4" style={{backgroundColor:'#FEF2F2'}}>
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{backgroundColor:'#FEE2E2'}}>
-                <Wallet size={20} style={{color:'#B91C1C'}}/>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-base font-black" style={{color:'#7F1D1D'}}>Keep your wallet funded to stay active</p>
-                <p className="text-sm mt-1 leading-relaxed font-semibold" style={{color:'#B91C1C'}}>
-                  Your Bitcoin wallet must have at least <strong>$10 and above</strong> for your buy and sell offers to appear in the marketplace — and to unlock your first bonus on your way to becoming a vendor.
-                  Current balance: <strong>${(userBtcBalance * btcPrice).toFixed(2)}</strong>.
-                  Top up now to activate your offer.
-                </p>
-              </div>
-              <button
-                onClick={()=>navigate('/wallet')}
-                className="flex-shrink-0 w-full sm:w-auto px-6 py-3 rounded-xl text-sm font-black text-white shadow-md hover:opacity-90 transition"
-                style={{background:'linear-gradient(135deg,#B91C1C,#DC2626)'}}>
-                Top Up Now →
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ══ 3. FILTER BAR ══════════════════════════════════════ */}
       <div className="bg-white border-b flex-shrink-0" style={{borderColor:C.g200}}>

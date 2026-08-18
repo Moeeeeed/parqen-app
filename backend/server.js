@@ -158,7 +158,7 @@ async function _warmListingsCache() {
       .filter(l => userMap[l.seller_id]) // skip any listing with no user dataxa
       .map(l => {
         const u = userMap[l.seller_id];
-        return { ...l, users: { ...u, display_name: computeDisplayName(u), country: u.country || null } };
+        return { ...l, users: { ...u, avatar_url: capAvatar(u.avatar_url), display_name: computeDisplayName(u), country: u.country || null } };
       });
 
     if (listings.length === 0) return; // nothing valid to cache

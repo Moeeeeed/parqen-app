@@ -14,7 +14,7 @@ import {
   Globe, CreditCard, Waves, Circle, Banknote, Apple,
   MessageCircle, Diamond, Send, Building2, Landmark, Link2,
   Palmtree, Sparkles, Moon, Star, FileText, ClipboardList,
-  BarChart3, WifiOff, Search, Loader2, Smartphone,
+  BarChart3, WifiOff, Search, Loader2, Smartphone, Crown,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
@@ -38,6 +38,20 @@ const C = {
 
 // ── Featured badge config ─────────────────────────────────────────────────────
 const FEATURED = {
+  active_trader: {
+    TagIcon:     Crown,
+    tag:         'ACTIVE TRADER OF THE WEEK',
+    ribbon:      'linear-gradient(90deg,#064E3B 0%,#065F46 18%,#059669 38%,#6EE7B7 50%,#059669 62%,#065F46 82%,#064E3B 100%)',
+    border:      '#059669',
+    glow:        'rgba(5,150,105,0.35)',
+    bg:          '#F0FAF5',
+    bgGradient:  'linear-gradient(150deg,rgba(110,231,183,0.22) 0%,#F0FAF5 42%,rgba(16,185,129,0.12) 100%)',
+    divider:     'rgba(5,150,105,0.20)',
+    labelColor:  '#064E3B',
+    btnGradient: 'linear-gradient(135deg,#064E3B 0%,#059669 55%,#34D399 100%)',
+    btnShadow:   '0 4px 20px rgba(5,150,105,0.50)',
+    pulse:       true,
+  },
   fast_buyer: {
     TagIcon:     Zap,
     tag:         'FAST BUYER OF THE WEEK',
@@ -1317,6 +1331,13 @@ export default function SellBitcoin({user}) {
   const onlineCnt   = offers.filter(l=>(Date.now()-new Date(l.users?.last_seen_at||l.users?.last_login||0))/1000<300).length;
   const buyerCount  = new Set(offers.map(l=>l.seller_id)).size;
 
+  // Active Trader of the Week — RAFI_CRYPTO's MTN Mobile Money offer only
+  const ACTIVE_TRADER_USERNAME = 'rafi_crypto';
+  const activeTraderListingId = offers.find(l =>
+    (l.users?.username || '').toLowerCase() === ACTIVE_TRADER_USERNAME &&
+    String(l.payment_method||'').toLowerCase().includes('mtn')
+  )?.id || null;
+
   // Fast Buyer of the Week — Lhord_Exchange's MTN Mobile Money offer only
   const FAST_BUYER_USERNAME = 'lhord_exchange';
   const fastBuyerListingId = offers.find(l =>
@@ -1816,7 +1837,7 @@ export default function SellBitcoin({user}) {
                 <OfferCard
                   listing={l}
                   btcPriceUSD={btcPrice}
-                  featuredType={l.id === fastBuyerListingId ? 'fast_buyer' : l.id === hotOfferListingId ? 'hot_offer' : undefined}
+                  featuredType={l.id === activeTraderListingId ? 'active_trader' : l.id === fastBuyerListingId ? 'fast_buyer' : l.id === hotOfferListingId ? 'hot_offer' : undefined}
                   liveSeenAt={liveStatus[l.users?.id] || null}
                   onViewBuyer={()=>{
                     setModal({buyer:l.users||{}, listing:l});
