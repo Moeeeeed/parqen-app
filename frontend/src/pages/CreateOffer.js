@@ -773,8 +773,8 @@ export default function CreateOffer() {
   const maxExceedsWallet = isSellSide && !!maxLimit && walletCapacityLocal > 0 && parseFloat(maxLimit) > walletCapacityLocal;
   const minUSDVal = minLimit ? parseFloat(minLimit) / localRate : 0;
   const activeGcCurrency = gcCurrencies.length > 0 ? gcCurrencies[0] : null;
-  const gcCurrencySymbol = activeGcCurrency?.symbol || '$';
-  const gcCurrencyCode = activeGcCurrency?.currency || 'USD';
+  const gcCurrencySymbol = activeGcCurrency?.symbol || '';
+  const gcCurrencyCode = activeGcCurrency?.currency || '';
   const parsedMinRange = parseFloat(gcMinRange) || 0;
   const parsedMaxRange = parseFloat(gcMaxRange) || 0;
   const gcMinVal = parsedMinRange;
@@ -1333,6 +1333,11 @@ export default function CreateOffer() {
                       <p className="text-xs font-bold" style={{ color: C.g500 }}>Selected Card Range</p>
                       <p className="text-sm font-black" style={{ color: C.purple }}>
                         {gcCurrencySymbol}{fmt(parsedMinRange)} – {gcCurrencySymbol}{fmt(parsedMaxRange)} {gcCurrencyCode}
+                        {!activeGcCurrency && (
+                          <span className="block text-[11px] font-semibold text-amber-600 mt-0.5">
+                            (Select region above for currency)
+                          </span>
+                        )}
                       </p>
                     </div>
                     <div className="text-right flex-shrink-0">

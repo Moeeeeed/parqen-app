@@ -383,13 +383,12 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   const refUSD = cardRange ? (cardRange[0]?.isRange ? cardRange[0].min : cardRange[0]) : (fv || 1);
   const btcOut = refUSD / rateUSD;
   const receiveUSD = btcOut * btcPriceUSD;
-  // SELL_GIFT_CARD listings are posted by someone selling their card, so trading against
-  // one makes the viewer the BUYER (matches ListingDetail.js's trade_type assignment) —
-  // they give crypto and receive the card, the reverse of a BUY_GIFT_CARD listing.
-  const viewerIsBuyingCard = listing.listing_type === 'SELL_GIFT_CARD';
+  // BUY_GIFT_CARD listings are posted by vendors selling crypto for gift cards, so trading against
+  // one under the "Buy" tab means the viewer is BUYING crypto with their gift card.
+  const viewerIsBuyingCard = listing.listing_type === 'BUY_GIFT_CARD';
   const cryptoSide = { val: `$${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}`, sub: `≈ ${fBtc(btcOut)} BTC` };
-  const youGive    = viewerIsBuyingCard ? cryptoSide : cardSide;
-  const youReceive = viewerIsBuyingCard ? cardSide   : cryptoSide;
+  const youGive    = viewerIsBuyingCard ? cardSide   : cryptoSide;
+  const youReceive = viewerIsBuyingCard ? cryptoSide : cardSide;
 
   const rangeLabel = !cardRange ? 'Any value'
     : cardRange[0]?.isRange ? `${sym}${fmt(cardRange[0].min)} – ${sym}${fmt(cardRange[0].max)}`
@@ -622,7 +621,7 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
               background: ft ? ft.btnGradient : C.forest,
               boxShadow: ft ? ft.btnShadow : undefined,
             }}>
-            {viewerIsBuyingCard ? 'BUY GIFT CARD' : 'SELL GIFT CARD'} <ArrowRight size={14} />
+            {viewerIsBuyingCard ? 'BUY' : 'SELL'} <ArrowRight size={14} />
           </button>
         </div>
       </div>
@@ -1297,9 +1296,9 @@ useEffect(() => {
       // to buy one). This matches ListingDetail.js's role assignment (trade_type:
       // SELL_GIFT_CARD -> viewer BUYs) and the Buy/Sell Bitcoin page convention.
       if (gcMode === 'buy') {
-        list = list.filter(l => l.listing_type === 'SELL_GIFT_CARD');
-      } else if (gcMode === 'sell') {
         list = list.filter(l => l.listing_type === 'BUY_GIFT_CARD');
+      } else if (gcMode === 'sell') {
+        list = list.filter(l => l.listing_type === 'SELL_GIFT_CARD');
       }
       list = list.filter(isForeignListing);
       if (cryptoFilter === 'BTC') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'BTC');
