@@ -1223,27 +1223,24 @@ export default function CreateOffer() {
                 </div>
               </div>
 
-              {/* ── Card Currency Regions (optional) */}
+              {/* ── Card Currency Region (single select) */}
               <div>
                 <label className="block text-sm font-semibold mb-1" style={{ color: C.g700 }}>
-                  Card Currency Regions
-                  <span className="ml-1.5 text-xs font-normal" style={{ color: C.g400 }}>(optional · up to 10)</span>
+                  Card Currency Region
                 </label>
                 <p className="text-sm mb-3" style={{ color: C.g500 }}>
-                  Add the regions / currencies your card supports.
+                  Select the region / currency your gift card supports.
                 </p>
                 <SearchableSelect
                   items={GC_CURRENCIES}
-                  value=""
+                  value={gcCurrencies[0]?.region || ''}
                   onChange={(region) => {
                     const c = GC_CURRENCIES.find(x => x.region === region);
                     if (!c) return;
-                    if (gcCurrencies.some(x => x.region === region)) {
-                      setGcCurrencies(prev => prev.filter(x => x.region !== region));
-                    } else if (gcCurrencies.length < 10) {
-                      setGcCurrencies(prev => [...prev, { ...c }]);
+                    if (gcCurrencies[0]?.region === region) {
+                      setGcCurrencies([]);
                     } else {
-                      toast.warn('Maximum 10 currency regions allowed');
+                      setGcCurrencies([{ ...c }]);
                     }
                   }}
                   searchValue={gcCurrSearch}
@@ -1269,11 +1266,11 @@ export default function CreateOffer() {
                 />
                 {gcCurrencies.length > 0 && (
                   <div className="mt-3 p-4 rounded-2xl" style={{ backgroundColor: `${C.mint}06`, border: `1px solid ${C.mint}20` }}>
-                    <p className="text-xs font-semibold mb-2" style={{ color: C.g600 }}>Selected regions ({gcCurrencies.length}/10)</p>
+                    <p className="text-xs font-semibold mb-2" style={{ color: C.g600 }}>Selected Region</p>
                     <div className="flex flex-wrap gap-1.5">
                       {gcCurrencies.map(c => (
                         <button key={c.region}
-                          onClick={() => setGcCurrencies(prev => prev.filter(x => x.region !== c.region))}
+                          onClick={() => setGcCurrencies([])}
                           className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full transition-transform hover:scale-105 active:scale-95"
                           style={{ backgroundColor: C.mint, color: C.white }}>
                           {c.flag} {c.region}
