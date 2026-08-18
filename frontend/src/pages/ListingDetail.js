@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRates } from '../contexts/RatesContext';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -754,7 +754,9 @@ const loadAll = useCallback(async (isBackground = false) => {
             <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.g100}`, background: C.g50, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ fontSize: 11, color: C.g400, fontWeight: 700, marginBottom: 2 }}>PAY WITH</div>
-                <div style={{ fontSize: 13, fontWeight: 800, color: C.g800 }}>{pm.icon} {pm.label}</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: C.g800 }}>
+                  {isGiftCard && (listing.gift_card_brand || listing.giftCardBrand) ? `🎁 ${listing.gift_card_brand || listing.giftCardBrand}` : <>{pm.icon} {pm.label}</>}
+                </div>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 11, color: C.g400, fontWeight: 700, marginBottom: 2 }}>LIMIT</div>

@@ -376,9 +376,9 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   // which direction this listing runs.
   const cardSide = (() => {
     if (!cardRange) { const ml = listing.min_limit_local || (fv ? fv * usdRate : 0); return { val: `${sym}${fmt(ml)}`, sub: cur }; }
-    if (cardRange[0]?.isRange) return { val: `$${cardRange[0].min}`, sub: 'USD starting' };
-    if (cardRange.length === 1) return { val: `$${cardRange[0]}`, sub: 'USD card' };
-    return { val: `$${cardRange[0]}`, sub: 'USD starting' };
+    if (cardRange[0]?.isRange) return { val: `${sym}${fmt(cardRange[0].min)}`, sub: `${cur} starting` };
+    if (cardRange.length === 1) return { val: `${sym}${fmt(cardRange[0])}`, sub: `${cur} card` };
+    return { val: `${sym}${fmt(cardRange[0])}`, sub: `${cur} starting` };
   })();
   const refUSD = cardRange ? (cardRange[0]?.isRange ? cardRange[0].min : cardRange[0]) : (fv || 1);
   const btcOut = refUSD / rateUSD;
@@ -392,8 +392,8 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   const youReceive = viewerIsBuyingCard ? cardSide   : cryptoSide;
 
   const rangeLabel = !cardRange ? 'Any value'
-    : cardRange[0]?.isRange ? `$${cardRange[0].min} – $${cardRange[0].max}`
-    : cardRange.map(v => `$${v}`).join(' | ');
+    : cardRange[0]?.isRange ? `${sym}${fmt(cardRange[0].min)} – ${sym}${fmt(cardRange[0].max)}`
+    : cardRange.map(v => `${sym}${fmt(v)}`).join(' | ');
 
   const pos = parseInt(u.positive_feedback || 0);
   const neg = parseInt(u.negative_feedback || 0);
@@ -1114,7 +1114,7 @@ export default function GiftCards({ user }) {
   const [showSellAssetMenu, setShowSellAssetMenu] = useState(false);
   const [cryptoFilter, setCryptoFilter] = useState('ALL'); // 'ALL' | 'BTC' | 'USDT'
   const [showCryptoMenu, setShowCryptoMenu] = useState(false);
-  const [gcMode, setGcMode] = useState('all'); // 'all' | 'sell'
+  const [gcMode, setGcMode] = useState('buy'); // 'buy' | 'sell' | 'all'
   const [modal, setModal] = useState(null);
   const [activeTrades, setActiveTrades] = useState([]);
   const [showAllTrades, setShowAllTrades] = useState(false);
@@ -1296,7 +1296,11 @@ useEffect(() => {
       // where the viewer sells their own card (BUY_GIFT_CARD listings — people requesting
       // to buy one). This matches ListingDetail.js's role assignment (trade_type:
       // SELL_GIFT_CARD -> viewer BUYs) and the Buy/Sell Bitcoin page convention.
-      if (gcMode === 'sell') list = list.filter(l => l.listing_type === 'BUY_GIFT_CARD');
+      if (gcMode === 'buy') {
+        list = list.filter(l => l.listing_type === 'SELL_GIFT_CARD');
+      } else if (gcMode === 'sell') {
+        list = list.filter(l => l.listing_type === 'BUY_GIFT_CARD');
+      }
       list = list.filter(isForeignListing);
       if (cryptoFilter === 'BTC') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'BTC');
       if (cryptoFilter === 'USDT') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'USDT');
@@ -1410,14 +1414,14 @@ useEffect(() => {
       <div className="bg-white border-b sticky z-30 flex-shrink-0" style={{ top: 'var(--navbar-h)', borderColor: C.g200 }}>
         <div className="flex w-full">
           <div className="flex-1 relative">
-            <button onClick={() => setGcMode('all')}
+            <button onClick={() => setGcMode('buy')}
               className="w-full text-center py-3 text-xs font-bold border-b-2 transition-all flex items-center justify-center gap-1"
               style={{
-                borderColor: gcMode === 'all' ? C.gold : 'transparent',
-                color: gcMode === 'all' ? C.gold : C.g400,
-                backgroundColor: gcMode === 'all' ? 'rgba(244,164,34,0.08)' : 'transparent',
+                borderColor: gcMode === 'buy' ? C.forest : 'transparent',
+                color: gcMode === 'buy' ? C.forest : C.g400,
+                backgroundColor: gcMode === 'buy' ? `${C.forest}18` : 'transparent',
               }}>
-              All
+              Buy Gift Cards
             </button>
           </div>
 
@@ -1425,11 +1429,23 @@ useEffect(() => {
             <button onClick={() => setGcMode('sell')}
               className="w-full text-center py-3 text-xs font-bold border-b-2 transition-all flex items-center justify-center gap-1"
               style={{
-                borderColor: gcMode === 'sell' ? C.forest : 'transparent',
-                color: gcMode === 'sell' ? C.forest : C.g400,
-                backgroundColor: gcMode === 'sell' ? `${C.forest}18` : 'transparent',
+                borderColor: gcMode === 'sell' ? C.gold : 'transparent',
+                color: gcMode === 'sell' ? C.gold : C.g400,
+                backgroundColor: gcMode === 'sell' ? 'rgba(244,164,34,0.08)' : 'transparent',
               }}>
-              Sell
+              Sell Gift Cards
+            </button>
+          </div>
+
+          <div className="flex-1 relative">
+            <button onClick={() => setGcMode('all')}
+              className="w-full text-center py-3 text-xs font-bold border-b-2 transition-all flex items-center justify-center gap-1"
+              style={{
+                borderColor: gcMode === 'all' ? C.purple : 'transparent',
+                color: gcMode === 'all' ? C.purple : C.g400,
+                backgroundColor: gcMode === 'all' ? `${C.purple}12` : 'transparent',
+              }}>
+              All
             </button>
           </div>
 

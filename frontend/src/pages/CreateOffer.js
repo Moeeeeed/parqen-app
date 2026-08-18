@@ -634,6 +634,8 @@ export default function CreateOffer() {
   const [gcBrand, setGcBrand] = useState('Amazon');
   const [gcCardType, setGcCardType] = useState('both');   // 'physical' | 'ecode' | 'both'
   const [gcCardValues, setGcCardValues] = useState([50]);     // array of selected denominations
+  const [gcMinRange, setGcMinRange] = useState('10');
+  const [gcMaxRange, setGcMaxRange] = useState('500');
   const [gcSearch, setGcSearch] = useState('');
   const [gcCurrencies, setGcCurrencies] = useState([]);       // selected currency regions (max 10)
   const [gcCurrSearch, setGcCurrSearch] = useState('');
@@ -770,14 +772,19 @@ export default function CreateOffer() {
   const sellWalletTooLow = isSellSide && walletUsdValue < 10;
   const maxExceedsWallet = isSellSide && !!maxLimit && walletCapacityLocal > 0 && parseFloat(maxLimit) > walletCapacityLocal;
   const minUSDVal = minLimit ? parseFloat(minLimit) / localRate : 0;
-  const gcMinVal = gcCardValues.length ? Math.min(...gcCardValues) : 0;
+  const activeGcCurrency = gcCurrencies.length > 0 ? gcCurrencies[0] : null;
+  const gcCurrencySymbol = activeGcCurrency?.symbol || '$';
+  const gcCurrencyCode = activeGcCurrency?.currency || 'USD';
+  const parsedMinRange = parseFloat(gcMinRange) || 0;
+  const parsedMaxRange = parseFloat(gcMaxRange) || 0;
+  const gcMinVal = parsedMinRange;
   // gc_buy offers pay gift-card sellers straight out of this wallet, same as a
   // regular SELL offer — the backend requires >= $10 AND enough to cover the
   // offer's own minimum card value, or it gets auto-paused a few minutes later
   // by the balance sync sweep. Mirror both checks here so the form blocks early.
   const isGcBuySide = offerType === 'gc_buy';
   const gcWalletTooLow = isGcBuySide && walletUsdValue < 10;
-  const gcMinExceedsWallet = isGcBuySide && gcCardValues.length > 0 && gcMinVal > walletUsdValue;
+  const gcMinExceedsWallet = isGcBuySide && parsedMinRange > 0 && gcMinVal > walletUsdValue;
 
   // Grouped payment methods for dropdown
   const matchesPay = (m) => {
@@ -797,7 +804,7 @@ export default function CreateOffer() {
  const canNext = () => {
     if (step === 1) return !!offerType;
     if (isGC) {
-      if (step === 2) return gcCardValues.length > 0 && !!gcBrand && (isGcBuySide || (!gcWalletTooLow && !gcMinExceedsWallet));
+      if (step === 2) return parsedMinRange > 0 && parsedMaxRange >= parsedMinRange && !!gcBrand && (isGcBuySide || (!gcWalletTooLow && !gcMinExceedsWallet));
       if (step === 3) return !!country && !!currencyCode && FOREIGN_CURRENCY_CODES.includes(currencyCode);
       if (step === 4) return pricingType === 'fixed' ? !!fixedPrice : true;
       if (step === 5) return true;
@@ -839,27 +846,25 @@ export default function CreateOffer() {
     setSubmitting(true);
     setDupOfferWarning(null);
     try {
+      const gcValuesPayload = [{ min: parsedMinRange, max: parsedMaxRange, isRange: true }];
       const payload = {
         type:                offerType,
         country,
-        currency:            currencyCode,
-        currency_symbol:     currencySymbol,
+        currency:            isGC ? gcCurrencyCode : currencyCode,
+        currency_symbol:     isGC ? gcCurrencySymbol : currencySymbol,
         payment_method:      isGC ? 'Gift Card' : payMethod,
         gift_card_brand:     isGC ? gcBrand : null,
         card_type:           isGC ? gcCardType : null,
-        card_values:         isGC ? gcCardValues : null,
+        card_values:         isGC ? gcValuesPayload : null,
         gift_card_currencies: isGC ? gcCurrencies : null,
         pricing_type:        pricingType,
         asset,
         margin:              pricingType === 'market' ? margin : null,
         bitcoin_price:       pricingType === 'fixed' && fixedPrice ? parseFloat(fixedPrice) : assetLocal,
-        // gcCardValues are USD face values (e.g. a "$50" gift card) — the local-currency
-        // min/max must be that amount converted at the local rate, not the raw USD number,
-        // or the trade range shown/enforced for non-USD listings is off by the FX rate.
-        min_limit_local:     !isGC && minLimit ? parseFloat(minLimit) : (isGC ? gcMinVal * localRate : null),
-        max_limit_local:     !isGC && maxLimit ? parseFloat(maxLimit) : (isGC ? Math.max(...gcCardValues, gcMinVal) * localRate : null),
-        min_limit_usd:       !isGC && minLimit ? minUSDVal : (isGC ? gcMinVal : null),
-        max_limit_usd:       !isGC && maxLimit ? parseFloat(maxLimit) / localRate : (isGC ? Math.max(...gcCardValues, gcMinVal) : null),
+        min_limit_local:     !isGC && minLimit ? parseFloat(minLimit) : (isGC ? parsedMinRange : null),
+        max_limit_local:     !isGC && maxLimit ? parseFloat(maxLimit) : (isGC ? parsedMaxRange : null),
+        min_limit_usd:       !isGC && minLimit ? minUSDVal : (isGC ? parsedMinRange : null),
+        max_limit_usd:       !isGC && maxLimit ? parseFloat(maxLimit) / localRate : (isGC ? parsedMaxRange : null),
         time_limit:          timeLimit,
         trade_instructions:  instructions,
         listing_terms:       terms,
@@ -1280,70 +1285,83 @@ export default function CreateOffer() {
                 )}
               </div>
 
-              {/* Card Range (multi-select denominations) */}
+              {/* Card Range (Min - Max inputs) */}
               <div>
                 <label className="block text-sm font-bold mb-1.5" style={{ color: C.g700 }}>
-                  Card Range (USD) <span style={{ color: C.danger }}>*</span>
+                  Card Range ({gcCurrencyCode}) <span style={{ color: C.danger }}>*</span>
                 </label>
-                <p className="text-xs mb-2" style={{ color: C.g500 }}>
-                  Tap denominations you accept — select one or many.
+                <p className="text-xs mb-2.5" style={{ color: C.g500 }}>
+                  Enter the minimum and maximum card value you accept.
                 </p>
-                <div className="grid grid-cols-4 gap-2">
-                  {GC_FACE_VALUES.map(v => {
-                    const selected = gcCardValues.includes(v);
-                    return (
-                      <button key={v}
-                        onClick={() => setGcCardValues(prev =>
-                          selected ? prev.filter(x => x !== v) : [...prev, v].sort((a, b) => a - b)
-                        )}
-                        className="relative py-3 rounded-xl font-bold text-sm transition-all border-2"
-                        style={{
-                          borderColor: selected ? C.purple : C.g200,
-                          backgroundColor: selected ? C.purple : C.white,
-                          color: selected ? C.white : C.g700,
-                        }}>
-                        ${v}
-                        {selected && (
-                          <span className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center"
-                            style={{ backgroundColor: 'rgba(255,255,255,0.25)' }}>
-                            <Check size={9} style={{ color: C.white }} />
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1" style={{ color: C.g600 }}>
+                      Minimum ({gcCurrencySymbol})
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-sm" style={{ color: C.g400 }}>
+                        {gcCurrencySymbol}
+                      </span>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="e.g. 10"
+                        value={gcMinRange}
+                        onChange={(e) => setGcMinRange(e.target.value)}
+                        className="w-full pl-8 pr-3 py-2.5 rounded-xl border-2 font-bold text-sm focus:outline-none transition-all"
+                        style={{ borderColor: C.g200, color: C.g800 }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold mb-1" style={{ color: C.g600 }}>
+                      Maximum ({gcCurrencySymbol})
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-sm" style={{ color: C.g400 }}>
+                        {gcCurrencySymbol}
+                      </span>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="e.g. 500"
+                        value={gcMaxRange}
+                        onChange={(e) => setGcMaxRange(e.target.value)}
+                        className="w-full pl-8 pr-3 py-2.5 rounded-xl border-2 font-bold text-sm focus:outline-none transition-all"
+                        style={{ borderColor: C.g200, color: C.g800 }}
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                {gcCardValues.length > 0 && (
-                  <div className="mt-3 p-3 rounded-xl flex items-start gap-3"
+                {parsedMinRange > 0 && parsedMaxRange >= parsedMinRange && (
+                  <div className="mt-3 p-3 rounded-xl flex items-center justify-between"
                     style={{ backgroundColor: `${C.purple}08`, border: `1px solid ${C.purple}20` }}>
-                    <div className="flex-1">
-                      <p className="text-xs font-bold mb-1.5" style={{ color: C.g500 }}>Selected card range</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {gcCardValues.map(v => (
-                          <span key={v} className="text-xs font-bold px-2.5 py-1 rounded-full text-white"
-                            style={{ backgroundColor: C.purple }}>${v}</span>
-                        ))}
-                      </div>
+                    <div>
+                      <p className="text-xs font-bold" style={{ color: C.g500 }}>Selected Card Range</p>
+                      <p className="text-sm font-black" style={{ color: C.purple }}>
+                        {gcCurrencySymbol}{fmt(parsedMinRange)} – {gcCurrencySymbol}{fmt(parsedMaxRange)} {gcCurrencyCode}
+                      </p>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-xs" style={{ color: C.g400 }}>{assetLabel} equiv.</p>
                       <p className="text-xs font-bold" style={{ color: C.forest }}>
-                        {assetSymbol}{(gcMinVal / assetPriceUsd).toFixed(assetDecimals)}
+                        {assetSymbol}{(parsedMinRange / assetPriceUsd).toFixed(assetDecimals)}
                       </p>
-                      <p className="text-xs" style={{ color: C.g400 }}>at min ${gcMinVal}</p>
+                      <p className="text-xs" style={{ color: C.g400 }}>at min {gcCurrencySymbol}{fmt(parsedMinRange)}</p>
                     </div>
                   </div>
                 )}
 
-                {isGcBuySide && gcCardValues.length > 0 && (gcWalletTooLow || gcMinExceedsWallet) && (
+                {isGcBuySide && parsedMinRange > 0 && (gcWalletTooLow || gcMinExceedsWallet) && (
                   <div className="mt-3 p-3 rounded-xl flex items-start gap-2"
                     style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
                     <AlertTriangle size={14} style={{ color: '#B45309', flexShrink: 0, marginTop: 1 }} />
                     <p className="text-xs font-semibold" style={{ color: '#92400E' }}>
                       {gcWalletTooLow
                         ? `Your ${assetLabel} wallet balance is too low to back this offer — top up at least $10 worth of ${assetLabel} first.`
-                        : `Your wallet only covers ~$${fmt(walletUsdValue, 0)} — below your $${gcMinVal} minimum card value. Lower the minimum or top up your wallet, or this offer will show as unavailable to buyers.`}
+                        : `Your wallet only covers ~$${fmt(walletUsdValue, 0)} — below your ${gcCurrencySymbol}${parsedMinRange} minimum card value. Lower the minimum or top up your wallet, or this offer will show as unavailable to buyers.`}
                     </p>
                   </div>
                 )}

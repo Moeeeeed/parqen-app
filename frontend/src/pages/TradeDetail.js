@@ -788,7 +788,7 @@ function ProfilePopup({user, label, trade, onClose}) {
               {[
                 {label:'Trade ID',       value: trade?.id ? `#${String(trade.id).slice(0,8).toUpperCase()}` : '—'},
                 {label:'Status',         value: tradeStatus},
-                {label:'Payment Method', value: listing?.payment_method || trade?.payment_method || '—'},
+                {label:'Payment Method', value: (listing?.gift_card_brand || trade?.gift_card_brand) ? (listing?.gift_card_brand || trade?.gift_card_brand) : (listing?.payment_method || trade?.payment_method || '—')},
                 {label:'Fiat Amount',    value: tradeAmt ? `${sym}${fmt(tradeAmt)} ${cur}` : '—'},
                 {label:'BTC Amount',     value: tradeBtc ? `${fmtBtc(tradeBtc,6)} BTC` : '—'},
                 {label:'Time Limit',     value: `${listing?.time_limit || 30} minutes`},
