@@ -200,6 +200,15 @@ export default function TradeChat({ user }) {
         </div>
       </div>
 
+      {/* ── DISPUTE BANNER ──────────────────────────────────────────── */}
+      {trade?.status === 'DISPUTED' && (
+        <div className="flex-shrink-0 py-3 px-5 text-center text-white"
+          style={{ background: 'linear-gradient(135deg,#4C1D95,#7C3AED)' }}>
+          <p className="font-bold text-sm">Dispute Under Review</p>
+          <p className="text-xs text-white/70 mt-0.5">PRAQEN Moderator reviewing within 24h</p>
+        </div>
+      )}
+
       {/* ── MESSAGES AREA ───────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ backgroundColor: '#F9FAFB', minHeight: 0 }}>
         {messages.length === 0 ? (

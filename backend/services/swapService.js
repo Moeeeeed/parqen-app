@@ -63,6 +63,42 @@ class SwapService {
     };
   }
 
+  // ── Ledger-true BTC balance check ─────────────────────────────────────────
+  // balance_audit.new_balance is the independently-recomputed "true" balance
+  // from the last integrity sync. If wallets.balance_btc has drifted from it,
+  // something changed the raw column outside the normal ledger (a bug, a
+  // manual SQL edit) — refuse the swap rather than trust a number that may be
+  // an artifact of that drift. This is exactly what let the 2026-08-18
+  // manual-SQL-correction incident get laundered into real USDT: two accounts
+  // swapped out more BTC than their last confirmed balance, during the window
+  // before the corrupted balance was caught and restored.
+  //
+  // No equivalent audit table exists for USDT yet, so this check only guards
+  // the BTC→USDT direction (the one actually exploited). USDT→BTC still only
+  // checks the raw wallets.balance_usdt column.
+  async _assertLedgerTrueBtc(userId, walletBtc) {
+    const { data: lastAudit, error } = await supabaseAdmin
+      .from('balance_audit')
+      .select('new_balance, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(`Ledger check failed: ${error.message}`);
+    if (!lastAudit) return walletBtc; // no integrity history yet — nothing to check against
+
+    const audited = parseFloat(lastAudit.new_balance);
+    const EPSILON = 0.0000001; // 10 sats — rounding tolerance
+    if (Math.abs(walletBtc - audited) > EPSILON) {
+      throw new Error(
+        `Swap refused: your wallet balance (₿${walletBtc.toFixed(8)}) does not match your last verified ` +
+        `balance (₿${audited.toFixed(8)} as of ${lastAudit.created_at}). This needs a balance review before ` +
+        `swapping — please contact support.`
+      );
+    }
+    return audited;
+  }
+
   // ── Credit company fee wallet ─────────────────────────────────────────────
   // Throws on failure instead of swallowing errors — same fix applied to
   // tronHotWallet.creditFeeToCompany earlier: a blind update-with-no-error-
@@ -163,9 +199,10 @@ class SwapService {
     const netUsdt    = parseFloat((grossUsdt - feeUsdt).toFixed(6));
 
     const wallet = await this._getWallet(userId);
-    if (wallet.btc < amount) {
+    const ledgerBtc = await this._assertLedgerTrueBtc(userId, wallet.btc);
+    if (ledgerBtc < amount) {
       throw new Error(
-        `Insufficient BTC balance. Available: ${wallet.btc.toFixed(8)} BTC, Required: ${amount.toFixed(8)} BTC`
+        `Insufficient BTC balance. Available: ${ledgerBtc.toFixed(8)} BTC, Required: ${amount.toFixed(8)} BTC`
       );
     }
 

@@ -4997,38 +4997,46 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
   try {
     // Core columns — confirmed to exist in every PRAQEN DB schema
     const coreCols = 'id, email, username, full_name, bio, location, website, phone, avatar_url, average_rating, total_trades, completion_rate, created_at, is_admin, is_moderator, is_id_verified, is_email_verified, is_phone_verified, total_feedback_count, positive_feedback, negative_feedback, last_login, last_seen_at, badge, country, two_factor_enabled, two_factor_method';
-    let { data, error } = await supabaseAdmin.from('users')
-      .select(coreCols)
-      .eq('id', req.userId).single();
-    // Fallback if a column doesn't exist in the DB (e.g. is_phone_verified, badge, country)
-    if (error && (error.code === '42703' || (error.message && error.message.includes('does not exist')))) {
-      const essential = 'id, email, username, full_name, avatar_url, average_rating, total_trades, completion_rate, created_at, is_admin, is_moderator, is_id_verified, is_email_verified, total_feedback_count, positive_feedback, negative_feedback, last_login, two_factor_enabled, two_factor_method';
-      console.warn('[GET /api/users/profile] Column missing — falling back to essentials:', error.message);
-      const fallback = await supabaseAdmin.from('users').select(essential).eq('id', req.userId).single();
-      if (fallback.error) { error = fallback.error; data = null; }
-      else { data = fallback.data; error = null; Object.assign(data, { is_phone_verified: false, bio: null, location: null, website: null, phone: null, last_seen_at: null, badge: null, country: null }); }
-    }
+    const essentialCols = 'id, email, username, full_name, avatar_url, average_rating, total_trades, completion_rate, created_at, is_admin, is_moderator, is_id_verified, is_email_verified, total_feedback_count, positive_feedback, negative_feedback, last_login, two_factor_enabled, two_factor_method';
+
+    // The core profile fetch (with its column-missing fallback), the optional
+    // extra fields, and the wallet balance don't depend on each other — run all
+    // three round-trips at once instead of one-after-another.
+    const [{ data, error }, extraFields, balance] = await Promise.all([
+      (async () => {
+        let { data, error } = await supabaseAdmin.from('users').select(coreCols).eq('id', req.userId).single();
+        // Fallback if a column doesn't exist in the DB (e.g. is_phone_verified, badge, country)
+        if (error && (error.code === '42703' || (error.message && error.message.includes('does not exist')))) {
+          console.warn('[GET /api/users/profile] Column missing — falling back to essentials:', error.message);
+          const fallback = await supabaseAdmin.from('users').select(essentialCols).eq('id', req.userId).single();
+          if (fallback.error) { error = fallback.error; data = null; }
+          else { data = fallback.data; error = null; Object.assign(data, { is_phone_verified: false, bio: null, location: null, website: null, phone: null, last_seen_at: null, badge: null, country: null }); }
+        }
+        return { data, error };
+      })(),
+      (async () => {
+        // Optional columns — isolated so a missing column never breaks the response
+        try {
+          const { data: extra } = await supabaseAdmin.from('users')
+            .select('email_verified, is_phone_verified, phone_verified, kyc_verified, kyc_status, id_type, kyc_submitted_at, id_front_url, id_back_url, selfie_url, kyc_rejection_reason, username_changed, preferred_currency, preferred_language, timezone, hide_full_name, name_display, city, country_name, last_seen_location, referral_code, total_referrals, referral_earnings_btc, p2p_migrated_platform, p2p_migrated_username, p2p_migrated_feedback, p2p_migration_approved_at')
+            .eq('id', req.userId).single();
+          return extra || {};
+        } catch { return {}; }
+      })(),
+      (async () => {
+        // Balance — non-critical, silently ignored on error
+        try {
+          const { data: bal } = await supabaseAdmin.from('user_balances').select('balance_btc, balance_usd').eq('user_id', req.userId).single();
+          return bal || { balance_btc: 0, balance_usd: 0 };
+        } catch { return { balance_btc: 0, balance_usd: 0 }; }
+      })(),
+    ]);
+
     if (error) {
       console.error('[GET /api/users/profile] DB error:', error.message, '| code:', error.code || 'N/A');
       return res.status(500).json({ error: 'Could not load your profile. Please try again.' });
     }
     if (!data) return res.status(404).json({ error: 'Profile not found.' });
-
-    // Optional columns — isolated so a missing column never breaks the response
-    let extraFields = {};
-    try {
-      const { data: extra } = await supabaseAdmin.from('users')
-        .select('email_verified, is_phone_verified, phone_verified, kyc_verified, kyc_status, id_type, kyc_submitted_at, id_front_url, id_back_url, selfie_url, kyc_rejection_reason, username_changed, preferred_currency, preferred_language, timezone, hide_full_name, name_display, city, country_name, last_seen_location, referral_code, total_referrals, referral_earnings_btc, p2p_migrated_platform, p2p_migrated_username, p2p_migrated_feedback, p2p_migration_approved_at')
-        .eq('id', req.userId).single();
-      if (extra) extraFields = extra;
-    } catch { }
-
-    // Balance — non-critical, silently ignored on error
-    let balance = { balance_btc: 0, balance_usd: 0 };
-    try {
-      const { data: bal } = await supabaseAdmin.from('user_balances').select('balance_btc, balance_usd').eq('user_id', req.userId).single();
-      if (bal) balance = bal;
-    } catch { }
 
     res.json({
       user: {
@@ -7531,14 +7539,27 @@ app.post('/api/trades/:id/mark-paid', tradeLimiter, verifyToken, async (req, res
       }
     }
 
+    // Cash/BTC trades: the buyer's word alone is not enough — require a screenshot
+    // or receipt attached before payment can be marked as sent. This is what the
+    // seller (and any moderator, later, on a dispute) sees before BTC is released.
+    const { proofImage } = req.body;
+    if (!isGiftCardTrade && (!proofImage || typeof proofImage !== 'string' || !proofImage.startsWith('data:image/'))) {
+      return res.status(400).json({ error: 'Please attach a screenshot or receipt of your payment before confirming.' });
+    }
+
     const allowedStatuses = ['CREATED', 'FUNDS_LOCKED', 'ESCROW', 'ACTIVE', 'OPEN'];
     if (!allowedStatuses.includes(trade.status)) return res.status(400).json({ error: `Cannot mark as paid — trade status is ${trade.status}` });
 
     // Atomic update — only flips to PAYMENT_SENT if status is still in allowedStatuses.
     // Prevents a race where auto-cancel fires between our status check above and this write.
     // expires_at is cleared so no cron job or timer can ever expire a paid trade.
+    const updatePayload = { status: 'PAYMENT_SENT', buyer_confirmed: true, buyer_confirmed_at: new Date(), expires_at: null };
+    if (!isGiftCardTrade) {
+      updatePayload.payment_proof_url = proofImage;
+      updatePayload.payment_proof_at = new Date();
+    }
     const { data, error } = await supabaseAdmin.from('trades')
-      .update({ status: 'PAYMENT_SENT', buyer_confirmed: true, buyer_confirmed_at: new Date(), expires_at: null })
+      .update(updatePayload)
       .eq('id', req.params.id)
       .in('status', allowedStatuses)
       .select().single();
@@ -7559,6 +7580,16 @@ app.post('/api/trades/:id/mark-paid', tradeLimiter, verifyToken, async (req, res
     res.json({ success: true, trade: data });
 
     setImmediate(async () => {
+      // Keep the proof visible in the trade's evidence trail (moderator dispute
+      // view already renders every trade_images row), not just on the trade record.
+      if (!isGiftCardTrade && proofImage) {
+        try {
+          await supabaseAdmin.from('trade_images').insert({
+            trade_id: req.params.id, user_id: req.userId,
+            image_url: proofImage, image_type: 'payment_proof', created_at: new Date(),
+          });
+        } catch (e) { console.warn('[mark-paid] proof image insert failed:', e.message); }
+      }
       try {
         const notifyMsg = isGiftCardTrade
           ? `${actorName} sent the gift card code · Verify and release Bitcoin`
@@ -7892,7 +7923,7 @@ app.post('/api/trades/:id/dispute', tradeLimiter, verifyToken, async (req, res) 
     const { reason } = req.body;
     const { data: trade } = await supabaseAdmin.from('trades').select('*').eq('id', req.params.id).single();
     if (!trade) return res.status(404).json({ error: 'Trade not found' });
-    if (trade.buyer_id !== req.userId && trade.seller_id !== req.userId) {
+    if (String(trade.buyer_id) !== String(req.userId) && String(trade.seller_id) !== String(req.userId)) {
       return res.status(403).json({ error: 'Not a participant in this trade' });
     }
     // Clear expires_at so no expiry logic (frontend timer or backend) can ever
@@ -7900,15 +7931,26 @@ app.post('/api/trades/:id/dispute', tradeLimiter, verifyToken, async (req, res) 
     // `disputed_by` records exactly who opened it — only they can self-cancel
     // it later (POST /api/trades/:id/cancel); the other side can't unilaterally
     // cancel their way out of a dispute filed against them.
-    const { data, error } = await supabaseAdmin.from('trades')
-      .update({
-        status: 'DISPUTED',
-        disputed_at: new Date(),
-        disputed_by: req.userId,
-        dispute_reason: reason || 'User opened a dispute',
-        expires_at: null,
-      })
+    const disputePayload = {
+      status: 'DISPUTED',
+      disputed_at: new Date(),
+      disputed_by: req.userId,
+      dispute_reason: reason || 'User opened a dispute',
+      expires_at: null,
+    };
+    let { data, error } = await supabaseAdmin.from('trades')
+      .update(disputePayload)
       .eq('id', req.params.id).select().single();
+    // `disputed_by` only exists once dispute_voting_tables.sql has been run —
+    // if it hasn't, don't block the user from opening a dispute over it.
+    if (error && (error.code === '42703' || (error.message && error.message.includes('does not exist')))) {
+      console.warn('[dispute] disputed_by column missing — retrying without it:', error.message);
+      delete disputePayload.disputed_by;
+      const retry = await supabaseAdmin.from('trades')
+        .update(disputePayload)
+        .eq('id', req.params.id).select().single();
+      data = retry.data; error = retry.error;
+    }
     if (error) return res.status(400).json({ error: error.message });
     res.json({ success: true, trade: data });
 

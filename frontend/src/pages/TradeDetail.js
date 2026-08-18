@@ -170,7 +170,7 @@ function FeedbackModal({name,onClose,onSubmit,submitting}) {
 }
 
 // ─── Confirm action modal (Pay / Release) ────────────────────────────────────
-function ConfirmActionModal({icon:Icon, iconBg, title, lines, confirmLabel, confirmBg, confirmColor='#fff', onClose, onConfirm, submitting}) {
+function ConfirmActionModal({icon:Icon, iconBg, title, lines, confirmLabel, confirmBg, confirmColor='#fff', onClose, onConfirm, submitting, children, confirmDisabled}) {
   return(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
       style={{backgroundColor:'rgba(0,0,0,0.6)',backdropFilter:'blur(4px)'}}>
@@ -210,6 +210,8 @@ function ConfirmActionModal({icon:Icon, iconBg, title, lines, confirmLabel, conf
           ))}
         </div>
 
+        {children}
+
         {/* Buttons */}
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,padding:'0 16px 20px',boxSizing:'border-box'}}>
           <button onClick={onClose} disabled={submitting}
@@ -220,12 +222,12 @@ function ConfirmActionModal({icon:Icon, iconBg, title, lines, confirmLabel, conf
             }}>
             Go Back
           </button>
-          <button onClick={onConfirm} disabled={submitting}
+          <button onClick={onConfirm} disabled={submitting||confirmDisabled}
             style={{
               padding:'13px 0',borderRadius:14,fontWeight:900,fontSize:13,
               backgroundColor:confirmBg,color:confirmColor,border:'none',
-              cursor:submitting?'not-allowed':'pointer',
-              opacity:submitting?0.5:1,
+              cursor:(submitting||confirmDisabled)?'not-allowed':'pointer',
+              opacity:(submitting||confirmDisabled)?0.5:1,
               display:'flex',alignItems:'center',justifyContent:'center',gap:6,
             }}>
             {submitting?<><RefreshCw size={14} style={{animation:'spin 1s linear infinite'}}/>Processing…</>:confirmLabel}
@@ -872,6 +874,8 @@ export default function TradeDetail({user}) {
   const [timeLeft,  setTimeLeft]  = useState(null);
   const [showCancel,     setShowCancel]     = useState(false);
   const [showPayConfirm, setShowPayConfirm] = useState(false);
+  const [payProofPreview, setPayProofPreview] = useState(null);
+  const payProofRef = useRef(null);
   const [showRelConfirm, setShowRelConfirm] = useState(false);
   const [showFb,         setShowFb]         = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -1154,14 +1158,30 @@ export default function TradeDetail({user}) {
     }
   };
 
+  const handlePayProofSelect=(file)=>{
+    if(!file)return;
+    if(!file.type.startsWith('image/')){toast.error('Please attach an image — a screenshot or photo of your receipt.');return;}
+    if(file.size>5*1024*1024){toast.error('Image is over 5MB — please choose a smaller one.');return;}
+    const rd=new FileReader();
+    rd.onload=()=>setPayProofPreview(rd.result);
+    rd.readAsDataURL(file);
+  };
+
   const markPaid=async()=>{
+    if(!isGiftCardTrade&&!payProofPreview){
+      toast.error('Please attach a screenshot or receipt of your payment first.');
+      return;
+    }
     setShowPayConfirm(false);
     setSubmitting(true);
     // Block auto-cancel IMMEDIATELY — before the API round-trip completes.
     // The timer interval uses a stale closure; autoCancelled ref is always current.
     autoCancelled.current = true;
     try{
-      await axios.post(`${API_URL}/trades/${id}/mark-paid`,{},{headers:authH()});
+      await axios.post(`${API_URL}/trades/${id}/mark-paid`,
+        isGiftCardTrade?{}:{proofImage:payProofPreview},
+        {headers:authH()});
+      setPayProofPreview(null);
       setPaidAt(Date.now()); // Record the paid timestamp shown in the system message
       toast.success(isGiftCardTrade ? 'Code sent! Waiting for buyer to verify.' : 'Payment confirmed!');
       // Post this as a real system message in the chat (matches the "Trade
@@ -1260,7 +1280,7 @@ export default function TradeDetail({user}) {
       setShowDisputeModal(false);
       await loadTrade();
       await loadMessages();
-    }catch{toast.error('Failed to submit report. Please try again.');}
+    }catch(e){toast.error(e?.response?.data?.error||'Failed to submit report. Please try again.');}
     finally{setDisputeSubmitting(false);}
   };
 
@@ -1474,6 +1494,23 @@ export default function TradeDetail({user}) {
                   {isBuyer
                     ? <><CheckCircle size={14} style={{flexShrink:0}}/> Code received! Test it — if it works, click RELEASE BITCOIN to pay the seller.</>
                     : <><Clock size={14} style={{flexShrink:0}}/> Buyer is verifying your gift card code. Bitcoin releases once they confirm.</>}
+                </div>
+              )}
+
+              {/* ── Payment proof — shown to the seller before they can release ── */}
+              {isActive&&isPaid&&!isGiftCardTrade&&isSeller&&(
+                <div className="p-3 rounded-xl text-xs font-semibold border"
+                  style={{backgroundColor:'#F0FDF4',borderColor:'#86EFAC',color:'#166534'}}>
+                  <div style={{display:'flex',alignItems:'flex-start',gap:8,marginBottom:trade?.payment_proof_url?8:0}}>
+                    <CheckCircle size={14} style={{flexShrink:0,marginTop:1}}/>
+                    Buyer confirmed payment via {payMethod}. Check your account, then verify the proof below before releasing Bitcoin.
+                  </div>
+                  {trade?.payment_proof_url ? (
+                    <img src={trade.payment_proof_url} alt="Payment proof" onClick={()=>setImgSrc(trade.payment_proof_url)}
+                      style={{width:'100%',maxHeight:180,objectFit:'contain',borderRadius:8,cursor:'pointer',border:'1px solid #86EFAC',backgroundColor:'#fff',display:'block'}}/>
+                  ) : (
+                    <p style={{margin:0,color:'#92400E'}}>No proof was attached — verify carefully with the buyer before releasing.</p>
+                  )}
                 </div>
               )}
 
@@ -2315,7 +2352,30 @@ export default function TradeDetail({user}) {
           onClose={()=>setShowPayConfirm(false)}
           onConfirm={markPaid}
           submitting={submitting}
-        />
+          confirmDisabled={!isGiftCardTrade&&!payProofPreview}
+        >
+          {!isGiftCardTrade&&(
+            <div style={{padding:'0 16px 16px'}}>
+              <input ref={payProofRef} type="file" accept="image/*" style={{display:'none'}}
+                onChange={e=>handlePayProofSelect(e.target.files?.[0])}/>
+              {payProofPreview ? (
+                <div style={{display:'flex',alignItems:'center',gap:10,padding:10,borderRadius:12,backgroundColor:'#F0FDF4',border:'1px solid #86EFAC'}}>
+                  <img src={payProofPreview} alt="Payment proof" style={{width:44,height:44,borderRadius:8,objectFit:'cover',flexShrink:0}}/>
+                  <span style={{fontSize:12,fontWeight:700,color:'#166534',flex:1}}>Proof attached</span>
+                  <button type="button" onClick={()=>payProofRef.current?.click()}
+                    style={{fontSize:11,fontWeight:700,color:C.forest,background:'none',border:'none',cursor:'pointer'}}>
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <button type="button" onClick={()=>payProofRef.current?.click()}
+                  style={{width:'100%',padding:'12px',borderRadius:12,border:'2px dashed #CBD5E1',backgroundColor:'#F8FAFC',color:'#475569',fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                  <Paperclip size={14}/> Attach payment screenshot or receipt (required)
+                </button>
+              )}
+            </div>
+          )}
+        </ConfirmActionModal>
       )}
 
       {/* ── Release confirmation modal ───────────────────────────────── */}
