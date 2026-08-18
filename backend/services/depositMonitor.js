@@ -16,6 +16,7 @@ const axios      = require('axios');
 const nodemailer = require('nodemailer');
 const { updateOfferStatus }  = require('./offerStatusService');
 const { sendSystemAlert }    = require('./pushNotificationService');
+const { sendTelegramAlert }  = require('./telegramService');
 const { createClient }       = require('@supabase/supabase-js');
 
 const supabaseAdmin = createClient(
@@ -505,6 +506,9 @@ class DepositMonitor {
         `${depositBTC.toFixed(8)} BTC deposited to your PRAQEN wallet`,
         'https://praqen.com/wallet'
       ).catch(err => console.error('[DepositMonitor] Push notification error:', err.message));
+
+      // ── Step 9b: Telegram notification ───────────────────────────────────────
+      sendTelegramAlert(userId, `✅ Deposit received! ₿${depositBTC.toFixed(8)} BTC credited to your wallet. Balance: ${newBalanceBTC.toFixed(8)} BTC`).catch(() => {});
 
       // ── Step 10: Re-evaluate offer status ────────────────────────────────
       updateOfferStatus(userId).catch(() => {});

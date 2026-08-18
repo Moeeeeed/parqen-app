@@ -16,7 +16,7 @@ import {
   FileText, DollarSign, Languages, MapPin, X,
   ToggleLeft, ToggleRight,
   Ban, WifiOff, MessageCircle, Car, Plane, Zap,
-  AlertTriangle, Circle
+  AlertTriangle, Circle, Send, Unlink, Link
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -187,6 +187,165 @@ function PushEnableCard() {
           {requesting ? "Requesting permission…" : "Enable Instant Trade Alerts"}
         </button>
       </div>
+  );
+}
+
+// ─── Telegram Notifications Card ────────────────────────────────────────────
+function TelegramCard() {
+  const [status, setStatus] = React.useState({ connected: false, enabled: false });
+  const [linkingCode, setLinkingCode] = React.useState(null);
+  const [loading, setLoading] = React.useState(false);
+  const [polling, setPolling] = React.useState(false);
+
+  // Fetch status on mount
+  React.useEffect(() => {
+    fetchStatus();
+  }, []);
+
+  // Poll for connection after generating a code
+  React.useEffect(() => {
+    if (!linkingCode || !polling) return;
+    const interval = setInterval(async () => {
+      try {
+        const r = await axios.get(`${API_URL}/telegram/status`, { headers: authH() });
+        if (r.data?.connected) {
+          clearInterval(interval);
+          setLinkingCode(null);
+          setPolling(false);
+          setStatus(r.data);
+          toast.success('✅ Telegram connected successfully!');
+        }
+      } catch { /* ignore */ }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [linkingCode, polling]);
+
+  const fetchStatus = async () => {
+    try {
+      const r = await axios.get(`${API_URL}/telegram/status`, { headers: authH() });
+      setStatus(r.data);
+    } catch { /* ignore */ }
+  };
+
+  const handleConnect = async () => {
+    setLoading(true);
+    try {
+      const r = await axios.post(`${API_URL}/telegram/link`, {}, { headers: authH() });
+      if (r.data?.code) {
+        setLinkingCode(r.data.code);
+        setPolling(true);
+      }
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to generate linking code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggle = async (newVal) => {
+    try {
+      await axios.post(`${API_URL}/telegram/toggle`, { enabled: newVal }, { headers: authH() });
+      setStatus(s => ({ ...s, enabled: newVal }));
+      toast.success(newVal ? '🔔 Telegram alerts enabled.' : '🔕 Telegram alerts disabled.');
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to update settings.');
+    }
+  };
+
+  const handleDisconnect = async () => {
+    if (!window.confirm('Disconnect Telegram? You will stop receiving alerts.')) return;
+    try {
+      await axios.post(`${API_URL}/telegram/disconnect`, {}, { headers: authH() });
+      setStatus({ connected: false, enabled: false });
+      setLinkingCode(null);
+      setPolling(false);
+      toast.success('Telegram disconnected.');
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to disconnect.');
+    }
+  };
+
+  // ── Connected state ──────────────────────────────────────────────────
+  if (status.connected) {
+    return (
+      <div className="rounded-2xl border p-4" style={{ borderColor: '#A7F3D0', backgroundColor: '#ECFDF5' }}>
+        <div className="flex items-start gap-3 mb-3">
+          <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#0D9488' }}>
+            <Send size={18} color="#fff" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-black" style={{ color: '#065F46' }}>Telegram Connected</p>
+            <p className="text-xs mt-0.5" style={{ color: '#059669' }}>
+              {status.connectedAt ? `Linked ${new Date(status.connectedAt).toLocaleDateString()}` : 'Linked'}
+              {status.enabled ? ' — alerts active' : ' — alerts paused'}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-sm font-bold text-gray-700">Alerts Enabled</p>
+          <Toggle checked={status.enabled} onChange={handleToggle} />
+        </div>
+        <button onClick={handleDisconnect}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border-2 transition hover:bg-red-50 mt-2"
+                style={{ borderColor: '#FECACA', color: '#991B1B' }}>
+          <Unlink size={13} /> Disconnect Telegram
+        </button>
+      </div>
+    );
+  }
+
+  // ── Linking code shown ───────────────────────────────────────────────
+  if (linkingCode) {
+    return (
+      <div className="rounded-2xl border p-4" style={{ borderColor: '#A5F3FC', backgroundColor: '#ECFEFF' }}>
+        <div className="flex items-start gap-3 mb-3">
+          <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#0891B2' }}>
+            <Send size={18} color="#fff" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-black" style={{ color: '#164E63' }}>Link Your Telegram</p>
+            <p className="text-xs mt-0.5" style={{ color: '#0891B2' }}>Waiting for you to send the code in Telegram…</p>
+          </div>
+        </div>
+        <div className="p-4 rounded-xl text-center" style={{ backgroundColor: 'white', border: '2px dashed #0891B2' }}>
+          <p className="text-xs text-gray-500 mb-2">Your linking code:</p>
+          <p className="text-3xl font-black tracking-widest" style={{ color: '#0891B2', fontFamily: 'monospace' }}>{linkingCode}</p>
+        </div>
+        <div className="mt-3 p-3 rounded-xl text-xs space-y-1" style={{ backgroundColor: 'rgba(8,145,178,0.08)', color: '#155E75' }}>
+          <p className="font-bold">Steps:</p>
+          <p>1. Open Telegram and search for <span className="font-bold">@PraqenAlertsBot</span></p>
+          <p>2. Send this code: <span className="font-bold">{linkingCode}</span></p>
+          <p>3. Wait a few seconds — we'll detect it automatically</p>
+        </div>
+        <div className="flex items-center gap-2 mt-3">
+          <RefreshCw size={13} className="animate-spin" style={{ color: '#0891B2' }} />
+          <p className="text-xs font-bold" style={{ color: '#0891B2' }}>Waiting for connection…</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Not connected — show connect button ──────────────────────────────
+  return (
+    <div className="rounded-2xl border p-4" style={{ borderColor: '#A5F3FC', backgroundColor: '#ECFEFF' }}>
+      <div className="flex items-start gap-3 mb-3">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#0891B2' }}>
+          <Send size={18} color="#fff" />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-black" style={{ color: '#164E63' }}>Telegram Trade Alerts</p>
+          <p className="text-xs mt-0.5" style={{ color: '#0891B2' }}>
+            Get instant trade alerts via Telegram — never miss a payment, release or dispute.
+          </p>
+        </div>
+      </div>
+      <button onClick={handleConnect} disabled={loading}
+              className="w-full py-3 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-opacity hover:opacity-90"
+              style={{ backgroundColor: '#0891B2', color: '#fff' }}>
+        <Link size={15} />
+        {loading ? 'Generating code…' : 'Connect Telegram'}
+      </button>
+    </div>
   );
 }
 
@@ -822,6 +981,41 @@ export default function Settings({ user, setUser }) {
   };
 
   const handleSendPhoneOtp = async () => {
+    const isEmail = phoneOtpMethod === "email";
+    if (isEmail) {
+      const email = (accountForm.email || "").trim().toLowerCase();
+      if (!email) {
+        toast.error("Please enter your email address first");
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        toast.error("That doesn't look like a valid email address.");
+        return;
+      }
+      setAccountForm((prev) => ({ ...prev, email }));
+      setPhoneStep("sending");
+      try {
+        const r = await axios.post(`${API_URL}/users/send-phone-otp`, { phone: email, method: "email" }, { headers: authH() });
+        setPhoneStep("otp");
+        if (r.data?.devCode) {
+          setPhoneOtpCode(r.data.devCode);
+          toast.info(`Dev: code auto-filled (${r.data.devCode})`, { autoClose: 8000 });
+        } else {
+          toast.success("Code sent to your email! Check inbox and spam folder.");
+        }
+      } catch (e) {
+        const errData = e?.response?.data;
+        if (errData?.devCode) {
+          setPhoneOtpCode(errData.devCode);
+          setPhoneStep("otp");
+          toast.warning(`Send failed — dev code auto-filled: ${errData.devCode}`, { autoClose: 10000 });
+        } else {
+          toast.error(errData?.error || "Failed to send code. Please try again.");
+          setPhoneStep("idle");
+        }
+      }
+      return;
+    }
     const raw = accountForm.phone || "";
     const phone = raw.trim().replace(/[\s\-()]/g, "");
     if (!phone) {
@@ -870,9 +1064,14 @@ export default function Settings({ user, setUser }) {
     }
     setPhoneStep("verifying");
     try {
-      await axios.post(`${API_URL}/users/verify-phone-otp`, { phone: accountForm.phone, otp: phoneOtpCode }, { headers: authH() });
+      const isEmail = phoneOtpMethod === "email";
+      await axios.post(`${API_URL}/users/verify-phone-otp`, {
+        phone: isEmail ? undefined : accountForm.phone,
+        email: isEmail ? (accountForm.email || "").trim() : undefined,
+        otp: phoneOtpCode,
+      }, { headers: authH() });
       toast.success("Phone number verified!");
-      markPhoneVerifiedLocally(accountForm.phone);
+      markPhoneVerifiedLocally(isEmail ? accountForm.email : accountForm.phone);
     } catch (e) {
       toast.error(e?.response?.data?.error || "Invalid or expired code. Tap Resend to get a new one.");
       setPhoneStep("otp");
@@ -1613,12 +1812,22 @@ export default function Settings({ user, setUser }) {
                                         <div className="mt-3 space-y-2">
                                           {phoneStep === 'idle' && (
                                               <>
-                                                <input type="tel" placeholder="+233241234567" value={accountForm.phone || ''}
-                                                       onChange={e => setAccountForm({ ...accountForm, phone: e.target.value.replace(/[^\d+]/g, '') })}
-                                                       className="w-full px-3 py-2 border-2 rounded-xl text-sm focus:outline-none"
-                                                       style={{ borderColor: accountForm.phone ? C.green : C.g200, color: C.g800, backgroundColor: 'white' }} />
+                                                {phoneOtpMethod === 'email' ? (
+                                                    <input type="email" inputMode="email" placeholder="you@example.com"
+                                                           value={accountForm.email || ''}
+                                                           onChange={e => setAccountForm({ ...accountForm, email: e.target.value })}
+                                                           className="w-full px-3 py-2 border-2 rounded-xl text-sm focus:outline-none"
+                                                           style={{ borderColor: accountForm.email ? C.green : C.g200, color: C.g800, backgroundColor: 'white' }} />
+                                                ) : (
+                                                    <input type="tel" inputMode="tel" placeholder="+233241234567" value={accountForm.phone || ''}
+                                                           onChange={e => setAccountForm({ ...accountForm, phone: e.target.value.replace(/[^\d+]/g, '') })}
+                                                           className="w-full px-3 py-2 border-2 rounded-xl text-sm focus:outline-none"
+                                                           style={{ borderColor: accountForm.phone ? C.green : C.g200, color: C.g800, backgroundColor: 'white' }} />
+                                                )}
                                                 <p className="text-xs" style={{ color: C.g400 }}>
-                                                  Example: <span className="font-bold" style={{ color: C.g800 }}>+233241234567</span> — country code (+233 for Ghana) followed by your 9-digit number, no spaces or leading 0.
+                                                  {phoneOtpMethod === 'email'
+                                                      ? <>Example: <span className="font-bold" style={{ color: C.g800 }}>you@example.com</span> — we'll send your 6-digit code there.</>
+                                                      : <>Example: <span className="font-bold" style={{ color: C.g800 }}>+233241234567</span> — country code (+233 for Ghana) followed by your 9-digit number, no spaces or leading 0.</>}
                                                 </p>
                                                 <p className="text-xs font-bold" style={{ color: '#1e40af' }}>How would you like to receive your code?</p>
                                                 <div className="flex gap-2">
@@ -1637,10 +1846,11 @@ export default function Settings({ user, setUser }) {
                                                     <MessageCircle size={12} /> WhatsApp
                                                   </button>
                                                 </div>
-                                                <button onClick={handleSendPhoneOtp} disabled={!accountForm.phone}
+                                                <button onClick={handleSendPhoneOtp}
+                                                        disabled={phoneOtpMethod === 'email' ? !accountForm.email : !accountForm.phone}
                                                         className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-xs font-black disabled:opacity-60"
                                                         style={{ backgroundColor: C.paid }}>
-                                                  <Smartphone size={13} /> Send Verification Code →
+                                                  {phoneOtpMethod === 'email' ? <Mail size={13} /> : <Smartphone size={13} />} Send Verification Code →
                                                 </button>
                                               </>
                                           )}
@@ -2336,6 +2546,7 @@ export default function Settings({ user, setUser }) {
                     <h2 className="text-lg font-black mb-5" style={{ color: C.forest }}>Notification Preferences</h2>
                     <div className="space-y-4">
                       <PushEnableCard />
+                      <TelegramCard />
 
                       {[
                         { grpKey: 'email', section: <span className="inline-flex items-center gap-1.5"><Mail size={14} className="inline-block" />Email Notifications</span>, items: [

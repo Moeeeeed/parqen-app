@@ -21,6 +21,7 @@ const { WebSocket }    = require('ws');
 const { createClient } = require('@supabase/supabase-js');
 const depositMonitor   = require('./depositMonitor');
 const { sendSystemAlert } = require('./pushNotificationService');
+const { sendTelegramAlert } = require('./telegramService');
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -236,6 +237,9 @@ class RealtimeDepositService {
           `${amountBTC.toFixed(8)} BTC detected — confirming on blockchain. Balance updates when confirmed.`,
           'https://praqen.com/wallet'
         ).catch(err => console.error('[RealtimeDeposit] Pending push error:', err.message));
+
+        // Telegram notification
+        sendTelegramAlert(userId, `⏳ Bitcoin incoming! ₿${amountBTC.toFixed(8)} BTC detected — confirming on blockchain.`).catch(() => {});
       }
     }
   }

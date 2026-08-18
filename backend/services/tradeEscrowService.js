@@ -9,6 +9,7 @@ const hdWallet = require('./hdWalletService');
 const { checkAndAwardBadges } = require('./badgeService');
 const { updateOfferStatus } = require('./offerStatusService');
 const { sendTradeAlert, sendSystemAlert } = require('./pushNotificationService');
+const { sendTelegramAlert } = require('./telegramService');
 
 // ── Supabase admin (bypasses RLS) ─────────────────────────────────────────────
 const supabaseAdmin = createClient(
@@ -304,7 +305,11 @@ class TradeEscrowService {
       .select('seller_id, trade_ref, amount_btc, amount_usdt')
       .eq('id', tradeId).maybeSingle()
       .then(({ data: t }) => {
-        if (t?.seller_id) sendTradeAlert(t.seller_id, t, 'new_trade').catch(() => {});
+        if (t?.seller_id) {
+          sendTradeAlert(t.seller_id, t, 'new_trade').catch(() => {});
+          const amt = isUsdt ? `$${parsedAmount.toFixed(2)} USDT` : `₿${parsedAmount.toFixed(8)}`;
+          sendTelegramAlert(t.seller_id, `💰 New trade request! Someone wants to buy ${amt} from you. Trade #${tradeId.slice(0,8).toUpperCase()}`).catch(() => {});
+        }
       }).catch(() => {});
 
     return {
@@ -386,6 +391,9 @@ class TradeEscrowService {
       `/trade/${tradeId}`
     );
     sendTradeAlert(notifyId, trade, 'payment_sent').catch(() => {});
+    // Telegram alert for payment sent
+    const isGC = isGiftCardTrade;
+    sendTelegramAlert(notifyId, `${isGC ? '🎁' : '💵'} ${isGC ? 'Seller sent the gift card code' : 'Buyer confirmed payment'}! Trade #${tradeId.slice(0,8).toUpperCase()} — please verify and release crypto.`).catch(() => {});
 
     console.log(`✅ Trade ${tradeId.slice(0,8)} marked as PAYMENT_SENT`);
 
@@ -738,6 +746,10 @@ class TradeEscrowService {
     );
     sendTradeAlert(btcReceiverId, tradeData, 'btc_released').catch(() => {});
     sendTradeAlert(releaserId, tradeData, 'btc_released').catch(() => {});
+    // Telegram alerts for escrow release
+    const releaseAmtDisplay = isUsdt ? `$${buyerGets.toFixed(2)} USDT` : `₿${buyerGets.toFixed(8)}`;
+    sendTelegramAlert(btcReceiverId, `✅ Trade completed! You received ${releaseAmtDisplay} — Trade #${tradeId.slice(0,8).toUpperCase()}`).catch(() => {});
+    sendTelegramAlert(releaserId, `✅ Trade #${tradeId.slice(0,8).toUpperCase()} completed — ${releaseAmtDisplay} released to buyer.`).catch(() => {});
 
     console.log(`✅ Trade ${tradeId.slice(0, 8)} COMPLETED — receiver got ${amtDisplay} | fee ${symbol}${platformFee.toFixed(decimals)} → company`);
 
@@ -1003,6 +1015,11 @@ class TradeEscrowService {
       // Push to the party who did NOT get the refund alert above (btcProviderId already got sendSystemAlert)
       const otherPartyId = btcProviderId === trade.buyer_id ? trade.seller_id : trade.buyer_id;
       if (otherPartyId) sendTradeAlert(otherPartyId, trade, 'trade_cancelled').catch(() => {});
+      // Telegram alert for trade cancel/expiry
+      const cancelRef = `#${tradeId.slice(0,8).toUpperCase()}`;
+      [trade.buyer_id, trade.seller_id].filter(Boolean).forEach(uid => {
+        sendTelegramAlert(uid, `${isExpiry ? '⏰' : '❌'} Trade ${cancelRef} ${isExpiry ? 'expired' : 'cancelled'}. ${isExpiry ? 'Payment window closed and funds refunded.' : ''}`.trim()).catch(() => {});
+      });
     }
 
     console.log(`✅ Trade ${tradeId.slice(0,8)} cancelled and closed`);
