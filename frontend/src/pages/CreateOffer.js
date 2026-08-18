@@ -1218,6 +1218,68 @@ export default function CreateOffer() {
                 </div>
               </div>
 
+              {/* ── Card Currency Regions (optional) */}
+              <div>
+                <label className="block text-sm font-semibold mb-1" style={{ color: C.g700 }}>
+                  Card Currency Regions
+                  <span className="ml-1.5 text-xs font-normal" style={{ color: C.g400 }}>(optional · up to 10)</span>
+                </label>
+                <p className="text-sm mb-3" style={{ color: C.g500 }}>
+                  Add the regions / currencies your card supports.
+                </p>
+                <SearchableSelect
+                  items={GC_CURRENCIES}
+                  value=""
+                  onChange={(region) => {
+                    const c = GC_CURRENCIES.find(x => x.region === region);
+                    if (!c) return;
+                    if (gcCurrencies.some(x => x.region === region)) {
+                      setGcCurrencies(prev => prev.filter(x => x.region !== region));
+                    } else if (gcCurrencies.length < 10) {
+                      setGcCurrencies(prev => [...prev, { ...c }]);
+                    } else {
+                      toast.warn('Maximum 10 currency regions allowed');
+                    }
+                  }}
+                  searchValue={gcCurrSearch}
+                  onSearchChange={setGcCurrSearch}
+                  placeholder="Search region or currency…"
+                  searchPlaceholder="Search regions…"
+                  getKey={(item) => item.region}
+                  getLabel={(item) => item.region}
+                  renderSelected={() => null}
+                  renderItem={(item, active) => {
+                    const sel = gcCurrencies.some(x => x.region === item.region);
+                    return (
+                      <>
+                        <span className="text-base w-7 text-center flex-shrink-0">{item.flag}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate" style={{ color: C.g800 }}>{item.region}</p>
+                          <p className="text-xs" style={{ color: C.g500 }}>{item.symbol} {item.currency}</p>
+                        </div>
+                        {sel && <Check size={14} style={{ color: C.mint, flexShrink: 0 }} />}
+                      </>
+                    );
+                  }}
+                />
+                {gcCurrencies.length > 0 && (
+                  <div className="mt-3 p-4 rounded-2xl" style={{ backgroundColor: `${C.mint}06`, border: `1px solid ${C.mint}20` }}>
+                    <p className="text-xs font-semibold mb-2" style={{ color: C.g600 }}>Selected regions ({gcCurrencies.length}/10)</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {gcCurrencies.map(c => (
+                        <button key={c.region}
+                          onClick={() => setGcCurrencies(prev => prev.filter(x => x.region !== c.region))}
+                          className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full transition-transform hover:scale-105 active:scale-95"
+                          style={{ backgroundColor: C.mint, color: C.white }}>
+                          {c.flag} {c.region}
+                          <X size={10} className="ml-0.5" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Card Range (multi-select denominations) */}
               <div>
                 <label className="block text-sm font-bold mb-1.5" style={{ color: C.g700 }}>
@@ -1283,68 +1345,6 @@ export default function CreateOffer() {
                         ? `Your ${assetLabel} wallet balance is too low to back this offer — top up at least $10 worth of ${assetLabel} first.`
                         : `Your wallet only covers ~$${fmt(walletUsdValue, 0)} — below your $${gcMinVal} minimum card value. Lower the minimum or top up your wallet, or this offer will show as unavailable to buyers.`}
                     </p>
-                  </div>
-                )}
-              </div>
-
-              {/* ── Card Currency Regions (optional) */}
-              <div>
-                <label className="block text-sm font-semibold mb-1" style={{ color: C.g700 }}>
-                  Card Currency Regions
-                  <span className="ml-1.5 text-xs font-normal" style={{ color: C.g400 }}>(optional · up to 10)</span>
-                </label>
-                <p className="text-sm mb-3" style={{ color: C.g500 }}>
-                  Add the regions / currencies your card supports.
-                </p>
-                <SearchableSelect
-                  items={GC_CURRENCIES}
-                  value=""
-                  onChange={(region) => {
-                    const c = GC_CURRENCIES.find(x => x.region === region);
-                    if (!c) return;
-                    if (gcCurrencies.some(x => x.region === region)) {
-                      setGcCurrencies(prev => prev.filter(x => x.region !== region));
-                    } else if (gcCurrencies.length < 10) {
-                      setGcCurrencies(prev => [...prev, { ...c }]);
-                    } else {
-                      toast.warn('Maximum 10 currency regions allowed');
-                    }
-                  }}
-                  searchValue={gcCurrSearch}
-                  onSearchChange={setGcCurrSearch}
-                  placeholder="Search region or currency…"
-                  searchPlaceholder="Search regions…"
-                  getKey={(item) => item.region}
-                  getLabel={(item) => item.region}
-                  renderSelected={() => null}
-                  renderItem={(item, active) => {
-                    const sel = gcCurrencies.some(x => x.region === item.region);
-                    return (
-                      <>
-                        <span className="text-base w-7 text-center flex-shrink-0">{item.flag}</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold truncate" style={{ color: C.g800 }}>{item.region}</p>
-                          <p className="text-xs" style={{ color: C.g500 }}>{item.symbol} {item.currency}</p>
-                        </div>
-                        {sel && <Check size={14} style={{ color: C.mint, flexShrink: 0 }} />}
-                      </>
-                    );
-                  }}
-                />
-                {gcCurrencies.length > 0 && (
-                  <div className="mt-3 p-4 rounded-2xl" style={{ backgroundColor: `${C.mint}06`, border: `1px solid ${C.mint}20` }}>
-                    <p className="text-xs font-semibold mb-2" style={{ color: C.g600 }}>Selected regions ({gcCurrencies.length}/10)</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {gcCurrencies.map(c => (
-                        <button key={c.region}
-                          onClick={() => setGcCurrencies(prev => prev.filter(x => x.region !== c.region))}
-                          className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full transition-transform hover:scale-105 active:scale-95"
-                          style={{ backgroundColor: C.mint, color: C.white }}>
-                          {c.flag} {c.region}
-                          <X size={10} className="ml-0.5" />
-                        </button>
-                      ))}
-                    </div>
                   </div>
                 )}
               </div>
