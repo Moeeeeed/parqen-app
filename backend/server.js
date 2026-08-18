@@ -105,6 +105,12 @@ setInterval(() => {
 // In-memory market cache — serves offers/listings without hitting DB on every page load
 const _marketCache = new Map(); // key -> { data, ts }
 const MARKET_CACHE_TTL = 300000; // 5 minutes
+// Pagination metadata for /api/listings, keyed the same as _marketCache. Kept separate from
+// _marketCache itself (rather than changing what getCached()/setCached() store) because
+// hasMore/nextCursor must reflect the RAW query page (before balance-based filtering removes
+// some rows from the cached `listings` array) — using the filtered array's last row as the
+// cursor could skip rows that got filtered out of THIS page but still need to be fetched.
+const _listingsPageMeta = new Map(); // key -> { hasMore, nextCursor }
 function getCached(key) {
   const c = _marketCache.get(key);
   return c && Date.now() - c.ts < MARKET_CACHE_TTL ? c.data : null;
@@ -256,6 +262,20 @@ app.use(cors({
 app.use('/api/wallet/webhook', express.raw({ type: '*/*' }));
 
 app.use(express.json({ limit: '6mb' })); // raised from 2mb — KYC route needs headroom for 2 compressed base64 images (~1.1–1.9mb each after canvas compression)
+
+// ── Lightweight perf timing for a curated set of endpoints ─────────────────
+// Only method, path, duration, and status — never bodies, headers, tokens,
+// wallet addresses, or KYC data. Purely observational (res.on('finish')),
+// doesn't touch anything inside the routes it watches.
+const PERF_WATCH_PATHS = ['/api/listings', '/api/hd-wallet/wallet', '/api/users/profile'];
+app.use((req, res, next) => {
+  if (!PERF_WATCH_PATHS.some(p => req.path === p)) return next();
+  const start = Date.now();
+  res.on('finish', () => {
+    console.log(`[PERF] ${req.method} ${req.path} ${Date.now() - start}ms ${res.statusCode}`);
+  });
+  next();
+});
 
 // ── Rate Limiters ──────────────────────────────────────────────────────────
 const rateLimit = require('express-rate-limit');
@@ -913,7 +933,17 @@ function calculateFee(btcAmount) {
   return (parseFloat(btcAmount) * 0.01).toFixed(8);
 }
 
-async function getCurrentBTCPrice() {
+// allowCached=true (default): reuse _btcCache for up to BTC_CACHE_TTL — for display-only
+// call sites (rates, balance display, listings). allowCached=false: always hit the live
+// sources — used ONLY by the trade-settlement call site, which must never price a trade off
+// a stale cached value. The cache itself is only ever written on a validated live price
+// (price > 1000, same check as before) — a failed/invalid fetch never gets cached.
+const BTC_CACHE_TTL = 45000; // 45s
+let _btcCacheAt = 0;
+async function getCurrentBTCPrice({ allowCached = true } = {}) {
+  if (allowCached && _btcCache > 0 && (Date.now() - _btcCacheAt) < BTC_CACHE_TTL) {
+    return _btcCache;
+  }
   // Try Binance first (most reliable, real-time), then Coinbase, then CoinGecko
   const sources = [
     () => fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT', { signal: AbortSignal.timeout(5000) })
@@ -928,6 +958,7 @@ async function getCurrentBTCPrice() {
       const price = await src();
       if (price > 1000) {
         _btcCache = price;
+        _btcCacheAt = Date.now();
         console.log(`[BTC] live price: $${Math.round(price).toLocaleString()}`);
         return price;
       }
@@ -2215,7 +2246,8 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
         id: data.id, email: data.email, username: data.username, full_name: data.full_name,
         average_rating: data.average_rating || 0, total_trades: data.total_trades || 0,
         avatar_url: data.avatar_url || null, is_admin: data.is_admin || false,
-        is_moderator: data.is_moderator || false, referral_code: data.referral_code || null,
+        is_moderator: data.is_moderator || false,
+        referral_code: data.referral_code || null,
         bitcoin_wallet_address: btcAddress,
         total_referrals: data.total_referrals || 0,
         referral_earnings_btc: data.referral_earnings_btc || 0,
@@ -2329,7 +2361,8 @@ app.post('/api/auth/verify-2fa-login', authLimiter, async (req, res) => {
         id: data.id, email: data.email, username: data.username, full_name: data.full_name,
         average_rating: data.average_rating || 0, total_trades: data.total_trades || 0,
         avatar_url: data.avatar_url || null, is_admin: data.is_admin || false,
-        is_moderator: data.is_moderator || false, referral_code: data.referral_code || null,
+        is_moderator: data.is_moderator || false,
+        referral_code: data.referral_code || null,
         bitcoin_wallet_address: btcAddress,
         total_referrals: data.total_referrals || 0,
         referral_earnings_btc: data.referral_earnings_btc || 0,
@@ -4630,6 +4663,19 @@ app.post('/api/users/verify-phone-otp', verifyToken, async (req, res) => {
   }
 });
 
+// Interim timeout guard shared by the KYC and p2p-migration Storage uploads below. The
+// installed @supabase/storage-js's upload() (uploadOrUpdate() in StorageFileApi.ts) only
+// accepts FileOptions, which has no `signal` field — AbortSignal is a different interface
+// used only by download()/list(). Verified by reading the installed package source. That
+// means the outbound request to Supabase Storage CANNOT actually be cancelled by this SDK
+// version. This only races the upload against a timer so the request responds to the client
+// with a clean error instead of hanging until Render's own proxy kills the connection and
+// returns a raw 544 — it does NOT cancel or free the underlying upload attempt itself.
+const withUploadTimeout = (p, ms, label) => Promise.race([
+  p,
+  new Promise(resolve => setTimeout(() => resolve({ data: null, error: { message: `${label} upload timed out after ${ms}ms` } }), ms)),
+]);
+
 // POST /api/kyc/upload — receive base64 ID front + back, store in Supabase Storage, set status pending
 app.post('/api/kyc/upload', express.json({ limit: '25mb' }), verifyToken, async (req, res) => {
   try {
@@ -4646,15 +4692,22 @@ app.post('/api/kyc/upload', express.json({ limit: '25mb' }), verifyToken, async 
     let idUrl = null;
     let idBackUrl = null;
 
-    // Try Supabase Storage upload (bucket: kyc-documents)
+    // Try Supabase Storage upload (bucket: kyc-documents) — see withUploadTimeout() above
+    // for why this can only fail-fast on the response, not actually cancel the upload.
     try {
-      const { error: idErr } = await supabaseAdmin.storage
-        .from('kyc-documents')
-        .upload(`${userId}/id_front_${timestamp}.jpg`, toBuffer(idImage), { contentType: 'image/jpeg', upsert: true });
+      const { error: idErr } = await withUploadTimeout(
+        supabaseAdmin.storage
+          .from('kyc-documents')
+          .upload(`${userId}/id_front_${timestamp}.jpg`, toBuffer(idImage), { contentType: 'image/jpeg', upsert: true }),
+        25000, 'ID front'
+      );
 
-      const { error: idBackErr } = await supabaseAdmin.storage
-        .from('kyc-documents')
-        .upload(`${userId}/id_back_${timestamp}.jpg`, toBuffer(idImageBack), { contentType: 'image/jpeg', upsert: true });
+      const { error: idBackErr } = await withUploadTimeout(
+        supabaseAdmin.storage
+          .from('kyc-documents')
+          .upload(`${userId}/id_back_${timestamp}.jpg`, toBuffer(idImageBack), { contentType: 'image/jpeg', upsert: true }),
+        25000, 'ID back'
+      );
 
       if (!idErr) {
         const { data: { publicUrl } } = supabaseAdmin.storage.from('kyc-documents').getPublicUrl(`${userId}/id_front_${timestamp}.jpg`);
@@ -4762,9 +4815,12 @@ app.post('/api/p2p-migration/submit', authLimiter, async (req, res) => {
     try {
       const buffer = Buffer.from(screenshot.replace(/^data:image\/\w+;base64,/, ''), 'base64');
       const path = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`;
-      const { error: uploadErr } = await supabaseAdmin.storage
-        .from('p2p-migration')
-        .upload(path, buffer, { contentType: 'image/jpeg', upsert: true });
+      const { error: uploadErr } = await withUploadTimeout(
+        supabaseAdmin.storage
+          .from('p2p-migration')
+          .upload(path, buffer, { contentType: 'image/jpeg', upsert: true }),
+        25000, 'Screenshot'
+      );
       if (!uploadErr) {
         const { data: { publicUrl } } = supabaseAdmin.storage.from('p2p-migration').getPublicUrl(path);
         screenshotUrl = publicUrl;
@@ -5689,20 +5745,54 @@ app.get('/api/featured-offers', async (req, res) => {
   }
 });
 
+// Cursor is "<created_at>|<id>" — a compound tie-breaker, not created_at alone. Multiple
+// listings can share an identical created_at (bulk inserts, same-second creates), so a
+// plain created_at cursor can silently skip or repeat rows across pages. Both parts are
+// validated before use since they're echoed back to us from the client on the next page
+// request and get interpolated into a PostgREST .or() filter string below.
+function parseListingsCursor(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const sep = raw.lastIndexOf('|');
+  if (sep === -1) return null;
+  const ts = raw.slice(0, sep);
+  const id = raw.slice(sep + 1);
+  if (isNaN(Date.parse(ts))) return null;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
+  return { ts, id };
+}
+
 app.get('/api/listings', async (req, res) => {
   try {
-    const { brand, minPrice, maxPrice } = req.query;
-    const cacheKey = `listings|${brand || ''}|${minPrice || ''}|${maxPrice || ''}`;
+    const { brand, minPrice, maxPrice, type } = req.query;
+    // Backward compatibility: with none of type/limit/cursor set, this key is byte-identical
+    // to the pre-pagination key ('listings|||' when brand/minPrice/maxPrice are also unset) —
+    // _warmListingsCache() below still warms exactly that key, and the 6 other pages that
+    // call /api/listings with no extra params keep hitting the same cache entries as before.
+    let cacheKey = `listings|${brand || ''}|${minPrice || ''}|${maxPrice || ''}`;
+    if (type) cacheKey += `|t:${type}`;
+
+    const requestedLimit = parseInt(req.query.limit, 10);
+    const effectiveLimit = (Number.isFinite(requestedLimit) && requestedLimit > 0) ? Math.min(requestedLimit, 50) : 200;
+    if (req.query.limit) cacheKey += `|l:${effectiveLimit}`;
+
+    const cursor = parseListingsCursor(req.query.cursor);
+    if (cursor) cacheKey += `|c:${req.query.cursor}`;
+
     const hit = getCached(cacheKey);
-    if (hit) return res.json({ listings: hit });
+    if (hit) {
+      const meta = _listingsPageMeta.get(cacheKey) || { hasMore: false, nextCursor: null };
+      return res.json({ listings: hit, hasMore: meta.hasMore, nextCursor: meta.nextCursor });
+    }
 
     // Step 1: fetch listings only (no join) — fast
     let listingsQ = supabaseAdmin.from('listings').select(
       'id, seller_id, listing_type, asset, gift_card_brand, status, bitcoin_price, margin, pricing_type, currency, currency_symbol, country, country_name, payment_method, payment_methods, amount_usd, min_limit_usd, max_limit_usd, min_limit_local, max_limit_local, time_limit, trade_instructions, listing_terms, description, created_at, card_values, card_type, face_value'
-    ).eq('status', 'ACTIVE').order('created_at', { ascending: false }).limit(200);
+    ).eq('status', 'ACTIVE').order('created_at', { ascending: false }).order('id', { ascending: false }).limit(effectiveLimit);
     if (brand) listingsQ = listingsQ.ilike('gift_card_brand', `%${brand}%`);
     if (minPrice) listingsQ = listingsQ.gte('bitcoin_price', parseFloat(minPrice));
     if (maxPrice) listingsQ = listingsQ.lte('bitcoin_price', parseFloat(maxPrice));
+    if (type) listingsQ = listingsQ.eq('listing_type', type);
+    if (cursor) listingsQ = listingsQ.or(`created_at.lt.${cursor.ts},and(created_at.eq.${cursor.ts},id.lt.${cursor.id})`);
 
     // Use a real AbortSignal instead of Promise.race: race() only abandons the promise
     // on the Node side — the underlying PostgREST request (and the Postgres connection
@@ -5730,6 +5820,14 @@ app.get('/api/listings', async (req, res) => {
       console.warn('[/api/listings] DB query timed out — returning 503 so client retries');
       return res.status(503).json({ error: 'Marketplace is temporarily unavailable. Please try again in a moment.' });
     }
+
+    // Pagination metadata derived from the RAW page (before balance-filtering below can
+    // remove rows) — the cursor must track how far the underlying query got, not how many
+    // rows ended up visible after filtering, or the next page would skip rows.
+    const _rawCount = (rawListings || []).length;
+    const hasMoreListings = _rawCount === effectiveLimit;
+    const lastRaw = _rawCount ? rawListings[_rawCount - 1] : null;
+    const nextCursorVal = lastRaw ? `${lastRaw.created_at}|${lastRaw.id}` : null;
 
     // Step 2+3: fetch user profiles AND wallet balances in parallel (not sequential)
     const sellerIdSet = [...new Set((rawListings || []).map(l => l.seller_id).filter(Boolean))];
@@ -5861,8 +5959,11 @@ app.get('/api/listings', async (req, res) => {
 
     // Only cache when we actually got real data — never cache an empty result
     // (empty could mean DB timeout/failure, not a genuinely empty marketplace)
-    if (listings.length > 0) setCached(cacheKey, listings);
-    res.json({ listings });
+    if (listings.length > 0) {
+      setCached(cacheKey, listings);
+      _listingsPageMeta.set(cacheKey, { hasMore: hasMoreListings, nextCursor: nextCursorVal });
+    }
+    res.json({ listings, hasMore: hasMoreListings, nextCursor: nextCursorVal });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -7339,7 +7440,8 @@ app.post('/api/trades', verifyToken, requireEmailVerified, async (req, res) => {
       // try/caught, with cached + static fallbacks) instead of raw fetch() calls
       // that crash this entire request if a single external host is unreachable.
       const fxRates = await getLiveFXRates();
-      const marketRateUSD = await getCurrentBTCPrice();
+      // Trade settlement — must never price a trade off a stale cached value.
+      const marketRateUSD = await getCurrentBTCPrice({ allowCached: false });
       const tradeCurRate = (tradeCur && fxRates[tradeCur]) ? fxRates[tradeCur] : 1;
 
       tradeAmountUsd = tradeLocalAmt > 0
@@ -7664,7 +7766,9 @@ app.post('/api/trades/:id/release', tradeLimiter, verifyToken, async (req, res) 
               .eq('id', releasedTrade.buyer_id).single();
             if (bonusBuyer?.bonus_step === 2 && bonusBuyer?.bonus_expires_at &&
               new Date(bonusBuyer.bonus_expires_at) > new Date()) {
-              const btcPx = await getCurrentBTCPrice();
+              // Credits real BTC to a wallet balance — keep it on the same always-live
+              // pricing this had before caching was introduced, not the display cache.
+              const btcPx = await getCurrentBTCPrice({ allowCached: false });
               const bonusBtc = parseFloat((2 / btcPx).toFixed(8));
               const { data: wal } = await supabaseAdmin.from('wallets')
                 .select('balance_btc').eq('user_id', releasedTrade.buyer_id).maybeSingle();

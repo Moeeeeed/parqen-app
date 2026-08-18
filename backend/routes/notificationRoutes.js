@@ -28,8 +28,6 @@ router.get('/notification-preferences', verifyToken, async (req, res) => {
     try {
         const userId = req.user.id;
 
-        console.log(`📝 Fetching notification preferences for user: ${userId}`);
-
         const { data, error } = await supabaseAdmin
             .from('user_notification_preferences')
             .select('email_trades, email_security, email_marketing, push_trades, push_messages, push_disputes')
@@ -43,7 +41,6 @@ router.get('/notification-preferences', verifyToken, async (req, res) => {
 
         // If no preferences found, return defaults
         if (!data) {
-            console.log(`📝 No preferences found for user ${userId}, returning defaults`);
             return res.json({
                 email_trades: true,
                 email_security: true,
@@ -54,7 +51,6 @@ router.get('/notification-preferences', verifyToken, async (req, res) => {
             });
         }
 
-        console.log(`📝 Preferences fetched for user ${userId}:`, data);
         res.json(data);
     } catch (error) {
         console.error('Error fetching notification preferences:', error);
@@ -66,9 +62,6 @@ router.get('/notification-preferences', verifyToken, async (req, res) => {
 router.put('/notification-preferences', verifyToken, async (req, res) => {
     try {
         const userId = req.user.id;
-
-        console.log(`📝 Saving notification preferences for user: ${userId}`);
-        console.log('📝 Request body:', req.body);
 
         const {
             email_trades,
@@ -91,8 +84,6 @@ router.put('/notification-preferences', verifyToken, async (req, res) => {
             updated_at: new Date().toISOString(),
         };
 
-        console.log('📝 Upsert data:', preferences);
-
         // Upsert: Insert or update
         const { data, error } = await supabaseAdmin
             .from('user_notification_preferences')
@@ -107,8 +98,6 @@ router.put('/notification-preferences', verifyToken, async (req, res) => {
             console.error('Supabase error:', error);
             return res.status(500).json({ error: 'Failed to save preferences: ' + error.message });
         }
-
-        console.log(`✅ Preferences saved for user ${userId}:`, data);
 
         res.json({
             success: true,

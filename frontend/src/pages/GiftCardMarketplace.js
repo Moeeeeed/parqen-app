@@ -341,6 +341,7 @@ function Avatar({ user, size = 48, radius = 'rounded-xl' }) {
   const url = u?.avatar_url || lazyUrl;
   if (url && !err) return (
     <img src={url} alt={u.username || 'user'} onError={() => setErr(true)}
+      loading="lazy" width={size} height={size}
       className={`object-cover flex-shrink-0 ${radius}`} style={{ width: size, height: size }} />
   );
   return (
@@ -352,6 +353,28 @@ function Avatar({ user, size = 48, radius = 'rounded-xl' }) {
 }
 
 // ── Gift Card Offer Card ──────────────────────────────────────────────────────
+// Placeholder shown in place of GCCard while the initial /api/listings response is still
+// loading, so the marketplace paints immediately instead of a blank/spinner block.
+function GCCardSkeleton() {
+  const bar = (style) => <div className="animate-pulse rounded-md" style={{ backgroundColor: C.g100, ...style }} />;
+  return (
+    <div className="rounded-2xl overflow-hidden w-full" style={{ border: `1px solid ${C.g200}`, background: '#fff' }}>
+      <div className="p-3.5 space-y-3">
+        <div className="flex items-center gap-2.5">
+          {bar({ width: 36, height: 36, borderRadius: 10, flexShrink: 0 })}
+          <div className="flex-1 space-y-1.5">
+            {bar({ height: 10, width: '55%' })}
+            {bar({ height: 8, width: '35%' })}
+          </div>
+        </div>
+        {bar({ height: 14, width: '70%' })}
+        {bar({ height: 34, width: '100%', borderRadius: 12 })}
+        {bar({ height: 28, width: '100%', borderRadius: 10 })}
+      </div>
+    </div>
+  );
+}
+
 function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   const { rates: USD_RATES } = useRates();
   const u = getUser(listing.users);
@@ -1099,6 +1122,12 @@ export default function GiftCards({ user }) {
   const [loading, setLoading] = useState(() => _gcNow().length === 0);
   const [loadError, setLoadError] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  // How many of the already-filtered results are rendered at once. Progressive reveal so the
+  // initial paint is ~24 cards instead of every matching listing at once, without changing
+  // what /api/listings fetches (the existing filter stack below — currency, country, brand,
+  // trader search, amount, sort — is entirely client-side with no server-side equivalent, so
+  // this windows the display rather than the network request).
+  const [visibleCount, setVisibleCount] = useState(24);
   const [btcPrice, setBtcPrice] = useState(68000);
   const [affLeaderboard, setAffLeaderboard] = useState([]);
   const [selCurrency, setSelCurrency] = useState(CURRENCIES.find(c => c.code === 'USD') || CURRENCIES[0]);
@@ -1227,6 +1256,11 @@ export default function GiftCards({ user }) {
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
+  // Reset the reveal window whenever the active filter set changes, so switching brand/
+  // country/mode/etc. starts back at the first 24 matches instead of showing a stale count.
+  useEffect(() => {
+    setVisibleCount(24);
+  }, [gcMode, cryptoFilter, selBrand, amountInput, selCountry.code, traderSearch, sortBy]);
   const loadListings = async (attempt = 1, force = false) => {
     // Skip fetch if cache is fresh (< 5 minutes) and not forced
     if (attempt === 1 && !force) {
@@ -1269,7 +1303,10 @@ export default function GiftCards({ user }) {
     } catch {
       if (attempt < 3) {
         setRetrying(true);
-        setTimeout(() => loadListings(attempt + 1, force), 1000);
+        // Capped exponential backoff instead of a flat 1s retry — attempt 2 waits ~500ms,
+        // attempt 3 waits ~1.5s, so a struggling server isn't immediately hammered 3x.
+        const backoffMs = attempt === 1 ? 500 : 1500;
+        setTimeout(() => loadListings(attempt + 1, force), backoffMs);
       } else {
         setRetrying(false);
         if (!listings.length) setLoadError(true);
@@ -1279,12 +1316,6 @@ export default function GiftCards({ user }) {
   };
 
 useEffect(() => {
-      loadListings();
-      const interval = setInterval(() => loadListings(1, true), 60000);
-      return () => clearInterval(interval);
-    }, []);
-
-    useEffect(() => {
       axios.get(`${API_URL}/referral/leaderboard`).then(r => {
         if (r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0, 3));
       }).catch(() => { });
@@ -1834,20 +1865,16 @@ useEffect(() => {
         </div>
 
         {(loading && !listings.length) || retrying ? (
-          <div className="bg-white rounded-2xl border p-8 text-center" style={{ borderColor: C.g200 }}>
-            <div className="flex justify-center mb-3">
-              <Timer size={44} style={{ color: C.g400 }} className="animate-pulse" />
+          <>
+            {retrying && (
+              <p className="text-xs font-semibold text-center" style={{ color: C.g500 }}>
+                Our server is starting up, this takes a few seconds…
+              </p>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 w-full">
+              {Array.from({ length: 8 }).map((_, i) => <GCCardSkeleton key={i} />)}
             </div>
-            <p className="font-bold text-base mb-1" style={{ color: C.g800 }}>
-              {retrying ? 'Waking up server…' : 'Loading offers…'}
-            </p>
-            <p className="text-sm" style={{ color: C.g400 }}>
-              {retrying ? 'Our server is starting up, this takes a few seconds' : 'Fetching the latest offers for you'}
-            </p>
-            <div className="flex justify-center mt-4">
-              <div className="w-8 h-8 border-4 border-t-transparent rounded-full animate-spin" style={{ borderColor: `${C.forest}40`, borderTopColor: 'transparent' }} />
-            </div>
-          </div>
+          </>
         ) : loadError && !listings.length ? (
           <div className="bg-white rounded-2xl border p-8 text-center" style={{ borderColor: C.g200 }}>
             <div className="flex justify-center mb-3">
@@ -1875,18 +1902,27 @@ useEffect(() => {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 w-full">
-            {filtered.map(l => (
-              <GCCard
-                key={l.id}
-                listing={l}
-                btcPriceUSD={btcPrice}
-                featuredType={l.id === activeTraderListingId ? 'fast_responder' : undefined}
-                onViewSeller={() => setModal({ seller: l.users || {}, listing: l })}
-                onTrade={() => handleTrade(l.id)}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 w-full">
+              {filtered.slice(0, visibleCount).map(l => (
+                <GCCard
+                  key={l.id}
+                  listing={l}
+                  btcPriceUSD={btcPrice}
+                  featuredType={l.id === activeTraderListingId ? 'fast_responder' : undefined}
+                  onViewSeller={() => setModal({ seller: l.users || {}, listing: l })}
+                  onTrade={() => handleTrade(l.id)}
+                />
+              ))}
+            </div>
+            {filtered.length > visibleCount && (
+              <button onClick={() => setVisibleCount(v => v + 24)}
+                className="mx-auto px-6 py-2.5 rounded-xl text-sm font-black hover:opacity-90 transition"
+                style={{ backgroundColor: C.g100, color: C.g700 }}>
+                Load more ({filtered.length - visibleCount} more offer{filtered.length - visibleCount !== 1 ? 's' : ''})
+              </button>
+            )}
+          </>
         )}
 
         {/* ── Trade Safety Banner ── */}
