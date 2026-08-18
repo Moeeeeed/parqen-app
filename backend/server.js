@@ -11334,6 +11334,14 @@ app.get('/api/wallet/usdt', verifyToken, async (req, res) => {
 // less fee than a smaller one — that gap let users dodge the flat fee by
 // nudging just above the old $50 cutoff.
 app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
+  // Emergency kill-switch — SENDS_DISABLED=true in .env blocks external
+  // withdrawals platform-wide without touching trading/internal transfers.
+  // Checked in-process (not DB-backed) so it works even if Supabase is down.
+  if (process.env.SENDS_DISABLED === 'true') {
+    return res.status(503).json({
+      error: 'Withdrawals are temporarily disabled for maintenance. Trading and internal transfers are unaffected — please try again later.',
+    });
+  }
   const FEE_FLAT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_FLAT || '5.0');  // flat floor
   const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.05'); // 5% once it exceeds the floor
   const MIN_SEND = parseFloat(process.env.USDT_MIN_SEND || '5.0');  // minimum $5

@@ -401,6 +401,14 @@ async function pauseSellOffersIfEmpty(sellerId) {
 }
 
 router.post('/send', verifyToken, sendLimiter, async (req, res) => {
+  // Emergency kill-switch — SENDS_DISABLED=true in .env blocks external
+  // withdrawals platform-wide without touching trading/internal transfers.
+  // Checked in-process (not DB-backed) so it works even if Supabase is down.
+  if (process.env.SENDS_DISABLED === 'true') {
+    return res.status(503).json({
+      error: 'Withdrawals are temporarily disabled for maintenance. Trading and internal transfers are unaffected — please try again later.',
+    });
+  }
   // Hoisted above the try block so the catch block below can actually see them —
   // `const`/destructured bindings declared inside `try {}` are NOT visible inside
   // the paired `catch (error) {}` (separate block scopes); referencing them there

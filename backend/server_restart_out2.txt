@@ -1,0 +1,77 @@
+[AT] Africa's Talking SMS initialized 🟢 LIVE
+🔑 ENV check:
+   SUPABASE_URL:               ✅ FOUND
+   SUPABASE_ANON_KEY:          ✅ FOUND
+   SUPABASE_SERVICE_ROLE_KEY:  ✅ FOUND
+✅ PRAQEN Backend running on http://localhost:5000
+📋 Routes: /api/auth, /api/users, /api/listings, /api/trades, /api/my-trades, /api/wallet, /api/hd-wallet, /api/notifications
+📱 OneSignal: ✅ Configured
+🔔 Push notifications: ✅ Ready
+✅ Tron Wallet Service initialized — MAINNET
+   USDT contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t
+
+🔥 PRAQEN USDT Hot Wallet Service
+   Hot wallet address  : TXeSskzYJnbaNwg6sJvkYsgUPss7hkzYUY
+   Company Tron address: TQPTEcUwGLKQ9qrbPTwYgpiEvbEX8nQUWV
+   Withdrawal fee      : ₮1 per withdrawal
+   Min TRX reserve     : 100 TRX
+   ⚠️  Fund hot wallet with TRX (min 100) and USDT before withdrawals go live
+
+🔕 Stale offer cron: pauses offers from sellers inactive 10+ days — checks every 6 hours
+
+🔍 DepositMonitor started — MAINNET
+   Polling every 15 minutes
+   API: https://mempool.space/api
+
+
+[DepositMonitor] ⏱  Cycle start 2026-08-18T14:42:47.629Z
+🔍 Deposit monitor: MAINNET — polls every 5 min | SMS + Email alerts enabled
+
+🔍 USDT Deposit Monitor started — MAINNET (Tron)
+   Polling every 1.5 minutes
+
+[USDTMonitor] ⏱  Cycle start 2026-08-18T14:42:47.630Z
+🔍 USDT Deposit monitor: MAINNET (Tron) — polls every 15 min | Email + Push alerts enabled
+✅ HD Wallet initialized — MAINNET
+📡 API: https://mempool.space/api
+
+🧹 SweepService started
+   Hot wallet : bc1q27xsx9vpdxlhlegwjq8d86tef45admvp43nft0
+   Min sweep  : 0.0001 BTC (10000 sats)
+   Interval   : every 30 minutes
+
+🧹 Sweep service: MAINNET — hot wallet bc1q27xsx9vpdxlhlegwjq8d86tef45admvp43nft0
+
+🔍 [BalanceIntegrity] Starting daily balance check...
+🛡️  Balance integrity checker: runs every 24 hours
+⏱  Expired trade cron: checks every 60 seconds — BTC auto-refunded to seller on expiry
+[Wallet] === loading wallet for userId=5b03e900-0800-43e0-ae64-dbf126f3b1e2 ===
+[BTC] live price: $64,710
+[FX] rates refreshed — GHS:11.0292 NGN:1360.58
+
+⚡ [RealtimeDeposit] Service started
+   Monitoring 942 address(es) via mempool.space WebSocket
+   Confirmed deposits will credit user wallets INSTANTLY
+
+[Escrow] Processing 1 expired trades...
+
+❌ cancelTrade — Trade: 9c13d3f5, Reason: Trade expired — time limit reached
+[deactivateStaleOffers] ✅ No stale sellers — all sellers active within 10 days.
+[Wallet] user=5b03e900 avail=0 locked=0 total=0 price=64710 usd=0
+[Backfill] No users needed country backfill from phone
+[USDTMonitor] Scanning 929 Tron address(es)...
+[DepositMonitor] Scanning 942 wallet address(es)...
+[syncAllOfferStatuses] ✅ All offer statuses are already correct.
+[RealtimeDeposit] Connected to mempool.space WebSocket
+[RealtimeDeposit] Subscribed to 942 address(es)
+[Escrow] Failed to cancel 9c13d3f5: Failed to claim trade for cancellation: new row for relation "trades" violates check constraint "trades_status_check"
+[BalanceIntegrity] ⚠️  MISMATCH user 14762cd0: wallets=0.00012486 user_balances=0.00000458 diff=0.00012028
+[Wallet] === loading wallet for userId=65830906-297b-4eb5-8c60-ed0e9a4aac82 ===
+[Wallet] user=65830906 avail=0.00364227 locked=0 total=0.00364227 price=64710 usd=235.69
+[BTC] live price: $64,754
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Rate limited — will retry next cycle
+[DepositMonitor] Using API: https://blockstream.info/api
+[BalanceIntegrity] ⚠️  MISMATCH user cc618725: wallets=0.00037470 user_balances=0.00000000 diff=0.00037470
+[BalanceIntegrity] ⚠️  MISMATCH user e8d3d037: wallets=0.00125474 user_balances=0.00097261 diff=0.00028213
