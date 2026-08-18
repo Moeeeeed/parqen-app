@@ -181,15 +181,16 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
             onMouseEnter={() => handleGuideEnter('nav_p2p_trade')} onMouseLeave={handleGuideLeave}>
             {activeGuide === 'nav_p2p_trade' && !marketDrop && (
               <div style={{
-                position: 'absolute', bottom: 'calc(100% + 8px)', left: 0, zIndex: 10000,
-                width: 'min(260px, calc(100vw - 32px))',
+                position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 10000,
+                width: 'min(210px, calc(100vw - 24px))',
+                maxWidth: 'calc(100vw - 24px)',
                 background: 'linear-gradient(135deg, #1E40AF 0%, #2563EB 100%)',
-                borderRadius: 14, padding: '10px 12px',
+                borderRadius: 12, padding: '8px 9px',
                 boxShadow: '0 10px 36px rgba(37,99,235,0.35)', pointerEvents: 'none',
                 color: '#fff', boxSizing: 'border-box',
               }}>
-                <p style={{ margin: '0 0 3px', fontWeight: 800, fontSize: 12 }}>P2P Trading</p>
-                <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.9)' }}>
+                <p style={{ margin: '0 0 2px', fontWeight: 800, fontSize: 10.5 }}>P2P Trading</p>
+                <p style={{ margin: 0, fontSize: 9.5, color: 'rgba(255,255,255,0.9)', lineHeight: 1.4 }}>
                   Buy & Sell Bitcoin (BTC) or Tether (USDT) directly with verified peers using local payment methods.
                 </p>
               </div>
@@ -283,15 +284,16 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
         onMouseEnter={() => handleGuideEnter('nav_create_offer')} onMouseLeave={handleGuideLeave}>
         {activeGuide === 'nav_create_offer' && (
           <div style={{
-            position: 'absolute', bottom: 'calc(100% + 8px)', right: 0, zIndex: 10000,
-            width: 'min(280px, calc(100vw - 32px))',
+            position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 10000,
+            width: 'min(215px, calc(100vw - 24px))',
+            maxWidth: 'calc(100vw - 24px)',
             background: 'linear-gradient(135deg, #1E40AF 0%, #2563EB 100%)',
-            borderRadius: 14, padding: '10px 12px',
+            borderRadius: 12, padding: '8px 9px',
             boxShadow: '0 10px 36px rgba(37,99,235,0.35)', pointerEvents: 'none',
             color: '#fff', boxSizing: 'border-box',
           }}>
-            <p style={{ margin: '0 0 3px', fontWeight: 800, fontSize: 12 }}>+ Create Offer</p>
-            <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.9)' }}>
+            <p style={{ margin: '0 0 2px', fontWeight: 800, fontSize: 10.5 }}>+ Create Offer</p>
+            <p style={{ margin: 0, fontSize: 9.5, color: 'rgba(255,255,255,0.9)', lineHeight: 1.4 }}>
               Create a new P2P buy or sell offer to trade Bitcoin, USDT, or Gift Cards on your terms.
             </p>
           </div>
@@ -375,9 +377,16 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
         /* Brand name always stays visible — just runs a bit smaller on narrow phones
            so there's still room for the wallet balance, avatar and bell. */
         @media (max-width: 400px) { .prq-logo-wordmark { font-size: 16px !important; } }
+        /* Below ~380px the wallet pill's show/hide toggle and the avatar's chevron
+           are the least essential pixels — drop them first so the bell never gets
+           pushed off the edge of the screen. */
+        @media (max-width: 380px) {
+          .prq-bal-toggle { display: none !important; }
+          .prq-avatar-chevron { display: none !important; }
+        }
       `}</style>
       <div className="max-w-[1400px] mx-auto px-4 md:px-10">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64, gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64, gap: 6 }}>
 
           {/* Logo */}
           <Link to="/" style={{ textDecoration: 'none', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -396,21 +405,22 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
           <DesktopNavLinks />
 
           {/* Right: Wallet (desktop) · Avatar · Bell */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
 
             {/* Wallet — compact mobile pill. Balance text is never truncated. */}
             <div className="flex md:hidden items-center" style={{ background: C.mist, border: `1px solid #c8e6d4`, borderRadius: 8, overflow: 'hidden', flexShrink: 0 }}>
               <Link to="/wallet"
                 style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '5px 6px', textDecoration: 'none' }}>
-                <Wallet size={12} color={C.forest} style={{ flexShrink: 0 }} />
-                <span style={{ fontSize: 11, fontWeight: 900, color: C.forest, whiteSpace: 'nowrap' }}>
+                <Wallet size={11} color={C.forest} style={{ flexShrink: 0 }} />
+                <span style={{ fontSize: 10.5, fontWeight: 900, color: C.forest, whiteSpace: 'nowrap' }}>
                   {showBal ? `${localCode} ${sym}${fmt(totalLocal, 2)}` : '•••'}
                 </span>
               </Link>
               <button
                 onClick={() => setShowBal(!showBal)}
-                style={{ background: 'none', border: 'none', borderLeft: `1px solid #c8e6d4`, cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '5px 5px', flexShrink: 0 }}>
-                {showBal ? <Eye size={11} color={C.green} /> : <EyeOff size={11} color={C.g400} />}
+                className="prq-bal-toggle"
+                style={{ background: 'none', border: 'none', borderLeft: `1px solid #c8e6d4`, cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '5px 4px', flexShrink: 0 }}>
+                {showBal ? <Eye size={10} color={C.green} /> : <EyeOff size={10} color={C.g400} />}
               </button>
             </div>
 
@@ -441,9 +451,9 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
               <button
                 onClick={() => setProfileDrop(!profileDrop)}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
+                  display: 'flex', alignItems: 'center', gap: 5,
                   background: C.g100, border: `1px solid ${C.g200}`,
-                  borderRadius: 10, padding: '5px 10px 5px 5px',
+                  borderRadius: 10, padding: '5px 7px 5px 5px',
                   cursor: 'pointer', transition: 'all 0.2s',
                 }}>
                 <div style={{ position: 'relative', flexShrink: 0 }}>
@@ -466,7 +476,7 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
                 <span className="hidden md:block" style={{ fontSize: 13, fontWeight: 800, color: C.g800, maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {displayUser?.username || 'User'}
                 </span>
-                <ChevronDown size={13} color={C.g400}
+                <ChevronDown size={13} color={C.g400} className="prq-avatar-chevron"
                   style={{ transform: profileDrop ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
               </button>
 

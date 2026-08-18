@@ -1793,8 +1793,10 @@ export default function TradeDetail({user}) {
                   </div>
                 )}
 
-                {/* System message — trade opened notice, mirrors the "safe to pay" banner */}
-                {isEscrow && !isPaid && (isBuyer||isSeller) && (()=>{
+                {/* System message — trade opened notice. Stays visible for the life of the trade
+                    (paid, completed, cancelled, disputed, or expired) so either party can always
+                    scroll back and re-read the original terms. */}
+                {(isBuyer||isSeller) && (()=>{
                   const openedRaw = trade.created_at;
                   const openedDate = openedRaw ? new Date(/[Z+]/.test(openedRaw)?openedRaw:openedRaw+'Z') : new Date();
                   const openedLabel = `${String(openedDate.getDate()).padStart(2,'0')}/${String(openedDate.getMonth()+1).padStart(2,'0')}/${openedDate.getFullYear()} ${String(openedDate.getHours()).padStart(2,'0')}:${String(openedDate.getMinutes()).padStart(2,'0')}`;

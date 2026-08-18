@@ -1100,29 +1100,31 @@ export default function BuyBitcoin({user}) {
   function handleGuideLeave()   { guideTimer.current = setTimeout(() => setActiveGuide(null), 140); }
 
   const GUIDE_TOTAL = 4;
-  function MarketGuide({ id, icon: Icon, title, body, example, guideStep }) {
+  function MarketGuide({ id, icon: Icon, title, body, example, guideStep, align = 'left' }) {
     if (activeGuide !== id) return null;
     const isTab = id.startsWith('tab_');
     const isRightTab = id.includes('crypto') || id.includes('giftcards');
+    const alignRight = isRightTab || align === 'right';
 
-    const posStyle = isTab
-      ? {
-          top: 'calc(100% + 8px)',
-          ...(isRightTab ? { right: 0, left: 'auto' } : { left: 0 }),
-        }
-      : { bottom: 'calc(100% + 8px)', left: 0 };
+    const posStyle = {
+      top: 'calc(100% + 8px)',
+      maxHeight: 'calc(100vh - 24px)',
+      ...(alignRight ? { right: 0, left: 'auto' } : { left: 0, right: 'auto' }),
+    };
 
     return (
       <div style={{
         position: 'absolute',
         ...posStyle,
         zIndex: 10000,
-        width: 'min(300px, calc(100vw - 32px))',
+        width: 'min(215px, calc(100vw - 24px))',
+        maxWidth: 'calc(100vw - 24px)',
         background: 'linear-gradient(135deg,#1E40AF 0%,#2563EB 100%)',
-        borderRadius: 14, padding: '11px 13px',
+        borderRadius: 12, padding: '8px 9px',
         boxShadow: '0 10px 36px rgba(37,99,235,0.30),0 2px 8px rgba(0,0,0,0.08)',
-        animation: isTab ? 'marketGuideFadeDown 0.2s ease both' : 'marketGuideFadeUp 0.2s ease both',
+        animation: 'marketGuideFadeDown 0.2s ease both',
         pointerEvents: 'none',
+        overflowY: 'auto',
         boxSizing: 'border-box', color: '#fff',
       }}>
         <style>{`
@@ -1130,24 +1132,24 @@ export default function BuyBitcoin({user}) {
           @keyframes marketGuideFadeDown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
         `}</style>
         {guideStep && (
-          <div style={{ marginBottom: 7 }}>
+          <div style={{ marginBottom: 5 }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 3 }}>
-              <span style={{ background:'rgba(255,255,255,0.25)', borderRadius:20, padding:'1px 8px', fontSize:10, fontWeight:800, color:'#fff', letterSpacing:0.5, textTransform:'uppercase' }}>Step {guideStep} of {GUIDE_TOTAL}</span>
-              <span style={{ fontSize:10, color:'rgba(255,255,255,0.6)', fontWeight:600 }}>{Math.round((guideStep/GUIDE_TOTAL)*100)}%</span>
+              <span style={{ background:'rgba(255,255,255,0.25)', borderRadius:20, padding:'1px 6px', fontSize:8.5, fontWeight:800, color:'#fff', letterSpacing:0.5, textTransform:'uppercase' }}>Step {guideStep} of {GUIDE_TOTAL}</span>
+              <span style={{ fontSize:8.5, color:'rgba(255,255,255,0.6)', fontWeight:600 }}>{Math.round((guideStep/GUIDE_TOTAL)*100)}%</span>
             </div>
             <div style={{ height:3, background:'rgba(255,255,255,0.18)', borderRadius:2, overflow:'hidden' }}>
               <div style={{ width:`${(guideStep/GUIDE_TOTAL)*100}%`, height:'100%', background:'rgba(255,255,255,0.75)', borderRadius:2 }} />
             </div>
           </div>
         )}
-        <div style={{ display:'flex', alignItems:'flex-start', gap:9 }}>
-          <div style={{ width:24, height:24, borderRadius:'50%', background:'rgba(255,255,255,0.22)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-            {guideStep ? <span style={{ fontWeight:900, fontSize:11, color:'#fff' }}>{guideStep}</span> : <Icon size={12} style={{ color:'#fff' }} />}
+        <div style={{ display:'flex', alignItems:'flex-start', gap:7 }}>
+          <div style={{ width:19, height:19, borderRadius:'50%', background:'rgba(255,255,255,0.22)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            {guideStep ? <span style={{ fontWeight:900, fontSize:9.5, color:'#fff' }}>{guideStep}</span> : <Icon size={10} style={{ color:'#fff' }} />}
           </div>
           <div style={{ flex:1, minWidth:0 }}>
-            <p style={{ margin:'0 0 3px', fontWeight:800, fontSize:12, color:'#fff', lineHeight:1.3 }}>{title}</p>
-            <p style={{ margin:'0 0 5px', fontSize:11, color:'rgba(255,255,255,0.9)', lineHeight:1.45 }}>{body}</p>
-            {example && <div style={{ fontSize:10, color:'rgba(255,255,255,0.68)', fontStyle:'italic', background:'rgba(255,255,255,0.12)', borderRadius:6, padding:'2px 8px', display:'inline-block' }}>💡 {example}</div>}
+            <p style={{ margin:'0 0 2px', fontWeight:800, fontSize:10.5, color:'#fff', lineHeight:1.25 }}>{title}</p>
+            <p style={{ margin:'0 0 4px', fontSize:9.5, color:'rgba(255,255,255,0.9)', lineHeight:1.4 }}>{body}</p>
+            {example && <div style={{ fontSize:8.5, color:'rgba(255,255,255,0.68)', fontStyle:'italic', background:'rgba(255,255,255,0.12)', borderRadius:6, padding:'2px 7px', display:'inline-block' }}>💡 {example}</div>}
           </div>
         </div>
       </div>
@@ -1582,6 +1584,7 @@ export default function BuyBitcoin({user}) {
                   type="number" min="0" placeholder="e.g. 50"
                   value={buyAmt}
                   onChange={e=>setBuyAmt(e.target.value)}
+                  onFocus={()=>handleGuideEnter('buy_amount')} onBlur={handleGuideLeave}
                   className="w-full pl-6 pr-7 py-2.5 rounded-xl border-2 font-black focus:outline-none"
                   style={{borderColor:buyAmt?C.forest:C.g200, color:C.g800, backgroundColor:buyAmt?`${C.forest}08`:'transparent', fontSize:'16px'}}
                 />
@@ -1597,12 +1600,15 @@ export default function BuyBitcoin({user}) {
 
             <div className="relative" ref={currencyRef}
               onMouseEnter={()=>handleGuideEnter('buy_currency')} onMouseLeave={handleGuideLeave}>
-              <MarketGuide id="buy_currency" icon={CreditCard} guideStep={2}
-                title="Currency"
-                body="Select your local currency. Prices shown on all offer cards will switch to this currency so you can compare rates at a glance."
-                example="GHS for Ghana · NGN for Nigeria · KES for Kenya · USD for global" />
+              {!showCurrency && (
+                <MarketGuide id="buy_currency" icon={CreditCard} guideStep={2} align="right"
+                  title="Currency"
+                  body="Select your local currency. Prices shown on all offer cards will switch to this currency so you can compare rates at a glance."
+                  example="GHS for Ghana · NGN for Nigeria · KES for Kenya · USD for global" />
+              )}
               <p className="text-xs font-black mb-1 tracking-wide" style={{color:C.g500}}>CURRENCY</p>
               <button
+                onFocus={()=>handleGuideEnter('buy_currency')} onBlur={handleGuideLeave}
                 onClick={()=>{setShowCurrency(!showCurrency);setShowCountry(false);setShowPayment(false);}}
                 className="w-full flex items-center gap-1.5 px-2.5 py-2.5 rounded-xl border-2 font-bold transition"
                 style={{
@@ -1646,12 +1652,15 @@ export default function BuyBitcoin({user}) {
 
             <div className="relative" ref={paymentRef}
               onMouseEnter={()=>handleGuideEnter('buy_payment')} onMouseLeave={handleGuideLeave}>
-              <MarketGuide id="buy_payment" icon={Smartphone} guideStep={3}
-                title="Payment Method"
-                body="Filter by how you want to pay. Only sellers who accept your chosen payment method will be shown. Leave on 'All Methods' to see every offer."
-                example="MTN MoMo · Bank Transfer · PayPal · M-Pesa · WeChat Pay" />
+              {!showPayment && (
+                <MarketGuide id="buy_payment" icon={Smartphone} guideStep={3}
+                  title="Payment Method"
+                  body="Filter by how you want to pay. Only sellers who accept your chosen payment method will be shown. Leave on 'All Methods' to see every offer."
+                  example="MTN MoMo · Bank Transfer · PayPal · M-Pesa · WeChat Pay" />
+              )}
               <p className="text-xs font-black mb-1 tracking-wide" style={{color:C.g500}}>PAYMENT</p>
               <button
+                onFocus={()=>handleGuideEnter('buy_payment')} onBlur={handleGuideLeave}
                 onClick={()=>{setShowPayment(!showPayment);setShowCurrency(false);setShowCountry(false);}}
                 className="w-full flex items-center gap-1.5 px-2.5 py-2.5 rounded-xl border-2 font-bold transition"
                 style={{
@@ -1705,12 +1714,15 @@ export default function BuyBitcoin({user}) {
 
             <div className="relative" ref={countryRef}
               onMouseEnter={()=>handleGuideEnter('buy_country')} onMouseLeave={handleGuideLeave}>
-              <MarketGuide id="buy_country" icon={Globe} guideStep={4}
-                title="Country"
-                body="Filter sellers by their country. Sellers in your country usually offer the best local rates and the fastest payment methods."
-                example="Ghana · Nigeria · Kenya · South Africa · All Countries" />
+              {!showCountry && (
+                <MarketGuide id="buy_country" icon={Globe} guideStep={4} align="right"
+                  title="Country"
+                  body="Filter sellers by their country. Sellers in your country usually offer the best local rates and the fastest payment methods."
+                  example="Ghana · Nigeria · Kenya · South Africa · All Countries" />
+              )}
               <p className="text-xs font-black mb-1 tracking-wide" style={{color:C.g500}}>COUNTRY</p>
               <button
+                onFocus={()=>handleGuideEnter('buy_country')} onBlur={handleGuideLeave}
                 onClick={()=>{setShowCountry(!showCountry);setShowCurrency(false);setShowPayment(false);}}
                 className="w-full flex items-center gap-1.5 px-2.5 py-2.5 rounded-xl border-2 font-bold transition"
                 style={{

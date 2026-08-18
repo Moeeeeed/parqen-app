@@ -1632,19 +1632,20 @@ export default function Notifications({ user }) {
       <button
         onClick={() => { setShowDrop(v => !v); if (!showDrop) load(); }}
         style={{
-          position: 'relative', padding: '8px', borderRadius: 12,
+          position: 'relative', padding: isMobile ? '6px' : '8px', borderRadius: 12,
           border: 'none', background: 'transparent', cursor: 'pointer',
-          minWidth: 40, minHeight: 40,
+          minWidth: isMobile ? 32 : 40, minHeight: isMobile ? 32 : 40,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
         }}
         aria-label="Notifications">
-        <Bell size={22} style={{ color: T.forest }} />
+        <Bell size={isMobile ? 19 : 22} style={{ color: T.forest }} />
         {unread > 0 && (
           <span style={{
-            position: 'absolute', top: 2, right: 2,
-            minWidth: 18, height: 18, padding: '0 4px', borderRadius: 99,
+            position: 'absolute', top: isMobile ? 1 : 2, right: isMobile ? 1 : 2,
+            minWidth: 16, height: 16, padding: '0 3px', borderRadius: 99,
             backgroundColor: T.danger, color: '#fff',
-            fontSize: 10, fontWeight: 900,
+            fontSize: 9.5, fontWeight: 900,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             lineHeight: 1,
           }}>

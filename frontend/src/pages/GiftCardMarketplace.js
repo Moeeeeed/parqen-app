@@ -1128,29 +1128,31 @@ export default function GiftCards({ user }) {
   function handleGuideLeave() { guideTimer.current = setTimeout(() => setActiveGuide(null), 140); }
 
   const GUIDE_TOTAL = 4;
-  function MarketGuide({ id, icon: Icon = Info, title, body, example, guideStep }) {
+  function MarketGuide({ id, icon: Icon = Info, title, body, example, guideStep, align = 'left' }) {
     if (activeGuide !== id) return null;
     const isTab = id.startsWith('tab_');
     const isRightTab = id.includes('giftcards') || id.includes('crypto');
+    const alignRight = isRightTab || align === 'right';
 
-    const posStyle = isTab
-      ? {
-          top: 'calc(100% + 8px)',
-          ...(isRightTab ? { right: 0, left: 'auto' } : { left: 0 }),
-        }
-      : { bottom: 'calc(100% + 8px)', left: 0 };
+    const posStyle = {
+      top: 'calc(100% + 8px)',
+      maxHeight: 'calc(100vh - 24px)',
+      ...(alignRight ? { right: 0, left: 'auto' } : { left: 0, right: 'auto' }),
+    };
 
     return (
       <div style={{
         position: 'absolute',
         ...posStyle,
         zIndex: 10000,
-        width: 'min(300px, calc(100vw - 32px))',
+        width: 'min(215px, calc(100vw - 24px))',
+        maxWidth: 'calc(100vw - 24px)',
         background: 'linear-gradient(135deg,#1E40AF 0%,#2563EB 100%)',
-        borderRadius: 14, padding: '11px 13px',
+        borderRadius: 12, padding: '8px 9px',
         boxShadow: '0 10px 36px rgba(37,99,235,0.30),0 2px 8px rgba(0,0,0,0.08)',
-        animation: isTab ? 'gcGuideFadeDown 0.2s ease both' : 'gcGuideFadeUp 0.2s ease both',
+        animation: 'gcGuideFadeDown 0.2s ease both',
         pointerEvents: 'none',
+        overflowY: 'auto',
         boxSizing: 'border-box', color: '#fff',
       }}>
         <style>{`
@@ -1158,24 +1160,24 @@ export default function GiftCards({ user }) {
           @keyframes gcGuideFadeDown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
         `}</style>
         {guideStep && (
-          <div style={{ marginBottom: 7 }}>
+          <div style={{ marginBottom: 5 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
-              <span style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 20, padding: '1px 8px', fontSize: 10, fontWeight: 800, color: '#fff', letterSpacing: 0.5, textTransform: 'uppercase' }}>Step {guideStep} of {GUIDE_TOTAL}</span>
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>{Math.round((guideStep / GUIDE_TOTAL) * 100)}%</span>
+              <span style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 20, padding: '1px 6px', fontSize: 8.5, fontWeight: 800, color: '#fff', letterSpacing: 0.5, textTransform: 'uppercase' }}>Step {guideStep} of {GUIDE_TOTAL}</span>
+              <span style={{ fontSize: 8.5, color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>{Math.round((guideStep / GUIDE_TOTAL) * 100)}%</span>
             </div>
             <div style={{ height: 3, background: 'rgba(255,255,255,0.18)', borderRadius: 2, overflow: 'hidden' }}>
               <div style={{ width: `${(guideStep / GUIDE_TOTAL) * 100}%`, height: '100%', background: 'rgba(255,255,255,0.75)', borderRadius: 2 }} />
             </div>
           </div>
         )}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
-          <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            {guideStep ? <span style={{ fontWeight: 900, fontSize: 11, color: '#fff' }}>{guideStep}</span> : <Icon size={12} style={{ color: '#fff' }} />}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7 }}>
+          <div style={{ width: 19, height: 19, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            {guideStep ? <span style={{ fontWeight: 900, fontSize: 9.5, color: '#fff' }}>{guideStep}</span> : <Icon size={10} style={{ color: '#fff' }} />}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ margin: '0 0 3px', fontWeight: 800, fontSize: 12, color: '#fff', lineHeight: 1.3 }}>{title}</p>
-            <p style={{ margin: '0 0 5px', fontSize: 11, color: 'rgba(255,255,255,0.9)', lineHeight: 1.45 }}>{body}</p>
-            {example && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.68)', fontStyle: 'italic', background: 'rgba(255,255,255,0.12)', borderRadius: 6, padding: '2px 8px', display: 'inline-block' }}>💡 {example}</div>}
+            <p style={{ margin: '0 0 2px', fontWeight: 800, fontSize: 10.5, color: '#fff', lineHeight: 1.25 }}>{title}</p>
+            <p style={{ margin: '0 0 4px', fontSize: 9.5, color: 'rgba(255,255,255,0.9)', lineHeight: 1.4 }}>{body}</p>
+            {example && <div style={{ fontSize: 8.5, color: 'rgba(255,255,255,0.68)', fontStyle: 'italic', background: 'rgba(255,255,255,0.12)', borderRadius: 6, padding: '2px 7px', display: 'inline-block' }}>💡 {example}</div>}
           </div>
         </div>
       </div>
@@ -1531,6 +1533,7 @@ useEffect(() => {
                   type="number" min="0" placeholder="e.g. 50"
                   value={amountInput}
                   onChange={e => setAmountInput(e.target.value)}
+                  onFocus={() => handleGuideEnter('gc_amount')} onBlur={handleGuideLeave}
                   className="w-full pl-6 pr-7 py-2.5 rounded-xl border-2 font-bold focus:outline-none"
                   style={{
                     borderColor: amountInput ? C.forest : C.g200,
@@ -1552,13 +1555,16 @@ useEffect(() => {
             {/* ── CURRENCY ── */}
             <div style={{ position: 'relative' }}
               onMouseEnter={() => handleGuideEnter('gc_currency')} onMouseLeave={handleGuideLeave}>
-              <MarketGuide id="gc_currency" icon={CreditCard} guideStep={2}
-                title="Currency"
-                body="Filter by the currency of the gift card or payment currency. All card values will update to show amounts in your chosen currency."
-                example="USD for US Cards · EUR for European Cards · GHS for Ghana" />
+              {!showCurrency && (
+                <MarketGuide id="gc_currency" icon={CreditCard} guideStep={2} align="right"
+                  title="Currency"
+                  body="Filter by the currency of the gift card or payment currency. All card values will update to show amounts in your chosen currency."
+                  example="USD for US Cards · EUR for European Cards · GHS for Ghana" />
+              )}
               <p className="text-xs font-bold mb-1 tracking-wide" style={{ color: C.g500 }}>CURRENCY</p>
               <div className="relative" ref={currencyRef}>
-                <button onClick={() => { setShowCurrency(!showCurrency); setCurrencySearch(''); setShowBrand(false); setShowCountry(false); }}
+                <button onFocus={() => handleGuideEnter('gc_currency')} onBlur={handleGuideLeave}
+                  onClick={() => { setShowCurrency(!showCurrency); setCurrencySearch(''); setShowBrand(false); setShowCountry(false); }}
                   className="w-full flex items-center gap-1.5 px-3 py-2.5 rounded-xl border-2 font-bold transition"
                   style={{
                     borderColor: selCurrency.code !== 'USD' ? C.forest : C.g200,
@@ -1615,13 +1621,16 @@ useEffect(() => {
             {/* ── PAYMENT (Gift Card Brand) ── */}
             <div style={{ position: 'relative' }}
               onMouseEnter={() => handleGuideEnter('gc_brand')} onMouseLeave={handleGuideLeave}>
-              <MarketGuide id="gc_brand" icon={Gift} guideStep={3}
-                title="Gift Card Brand"
-                body="Filter by the specific gift card brand you want to buy or sell. Pick Amazon, iTunes, Google Play, Steam, Razer Gold and more."
-                example="Amazon · Apple iTunes · Google Play · Steam · Razer Gold" />
+              {!showBrand && (
+                <MarketGuide id="gc_brand" icon={Gift} guideStep={3}
+                  title="Gift Card Brand"
+                  body="Filter by the specific gift card brand you want to buy or sell. Pick Amazon, iTunes, Google Play, Steam, Razer Gold and more."
+                  example="Amazon · Apple iTunes · Google Play · Steam · Razer Gold" />
+              )}
               <p className="text-xs font-bold mb-1 tracking-wide" style={{ color: C.g500 }}>PAYMENT</p>
               <div className="relative" ref={brandRef}>
-                <button onClick={() => { setShowBrand(!showBrand); setBrandSearch(''); setShowCurrency(false); setShowCountry(false); }}
+                <button onFocus={() => handleGuideEnter('gc_brand')} onBlur={handleGuideLeave}
+                  onClick={() => { setShowBrand(!showBrand); setBrandSearch(''); setShowCurrency(false); setShowCountry(false); }}
                   className="w-full flex items-center gap-1.5 px-3 py-2.5 rounded-xl border-2 font-bold transition"
                   style={{
                     borderColor: selBrand !== 'All Brands' ? C.forest : C.g200,
@@ -1681,13 +1690,16 @@ useEffect(() => {
             {/* ── COUNTRY ── */}
             <div style={{ position: 'relative' }}
               onMouseEnter={() => handleGuideEnter('gc_country')} onMouseLeave={handleGuideLeave}>
-              <MarketGuide id="gc_country" icon={Globe} guideStep={4}
-                title="Country / Region"
-                body="Filter vendors by country. Local vendors can complete trade verification and payouts faster in your country."
-                example="Ghana · Nigeria · Kenya · USA · All Countries" />
+              {!showCountry && (
+                <MarketGuide id="gc_country" icon={Globe} guideStep={4} align="right"
+                  title="Country / Region"
+                  body="Filter vendors by country. Local vendors can complete trade verification and payouts faster in your country."
+                  example="Ghana · Nigeria · Kenya · USA · All Countries" />
+              )}
               <p className="text-xs font-bold mb-1 tracking-wide" style={{ color: C.g500 }}>COUNTRY</p>
               <div className="relative" ref={countryRef}>
-                <button onClick={() => { setShowCountry(!showCountry); setShowCurrency(false); setShowBrand(false); }}
+                <button onFocus={() => handleGuideEnter('gc_country')} onBlur={handleGuideLeave}
+                  onClick={() => { setShowCountry(!showCountry); setShowCurrency(false); setShowBrand(false); }}
                   className="w-full flex items-center gap-1.5 px-3 py-2.5 rounded-xl border-2 font-bold transition"
                   style={{
                     borderColor: selCountry.code !== 'ALL' ? C.forest : C.g200,

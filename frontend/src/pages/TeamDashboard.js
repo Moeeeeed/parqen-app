@@ -1167,7 +1167,7 @@ function KnowledgeBaseSection() {
           <p className="text-sm font-bold" style={{ color: C.g400 }}>{articles.length === 0 ? 'No articles yet — write the first one' : 'No results'}</p>
         </div>
       ) : (
-        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))' }}>
+        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px,100%),1fr))' }}>
           {filtered.map(a => (
             <div key={a.id} onClick={() => { setViewArt(a); setShowForm(false); }} className="bg-white rounded-2xl border p-4 cursor-pointer hover:shadow-md transition-shadow" style={{ borderColor: C.g200 }}>
               <div className="flex items-center gap-2 mb-2">
@@ -1775,7 +1775,7 @@ function StaffSection() {
           <p className="text-sm font-bold" style={{ color: C.g400 }}>{staff.length === 0 ? 'No staff members yet — add the first one' : 'No results match your filters'}</p>
         </div>
       ) : (
-        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))' }}>
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(min(280px,100%),1fr))' }}>
           {filtered.map(m => {
             const ct  = ctMeta(m.contract_type);
             const st  = stMeta(m.status);
@@ -4292,6 +4292,7 @@ function TopTradersSection() {
               )}
 
               {/* Rest of leaderboard */}
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead style={{ backgroundColor: C.g50 }}>
                   <tr>
@@ -4346,6 +4347,7 @@ function TopTradersSection() {
                   })}
                 </tbody>
               </table>
+              </div>
             </>
           )}
         </div>

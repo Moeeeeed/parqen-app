@@ -38,6 +38,20 @@ const C = {
 
 // ── Featured badge config ─────────────────────────────────────────────────────
 const FEATURED = {
+  fast_buyer: {
+    TagIcon:     Zap,
+    tag:         'FAST BUYER OF THE WEEK',
+    ribbon:      'linear-gradient(90deg,#064E3B 0%,#065F46 18%,#059669 38%,#6EE7B7 50%,#059669 62%,#065F46 82%,#064E3B 100%)',
+    border:      '#059669',
+    glow:        'rgba(5,150,105,0.35)',
+    bg:          '#F0FAF5',
+    bgGradient:  'linear-gradient(150deg,rgba(110,231,183,0.22) 0%,#F0FAF5 42%,rgba(16,185,129,0.12) 100%)',
+    divider:     'rgba(5,150,105,0.20)',
+    labelColor:  '#064E3B',
+    btnGradient: 'linear-gradient(135deg,#064E3B 0%,#059669 55%,#34D399 100%)',
+    btnShadow:   '0 4px 20px rgba(5,150,105,0.50)',
+    pulse:       true,
+  },
   hot_offer: {
     TagIcon:     Flame,
     tag:         'HOT OFFER · TRENDING NOW',
@@ -330,7 +344,7 @@ function OfferCard({listing, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLi
         background: ft?.bgGradient || (ft ? ft.bg : '#fff'),
         border: ft ? `2.5px solid ${ft.border}` : `1px solid ${C.g200}`,
         boxShadow: ft ? `0 0 0 3px ${ft.glow}, 0 10px 36px ${ft.glow}` : undefined,
-        animation: ft?.pulse ? 'hotOfferPulse 2.5s ease-in-out infinite' : undefined,
+        animation: ft?.pulse ? (featuredType === 'fast_buyer' ? 'fastBuyerPulse 2.5s ease-in-out infinite' : 'hotOfferPulse 2.5s ease-in-out infinite') : undefined,
       }}>
       {ft && (
         <div style={{position:'relative', overflow:'hidden'}}>
@@ -1053,29 +1067,31 @@ export default function SellBitcoin({user}) {
   function handleGuideLeave()   { guideTimer.current = setTimeout(() => setActiveGuide(null), 140); }
 
   const GUIDE_TOTAL = 4;
-  function MarketGuide({ id, icon: Icon, title, body, example, guideStep }) {
+  function MarketGuide({ id, icon: Icon, title, body, example, guideStep, align = 'left' }) {
     if (activeGuide !== id) return null;
     const isTab = id.startsWith('tab_');
     const isRightTab = id.includes('crypto') || id.includes('giftcards');
+    const alignRight = isRightTab || align === 'right';
 
-    const posStyle = isTab
-      ? {
-          top: 'calc(100% + 8px)',
-          ...(isRightTab ? { right: 0, left: 'auto' } : { left: 0 }),
-        }
-      : { bottom: 'calc(100% + 8px)', left: 0 };
+    const posStyle = {
+      top: 'calc(100% + 8px)',
+      maxHeight: 'calc(100vh - 24px)',
+      ...(alignRight ? { right: 0, left: 'auto' } : { left: 0, right: 'auto' }),
+    };
 
     return (
       <div style={{
         position: 'absolute',
         ...posStyle,
         zIndex: 10000,
-        width: 'min(300px, calc(100vw - 32px))',
+        width: 'min(215px, calc(100vw - 24px))',
+        maxWidth: 'calc(100vw - 24px)',
         background: 'linear-gradient(135deg,#1E40AF 0%,#2563EB 100%)',
-        borderRadius: 14, padding: '11px 13px',
+        borderRadius: 12, padding: '8px 9px',
         boxShadow: '0 10px 36px rgba(37,99,235,0.30),0 2px 8px rgba(0,0,0,0.08)',
-        animation: isTab ? 'sellGuideFadeDown 0.2s ease both' : 'sellGuide 0.2s ease both',
+        animation: 'sellGuideFadeDown 0.2s ease both',
         pointerEvents: 'none',
+        overflowY: 'auto',
         boxSizing: 'border-box', color: '#fff',
       }}>
         <style>{`
@@ -1083,24 +1099,24 @@ export default function SellBitcoin({user}) {
           @keyframes sellGuideFadeDown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
         `}</style>
         {guideStep && (
-          <div style={{ marginBottom: 7 }}>
+          <div style={{ marginBottom: 5 }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 3 }}>
-              <span style={{ background:'rgba(255,255,255,0.25)', borderRadius:20, padding:'1px 8px', fontSize:10, fontWeight:800, color:'#fff', letterSpacing:0.5, textTransform:'uppercase' }}>Step {guideStep} of {GUIDE_TOTAL}</span>
-              <span style={{ fontSize:10, color:'rgba(255,255,255,0.6)', fontWeight:600 }}>{Math.round((guideStep/GUIDE_TOTAL)*100)}%</span>
+              <span style={{ background:'rgba(255,255,255,0.25)', borderRadius:20, padding:'1px 6px', fontSize:8.5, fontWeight:800, color:'#fff', letterSpacing:0.5, textTransform:'uppercase' }}>Step {guideStep} of {GUIDE_TOTAL}</span>
+              <span style={{ fontSize:8.5, color:'rgba(255,255,255,0.6)', fontWeight:600 }}>{Math.round((guideStep/GUIDE_TOTAL)*100)}%</span>
             </div>
             <div style={{ height:3, background:'rgba(255,255,255,0.18)', borderRadius:2, overflow:'hidden' }}>
               <div style={{ width:`${(guideStep/GUIDE_TOTAL)*100}%`, height:'100%', background:'rgba(255,255,255,0.75)', borderRadius:2 }} />
             </div>
           </div>
         )}
-        <div style={{ display:'flex', alignItems:'flex-start', gap:9 }}>
-          <div style={{ width:24, height:24, borderRadius:'50%', background:'rgba(255,255,255,0.22)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-            {guideStep ? <span style={{ fontWeight:900, fontSize:11, color:'#fff' }}>{guideStep}</span> : <Icon size={12} style={{ color:'#fff' }} />}
+        <div style={{ display:'flex', alignItems:'flex-start', gap:7 }}>
+          <div style={{ width:19, height:19, borderRadius:'50%', background:'rgba(255,255,255,0.22)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            {guideStep ? <span style={{ fontWeight:900, fontSize:9.5, color:'#fff' }}>{guideStep}</span> : <Icon size={10} style={{ color:'#fff' }} />}
           </div>
           <div style={{ flex:1, minWidth:0 }}>
-            <p style={{ margin:'0 0 3px', fontWeight:800, fontSize:12, color:'#fff', lineHeight:1.3 }}>{title}</p>
-            <p style={{ margin:'0 0 5px', fontSize:11, color:'rgba(255,255,255,0.9)', lineHeight:1.45 }}>{body}</p>
-            {example && <div style={{ fontSize:10, color:'rgba(255,255,255,0.68)', fontStyle:'italic', background:'rgba(255,255,255,0.12)', borderRadius:6, padding:'2px 8px', display:'inline-block' }}>💡 {example}</div>}
+            <p style={{ margin:'0 0 2px', fontWeight:800, fontSize:10.5, color:'#fff', lineHeight:1.25 }}>{title}</p>
+            <p style={{ margin:'0 0 4px', fontSize:9.5, color:'rgba(255,255,255,0.9)', lineHeight:1.4 }}>{body}</p>
+            {example && <div style={{ fontSize:8.5, color:'rgba(255,255,255,0.68)', fontStyle:'italic', background:'rgba(255,255,255,0.12)', borderRadius:6, padding:'2px 7px', display:'inline-block' }}>💡 {example}</div>}
           </div>
         </div>
       </div>
@@ -1301,6 +1317,13 @@ export default function SellBitcoin({user}) {
   const onlineCnt   = offers.filter(l=>(Date.now()-new Date(l.users?.last_seen_at||l.users?.last_login||0))/1000<300).length;
   const buyerCount  = new Set(offers.map(l=>l.seller_id)).size;
 
+  // Fast Buyer of the Week — Lhord_Exchange's MTN Mobile Money offer only
+  const FAST_BUYER_USERNAME = 'lhord_exchange';
+  const fastBuyerListingId = offers.find(l =>
+    (l.users?.username || '').toLowerCase() === FAST_BUYER_USERNAME &&
+    String(l.payment_method||'').toLowerCase().includes('mtn')
+  )?.id || null;
+
   // Hot Offer of the Week — king_cash1's MTN listing only
   const HOT_OFFER_USERNAME = 'king_cash1';
   const hotOfferListingId = offers.find(l =>
@@ -1316,6 +1339,7 @@ export default function SellBitcoin({user}) {
       <style>{`
         @keyframes slideUp { from{transform:translateY(100%);opacity:0} to{transform:translateY(0);opacity:1} }
         @keyframes hotOfferPulse { 0%,100%{box-shadow:0 0 0 3px rgba(217,119,6,0.25),0 8px 32px rgba(217,119,6,0.15)} 50%{box-shadow:0 0 0 6px rgba(217,119,6,0.45),0 16px 48px rgba(217,119,6,0.28)} }
+        @keyframes fastBuyerPulse { 0%,100%{box-shadow:0 0 0 3px rgba(5,150,105,0.25),0 8px 32px rgba(5,150,105,0.15)} 50%{box-shadow:0 0 0 6px rgba(5,150,105,0.45),0 16px 48px rgba(5,150,105,0.28)} }
         @keyframes shimmer { 0%{transform:translateX(-130%)} 100%{transform:translateX(130%)} }
         input[type=number]::-webkit-inner-spin-button,
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
@@ -1457,6 +1481,7 @@ export default function SellBitcoin({user}) {
                   type="number" min="0" placeholder="e.g. 500"
                   value={sellAmt}
                   onChange={e=>setSellAmt(e.target.value)}
+                  onFocus={()=>handleGuideEnter('sell_amount')} onBlur={handleGuideLeave}
                   className="w-full pl-6 pr-7 py-2.5 rounded-xl border-2 font-black focus:outline-none"
                   style={{borderColor:sellAmt?C.sell:C.g200, color:C.g800, backgroundColor:sellAmt?`${C.sell}08`:'transparent', fontSize:'16px'}}
                 />
@@ -1473,12 +1498,15 @@ export default function SellBitcoin({user}) {
             {/* ── CURRENCY (own currency list) ── */}
             <div className="relative" ref={currencyRef}
               onMouseEnter={()=>handleGuideEnter('sell_currency')} onMouseLeave={handleGuideLeave}>
-              <MarketGuide id="sell_currency" icon={CreditCard} guideStep={2}
-                title="Currency"
-                body="Choose the currency you want to receive payment in. All offer prices will update to show amounts in your selected currency."
-                example="GHS for Ghana · NGN for Nigeria · KES for Kenya · USD for global" />
+              {!showCurrency && (
+                <MarketGuide id="sell_currency" icon={CreditCard} guideStep={2} align="right"
+                  title="Currency"
+                  body="Choose the currency you want to receive payment in. All offer prices will update to show amounts in your selected currency."
+                  example="GHS for Ghana · NGN for Nigeria · KES for Kenya · USD for global" />
+              )}
               <p className="text-xs font-black mb-1 tracking-wide" style={{color:C.g500}}>CURRENCY</p>
               <button
+                onFocus={()=>handleGuideEnter('sell_currency')} onBlur={handleGuideLeave}
                 onClick={()=>{setShowCurrency(!showCurrency);setShowCountry(false);setShowPayment(false);}}
                 className="w-full flex items-center gap-1.5 px-2.5 py-2.5 rounded-xl border-2 font-bold transition"
                 style={{
@@ -1522,12 +1550,15 @@ export default function SellBitcoin({user}) {
             {/* ── PAYMENT ── */}
             <div className="relative" ref={paymentRef}
               onMouseEnter={()=>handleGuideEnter('sell_payment')} onMouseLeave={handleGuideLeave}>
-              <MarketGuide id="sell_payment" icon={Smartphone} guideStep={3}
-                title="Payment Method"
-                body="Filter buyers by how they will pay you. Pick a payment method you can receive to see only matching buyers."
-                example="MTN MoMo · Bank Transfer · PayPal · Perfect Money · Wise" />
+              {!showPayment && (
+                <MarketGuide id="sell_payment" icon={Smartphone} guideStep={3}
+                  title="Payment Method"
+                  body="Filter buyers by how they will pay you. Pick a payment method you can receive to see only matching buyers."
+                  example="MTN MoMo · Bank Transfer · PayPal · Perfect Money · Wise" />
+              )}
               <p className="text-xs font-black mb-1 tracking-wide" style={{color:C.g500}}>PAYMENT</p>
               <button
+                onFocus={()=>handleGuideEnter('sell_payment')} onBlur={handleGuideLeave}
                 onClick={()=>{setShowPayment(!showPayment);setShowCurrency(false);setShowCountry(false);}}
                 className="w-full flex items-center gap-1.5 px-2.5 py-2.5 rounded-xl border-2 font-bold transition"
                 style={{
@@ -1581,12 +1612,15 @@ export default function SellBitcoin({user}) {
             {/* ── COUNTRY ── */}
             <div className="relative" ref={countryRef}
               onMouseEnter={()=>handleGuideEnter('sell_country')} onMouseLeave={handleGuideLeave}>
-              <MarketGuide id="sell_country" icon={Globe} guideStep={4}
-                title="Country"
-                body="Filter buyers by country. Buyers in your country typically offer faster payment and better local rates."
-                example="Ghana · Nigeria · Kenya · South Africa · All Countries" />
+              {!showCountry && (
+                <MarketGuide id="sell_country" icon={Globe} guideStep={4} align="right"
+                  title="Country"
+                  body="Filter buyers by country. Buyers in your country typically offer faster payment and better local rates."
+                  example="Ghana · Nigeria · Kenya · South Africa · All Countries" />
+              )}
               <p className="text-xs font-black mb-1 tracking-wide" style={{color:C.g500}}>COUNTRY</p>
               <button
+                onFocus={()=>handleGuideEnter('sell_country')} onBlur={handleGuideLeave}
                 onClick={()=>{setShowCountry(!showCountry);setShowCurrency(false);setShowPayment(false);}}
                 className="w-full flex items-center gap-1.5 px-2.5 py-2.5 rounded-xl border-2 font-bold transition"
                 style={{
@@ -1783,7 +1817,7 @@ export default function SellBitcoin({user}) {
                 <OfferCard
                   listing={l}
                   btcPriceUSD={btcPrice}
-                  featuredType={l.id === hotOfferListingId ? 'hot_offer' : undefined}
+                  featuredType={l.id === fastBuyerListingId ? 'fast_buyer' : l.id === hotOfferListingId ? 'hot_offer' : undefined}
                   liveSeenAt={liveStatus[l.users?.id] || null}
                   onViewBuyer={()=>{
                     setModal({buyer:l.users||{}, listing:l});
