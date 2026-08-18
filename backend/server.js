@@ -214,6 +214,11 @@ function capAvatar(url) {
 // ── 5. Express ─────────────────────────────────────────────────────────────
 const app = express();
 
+// Render sits in front of this app as a reverse proxy — without this, Express treats
+// every request as if it came directly from Render's proxy IP, which breaks
+// express-rate-limit's per-client IP keying (and its X-Forwarded-For trust warning) below.
+app.set('trust proxy', 1);
+
 // Security headers — applied before everything else
 app.use(helmet({
   contentSecurityPolicy: false, // pure API server, no HTML pages served
@@ -5699,12 +5704,19 @@ app.get('/api/listings', async (req, res) => {
     if (minPrice) listingsQ = listingsQ.gte('bitcoin_price', parseFloat(minPrice));
     if (maxPrice) listingsQ = listingsQ.lte('bitcoin_price', parseFloat(maxPrice));
 
-    let _listingsTimedOut = false;
-    const { data: rawListings, error: listErr } = await Promise.race([
-      listingsQ,
-      new Promise(resolve => setTimeout(() => { _listingsTimedOut = true; resolve({ data: null, error: null }); }, 8000)),
-    ]);
-    if (listErr) {
+    // Use a real AbortSignal instead of Promise.race: race() only abandons the promise
+    // on the Node side — the underlying PostgREST request (and the Postgres connection
+    // it holds open) keeps running to completion regardless. Under load that let
+    // timed-out requests pile up and hold connections while the client retried,
+    // starving the pool and making every subsequent request slower — a likely
+    // contributor to the "always going off" slowness. abortSignal() actually cancels
+    // the in-flight request so its connection is freed the moment we give up on it.
+    const _listingsAbort = new AbortController();
+    const _listingsTimer = setTimeout(() => _listingsAbort.abort(), 8000);
+    const { data: rawListings, error: listErr } = await listingsQ.abortSignal(_listingsAbort.signal);
+    clearTimeout(_listingsTimer);
+    const _listingsTimedOut = !!listErr && (listErr.code === '' || /abort/i.test(listErr.message || ''));
+    if (listErr && !_listingsTimedOut) {
       console.error('[/api/listings] Listing query error:', listErr.message, '| code:', listErr.code);
       // Return empty array so the marketplace doesn't crash — client will retry
       return res.json({ listings: [], stale: false, error: listErr.message });
