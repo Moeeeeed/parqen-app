@@ -41,15 +41,15 @@ const FEATURED = {
   fast_buyer: {
     TagIcon:     Zap,
     tag:         'FAST BUYER OF THE WEEK',
-    ribbon:      'linear-gradient(90deg,#064E3B 0%,#065F46 18%,#059669 38%,#6EE7B7 50%,#059669 62%,#065F46 82%,#064E3B 100%)',
-    border:      '#059669',
-    glow:        'rgba(5,150,105,0.35)',
-    bg:          '#F0FAF5',
-    bgGradient:  'linear-gradient(150deg,rgba(110,231,183,0.22) 0%,#F0FAF5 42%,rgba(16,185,129,0.12) 100%)',
-    divider:     'rgba(5,150,105,0.20)',
-    labelColor:  '#064E3B',
-    btnGradient: 'linear-gradient(135deg,#064E3B 0%,#059669 55%,#34D399 100%)',
-    btnShadow:   '0 4px 20px rgba(5,150,105,0.50)',
+    ribbon:      'linear-gradient(90deg,#78350F 0%,#C2410C 18%,#EA580C 38%,#FCD34D 50%,#EA580C 62%,#C2410C 82%,#78350F 100%)',
+    border:      '#D97706',
+    glow:        'rgba(217,119,6,0.38)',
+    bg:          '#FFFBEB',
+    bgGradient:  'linear-gradient(150deg,rgba(253,211,77,0.22) 0%,#FFFBEB 42%,rgba(234,88,12,0.12) 100%)',
+    divider:     'rgba(217,119,6,0.22)',
+    labelColor:  '#92400E',
+    btnGradient: 'linear-gradient(135deg,#78350F 0%,#D97706 55%,#FBBF24 100%)',
+    btnShadow:   '0 4px 20px rgba(217,119,6,0.50)',
     pulse:       true,
   },
   hot_offer: {
@@ -344,7 +344,7 @@ function OfferCard({listing, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLi
         background: ft?.bgGradient || (ft ? ft.bg : '#fff'),
         border: ft ? `2.5px solid ${ft.border}` : `1px solid ${C.g200}`,
         boxShadow: ft ? `0 0 0 3px ${ft.glow}, 0 10px 36px ${ft.glow}` : undefined,
-        animation: ft?.pulse ? (featuredType === 'fast_buyer' ? 'fastBuyerPulse 2.5s ease-in-out infinite' : 'hotOfferPulse 2.5s ease-in-out infinite') : undefined,
+        animation: ft?.pulse ? 'hotOfferPulse 2.5s ease-in-out infinite' : undefined,
       }}>
       {ft && (
         <div style={{position:'relative', overflow:'hidden'}}>
@@ -1339,7 +1339,6 @@ export default function SellBitcoin({user}) {
       <style>{`
         @keyframes slideUp { from{transform:translateY(100%);opacity:0} to{transform:translateY(0);opacity:1} }
         @keyframes hotOfferPulse { 0%,100%{box-shadow:0 0 0 3px rgba(217,119,6,0.25),0 8px 32px rgba(217,119,6,0.15)} 50%{box-shadow:0 0 0 6px rgba(217,119,6,0.45),0 16px 48px rgba(217,119,6,0.28)} }
-        @keyframes fastBuyerPulse { 0%,100%{box-shadow:0 0 0 3px rgba(5,150,105,0.25),0 8px 32px rgba(5,150,105,0.15)} 50%{box-shadow:0 0 0 6px rgba(5,150,105,0.45),0 16px 48px rgba(5,150,105,0.28)} }
         @keyframes shimmer { 0%{transform:translateX(-130%)} 100%{transform:translateX(130%)} }
         input[type=number]::-webkit-inner-spin-button,
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }

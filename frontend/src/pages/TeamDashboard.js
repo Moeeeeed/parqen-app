@@ -4566,6 +4566,105 @@ function LiveClock() {
 }
 
 // ================================================================
+// VENDOR DEPOSITS — new gift-card sellers awaiting the $200 security
+// deposit review before they're allowed to publish listings. Visible to
+// the whole team; approve/reject is admin-only (money-adjacent trust call).
+// ================================================================
+function VendorDepositsSection({ teamUser }) {
+  const [deposits, setDeposits] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [actingId, setActingId] = useState(null);
+  const isAdmin = !!teamUser?.is_admin;
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await axios.get(`${API_URL}/team/seller-deposits/pending`, { headers: authH() });
+      setDeposits(r.data.deposits || []);
+    } catch (err) { toast.error(err.response?.data?.error || 'Failed to load pending deposits'); }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const approve = async (d) => {
+    if (!window.confirm(`Approve ${d.user?.username || 'this user'}'s $${d.amount_usdt} deposit? They'll immediately be able to create gift card offers.`)) return;
+    setActingId(d.id);
+    try {
+      await axios.post(`${API_URL}/admin/seller-deposits/${d.user_id}/approve-deposit`, {}, { headers: authH() });
+      toast.success(`Approved — ${d.user?.username || 'user'} can now sell gift cards.`);
+      load();
+    } catch (err) { toast.error(err.response?.data?.error || 'Failed to approve deposit'); }
+    setActingId(null);
+  };
+
+  const reject = async (d) => {
+    const reason = window.prompt(`Reject ${d.user?.username || 'this user'}'s $${d.amount_usdt} deposit and refund it to their wallet?\n\nOptional reason (shown to the user):`, '');
+    if (reason === null) return; // cancelled
+    setActingId(d.id);
+    try {
+      await axios.post(`${API_URL}/admin/seller-deposits/${d.user_id}/reject-deposit`, { reason }, { headers: authH() });
+      toast.success(`Rejected — $${d.amount_usdt} refunded to ${d.user?.username || 'user'}'s wallet.`);
+      load();
+    } catch (err) { toast.error(err.response?.data?.error || 'Failed to reject deposit'); }
+    setActingId(null);
+  };
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-black" style={{ color: C.g800 }}>Vendor Deposits</h2>
+        <p className="text-xs mt-0.5" style={{ color: C.g400 }}>New gift-card sellers' $200 security deposits, awaiting review before they can list</p>
+      </div>
+
+      {!isAdmin && (
+        <div className="rounded-2xl border p-3.5 flex items-start gap-2.5" style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}>
+          <Shield size={15} style={{ color: '#B45309', flexShrink: 0, marginTop: 1 }} />
+          <p className="text-xs leading-relaxed" style={{ color: '#92400E' }}>
+            You can view pending deposits here, but approving or rejecting them requires full admin access.
+          </p>
+        </div>
+      )}
+
+      {loading ? <Spin /> : deposits.length === 0 ? (
+        <Empty icon={<Shield size={36} className="mx-auto" style={{ color: C.g300 }} />} text="No deposits waiting on review" />
+      ) : (
+        <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
+          {deposits.map((d, i) => (
+            <div key={d.id} className={`flex items-center justify-between gap-3 flex-wrap px-4 py-3.5 ${i > 0 ? 'border-t' : ''}`} style={{ borderColor: C.g100 }}>
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ backgroundColor: C.forest }}>
+                  {(d.user?.username || '?')[0].toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <p className="font-bold text-sm" style={{ color: C.g800 }}>{d.user?.username || 'Unknown'}</p>
+                  <p className="text-xs" style={{ color: C.g400 }}>{d.user?.email || '—'} · locked {fmtAge(d.locked_at)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="text-sm font-black px-2.5 py-1 rounded-lg" style={{ backgroundColor: C.g50, color: C.g700 }}>
+                  ${fmt(d.amount_usdt)} USDT
+                </span>
+                <button onClick={() => approve(d)} disabled={!isAdmin || actingId === d.id}
+                  className="px-3 py-1.5 rounded-lg text-xs font-black text-white"
+                  style={{ backgroundColor: !isAdmin ? C.g300 : (actingId === d.id ? C.g400 : C.green), cursor: !isAdmin ? 'not-allowed' : 'pointer' }}>
+                  {actingId === d.id ? '…' : 'Approve'}
+                </button>
+                <button onClick={() => reject(d)} disabled={!isAdmin || actingId === d.id}
+                  className="px-3 py-1.5 rounded-lg text-xs font-black text-white"
+                  style={{ backgroundColor: !isAdmin ? C.g300 : (actingId === d.id ? C.g400 : C.danger), cursor: !isAdmin ? 'not-allowed' : 'pointer' }}>
+                  Reject
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ================================================================
 // MAIN
 // ================================================================
 export default function TeamDashboard({ user: propUser }) {
@@ -4574,6 +4673,7 @@ export default function TeamDashboard({ user: propUser }) {
   const [section, setSection] = useState('overview');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [disputeCount, setDisputeCount] = useState(0);
+  const [pendingDepositCount, setPendingDepositCount] = useState(0);
 
   useEffect(() => {
     const token = localStorage.getItem('team_token');
@@ -4604,6 +4704,17 @@ export default function TeamDashboard({ user: propUser }) {
     poll(); const iv = setInterval(poll, 30000); return () => clearInterval(iv);
   }, [loggedIn]);
 
+  useEffect(() => {
+    if (!loggedIn) return;
+    const poll = async () => {
+      try {
+        const r = await axios.get(`${API_URL}/team/seller-deposits/pending`, { headers: authH() });
+        setPendingDepositCount((r.data.deposits || []).length);
+      } catch {}
+    };
+    poll(); const iv = setInterval(poll, 30000); return () => clearInterval(iv);
+  }, [loggedIn]);
+
   const logout = () => {
     localStorage.removeItem('team_token'); localStorage.removeItem('team_user');
     setLoggedIn(false); setTeamUser(null);
@@ -4625,6 +4736,7 @@ export default function TeamDashboard({ user: propUser }) {
       { id: 'feedback',       label: 'Feedback',        icon: Star },
       { id: 'risk-monitor',   label: 'Risk Monitor',    icon: AlertOctagon },
       { id: 'top-traders',    label: 'Top Traders',     icon: Trophy },
+      { id: 'vendor-deposits', label: 'Vendor Deposits', icon: Shield,      badge: pendingDepositCount },
     ]},
     { label: 'Team', items: [
       { id: 'announcements',  label: 'Announcements',   icon: Megaphone },
@@ -4824,6 +4936,7 @@ export default function TeamDashboard({ user: propUser }) {
           {section === 'disputes'       && <DisputesSection teamUser={teamUser} />}
           {section === 'feedback'       && <FeedbackSection />}
           {section === 'top-traders'    && <TopTradersSection />}
+          {section === 'vendor-deposits' && <VendorDepositsSection teamUser={teamUser} />}
           {section === 'users'          && <UsersSection />}
         </main>
       </div>

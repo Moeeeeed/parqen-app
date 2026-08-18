@@ -482,9 +482,51 @@ const GC_STEPS = [
 
 // ── Seller security deposit modal (gated before creating SELL_GIFT_CARD offers) ──
 const DEPOSIT_AMOUNT = 200;
-function DepositSecurityModal({ walletUsdt, onClose, onLock, loading, error }) {
+function DepositSecurityModal({ walletUsdt, onClose, onLock, loading, error, pending }) {
   const shortfall = Math.max(0, DEPOSIT_AMOUNT - walletUsdt);
   const canAfford = walletUsdt >= DEPOSIT_AMOUNT;
+
+  if (pending) {
+    return (
+      <div className="fixed inset-0 z-[1100] flex items-end md:items-center justify-center p-0 md:p-4"
+        style={{ backgroundColor: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)' }}>
+        <div className="bg-white w-full md:max-w-md rounded-t-3xl md:rounded-3xl overflow-hidden shadow-2xl">
+          <div style={{ background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 100%)`, padding: '20px 20px 18px' }}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl flex items-center justify-center"
+                  style={{ background: `linear-gradient(135deg, ${C.gold} 0%, ${C.amber} 100%)`, boxShadow: `0 4px 14px ${C.gold}66` }}>
+                  <Shield size={18} color="#fff" strokeWidth={2.2} />
+                </div>
+                <div>
+                  <h2 className="font-black text-base text-white">Deposit Under Review</h2>
+                  <p className="text-xs" style={{ color: 'rgba(255,255,255,0.6)' }}>Awaiting admin approval</p>
+                </div>
+              </div>
+              <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center"
+                style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}>
+                <X size={16} color="#fff" />
+              </button>
+            </div>
+          </div>
+          <div className="p-5" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <p className="text-sm leading-relaxed" style={{ color: C.g700 }}>
+              Your <b>${DEPOSIT_AMOUNT} USDT</b> security deposit is locked and waiting on our team to review it. This is usually quick — we'll notify you the moment you're cleared to sell gift cards.
+            </p>
+            <div className="rounded-2xl p-3.5" style={{ backgroundColor: C.mist, border: `1px solid ${C.sage}40` }}>
+              <p className="text-xs leading-relaxed" style={{ color: C.g700 }}>
+                No action needed on your end right now — you can check the status anytime from your <b>Wallet</b>.
+              </p>
+            </div>
+            <button onClick={() => { window.location.href = '/wallet'; }}
+              style={{ width: '100%', padding: '13px', borderRadius: 14, border: 'none', backgroundColor: C.green, color: '#fff', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
+              View in Wallet
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[1100] flex items-end md:items-center justify-center p-0 md:p-4"
@@ -651,8 +693,9 @@ export default function CreateOffer() {
       await axios.post(`${API_URL}/seller-deposit/lock`, {}, { headers: { Authorization: `Bearer ${token}` } });
       const res = await axios.get(`${API_URL}/seller-deposit/status`, { headers: { Authorization: `Bearer ${token}` } });
       setDepositStatus(res.data);
-      setShowDepositModal(false);
-      setStep(2);
+      // Locking now lands PENDING_APPROVAL, not LOCKED — stay on the modal (it switches
+      // to the "under review" view) instead of advancing, since the user still can't
+      // create the offer until an admin approves it.
     } catch (err) {
       setDepositError(err.response?.data?.error || 'Failed to lock security deposit. Please try again.');
     } finally {
@@ -881,9 +924,28 @@ export default function CreateOffer() {
         {(!paySearch || 'gift card'.includes(paySearch.toLowerCase())) && (
           <button
             type="button"
-            onClick={() => {
+            onClick={async () => {
               setShowPayMenu(false); setPaySearch('');
-              setOfferType(isSellSide ? 'gc_buy' : 'gc_sell');
+              const newType = isSellSide ? 'gc_buy' : 'gc_sell';
+              setOfferType(newType);
+              if (newType === 'gc_sell') {
+                // Paying with a gift card here makes this user the gift-card vendor —
+                // same $200 security deposit gate as picking "Sell Gift Card" at Step 1.
+                // Checked inline (not via the offerType-watching effect) because that
+                // effect wouldn't have run yet on this same click.
+                let status = depositStatus;
+                if (status === null) {
+                  const token = localStorage.getItem('token');
+                  try {
+                    const res = await axios.get(`${API_URL}/seller-deposit/status`, { headers: { Authorization: `Bearer ${token}` } });
+                    status = res.data;
+                  } catch {
+                    status = { has_deposit: false, can_create_sell_listing: false };
+                  }
+                  setDepositStatus(status);
+                }
+                if (status?.can_create_sell_listing !== true) { setShowDepositModal(true); return; }
+              }
               setStep(2); // GC_STEPS[1] = 'Card' — the Gift Card Details step
             }}
             className="w-full flex items-center gap-3 px-3 py-3 text-left transition hover:brightness-105 border-b-2"
@@ -2148,6 +2210,7 @@ export default function CreateOffer() {
           onLock={lockDeposit}
           loading={depositLoading}
           error={depositError}
+          pending={depositStatus?.pending_admin_approval === true}
         />
       )}
     </div>

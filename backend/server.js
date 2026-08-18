@@ -6561,9 +6561,9 @@ app.post('/api/seller-deposit/lock', verifyToken, async (req, res) => {
 
     const { data: existing } = await supabaseAdmin
       .from('seller_deposits').select('id')
-      .eq('user_id', userId).in('status', ['LOCKED', 'PENDING_WITHDRAWAL']).maybeSingle();
+      .eq('user_id', userId).in('status', ['PENDING_APPROVAL', 'LOCKED', 'PENDING_WITHDRAWAL']).maybeSingle();
     if (existing) {
-      return res.status(400).json({ error: 'You already have an active security deposit.' });
+      return res.status(400).json({ error: 'You already have an active or pending security deposit.' });
     }
 
     const { data: wallet } = await supabaseAdmin
@@ -6590,15 +6590,15 @@ app.post('/api/seller-deposit/lock', verifyToken, async (req, res) => {
         user_id: userId,
         amount_usdt: SELLER_DEPOSIT_AMOUNT,
         remaining_amount: SELLER_DEPOSIT_AMOUNT,
-        status: 'LOCKED',
+        status: 'PENDING_APPROVAL',
         locked_at: nowIso,
         eligible_at: eligibleAt,
       })
       .select().single();
 
     if (insertErr) {
-      // Unique-index violation = a concurrent request already locked a deposit for this user
-      return res.status(409).json({ error: 'You already have an active security deposit.' });
+      // Unique-index violation = a concurrent request already locked/pending a deposit for this user
+      return res.status(409).json({ error: 'You already have an active or pending security deposit.' });
     }
 
     const { data: deductRows, error: deductErr } = await supabaseAdmin.from('wallets')
@@ -6624,9 +6624,19 @@ app.post('/api/seller-deposit/lock', verifyToken, async (req, res) => {
       currency: 'USDT',
       amount_usdt: SELLER_DEPOSIT_AMOUNT,
       status: 'CONFIRMED',
-      notes: 'Gift-card seller security deposit locked',
+      notes: 'Gift-card seller security deposit locked — pending admin review',
       created_at: nowIso,
     }).then(null, e => console.error('[seller-deposit/lock] ledger insert failed (non-fatal):', e.message));
+
+    supabaseAdmin.from('notifications').insert({
+      user_id: userId,
+      type: 'wallet',
+      title: '⏳ Security Deposit Pending Review',
+      message: `Your $${SELLER_DEPOSIT_AMOUNT} USDT security deposit has been locked and is awaiting admin approval. We'll notify you once you're cleared to sell gift cards.`,
+      action: '/wallet',
+      is_read: false,
+      created_at: nowIso,
+    }).then(null, () => {});
 
     res.json({ success: true, deposit: depositRow, wallet: deductRows[0] });
   } catch (err) {
@@ -6641,11 +6651,11 @@ app.get('/api/seller-deposit/status', verifyToken, async (req, res) => {
     const userId = req.userId;
     const { data: deposit } = await supabaseAdmin
       .from('seller_deposits').select('*')
-      .eq('user_id', userId).in('status', ['LOCKED', 'PENDING_WITHDRAWAL'])
+      .eq('user_id', userId).in('status', ['PENDING_APPROVAL', 'LOCKED', 'PENDING_WITHDRAWAL'])
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
 
     if (!deposit) {
-      return res.json({ has_deposit: false, can_create_sell_listing: false });
+      return res.json({ has_deposit: false, can_create_sell_listing: false, pending_admin_approval: false });
     }
 
     const isClean = parseFloat(deposit.remaining_amount) === parseFloat(deposit.amount_usdt);
@@ -6657,6 +6667,7 @@ app.get('/api/seller-deposit/status', verifyToken, async (req, res) => {
     res.json({
       has_deposit: true,
       can_create_sell_listing: deposit.status === 'LOCKED' && isClean,
+      pending_admin_approval: deposit.status === 'PENDING_APPROVAL',
       deposit,
       eligible_to_withdraw: eligibleToWithdraw,
       days_remaining: daysRemaining,
@@ -6733,6 +6744,136 @@ app.get('/api/admin/seller-deposits', verifyToken, async (req, res) => {
     res.json({ success: true, deposits: deposits || [], total_locked_usdt: totalLocked });
   } catch (err) {
     console.error('[admin/seller-deposits] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/team/seller-deposits/pending — new vendor deposits awaiting admin review.
+// Open to the whole team (moderators included) so it's visible on the Team Dashboard;
+// only full admins can actually approve/reject (see below).
+app.get('/api/team/seller-deposits/pending', verifyToken, async (req, res) => {
+  try {
+    const t = await requireTeam(req, res); if (!t) return;
+
+    const { data: deposits, error } = await supabaseAdmin
+      .from('seller_deposits')
+      .select('*, user:user_id(id, username, email, badge, country, avatar_url)')
+      .eq('status', 'PENDING_APPROVAL')
+      .order('locked_at', { ascending: true });
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json({ success: true, deposits: deposits || [] });
+  } catch (err) {
+    console.error('[team/seller-deposits/pending] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/seller-deposits/:userId/approve-deposit — clears a newly-locked
+// deposit for selling. Funds already left the wallet at lock time; this just flips
+// PENDING_APPROVAL -> LOCKED so can_create_sell_listing turns true.
+app.post('/api/admin/seller-deposits/:userId/approve-deposit', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const targetUserId = req.params.userId;
+    const nowIso = new Date().toISOString();
+
+    const { data: rows, error } = await supabaseAdmin.from('seller_deposits')
+      .update({ status: 'LOCKED', approved_at: nowIso, updated_at: nowIso })
+      .eq('user_id', targetUserId).eq('status', 'PENDING_APPROVAL')
+      .select().single();
+
+    if (error || !rows) {
+      return res.status(400).json({ error: 'No pending deposit approval for this user.' });
+    }
+
+    await logAdminAction(req, 'SELLER_DEPOSIT_APPROVED', targetUserId, { amount: rows.amount_usdt });
+
+    supabaseAdmin.from('notifications').insert({
+      user_id: targetUserId,
+      type: 'wallet',
+      title: '✅ Security Deposit Approved',
+      message: `Your $${rows.amount_usdt} USDT security deposit has been approved. You can now create gift card offers.`,
+      action: '/create-offer?type=gc_sell',
+      is_read: false,
+      created_at: nowIso,
+    }).then(null, () => {});
+
+    res.json({ success: true, deposit: rows });
+  } catch (err) {
+    console.error('[approve-deposit] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/seller-deposits/:userId/reject-deposit — refunds the $200 back to
+// the user's wallet (they never got to sell anything against it) and marks the row
+// REJECTED so they can retry the lock later if they choose to.
+app.post('/api/admin/seller-deposits/:userId/reject-deposit', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const targetUserId = req.params.userId;
+    const { reason } = req.body;
+
+    const { data: deposit } = await supabaseAdmin
+      .from('seller_deposits').select('*').eq('user_id', targetUserId).eq('status', 'PENDING_APPROVAL').maybeSingle();
+    if (!deposit) {
+      return res.status(400).json({ error: 'No pending deposit approval for this user.' });
+    }
+
+    const { data: wallet } = await supabaseAdmin
+      .from('wallets').select('balance_usdt, locked_balance_usdt').eq('user_id', targetUserId).maybeSingle();
+    const available = parseFloat(wallet?.balance_usdt || 0);
+    const lockedAvailable = parseFloat(wallet?.locked_balance_usdt || 0);
+    const refundAmount = parseFloat(deposit.remaining_amount);
+    const nowIso = new Date().toISOString();
+
+    const { data: updRows, error: updErr } = await supabaseAdmin.from('wallets')
+      .update({
+        balance_usdt: parseFloat((available + refundAmount).toFixed(6)),
+        locked_balance_usdt: Math.max(0, parseFloat((lockedAvailable - refundAmount).toFixed(6))),
+        updated_at: nowIso,
+      })
+      .eq('user_id', targetUserId)
+      .eq('balance_usdt', available)
+      .eq('locked_balance_usdt', lockedAvailable)
+      .select('balance_usdt, locked_balance_usdt');
+
+    if (updErr || !updRows || updRows.length === 0) {
+      return res.status(409).json({ error: 'Wallet balance changed — please retry.' });
+    }
+
+    await supabaseAdmin.from('seller_deposits')
+      .update({ status: 'REJECTED', rejected_at: nowIso, admin_notes: reason || null, updated_at: nowIso })
+      .eq('id', deposit.id);
+
+    await supabaseAdmin.from('wallet_transactions').insert({
+      user_id: targetUserId,
+      type: 'SECURITY_DEPOSIT_REJECTED',
+      currency: 'USDT',
+      amount_usdt: refundAmount,
+      status: 'CONFIRMED',
+      notes: reason ? `Seller security deposit rejected: ${reason}` : 'Seller security deposit rejected — refunded',
+      created_at: nowIso,
+    }).then(null, e => console.error('[reject-deposit] ledger insert failed (non-fatal):', e.message));
+
+    await logAdminAction(req, 'SELLER_DEPOSIT_REJECTED', targetUserId, { amount: refundAmount, reason });
+
+    supabaseAdmin.from('notifications').insert({
+      user_id: targetUserId,
+      type: 'wallet',
+      title: '❌ Security Deposit Rejected',
+      message: reason
+        ? `Your $${refundAmount} USDT security deposit was rejected and refunded to your wallet. Reason: ${reason}`
+        : `Your $${refundAmount} USDT security deposit was rejected and refunded to your wallet.`,
+      action: '/wallet',
+      is_read: false,
+      created_at: nowIso,
+    }).then(null, () => {});
+
+    res.json({ success: true, amount_refunded: refundAmount, wallet: updRows[0] });
+  } catch (err) {
+    console.error('[reject-deposit] error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

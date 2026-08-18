@@ -2803,12 +2803,29 @@ export default function WalletPage({ user }) {
   // Seller security deposit (only relevant to users who've listed gift cards for sale)
   const [depositStatus,   setDepositStatus]   = useState(null);
   const [depositReqLoading, setDepositReqLoading] = useState(false);
+  const [depositLockLoading, setDepositLockLoading] = useState(false);
 
   const loadDepositStatus = async () => {
     try {
       const r = await axios.get(`${API_URL}/seller-deposit/status`, { headers: authH() });
       setDepositStatus(r.data);
     } catch { /* silent — most users have no deposit, this is not an error worth surfacing */ }
+  };
+
+  // Lets a user become a gift-card vendor straight from the Wallet, not just from the
+  // Create Offer flow. Funds move immediately; the deposit then sits PENDING_APPROVAL
+  // until a team member reviews it (see Team Dashboard).
+  const lockSecurityDeposit = async () => {
+    setDepositLockLoading(true);
+    try {
+      await axios.post(`${API_URL}/seller-deposit/lock`, {}, { headers: authH() });
+      toast.success('$200 USDT deposit locked — awaiting admin approval before you can sell gift cards.');
+      loadDepositStatus();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to lock security deposit.');
+    } finally {
+      setDepositLockLoading(false);
+    }
   };
 
   const requestDepositWithdrawal = async () => {
@@ -3281,6 +3298,7 @@ export default function WalletPage({ user }) {
                     Gift-Card Seller Security Deposit
                   </p>
                   <p className="text-xs mt-0.5" style={{ color: C.g500 }}>
+                    {depositStatus.deposit?.status === 'PENDING_APPROVAL' && '⏳ Locked — awaiting admin approval before you can sell gift cards.'}
                     {depositStatus.deposit?.status === 'LOCKED' && (
                       depositStatus.eligible_to_withdraw
                         ? 'Eligible to withdraw — no open trades, 7-day hold passed.'
@@ -3304,6 +3322,61 @@ export default function WalletPage({ user }) {
                   </button>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── BECOME A GIFT-CARD VENDOR — shown once status has loaded and confirmed
+             this user has no active/pending deposit. Same $200 lock as the Create Offer
+             flow, just reachable straight from the Wallet too. ── */}
+        {depositStatus !== null && !depositStatus.has_deposit && (
+          <div className="rounded-2xl bg-white shadow-sm border p-4 sm:p-5" style={{ borderColor: C.g200 }}>
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: C.mist }}>
+                  <Shield size={18} style={{ color: C.forest }} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-black" style={{ color: C.g800 }}>
+                    Become a Gift-Card Vendor
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: C.g500 }}>
+                    Lock a one-time $200 USDT security deposit to unlock unlimited gift-card listings.
+                  </p>
+                </div>
+              </div>
+              {usdtBal >= 200 ? (
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <span className="text-xs font-bold" style={{ color: C.g500 }}>Balance: ₮{fmt(usdtBal, 2)}</span>
+                  <button
+                    onClick={lockSecurityDeposit}
+                    disabled={depositLockLoading}
+                    className="px-4 py-2 rounded-xl text-xs font-black text-white"
+                    style={{ backgroundColor: depositLockLoading ? C.g400 : C.green }}>
+                    {depositLockLoading ? 'Locking…' : 'Lock $200 Deposit'}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                  <span className="text-xs font-bold" style={{ color: C.danger }}>Balance: ₮{fmt(usdtBal, 2)} — need $200</span>
+                  <div className="flex items-center gap-2">
+                    {balance > 0 && (
+                      <button
+                        onClick={() => { setSwapFrom('BTC'); setSwapAmount(''); setActiveCoin('SWAP'); }}
+                        className="px-3 py-2 rounded-xl text-xs font-black"
+                        style={{ backgroundColor: C.mist, color: C.forest }}>
+                        Convert from BTC
+                      </button>
+                    )}
+                    <button
+                      onClick={() => openAssetModal('receive', 'USDT')}
+                      className="px-3 py-2 rounded-xl text-xs font-black text-white"
+                      style={{ backgroundColor: C.gold }}>
+                      Deposit USDT
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

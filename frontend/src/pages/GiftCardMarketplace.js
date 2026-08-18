@@ -372,7 +372,9 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
 
   const cardType = listing.card_type || 'both';
   const cardRange = getCardRange(listing);
-  const youGive = (() => {
+  // Card-value side of the trade — always the gift card's face value, regardless of
+  // which direction this listing runs.
+  const cardSide = (() => {
     if (!cardRange) { const ml = listing.min_limit_local || (fv ? fv * usdRate : 0); return { val: `${sym}${fmt(ml)}`, sub: cur }; }
     if (cardRange[0]?.isRange) return { val: `$${cardRange[0].min}`, sub: 'USD starting' };
     if (cardRange.length === 1) return { val: `$${cardRange[0]}`, sub: 'USD card' };
@@ -381,6 +383,13 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   const refUSD = cardRange ? (cardRange[0]?.isRange ? cardRange[0].min : cardRange[0]) : (fv || 1);
   const btcOut = refUSD / rateUSD;
   const receiveUSD = btcOut * btcPriceUSD;
+  // SELL_GIFT_CARD listings are posted by someone selling their card, so trading against
+  // one makes the viewer the BUYER (matches ListingDetail.js's trade_type assignment) —
+  // they give crypto and receive the card, the reverse of a BUY_GIFT_CARD listing.
+  const viewerIsBuyingCard = listing.listing_type === 'SELL_GIFT_CARD';
+  const cryptoSide = { val: `$${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}`, sub: `≈ ${fBtc(btcOut)} BTC` };
+  const youGive    = viewerIsBuyingCard ? cryptoSide : cardSide;
+  const youReceive = viewerIsBuyingCard ? cardSide   : cryptoSide;
 
   const rangeLabel = !cardRange ? 'Any value'
     : cardRange[0]?.isRange ? `$${cardRange[0].min} – $${cardRange[0].max}`
@@ -518,13 +527,9 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
         <div className="border-l pl-3" style={{ borderColor: ft ? ft.divider : C.g100 }}>
           <p className="text-[11px] font-bold uppercase tracking-wide mb-0.5" style={{ color: ft ? ft.labelColor : C.g500 }}>You receive</p>
           <p className="text-base font-bold leading-tight" style={{ color: C.g800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '4px' }}>
-            ${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}
+            {youReceive.val}
           </p>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <p className="text-[10px] font-semibold" style={{ color: C.g500 }}>
-              ≈ {fBtc(btcOut)} BTC
-            </p>
-          </div>
+          <p className="text-[10px] font-semibold mt-0.5" style={{ color: C.g500 }}>{youReceive.sub}</p>
         </div>
       </div>
 
@@ -617,7 +622,7 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
               background: ft ? ft.btnGradient : C.forest,
               boxShadow: ft ? ft.btnShadow : undefined,
             }}>
-            TRADE <ArrowRight size={14} />
+            {viewerIsBuyingCard ? 'BUY GIFT CARD' : 'SELL GIFT CARD'} <ArrowRight size={14} />
           </button>
         </div>
       </div>
@@ -1287,9 +1292,13 @@ useEffect(() => {
 
     const getFiltered = () => {
       let list = [...listings];
-      // Filter by buy/sell mode
-      if (gcMode === 'buy') list = list.filter(l => l.listing_type === 'BUY_GIFT_CARD');
-      if (gcMode === 'sell') list = list.filter(l => l.listing_type === 'SELL_GIFT_CARD');
+      // Filter by buy/sell mode — "Buy" means the viewer wants to buy a gift card, so it
+      // must show SELL_GIFT_CARD listings (people offering their cards for sale); "Sell"
+      // means the viewer wants to sell their own card, so it shows BUY_GIFT_CARD listings
+      // (people requesting to buy one). This matches ListingDetail.js's role assignment
+      // (trade_type: SELL_GIFT_CARD -> viewer BUYs) and the Buy/Sell Bitcoin page convention.
+      if (gcMode === 'buy') list = list.filter(l => l.listing_type === 'SELL_GIFT_CARD');
+      if (gcMode === 'sell') list = list.filter(l => l.listing_type === 'BUY_GIFT_CARD');
       list = list.filter(isForeignListing);
       if (cryptoFilter === 'BTC') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'BTC');
       if (cryptoFilter === 'USDT') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'USDT');
