@@ -2564,10 +2564,7 @@ app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
 
 // ── Team portal: explicit email allowlist ────────────────────────────────────
 // Deliberately a hand-maintained list of exact addresses, not a domain check.
-// Emptied at the platform owner's request — nobody self-enrolls as a moderator
-// via the Team Portal right now. Add an address back here only when someone
-// specific should be granted that path again.
-const MODERATOR_EMAIL_ALLOWLIST = [];
+const MODERATOR_EMAIL_ALLOWLIST = ['zeinudeen.team@praqen.com'];
 
 // ── Team portal: direct login — password THEN a mandatory email OTP ──────────
 // No path through this route ever issues a token on password alone. Reuses the
