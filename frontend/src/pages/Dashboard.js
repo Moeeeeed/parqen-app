@@ -99,7 +99,7 @@ function ProfileSummary({ user, profile, stats }) {
   const badge    = TRUST_MAP[badgeKey] || TRUST_MAP.BEGINNER;
   const online  = isOnline(profile?.last_seen_at);
   const next    = getNextBadge(badgeKey);
-  const tradesProgress = next ? Math.min(1, (stats.totalTrades || 0) / next.tradesNeeded) : 1;
+  const badgeProgress = next ? Math.min(1, (stats.totalFeedback || 0) / next.countNeeded) : 1;
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border overflow-hidden mb-4" style={{borderColor:C.g200}}>
@@ -199,19 +199,19 @@ function ProfileSummary({ user, profile, stats }) {
             </div>
             <div>
               <div className="flex justify-between text-xs mb-0.5" style={{color:C.g500}}>
-                <span>Trades</span>
-                <span>{stats.totalTrades || 0} / {next.tradesNeeded}</span>
+                <span>Feedback</span>
+                <span>{stats.totalFeedback || 0} / {next.countNeeded}</span>
               </div>
               <div className="h-1.5 rounded-full" style={{backgroundColor:C.g200}}>
-                <div className="h-1.5 rounded-full transition-all" style={{width:`${tradesProgress * 100}%`, backgroundColor:C.gold}}/>
+                <div className="h-1.5 rounded-full transition-all" style={{width:`${badgeProgress * 100}%`, backgroundColor:C.gold}}/>
               </div>
             </div>
           </div>
         )}
         {!next && (
           <div className="flex items-center gap-2 p-3 rounded-xl" style={{backgroundColor:`${C.gold}12`}}>
-            {renderBadgeIcon(TRUST_MAP.GODMODE, 16)}
-            <p className="text-xs font-black" style={{color:C.amber}}>You&apos;ve reached the highest badge — GODMODE!</p>
+            {renderBadgeIcon(TRUST_MAP.EXPERT, 16)}
+            <p className="text-xs font-black" style={{color:C.amber}}>You&apos;ve reached the highest badge — EXPERT!</p>
           </div>
         )}
       </div>
@@ -841,6 +841,7 @@ export default function Dashboard({ user }) {
     setProfile(userData);
     setStats({
       totalTrades: userData.total_trades || 0,
+      totalFeedback: userData.total_feedback_count || 0,
       positiveFeedback: userData.positive_feedback || 0,
       negativeFeedback: userData.negative_feedback || 0,
       averageRating: userData.average_rating || 0,

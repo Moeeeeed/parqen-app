@@ -6037,7 +6037,7 @@ app.get('/api/listings', async (req, res) => {
           const timer = setTimeout(() => ac.abort(), 10000);
           try {
             const result = await Promise.race([
-              supabaseAdmin.from('users').select('id, username')
+              supabaseAdmin.from('users').select('id, username, badge, total_feedback_count')
                 .in('id', sellerIdSet),
               new Promise((_, reject) => {
                 ac.signal.addEventListener('abort', () =>

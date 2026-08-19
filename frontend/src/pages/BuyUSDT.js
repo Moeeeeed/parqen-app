@@ -1936,7 +1936,7 @@ export default function BuyUSDT({user}) {
                 <span style={{fontSize:9,color:'#0D9488',fontWeight:600,background:'#fff',borderRadius:4,padding:'1px 6px'}}>All Time</span>
               </div>
               {affLeaderboard.map((u,i)=>{
-                const badgeColors={BEGINNER:'#5EEAD4',PRO:'#2DD4BF',EXPERT:'#14B8A6',AMBASSADOR:'#0D9488',LEGEND:'#0F766E'};
+                const badgeColors={BEGINNER:'#5EEAD4',STAR:'#2DD4BF',TRADER:'#14B8A6',PRO:'#0D9488',EXPERT:'#0F766E'};
                 const bc = badgeColors[u.badge]||C.g500;
                 const rankBg = i===0?C.gold:i===1?C.g300:'#C08A4E';
                 const earnedUsd = parseFloat(u.earned_usdt||u.earned_btc||0);

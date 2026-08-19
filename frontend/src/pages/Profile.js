@@ -151,17 +151,17 @@ function MigrateFeedbackCard({ email, autoOpen }) {
 
 const BADGE_DEFS = BADGE_ORDER.map((key) => {
   const b = TRUST_MAP[key];
-  const tradesNeeded = BADGE_THRESHOLDS[key];
+  const feedbackNeeded = BADGE_THRESHOLDS[key];
   return {
     id: key.toLowerCase(),
     label: key,
     icon: renderBadgeIcon(b, 24),
     color: b.color,
     bg: b.bg.includes('gradient') ? b.bg : b.bg,
-    desc: tradesNeeded
-      ? `Level ${b.level}: ${tradesNeeded}+ successful trades completed.`
+    desc: feedbackNeeded
+      ? `Level ${b.level}: ${feedbackNeeded}+ feedback received from completed trades.`
       : `Level ${b.level}: Starting your trading journey on PRAQEN.`,
-    check: (u) => (tradesNeeded ? parseInt(u?.total_trades || 0, 10) >= tradesNeeded : true),
+    check: (u) => (feedbackNeeded ? parseInt(u?.total_feedback_count || 0, 10) >= feedbackNeeded : true),
   };
 });
 

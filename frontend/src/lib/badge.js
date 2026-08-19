@@ -1,39 +1,31 @@
 import React from 'react';
 import {
-  Shield, Zap, Briefcase, Target, Medal, Crown, Bird as Eagle, Diamond, Flame, Rocket,
+  Shield, Star, TrendingUp, Briefcase, Crown,
 } from 'lucide-react';
 
 // Single source of truth for all badge definitions across the app.
 // Import TRUST_MAP, deriveBadge, BadgeChip, and renderBadgeIcon from here.
+//
+// Tiers are keyed off total_feedback_count (reviews received from completed
+// trades), not total_trades — a user can trade a lot without ever collecting
+// feedback, and feedback count is what actually signals "buyers/sellers trust
+// this person," which is the whole point of the badge.
 
-export const BADGE_ORDER = [
-  'BEGINNER', 'ACTIVE', 'PRO', 'EXPERT', 'AMBASSADOR',
-  'LEGEND', 'ELITE', 'DIAMOND', 'TITAN', 'GODMODE',
-];
+export const BADGE_ORDER = ['BEGINNER', 'STAR', 'TRADER', 'PRO', 'EXPERT'];
 
 export const BADGE_THRESHOLDS = {
-  ACTIVE: 5,
-  PRO: 15,
-  EXPERT: 35,
-  AMBASSADOR: 75,
-  LEGEND: 150,
-  ELITE: 300,
-  DIAMOND: 500,
-  TITAN: 750,
-  GODMODE: 1000,
+  STAR: 1,
+  TRADER: 100,
+  PRO: 3000,
+  EXPERT: 10000,
 };
 
 export const TRUST_MAP = {
-  GODMODE:    { label: 'GODMODE',    level: 10, Icon: Rocket,     color: 'linear-gradient(90deg, #FF0080, #FF8C00, #40E0D0)', solidColor: '#FF0080', bg: 'linear-gradient(90deg, rgba(255,0,128,0.15), rgba(255,140,0,0.15), rgba(64,224,208,0.15))', textColor: '#FFFFFF', borderColor: '#FF0080', glow: 'rgba(255,0,128,0.5)', animate: true },
-  TITAN:      { label: 'TITAN',      level: 9,  Icon: Flame,      color: '#EC4899', solidColor: '#EC4899', bg: 'linear-gradient(135deg,#FCE7F3,#FBCFE8)', textColor: '#9D174D', borderColor: '#EC4899', glow: 'rgba(236,72,153,0.4)' },
-  DIAMOND:    { label: 'DIAMOND',    level: 8,  Icon: Diamond,    color: '#06B6D4', solidColor: '#06B6D4', bg: 'linear-gradient(135deg,#CFFAFE,#A5F3FC)', textColor: '#155E75', borderColor: '#06B6D4', glow: 'rgba(6,182,212,0.4)' },
-  ELITE:      { label: 'ELITE',      level: 7,  Icon: Eagle,      color: '#EF4444', solidColor: '#EF4444', bg: 'linear-gradient(135deg,#FEE2E2,#FECACA)', textColor: '#991B1B', borderColor: '#EF4444', glow: 'rgba(239,68,68,0.4)' },
-  LEGEND:     { label: 'LEGEND',     level: 6,  Icon: Crown,      color: '#EAB308', solidColor: '#EAB308', bg: 'linear-gradient(135deg,#FEF3C7,#FDE68A)', textColor: '#78350F', borderColor: '#EAB308', glow: 'rgba(234,179,8,0.5)', animate: true },
-  AMBASSADOR: { label: 'AMBASSADOR', level: 5,  Icon: Medal,      color: '#14B8A6', solidColor: '#14B8A6', bg: 'linear-gradient(135deg,#CCFBF1,#99F6E4)', textColor: '#115E59', borderColor: '#14B8A6', glow: 'rgba(20,184,166,0.4)' },
-  EXPERT:     { label: 'EXPERT',     level: 4,  Icon: Target,     color: '#F97316', solidColor: '#F97316', bg: 'linear-gradient(135deg,#FFEDD5,#FED7AA)', textColor: '#9A3412', borderColor: '#F97316', glow: 'rgba(249,115,22,0.4)' },
-  PRO:        { label: 'PRO',        level: 3,  Icon: Briefcase,  color: '#8B5CF6', solidColor: '#8B5CF6', bg: 'linear-gradient(135deg,#EDE9FE,#DDD6FE)', textColor: '#5B21B6', borderColor: '#8B5CF6', glow: 'rgba(139,92,246,0.4)' },
-  ACTIVE:     { label: 'ACTIVE',     level: 2,  Icon: Zap,        color: '#3B82F6', solidColor: '#3B82F6', bg: 'linear-gradient(135deg,#DBEAFE,#BFDBFE)', textColor: '#1E40AF', borderColor: '#3B82F6', glow: 'rgba(59,130,246,0.4)' },
-  BEGINNER:   { label: 'BEGINNER',   level: 1,  Icon: Shield,     color: '#22C55E', solidColor: '#22C55E', bg: 'linear-gradient(135deg,#DCFCE7,#BBF7D0)', textColor: '#166534', borderColor: '#22C55E', glow: 'rgba(34,197,94,0.4)' },
+  EXPERT:   { label: 'EXPERT',   level: 5, Icon: Crown,      color: '#F97316', solidColor: '#F97316', bg: 'linear-gradient(135deg,#FFEDD5,#FED7AA)', textColor: '#9A3412', borderColor: '#F97316', glow: 'rgba(249,115,22,0.4)' },
+  PRO:      { label: 'PRO',      level: 4, Icon: Briefcase,  color: '#8B5CF6', solidColor: '#8B5CF6', bg: 'linear-gradient(135deg,#EDE9FE,#DDD6FE)', textColor: '#5B21B6', borderColor: '#8B5CF6', glow: 'rgba(139,92,246,0.4)' },
+  TRADER:   { label: 'TRADER',   level: 3, Icon: TrendingUp, color: '#3B82F6', solidColor: '#3B82F6', bg: 'linear-gradient(135deg,#DBEAFE,#BFDBFE)', textColor: '#1E40AF', borderColor: '#3B82F6', glow: 'rgba(59,130,246,0.4)' },
+  STAR:     { label: 'STAR',     level: 2, Icon: Star,       color: '#F59E0B', solidColor: '#F59E0B', bg: 'linear-gradient(135deg,#FEF3C7,#FDE68A)', textColor: '#92400E', borderColor: '#F59E0B', glow: 'rgba(245,158,11,0.4)' },
+  BEGINNER: { label: 'BEGINNER', level: 1, Icon: Shield,     color: '#22C55E', solidColor: '#22C55E', bg: 'linear-gradient(135deg,#DCFCE7,#BBF7D0)', textColor: '#166534', borderColor: '#22C55E', glow: 'rgba(34,197,94,0.4)' },
 };
 
 export const BADGE_COLORS = Object.fromEntries(
@@ -43,12 +35,11 @@ export const BADGE_COLORS = Object.fromEntries(
 export function renderBadgeIcon(badge, size = 12) {
   if (!badge?.Icon) return null;
   const Icon = badge.Icon;
-  const isGodmode = badge.label === 'GODMODE';
   return (
     <Icon
       size={size}
       strokeWidth={2.5}
-      color={isGodmode ? '#FF0080' : (badge.iconColor || badge.solidColor || badge.color)}
+      color={badge.iconColor || badge.solidColor || badge.color}
       style={{ flexShrink: 0 }}
     />
   );
@@ -59,16 +50,11 @@ export function deriveBadge(u) {
     const b = String(u.badge).toUpperCase();
     if (TRUST_MAP[b]) return TRUST_MAP[b];
   }
-  const t = parseInt(u?.total_trades ?? u?.trade_count ?? 0, 10);
-  if (t >= 1000) return TRUST_MAP.GODMODE;
-  if (t >= 750)  return TRUST_MAP.TITAN;
-  if (t >= 500)  return TRUST_MAP.DIAMOND;
-  if (t >= 300)  return TRUST_MAP.ELITE;
-  if (t >= 150)  return TRUST_MAP.LEGEND;
-  if (t >= 75)   return TRUST_MAP.AMBASSADOR;
-  if (t >= 35)   return TRUST_MAP.EXPERT;
-  if (t >= 15)   return TRUST_MAP.PRO;
-  if (t >= 5)    return TRUST_MAP.ACTIVE;
+  const f = parseInt(u?.total_feedback_count ?? 0, 10);
+  if (f >= BADGE_THRESHOLDS.EXPERT) return TRUST_MAP.EXPERT;
+  if (f >= BADGE_THRESHOLDS.PRO)    return TRUST_MAP.PRO;
+  if (f >= BADGE_THRESHOLDS.TRADER) return TRUST_MAP.TRADER;
+  if (f >= BADGE_THRESHOLDS.STAR)   return TRUST_MAP.STAR;
   return TRUST_MAP.BEGINNER;
 }
 
@@ -79,7 +65,7 @@ export function getNextBadge(currentKey) {
   const nextKey = BADGE_ORDER[idx + 1];
   return {
     key: nextKey,
-    tradesNeeded: BADGE_THRESHOLDS[nextKey],
+    countNeeded: BADGE_THRESHOLDS[nextKey],
     ...TRUST_MAP[nextKey],
   };
 }
@@ -89,28 +75,16 @@ export function BadgeChip({ user, badgeName, className = '', size = 'sm' }) {
     ? (TRUST_MAP[String(badgeName).toUpperCase()] || TRUST_MAP.BEGINNER)
     : deriveBadge(user);
   const iconSize = size === 'xs' ? 9.5 : size === 'lg' ? 14 : 11;
-  const isGodmode = badge.label === 'GODMODE';
 
   return (
     <span
       className={`inline-flex items-center gap-1 font-black max-w-full min-w-0 ${className}`}
-      style={
-        isGodmode
-          ? {
-              background: 'linear-gradient(90deg, #FF0080, #FF8C00, #40E0D0)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              fontSize: size === 'xs' ? '9.5px' : size === 'lg' ? '12.5px' : '10.5px',
-              letterSpacing: '0.01em',
-              lineHeight: 1.1,
-            }
-          : {
-              color: badge.solidColor || badge.color,
-              fontSize: size === 'xs' ? '9.5px' : size === 'lg' ? '12.5px' : '10.5px',
-              letterSpacing: '0.01em',
-              lineHeight: 1.1,
-            }
-      }
+      style={{
+        color: badge.solidColor || badge.color,
+        fontSize: size === 'xs' ? '9.5px' : size === 'lg' ? '12.5px' : '10.5px',
+        letterSpacing: '0.01em',
+        lineHeight: 1.1,
+      }}
       title={badge.label}
     >
       {renderBadgeIcon(badge, iconSize)}

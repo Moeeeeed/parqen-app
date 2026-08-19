@@ -1945,7 +1945,7 @@ export default function SellBitcoin({user}) {
                 <span style={{fontSize:9,color:'#92400E',fontWeight:600}}>All Time</span>
               </div>
               {affLeaderboard.map((u,i)=>{
-                const badgeColors={BEGINNER:'#D9A441',PRO:'#D97706',EXPERT:'#B45309',AMBASSADOR:'#92400E',LEGEND:'#78350F'};
+                const badgeColors={BEGINNER:'#D9A441',STAR:'#D97706',TRADER:'#B45309',PRO:'#92400E',EXPERT:'#78350F'};
                 const bc=badgeColors[u.badge]||'#64748B';
                 const rankBg = i===0?'#F4A422':i===1?'#CBD5E1':'#C08A4E';
                 const earnedUsd=((u.earned_btc||0)*(btcPrice||76000));

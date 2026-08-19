@@ -42,16 +42,18 @@ const ACHIEVEMENT_BADGES = [
   },
 ];
 
-// Trust badge tier thresholds (auto-upgrade only, never downgrade)
-const TRUST_TIERS = ['BEGINNER', 'ACTIVE', 'PRO', 'EXPERT', 'AMBASSADOR', 'LEGEND'];
+// Trust badge tier thresholds (auto-upgrade only, never downgrade). Keyed off
+// total_feedback_count — reviews actually received from completed trades — not
+// total_trades, since that's what signals real buyer/seller trust. Mirrors
+// BADGE_ORDER/BADGE_THRESHOLDS in frontend/src/lib/badge.js — keep both in sync.
+const TRUST_TIERS = ['BEGINNER', 'STAR', 'TRADER', 'PRO', 'EXPERT'];
 
-function computeTrustTier(trades) {
-  const n = parseInt(trades || 0);
-  if (n >= 500) return 'LEGEND';
-  if (n >= 200) return 'AMBASSADOR';
-  if (n >= 100) return 'EXPERT';
-  if (n >= 25)  return 'PRO';
-  if (n >= 5)   return 'ACTIVE';
+function computeTrustTier(feedbackCount) {
+  const n = parseInt(feedbackCount || 0);
+  if (n >= 10000) return 'EXPERT';
+  if (n >= 3000)  return 'PRO';
+  if (n >= 100)   return 'TRADER';
+  if (n >= 1)     return 'STAR';
   return 'BEGINNER';
 }
 
@@ -60,7 +62,7 @@ async function checkAndAwardBadges(userId) {
   try {
     const { data: user, error } = await supabaseAdmin
       .from('users')
-      .select('id, total_trades, completion_rate, average_rating, kyc_verified, is_id_verified, is_email_verified, is_phone_verified, created_at, avg_reply_minutes, badge')
+      .select('id, total_trades, total_feedback_count, completion_rate, average_rating, kyc_verified, is_id_verified, is_email_verified, is_phone_verified, created_at, avg_reply_minutes, badge')
       .eq('id', userId)
       .single();
 
@@ -102,9 +104,9 @@ async function checkAndAwardBadges(userId) {
     }
 
     // ── Trust tier — upgrade only, NEVER downgrade ────────────────────────
-    // computeTrustTier uses total_trades from DB. If total_trades is lower than
-    // expected (sparse trades table), we still must not take the badge away.
-    const computedTier  = computeTrustTier(user.total_trades);
+    // computeTrustTier uses total_feedback_count from DB. If it's lower than
+    // expected (sparse feedback), we still must not take the badge away.
+    const computedTier  = computeTrustTier(user.total_feedback_count);
     const currentBadge  = (user.badge || 'BEGINNER').toUpperCase();
     const currentIdx    = TRUST_TIERS.indexOf(currentBadge);
     const computedIdx   = TRUST_TIERS.indexOf(computedTier);
