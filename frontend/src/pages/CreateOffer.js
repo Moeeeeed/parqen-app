@@ -321,7 +321,7 @@ const OFFER_TYPES = [
   { id: 'sell',   title: (a) => `Sell ${a}`,   desc: (a) => `Buyers pay you, you release ${a} from your wallet.`, icon: ArrowUpRight },
   { id: 'buy',    title: (a) => `Buy ${a}`,    desc: (a) => `You pay sellers to receive ${a} into your wallet.`, icon: ArrowDownRight },
   { id: 'gc_buy', title: (a) => `Buy ${a} with Gift Card`, desc: (a) => `Sellers send you a gift card, you send them ${a}.`, icon: Gift },
-  { id: 'gc_sell', title: (a) => `Sell Gift Card for ${a}`, desc: (a) => `You send a gift card, buyer sends you ${a}.`, icon: Gift },
+  { id: 'gc_sell', title: (a) => `Sell Gift Card for ${a}`, desc: (a) => `You send a gift card, buyer sends you ${a}. Requires a $200 security deposit.`, icon: Gift },
 ];
 
 // ── Reusable premium searchable select ────────────────────────────────────
