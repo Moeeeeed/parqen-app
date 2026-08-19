@@ -13,6 +13,7 @@
 require('dotenv').config();
 const nodemailer = require('nodemailer');
 const { sendSystemAlert } = require('./pushNotificationService');
+const { sendTelegramAlert } = require('./telegramService');
 const { createClient }    = require('@supabase/supabase-js');
 const tronWallet          = require('./tronWalletService');
 const tronHotWallet       = require('./tronHotWallet');
@@ -326,6 +327,9 @@ class USDTDepositMonitor {
         `$${depositUsdt.toFixed(2)} USDT deposited to your PRAQEN wallet`,
         'https://praqen.com/wallet'
       ).catch(err => console.error('[USDTMonitor] Push error:', err.message));
+
+      // ── Step 8b: Telegram notification ──────────────────────────────────────
+      sendTelegramAlert(userId, `✅ Deposit received! $${depositUsdt.toFixed(2)} USDT credited to your wallet. Balance: $${newUsdt.toFixed(2)} USDT`).catch(() => {});
 
       // ── Step 9: Email (fire-and-forget) ──────────────────────────────────
       this.sendDepositEmail(userId, username, depositUsdt, newUsdt, address)

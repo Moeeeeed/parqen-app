@@ -37,6 +37,9 @@ const TWILIO_WA_FROM = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+1415523888
 // ── OneSignal Push Notifications ────────────────────────────────────────────
 const { sendTradeAlert, sendSystemAlert, sendBroadcastPush } = require('./services/pushNotificationService');
 
+// ── Telegram Bot Notifications ──────────────────────────────────────────────
+const { sendTelegramAlert } = require('./services/telegramService');
+
 // ── Africa's Talking (primary SMS for African numbers) ───────────────────────
 let atSms = null;
 try {
@@ -314,17 +317,110 @@ const depositMonitor = require('./services/depositMonitor');
 const realtimeDepositService = require('./services/realtimeDepositService');
 const sweepService = require('./services/sweepService');
 const hdWalletRoutes = require('./routes/hdWalletRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 const tradeEscrowService = require('./services/tradeEscrowService');
 const actionCodeService = require('./services/actionCodeService');
 const balanceIntegrity = require('./services/balanceIntegrityService');
 const { checkAndAwardBadges } = require('./services/badgeService');
 const { syncAllOfferStatuses, deactivateStaleOffers, setCacheBuster, setBtcPriceGetter } = require('./services/offerStatusService');
+const telegramService = require('./services/telegramService');
 setCacheBuster(bustCache);
 // Was never wired up — offerStatusService's pause sweep was silently running on the
 // $88k hardcoded fallback instead of the live price used everywhere else (GET /api/listings,
 // offer creation), so its pause/reactivate decisions could disagree with what buyers saw.
 setBtcPriceGetter(() => _btcCache || 88000);
 app.use('/api/hd-wallet', hdWalletRoutes);
+app.use('/api/user', notificationRoutes);
+
+// ── Telegram Bot Integration ───────────────────────────────────────────────
+// Bot webhook receives messages from Telegram users (linking codes, commands)
+// Set webhook via: POST https://api.telegram.org/bot<TOKEN>/setWebhook?url=<YOUR_URL>/api/telegram/webhook
+if (telegramService.BOT_TOKEN) {
+  console.log('🤖 Telegram bot integration: ENABLED (TELEGRAM_BOT_TOKEN found)');
+} else {
+  console.warn('🤖 Telegram bot integration: DISABLED (no TELEGRAM_BOT_TOKEN in .env)');
+}
+
+// POST /api/telegram/webhook — receives updates from Telegram bot
+app.post('/api/telegram/webhook', async (req, res) => {
+  try {
+    const message = req.body?.message;
+    if (!message) return res.json({ ok: true }); // non-message updates (edited, etc.) — ignore
+
+    const chatId = message.chat?.id;
+    const text = message.text || '';
+    const telegramUser = message.from || {};
+
+    if (!chatId) return res.json({ ok: true });
+
+    const result = await telegramService.handleBotMessage(chatId, text, telegramUser);
+
+    if (result?.reply) {
+      await telegramService.sendTelegramMessage(chatId, result.reply);
+    }
+
+    // If linking was successful, send a confirmation
+    if (result?.success) {
+      await telegramService.sendTelegramMessage(
+        chatId,
+        '✅ Your PRAQEN account is now linked! You will receive trade alerts here.\n\nSend /stop to disable notifications, /enable to re-enable.'
+      );
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[Telegram webhook] Error:', err.message);
+    res.json({ ok: true }); // always return 200 to Telegram
+  }
+});
+
+// GET /api/telegram/status — get current user's Telegram connection status
+app.get('/api/telegram/status', verifyToken, async (req, res) => {
+  try {
+    const status = await telegramService.getTelegramStatus(req.userId);
+    res.json(status);
+  } catch (err) {
+    console.error('[Telegram status] Error:', err.message);
+    res.status(500).json({ error: 'Failed to check Telegram status' });
+  }
+});
+
+// POST /api/telegram/link — generate a linking code for the current user
+app.post('/api/telegram/link', verifyToken, async (req, res) => {
+  try {
+    const result = await telegramService.generateLinkingCode(req.userId);
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json({ success: true, code: result.code, expiresAt: result.expiresAt });
+  } catch (err) {
+    console.error('[Telegram link] Error:', err.message);
+    res.status(500).json({ error: 'Failed to generate linking code' });
+  }
+});
+
+// POST /api/telegram/toggle — enable/disable Telegram notifications
+app.post('/api/telegram/toggle', verifyToken, async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    const result = await telegramService.toggleTelegramNotifications(req.userId, enabled);
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json(result);
+  } catch (err) {
+    console.error('[Telegram toggle] Error:', err.message);
+    res.status(500).json({ error: 'Failed to update settings' });
+  }
+});
+
+// POST /api/telegram/disconnect — disconnect Telegram from the current user
+app.post('/api/telegram/disconnect', verifyToken, async (req, res) => {
+  try {
+    const result = await telegramService.disconnectTelegram(req.userId);
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json(result);
+  } catch (err) {
+    console.error('[Telegram disconnect] Error:', err.message);
+    res.status(500).json({ error: 'Failed to disconnect Telegram' });
+  }
+});
 
 // NOTE: walletRoutes removed — wallet routes are defined inline below
 // to avoid Supabase-not-initialized errors in external route files.
@@ -4354,10 +4450,53 @@ app.post('/api/users/verify-email-code', verifyToken, otpLimiter, async (req, re
 app.post('/api/users/send-phone-otp', otpLimiter, verifyToken, async (req, res) => {
   try {
     const { phone, country = 'GH', method = 'sms' } = req.body;
-    if (!phone) return res.status(400).json({ error: 'Phone number required' });
     if (!['email', 'sms', 'whatsapp'].includes(method)) {
       return res.status(400).json({ error: 'Delivery method must be "email", "sms", or "whatsapp"' });
     }
+
+    // Email delivery: the "phone" field carries an email address — validate as
+    // email and key the OTP by it (no phone required on the account yet).
+    if (method === 'email') {
+      const email = String(phone || '').trim().toLowerCase();
+      const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!email || !EMAIL_RE.test(email)) {
+        return res.status(400).json({ error: 'Enter a valid email address (e.g. you@example.com).' });
+      }
+
+      const limit = checkPhoneRateLimit(`email:${email}`);
+      if (limit.blocked) return res.status(429).json({ error: limit.error });
+
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresMs = Date.now() + 10 * 60 * 1000;
+      otpStore.set(email, { otp, expires: expiresMs });
+
+      supabaseAdmin.from('otp_codes').insert({
+        phone: email, code: otp, expires_at: new Date(expiresMs).toISOString(), used: false,
+      }).then(() => { }).catch(dbErr => console.warn('[send-phone-otp] DB backup warn:', dbErr.message));
+
+      recordPhoneRequest(`email:${email}`);
+      const isDev = process.env.NODE_ENV !== 'production';
+      console.log(`[send-phone-otp] method=email target=${email}`);
+      try {
+        await sendVerificationEmail(email, otp);
+        console.log(`[send-phone-otp] Email OTP → ${email}`);
+        return res.json({
+          success: true,
+          message: `Verification code sent to ${email}`,
+          devCode: isDev ? otp : undefined,
+        });
+      } catch (emailErr) {
+        console.error('[send-phone-otp] Email send error:', emailErr.message);
+        return res.status(500).json({
+          error: 'Email delivery failed. Check your spam folder or try the WhatsApp option.',
+          suggestAlt: 'whatsapp',
+          devCode: isDev ? otp : undefined,
+        });
+      }
+    }
+
+    // SMS / WhatsApp: phone delivery
+    if (!phone) return res.status(400).json({ error: 'Phone number required' });
 
     const valResult = validatePhone(phone, country);
     if (!valResult.valid) {
@@ -4588,14 +4727,55 @@ app.post('/api/users/submit-phone', verifyToken, async (req, res) => {
 // POST /api/users/verify-phone-otp — verify phone OTP and mark phone verified
 app.post('/api/users/verify-phone-otp', verifyToken, async (req, res) => {
   try {
-    const { phone, otp, country = 'GH' } = req.body;
-    if (!phone || !otp) return res.status(400).json({ error: 'Phone and OTP required' });
+    const { phone, otp, country = 'GH', email } = req.body;
+    if ((!phone && !email) || !otp) return res.status(400).json({ error: 'Phone/email and OTP required' });
+
+    // Email delivery: OTP is keyed by the email the code was sent to.
+    let e164 = null;
+    if (email && String(email).trim()) {
+      const em = String(email).trim().toLowerCase();
+      const code = String(otp).trim();
+      if (code.length !== 6) return res.status(400).json({ error: 'Enter the full 6-digit code' });
+
+      const limRec = phoneRateLimits.get(`email:${em}`);
+      if (limRec?.lockedUntil && Date.now() < limRec.lockedUntil) {
+        const mins = Math.ceil((limRec.lockedUntil - Date.now()) / 60000);
+        return res.status(429).json({ error: `Too many failed attempts. Try again in ${mins} minute(s).` });
+      }
+
+      let verified = false;
+      const stored = otpStore.get(em);
+      if (stored && String(stored.otp) === code && Date.now() <= stored.expires) {
+        otpStore.delete(em);
+        verified = true;
+      }
+      if (!verified) {
+        const dbRecord = await checkOtp(em, code);
+        if (dbRecord) verified = true;
+      }
+      if (!verified) {
+        recordPhoneFailure(`email:${em}`);
+        return res.status(400).json({ error: 'Invalid or expired code. Tap "Resend" to get a new one.' });
+      }
+
+      // Email-only verification: mark the account phone-verified without
+      // overwriting the stored phone (none may exist yet).
+      await supabaseAdmin.from('users').update({
+        is_phone_verified: true,
+        phone_verified: true,
+        updated_at: new Date().toISOString(),
+      }).eq('id', req.userId);
+
+      return res.json({ success: true, message: 'Phone number verified!' });
+    }
+
+    if (!phone) return res.status(400).json({ error: 'Phone number required' });
 
     const valResult = validatePhone(phone, country);
     if (!valResult.valid) {
       return res.status(400).json({ error: valResult.error });
     }
-    const e164 = valResult.e164;
+    e164 = valResult.e164;
     const code = String(otp).trim();
 
     if (code.length !== 6) return res.status(400).json({ error: 'Enter the full 6-digit code' });
@@ -5841,12 +6021,28 @@ app.get('/api/listings', async (req, res) => {
 
     if (sellerIdSet.length > 0) {
       const [usersResult, walletsResult, depositsResult] = await Promise.all([
-        Promise.race([
-          supabaseAdmin.from('users').select(
-            'id, username, full_name, average_rating, total_trades, completion_rate, is_id_verified, is_email_verified, last_login, last_seen_at, total_feedback_count, positive_feedback, negative_feedback, country, bio, badge, avatar_url'
-          ).in('id', sellerIdSet),
-          new Promise(resolve => setTimeout(() => resolve({ data: [] }), 10000)),
-        ]),
+        (async () => {
+          const ac = new AbortController();
+          const timer = setTimeout(() => ac.abort(), 10000);
+          try {
+            const result = await Promise.race([
+              supabaseAdmin.from('users').select('id, username')
+                .in('id', sellerIdSet),
+              new Promise((_, reject) => {
+                ac.signal.addEventListener('abort', () =>
+                  reject(new Error('Users query timed out after 10s'))
+                );
+              }),
+            ]);
+            clearTimeout(timer);
+            console.log('[/api/listings] Users query OK —', result.data?.length, 'rows');
+            return result;
+          } catch (err) {
+            clearTimeout(timer);
+            console.error(`[/api/listings] Users query TIMEOUT for ${sellerIdSet.length} sellers — aborting fetch`);
+            return { data: null, error: { message: err.message, code: 'TIMEOUT' } };
+          }
+        })(),
         btcSellerIds.length > 0
           ? Promise.race([
             supabaseAdmin.from('wallets').select('user_id, balance_btc, balance_usdt').in('user_id', btcSellerIds),
@@ -5861,15 +6057,22 @@ app.get('/api/listings', async (req, res) => {
           : Promise.resolve({ data: [] }),
       ]);
       if (usersResult.error || !usersResult.data || usersResult.data.length === 0) {
+        const isTimeout = usersResult.error?.code === 'TIMEOUT';
         const stale = getCachedStale(cacheKey);
         if (stale) {
-          if (usersResult.error) console.error('[/api/listings] Users query FAILED:', usersResult.error.message, '— serving stale cache');
+          if (isTimeout) console.warn('[/api/listings] Users query TIMEOUT — serving stale cache');
+          else if (usersResult.error) console.error('[/api/listings] Users query FAILED:', usersResult.error.message, '— serving stale cache');
           else console.warn('[/api/listings] Users query returned 0 rows — serving stale cache');
           return res.json({ listings: stale, stale: true });
         }
-        if (usersResult.error) console.error('[/api/listings] Users query FAILED:', usersResult.error.message, '| code:', usersResult.error.code);
-        else console.warn('[/api/listings] Users query returned 0 rows for', sellerIdSet.length, 'seller IDs. Timed out or RLS blocking. Returning 503.');
-        return res.status(503).json({ error: 'Could not load seller profiles. Please retry in a moment.' });
+        if (isTimeout) {
+          console.error(`[/api/listings] Users query TIMEOUT (no stale cache) for ${sellerIdSet.length} sellers — returning 503`);
+        } else if (usersResult.error) {
+          console.error('[/api/listings] Users query FAILED:', usersResult.error.message, '| code:', usersResult.error.code);
+        } else {
+          console.warn('[/api/listings] Users query returned 0 rows for', sellerIdSet.length, 'seller IDs. Returning 503.');
+        }
+        return res.status(503).json({ error: isTimeout ? 'Seller profiles took too long to load. Please retry.' : 'Could not load seller profiles. Please retry in a moment.' });
       }
       (usersResult.data || []).forEach(u => { userMap[u.id] = { ...u, avatar_url: capAvatar(u.avatar_url) }; });
       walletRows = walletsResult.data || [];
@@ -7564,6 +7767,9 @@ app.post('/api/trades', verifyToken, requireEmailVerified, async (req, res) => {
           { actor_id: sellerId, direction: 'buy', trade_id: tradeUUID, payment_method: pmDisp, gift_card_brand: gcBrandField }),
         sendTradeAlert(sellerId, trade[0], 'new_trade').catch(() => { }),
         sendTradeAlert(buyerId, trade[0], 'new_trade').catch(() => { }),
+        // Telegram alerts for new trade
+        sendTelegramAlert(sellerId, `💰 New trade request from @${buyerName}! ${btcDisp} · ${localDisp} via ${pmDisp}`),
+        sendTelegramAlert(buyerId, `🔒 Trade opened with @${sellerName}! ${btcDisp} · ${localDisp} via ${pmDisp}`),
       ]);
     } catch (notifyErr) {
       console.error('[Trade Open] Pre-escrow notification failed:', notifyErr.message);
@@ -7710,6 +7916,8 @@ app.post('/api/trades/:id/mark-paid', tradeLimiter, verifyToken, async (req, res
           : `${actorName} sent ${paidDisp} via ${paidPM} · Verify and release Bitcoin`;
         await createNotification(notifyId, 'payment', '💳 Payment Sent', notifyMsg, `/trade/${req.params.id}`);
         sendTradeAlert(notifyId, trade, 'payment_sent').catch(() => { });
+        // Telegram alert for payment sent
+        sendTelegramAlert(notifyId, `${isGiftCardTrade ? '🎁' : '💵'} ${actorName} ${isGiftCardTrade ? 'sent the gift card code' : 'sent payment'}! Trade #${String(req.params.id).slice(0,8).toUpperCase()} — verify and release crypto.`).catch(() => {});
         // Email only the party who needs to act next (seller for BTC trade, buyer for gift card)
         const { data: notifyEmailUser } = await supabaseAdmin
           .from('users').select('id, email, username').eq('id', notifyId).single();
@@ -8075,6 +8283,10 @@ app.post('/api/trades/:id/dispute', tradeLimiter, verifyToken, async (req, res) 
       await createNotification(trade.seller_id, 'support', '⚠️ Dispute Opened', `Dispute opened for trade #${req.params.id.slice(0, 8)}. Moderator will review.`, `/trade/${req.params.id}`);
       await createNotification(trade.buyer_id, 'support', '⚠️ Dispute Opened', `Dispute opened for trade #${req.params.id.slice(0, 8)}. Please provide evidence.`, `/trade/${req.params.id}`);
       notifyModerators(req.params.id, trade, reason || 'User opened a dispute').catch(e => console.error('[dispute] notifyModerators failed:', e.message));
+      // Telegram alerts for dispute opened
+      const disputeRef = `#${String(req.params.id).slice(0,8).toUpperCase()}`;
+      sendTelegramAlert(trade.buyer_id, `🚨 Dispute opened on trade ${disputeRef}. Reason: ${(reason || 'User opened a dispute').slice(0, 100)}. A moderator will review.`).catch(() => {});
+      sendTelegramAlert(trade.seller_id, `🚨 Dispute opened on trade ${disputeRef}. Reason: ${(reason || 'User opened a dispute').slice(0, 100)}. A moderator will review.`).catch(() => {});
       supabaseAdmin.from('messages').insert([{ trade_id: req.params.id, sender_id: null, recipient_id: null, message_text: `🚨 DISPUTE OPENED — Reason: ${reason || 'User opened a dispute'}. Moderators notified.`, message_type: 'SYSTEM', sender_role: 'system', created_at: new Date() }]).then(null, () => { });
 
       // Email both parties — fetch their user records in parallel
@@ -8431,6 +8643,11 @@ app.post('/api/admin/disputes/:id/resolve', verifyToken, async (req, res) => {
       if (sellerUser?.email)
         emailService.sendDisputeResolvedEmail(sellerUser, trade, winner, notes).catch(e => console.error('[resolve] seller email failed:', e.message));
       sendTradeAlert([trade.buyer_id, trade.seller_id].filter(Boolean), trade, 'dispute_resolved').catch(() => { });
+      // Telegram alerts for dispute resolved
+      const resolveRef = `#${String(trade.id).slice(0,8).toUpperCase()}`;
+      const resolveMsg = msgMap[winner] || `Dispute resolved: ${winner}`;
+      sendTelegramAlert(trade.buyer_id, `⚖️ Dispute resolved on trade ${resolveRef} — ${resolveMsg}`).catch(() => {});
+      sendTelegramAlert(trade.seller_id, `⚖️ Dispute resolved on trade ${resolveRef} — ${resolveMsg}`).catch(() => {});
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -11131,6 +11348,10 @@ app.post('/api/wallet/internal-transfer', verifyToken, async (req, res) => {
       '/wallet'
     ).catch(() => { });
 
+    // ── Telegram alerts (fire-and-forget) ──────────────────────────────────
+    sendTelegramAlert(recipientId, `₿ Bitcoin received! @${senderName} sent you ${amount.toFixed(8)} BTC — instant & free.`).catch(() => {});
+    sendTelegramAlert(req.userId, `✅ Transfer sent! ${amount.toFixed(8)} BTC → @${recipientUsername} — instant & free. Ref: ${txRef.slice(0, 16)}`).catch(() => {});
+
     // ── Email notifications (fire-and-forget) ──────────────────────────────
     const txDate = new Date().toUTCString();
 
@@ -12357,6 +12578,7 @@ app.listen(PORT, () => {
   console.log('📋 Routes: /api/auth, /api/users, /api/listings, /api/trades, /api/my-trades, /api/wallet, /api/hd-wallet, /api/notifications');
   console.log('📱 OneSignal: ✅ Configured');
   console.log('🔔 Push notifications: ✅ Ready');
+  console.log(`🤖 Telegram bot: ${telegramService.BOT_TOKEN ? '✅ ENABLED' : '⚠️  DISABLED (set TELEGRAM_BOT_TOKEN in .env)'}`);
 
   // Log hot wallet address so admin knows where to fund TRX + USDT
   tronHotWallet.logStartup();

@@ -679,6 +679,7 @@ const resolveReceiptParties = (tx, { self, counterparty } = {}) => {
 // ─── Transaction Receipt Modal ─────────────────────────────────────────────────
 function TxReceiptModal({ tx, onClose, onRepeat, btcPrice, user, tradeParties }) {
   const type       = (tx.type || '').toUpperCase();
+  const isUsdt     = resolveTxAsset(tx) === 'USDT';
   const isSend     = type === 'WITHDRAWAL' || type === 'SEND' || type === 'TRANSFER_OUT';
   // Direction for amount color / sign / header icon — the SAME shared verdict the
   // transaction history list (TxRow) uses, so the receipt always matches the list.
@@ -692,8 +693,8 @@ function TxReceiptModal({ tx, onClose, onRepeat, btcPrice, user, tradeParties })
   const isInternalTx = type.includes('TRANSFER') || type.includes('ESCROW') || type.includes('SECURITY_DEPOSIT');
   const label = type === 'TRANSFER_OUT' ? 'Send-out'
     : type === 'TRANSFER_IN'  ? 'Received'
-    : type === 'WITHDRAWAL'   ? 'Bitcoin Sent'
-    : type === 'DEPOSIT'      ? 'Bitcoin Received'
+    : type === 'WITHDRAWAL'   ? (isUsdt ? 'USDT Sent' : 'Bitcoin Sent')
+    : type === 'DEPOSIT'      ? (isUsdt ? 'USDT Received' : 'Bitcoin Received')
     : isTrade                 ? 'Trade'
     : isSend                  ? 'Send-out'
     : 'Received';
@@ -701,9 +702,14 @@ function TxReceiptModal({ tx, onClose, onRepeat, btcPrice, user, tradeParties })
   const txHash = tx.tx_hash || tx.txHash;
   const refId  = tx.id ? `#${String(tx.id).slice(0, 16).toUpperCase()}` : '—';
 
-  const amountBtc = Math.abs(tx.amount_btc || tx.amount || 0);
+  const amountVal = isUsdt
+    ? Math.abs(parseFloat(tx.amount_usdt || 0))
+    : Math.abs(parseFloat(tx.amount_btc || tx.amount || 0));
+  const assetTag  = isUsdt ? 'USDT' : 'BTC';
+  const amountFmt = isUsdt ? 2 : 8;
   const price     = btcPrice || 88000;
-  const rawUsdVal = (amountBtc * price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // USDT ≈ $1 (stablecoin) — same convention the wallet's send flows use.
+  const rawUsdVal = (isUsdt ? amountVal : amountVal * price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   // Date & Time split into bold date line and smaller gray time subtitle
   const txDateObj = (tx.created_at || tx.date) ? new Date(tx.created_at || tx.date) : null;
@@ -738,7 +744,7 @@ function TxReceiptModal({ tx, onClose, onRepeat, btcPrice, user, tradeParties })
     { label: 'Type',        primary: label, subtitle: isInternalTx ? 'Internally' : null },
     { label: 'From',        primary: fromVal },
     { label: 'To',          primary: toVal },
-    { label: 'Amount',      primary: `${isOutgoing ? '−' : '+'}${fmt(amountBtc)} BTC`, subtitle: `${rawUsdVal} USD`, primaryColor: isOutgoing ? C.danger : C.success },
+    { label: 'Amount',      primary: `${isOutgoing ? '−' : '+'}${fmt(amountVal, amountFmt)} ${assetTag}`, subtitle: `${rawUsdVal} USD`, primaryColor: isOutgoing ? C.danger : C.success },
     { label: 'Status',      primary: isPending ? 'Pending' : 'Completed', primaryColor: isPending ? C.warn : C.success },
     { label: 'Date',        primary: dateFormatted, subtitle: timeFormatted },
     { label: 'TX Hash', primary: txHash || (escrowRef ? `Trade #${escrowRef}` : null) || refId },
@@ -772,14 +778,14 @@ function TxReceiptModal({ tx, onClose, onRepeat, btcPrice, user, tradeParties })
                   : <Download size={20} color="#fff" strokeWidth={2.5} />}
               </div>
               <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center"
-                style={{ backgroundColor: '#F7931A', border: '1.5px solid #fff' }}>
-                <span style={{ color: '#fff', fontSize: 10, fontWeight: 900, lineHeight: 1 }}>₿</span>
+                style={{ backgroundColor: isUsdt ? USDT_ICON_BG : '#F7931A', border: '1.5px solid #fff' }}>
+                <span style={{ color: '#fff', fontSize: 10, fontWeight: 900, lineHeight: 1 }}>{isUsdt ? '₮' : '₿'}</span>
               </div>
             </div>
 
             {/* Amount display */}
             <p className="text-white font-black text-2xl mt-3 tracking-tight">
-              {isOutgoing ? '−' : '+'}{fmt(amountBtc)} BTC
+              {isOutgoing ? '−' : '+'}{fmt(amountVal, amountFmt)} {assetTag}
             </p>
             <p className="font-semibold text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.8)' }}>
               {rawUsdVal} USD
@@ -912,24 +918,43 @@ const isOutgoingTx = (tx) => {
   return false;
 };
 
+// ─── Helper: resolve the asset (USDT vs BTC) of a transaction ───────────────
+// USDT rows are written with currency: 'USDT' and the amount in amount_usdt
+// (amount_btc is 0). BTC rows carry amount_btc and no USDT currency/amount.
+const resolveTxAsset = (tx) => {
+  if (!tx) return 'BTC';
+  const cur = String(tx.currency || tx.asset || tx.coin || '').toUpperCase();
+  if (cur === 'USDT' || parseFloat(tx.amount_usdt || 0) > 0) return 'USDT';
+  return 'BTC';
+};
+
 // ─── Helper: resolve label, subtitle, and colors for a transaction row ──
-// NOTE: icon is intentionally the same Bitcoin coin glyph for every row type,
-// to match the approved PDF design — do not branch icon by type here.
-// Colors reuse the existing C.gold token (muted peach/gold), not a bright
-// orange, to match the approved mockup exactly.
+// Icon branches by ASSET: BTC rows use the Bitcoin coin glyph (orange), USDT
+// rows use the ₮ Tether glyph (teal) — the same style as the notifications
+// panel. Row type (escrow / internal / external / etc.) keeps the same coin
+// glyph within each asset, matching the approved design.
 const BTC_ICON_BG    = '#F7931A';
 const BTC_ICON_COLOR = '#FFFFFF';
+const USDT_ICON_BG   = '#0D9488';
+const USDT_ICON_COLOR = '#FFFFFF';
+
+// Tether glyph — rendered in place of the Bitcoin coin icon for USDT rows.
+// `strokeWidth` is accepted (TxRow passes it to every icon) but ignored for a span.
+const UsdtGlyph = ({ size = 22, strokeWidth, style, ...rest }) => (
+  <span style={{ fontSize: size, fontWeight: 900, lineHeight: 1, ...style }} {...rest}>₮</span>
+);
 
 const getTxVisualDetails = (tx) => {
   const type = (tx.type || '').toUpperCase();
   const notes = tx.notes || tx.description || '';
   const isSend = isOutgoingTx(tx);
+  const isUsdt = resolveTxAsset(tx) === 'USDT';
 
-  const withBtcIcon = (details) => ({
+  const withAssetIcon = (details) => ({
     ...details,
-    icon: Bitcoin,
-    bg: BTC_ICON_BG,
-    iconColor: BTC_ICON_COLOR,
+    icon: isUsdt ? UsdtGlyph : Bitcoin,
+    bg: isUsdt ? USDT_ICON_BG : BTC_ICON_BG,
+    iconColor: isUsdt ? USDT_ICON_COLOR : BTC_ICON_COLOR,
   });
 
   if (type.includes('ESCROW')) {
@@ -938,20 +963,20 @@ const getTxVisualDetails = (tx) => {
     else if (type.includes('REFUND') || type.includes('RETURN')) sub = 'Returned';
     else if (type.includes('LOCK')) sub = 'Reserved';
 
-    return withBtcIcon({ primary: 'Escrow', secondary: sub });
+    return withAssetIcon({ primary: 'Escrow', secondary: sub });
   }
 
   if (type === 'TRANSFER_OUT' || type === 'TRANSFER_IN') {
     const isOut = type === 'TRANSFER_OUT';
-    return withBtcIcon({ primary: isOut ? 'Send out' : 'Received', secondary: 'Internal' });
+    return withAssetIcon({ primary: isOut ? 'Send out' : 'Received', secondary: 'Internal' });
   }
 
   if (type === 'WITHDRAWAL' || type === 'SEND') {
-    return withBtcIcon({ primary: 'Send out', secondary: 'External' });
+    return withAssetIcon({ primary: 'Send out', secondary: 'External' });
   }
 
   if (type === 'DEPOSIT' || type === 'RECEIVE') {
-    return withBtcIcon({ primary: 'Received', secondary: 'External' });
+    return withAssetIcon({ primary: 'Received', secondary: 'External' });
   }
 
   if (type.includes('GIFT') || type.includes('SECURITY_DEPOSIT')) {
@@ -960,14 +985,14 @@ const getTxVisualDetails = (tx) => {
     else if (type.includes('RELEASE')) sub = 'Release';
     else if (type.includes('CREDIT') || type.includes('REFUND')) sub = 'Returned';
 
-    return withBtcIcon({ primary: type.includes('SECURITY') ? 'Security Deposit' : 'Gift Card', secondary: sub });
+    return withAssetIcon({ primary: type.includes('SECURITY') ? 'Security Deposit' : 'Gift Card', secondary: sub });
   }
 
   if (type === 'TRADE' || type === 'P2P_TRADE') {
-    return withBtcIcon({ primary: 'Trade', secondary: normalizeNotes(notes) || 'P2P Market' });
+    return withAssetIcon({ primary: 'Trade', secondary: normalizeNotes(notes) || 'P2P Market' });
   }
 
-  return withBtcIcon({
+  return withAssetIcon({
     primary: isSend ? 'Send out' : 'Received',
     secondary: normalizeNotes(notes) || (tx.tx_hash || tx.txHash ? `${(tx.tx_hash || tx.txHash).slice(0, 12)}…` : 'Bitcoin Activity'),
   });
@@ -982,8 +1007,11 @@ function TxRow({ tx, onClick, btcPrice }) {
 
   const { primary, secondary, icon: IconComponent, bg, iconColor } = getTxVisualDetails(tx);
 
-  const absBtc = Math.abs(tx.amount_btc || tx.amount || 0);
-  const absUsd = absBtc * (btcPrice || 88000);
+  const isUsdt = resolveTxAsset(tx) === 'USDT';
+  const absAmt = isUsdt
+    ? Math.abs(parseFloat(tx.amount_usdt || 0))
+    : Math.abs(parseFloat(tx.amount_btc || tx.amount || 0));
+  const absUsd = isUsdt ? absAmt : absAmt * (btcPrice || 88000);
   const dateStr = fmtTxDate(tx.created_at || tx.date);
 
   return (
@@ -1022,7 +1050,7 @@ function TxRow({ tx, onClick, btcPrice }) {
       <div className="flex items-center gap-2">
         <div className="text-right flex-shrink-0 min-w-0">
           <p className="text-sm font-black tracking-tight" style={{ color }}>
-            {sign}{fmt(absBtc)} BTC
+            {sign}{fmt(absAmt, isUsdt ? 2 : 8)} {isUsdt ? 'USDT' : 'BTC'}
           </p>
           <p className="text-xs font-semibold mt-0.5" style={{ color: C.g500 }}>
             {sign}{absUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD

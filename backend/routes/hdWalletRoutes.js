@@ -12,6 +12,7 @@ const depositMonitor         = require('../services/depositMonitor');
 const tronHotWallet          = require('../services/tronHotWallet');
 const realtimeDepositService = require('../services/realtimeDepositService');
 const { updateOfferStatus }  = require('../services/offerStatusService');
+const { sendTelegramAlert }  = require('../services/telegramService');
 const { createClient } = require('@supabase/supabase-js');
 const rateLimit = require('express-rate-limit');
 
@@ -236,7 +237,7 @@ router.get('/wallet', verifyToken, async (req, res) => {
 
         const { data: txs } = await supabaseAdmin
             .from('wallet_transactions')
-            .select('id, type, status, amount_btc, tx_hash, notes, created_at')
+            .select('id, type, status, currency, amount_btc, amount_usdt, tx_hash, notes, created_at')
             .eq('user_id', userId)
             .neq('type', 'SWEEP')  // internal platform operation — never shown to users
             .order('created_at', { ascending: false })
@@ -523,6 +524,10 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
         message: `₿${amount.toFixed(8)} received — instant internal transfer, no fee`,
         action: '/wallet', is_read: false, created_at: new Date().toISOString(),
       });
+
+      // ── Telegram alerts (fire-and-forget) ────────────────────────────────
+      sendTelegramAlert(recipientId, `₿ Bitcoin received! ${amount.toFixed(8)} BTC arrived instantly — no fee.`).catch(() => {});
+      sendTelegramAlert(userId, `✅ Transfer sent! ${amount.toFixed(8)} BTC → @${recip?.username || 'PRAQEN user'} — instant & free.`).catch(() => {});
 
       const txNow = new Date().toISOString();
       if (senderUser?.email) {

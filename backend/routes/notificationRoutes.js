@@ -35,7 +35,7 @@ router.get('/notification-preferences', verifyToken, async (req, res) => {
             .maybeSingle();
 
         if (error) {
-            console.error('Supabase error:', error);
+            console.error(`[notification-preferences] Supabase fetch failed for user ${userId}:`, JSON.stringify(error));
             return res.status(500).json({ error: 'Failed to fetch preferences: ' + error.message });
         }
 
@@ -95,7 +95,7 @@ router.put('/notification-preferences', verifyToken, async (req, res) => {
             .maybeSingle();
 
         if (error) {
-            console.error('Supabase error:', error);
+            console.error(`[notification-preferences] Supabase upsert failed for user ${userId}:`, JSON.stringify(error));
             return res.status(500).json({ error: 'Failed to save preferences: ' + error.message });
         }
 
@@ -105,7 +105,7 @@ router.put('/notification-preferences', verifyToken, async (req, res) => {
             message: 'Preferences saved successfully'
         });
     } catch (error) {
-        console.error('Error saving notification preferences:', error);
+        console.error(`[notification-preferences] Unhandled error saving for user ${userId}:`, error.message, error.stack);
         res.status(500).json({ error: 'Failed to save preferences: ' + error.message });
     }
 });
