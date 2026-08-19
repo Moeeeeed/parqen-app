@@ -839,6 +839,138 @@ router.get('/ceo/treasury', verifyToken, async (req, res) => {
   }
 });
 
+// GET /api/hd-wallet/ceo/pulse
+// Company-wide read-only snapshot for the CEO dashboard: money in/out, trade volume,
+// pending-approval counts across every queue in the app, new-user growth, and a recent
+// activity feed. Every query here is a SELECT/count — nothing here writes to any table.
+// Queried directly (not proxied through the admin/team endpoints that already expose most
+// of these numbers individually) because this page is gated by is_ceo only, and those
+// endpoints require is_admin/is_moderator instead — a CEO-only account wouldn't pass them.
+router.get('/ceo/pulse', verifyToken, async (req, res) => {
+  try {
+    const ceo = await requireCeo(req, res); if (!ceo) return;
+
+    const nowMs = Date.now();
+    const since24hMs = nowMs - 86400000;
+    const since7dMs = nowMs - 7 * 86400000;
+    const since7dISO = new Date(since7dMs).toISOString();
+    const todayStartMs = new Date().setHours(0, 0, 0, 0);
+
+    const [
+      depositsR, withdrawalsR, tradesR,
+      pendingWdR, pendingKycR, pendingDisputesR, pendingMigrationR,
+      newUsersR, activityR, totalUsersR,
+      tradeFeesR, swapFeesR,
+    ] = await Promise.allSettled([
+      // 7d window fetched once; 24h is derived from the same rows below — avoids a second
+      // round trip for the overlapping window. Bounded .limit() matches the existing
+      // swap_transactions precedent above ("fine at current volume, move to a DB-side
+      // aggregate once this scan gets expensive").
+      supabaseAdmin.from('wallet_transactions').select('amount_btc, amount_usdt, created_at')
+        .eq('type', 'DEPOSIT').eq('status', 'CONFIRMED').gte('created_at', since7dISO).limit(5000),
+      // Also pulls platform_fee_btc/platform_fee_usdt — same rows feed both "money out"
+      // (amount_btc/usdt, what the user received) and the withdrawal-fee breakdown below
+      // (what PRAQEN collected, in whichever currency), so this is fetched once, not twice.
+      supabaseAdmin.from('wallet_transactions').select('amount_btc, amount_usdt, platform_fee_btc, platform_fee_usdt, created_at')
+        .eq('type', 'WITHDRAWAL').eq('status', 'CONFIRMED').gte('created_at', since7dISO).limit(5000),
+      supabaseAdmin.from('trades').select('amount_usd, amount_btc, created_at')
+        .eq('status', 'COMPLETED').gte('created_at', since7dISO).limit(5000),
+      supabaseAdmin.from('wallet_transactions').select('id', { count: 'exact', head: true })
+        .eq('type', 'WITHDRAWAL').eq('status', 'PENDING_APPROVAL'),
+      supabaseAdmin.from('users').select('id', { count: 'exact', head: true }).eq('kyc_status', 'pending'),
+      supabaseAdmin.from('trades').select('id', { count: 'exact', head: true }).eq('status', 'DISPUTED'),
+      supabaseAdmin.from('p2p_migration_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabaseAdmin.from('users').select('id, created_at').gte('created_at', since7dISO).limit(5000),
+      supabaseAdmin.from('team_activity_log').select('actor, action, details, category, created_at')
+        .order('created_at', { ascending: false }).limit(20),
+      supabaseAdmin.from('users').select('id', { count: 'exact', head: true }),
+      // Trade fees — company_profits is the canonical trade-fee ledger, written by
+      // tradeEscrowService._creditCompanyFee-equivalent logic on every completed release.
+      supabaseAdmin.from('company_profits').select('profit_btc, profit_usdt, profit_usd, collected_at')
+        .gte('collected_at', since7dISO).limit(5000),
+      // Swap fees — swap_transactions.fee_btc/fee_usdt, written by swapService._recordSwap
+      // alongside the actual company-wallet credit (see swapService.js:_creditCompanyFee).
+      supabaseAdmin.from('swap_transactions').select('fee_btc, fee_usdt, created_at')
+        .gte('created_at', since7dISO).limit(5000),
+    ]);
+
+    // Splits an already-fetched 7d row set into 24h/7d sums for both currency columns.
+    // Compares as real Date values (not raw ISO strings) so it's correct regardless of the
+    // exact timestamp precision/offset format Postgres returns.
+    // btcField/usdtField/tsField are configurable so this same windowing logic works for
+    // deposits/withdrawals (amount_btc/amount_usdt/created_at), trade fees (profit_btc/
+    // profit_usdt/collected_at from company_profits), and swap fees (fee_btc/fee_usdt/
+    // created_at from swap_transactions) without three near-duplicate reducers.
+    const sumWindow = (rows, btcField = 'amount_btc', usdtField = 'amount_usdt', tsField = 'created_at') => {
+      const r24 = { btc: 0, usdt: 0 }, r7 = { btc: 0, usdt: 0 };
+      for (const row of rows) {
+        const btc = parseFloat(row[btcField] || 0);
+        const usdt = usdtField ? parseFloat(row[usdtField] || 0) : 0;
+        r7.btc += btc; r7.usdt += usdt;
+        if (new Date(row[tsField]).getTime() >= since24hMs) { r24.btc += btc; r24.usdt += usdt; }
+      }
+      return {
+        last24h: { btc: parseFloat(r24.btc.toFixed(8)), usdt: parseFloat(r24.usdt.toFixed(2)) },
+        last7d: { btc: parseFloat(r7.btc.toFixed(8)), usdt: parseFloat(r7.usdt.toFixed(2)) },
+      };
+    };
+
+    const depositRows = depositsR.status === 'fulfilled' ? (depositsR.value.data || []) : [];
+    const withdrawalRows = withdrawalsR.status === 'fulfilled' ? (withdrawalsR.value.data || []) : [];
+    const tradeRows = tradesR.status === 'fulfilled' ? (tradesR.value.data || []) : [];
+
+    const moneyIn = sumWindow(depositRows);
+    const moneyOut = sumWindow(withdrawalRows);
+
+    // Fees actually collected into the company wallet, broken out by source — verified
+    // against the real crediting code in tradeEscrowService.js, hdWalletRoutes.js's own
+    // approve handler above, and swapService.js's _creditCompanyFee before wiring this up.
+    const tradeFeeRows = tradeFeesR.status === 'fulfilled' ? (tradeFeesR.value.data || []) : [];
+    const swapFeeRows = swapFeesR.status === 'fulfilled' ? (swapFeesR.value.data || []) : [];
+    const fees = {
+      trade: sumWindow(tradeFeeRows, 'profit_btc', 'profit_usdt', 'collected_at'),
+      withdrawal: sumWindow(withdrawalRows, 'platform_fee_btc', 'platform_fee_usdt', 'created_at'),
+      swap: sumWindow(swapFeeRows, 'fee_btc', 'fee_usdt', 'created_at'),
+    };
+
+    const tradeVolume = (() => {
+      let v24 = 0, v7 = 0, c24 = 0, c7 = 0;
+      for (const t of tradeRows) {
+        const usd = parseFloat(t.amount_usd || 0);
+        v7 += usd; c7++;
+        if (new Date(t.created_at).getTime() >= since24hMs) { v24 += usd; c24++; }
+      }
+      return {
+        last24h: { usd: parseFloat(v24.toFixed(2)), count: c24 },
+        last7d: { usd: parseFloat(v7.toFixed(2)), count: c7 },
+      };
+    })();
+
+    const newUsersRows = newUsersR.status === 'fulfilled' ? (newUsersR.value.data || []) : [];
+    const countOf = (r) => r.status === 'fulfilled' ? (r.value.count || 0) : 0;
+    const newUsers = {
+      today: newUsersRows.filter(u => new Date(u.created_at).getTime() >= todayStartMs).length,
+      week: newUsersRows.length,
+      total: countOf(totalUsersR),
+    };
+
+    res.json({
+      success: true,
+      moneyIn, moneyOut, tradeVolume, newUsers, fees,
+      pending: {
+        withdrawals: countOf(pendingWdR),
+        kyc: countOf(pendingKycR),
+        disputes: countOf(pendingDisputesR),
+        p2pMigration: countOf(pendingMigrationR),
+      },
+      recentActivity: activityR.status === 'fulfilled' ? (activityR.value.data || []) : [],
+    });
+  } catch (error) {
+    console.error('[hdWalletRoutes GET /ceo/pulse]', error.message);
+    res.status(500).json({ error: 'Failed to load company pulse.' });
+  }
+});
+
 // GET /api/hd-wallet/ceo-withdrawals?status=PENDING_APPROVAL
 router.get('/ceo-withdrawals', verifyToken, async (req, res) => {
   try {
@@ -847,7 +979,7 @@ router.get('/ceo-withdrawals', verifyToken, async (req, res) => {
 
     const { data: rows, error } = await supabaseAdmin
       .from('wallet_transactions')
-      .select('id, user_id, amount_btc, platform_fee_btc, destination_address, status, notes, tx_hash, rejection_reason, reviewed_by, reviewed_at, created_at')
+      .select('id, user_id, currency, amount_btc, amount_usdt, platform_fee_btc, platform_fee_usdt, destination_address, status, notes, tx_hash, rejection_reason, reviewed_by, reviewed_at, created_at')
       .eq('type', 'WITHDRAWAL')
       .eq('status', status)
       .order('created_at', { ascending: status === 'PENDING_APPROVAL' })
@@ -885,33 +1017,43 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
       .from('wallet_transactions').select('*').eq('id', id).eq('status', 'PENDING_APPROVAL').maybeSingle();
     if (!txRow) return res.status(404).json({ error: 'No pending withdrawal found with that ID — it may have already been reviewed.' });
 
-    const platformFee = parseFloat(txRow.platform_fee_btc || 0);
+    const isUsdt = txRow.currency === 'USDT';
+    const platformFee = isUsdt ? parseFloat(txRow.platform_fee_usdt || 0) : parseFloat(txRow.platform_fee_btc || 0);
+    const sendAmount = isUsdt ? parseFloat(txRow.amount_usdt) : parseFloat(txRow.amount_btc);
     const { data: targetUser } = await supabaseAdmin
       .from('users').select('id, email, username').eq('id', txRow.user_id).single();
 
     let result;
     try {
-      result = await hdWallet.sendWithdrawal(txRow.user_id, txRow.destination_address, parseFloat(txRow.amount_btc));
+      result = isUsdt
+        ? await tronHotWallet.sendUsdtToExternal(txRow.destination_address, sendAmount)
+        : await hdWallet.sendWithdrawal(txRow.user_id, txRow.destination_address, sendAmount);
     } catch (sendErr) {
-      const lowHotWallet = sendErr.message?.startsWith('HOT_WALLET_INSUFFICIENT') || sendErr.message?.startsWith('INSUFFICIENT_UTXOS');
+      const lowHotWallet = isUsdt
+        ? /^HOT_WALLET_(USDT|TRX)_INSUFFICIENT/.test(sendErr.message || '')
+        : (sendErr.message?.startsWith('HOT_WALLET_INSUFFICIENT') || sendErr.message?.startsWith('INSUFFICIENT_UTXOS'));
       if (lowHotWallet && force) {
         // CEO force-approved despite a low hot wallet — queue it (funds stay deducted from the
         // user, fee is still earned) instead of broadcasting; the sweep/retry job picks it up.
-        const { data: cw } = await supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', COMPANY_WALLET_ID).maybeSingle();
-        const ncb = parseFloat((parseFloat(cw?.balance_btc || 0) + platformFee).toFixed(8));
-        const ts  = new Date().toISOString();
-        await Promise.all([
-          hdWallet.setWalletBalance(COMPANY_WALLET_ID, ncb),
-          supabaseAdmin.from('user_balances').upsert({ user_id: COMPANY_WALLET_ID, balance_btc: ncb, updated_at: ts }, { onConflict: 'user_id' }),
-        ]);
+        const ts = new Date().toISOString();
+        if (isUsdt) {
+          await tronHotWallet.creditFeeToCompany(platformFee, `USDT withdrawal fee from ${txRow.user_id.slice(0, 8)} — force-approved, queued`);
+        } else {
+          const { data: cw } = await supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', COMPANY_WALLET_ID).maybeSingle();
+          const ncb = parseFloat((parseFloat(cw?.balance_btc || 0) + platformFee).toFixed(8));
+          await Promise.all([
+            hdWallet.setWalletBalance(COMPANY_WALLET_ID, ncb),
+            supabaseAdmin.from('user_balances').upsert({ user_id: COMPANY_WALLET_ID, balance_btc: ncb, updated_at: ts }, { onConflict: 'user_id' }),
+          ]);
+        }
         await supabaseAdmin.from('wallet_transactions').update({
           status: 'PENDING', reviewed_by: ceo.id, reviewed_at: ts,
           notes: `${txRow.notes || ''} — CEO-approved ${ts}; queued (hot wallet low, force-approved).`,
         }).eq('id', id);
-        if (targetUser?.email) {
+        if (!isUsdt && targetUser?.email) {
           emailService.sendTxReceiptEmail(
             { id: targetUser.id, email: targetUser.email, username: targetUser.username },
-            { type: 'WITHDRAWAL', amount_btc: parseFloat(txRow.amount_btc), status: 'PENDING',
+            { type: 'WITHDRAWAL', amount_btc: sendAmount, status: 'PENDING',
               destination_address: txRow.destination_address, fee_btc: platformFee,
               notes: 'Approved by PRAQEN security review — broadcasting shortly.', created_at: ts }
           ).catch(() => {});
@@ -922,41 +1064,52 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
     }
 
     // Broadcast succeeded — credit the platform fee and mark this reviewed + confirmed
-    const { data: companyWallet } = await supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', COMPANY_WALLET_ID).maybeSingle();
-    const newCompanyBalance = parseFloat((parseFloat(companyWallet?.balance_btc || 0) + platformFee).toFixed(8));
     const ts = new Date().toISOString();
-    await Promise.all([
-      hdWallet.setWalletBalance(COMPANY_WALLET_ID, newCompanyBalance),
-      supabaseAdmin.from('user_balances').upsert({ user_id: COMPANY_WALLET_ID, balance_btc: newCompanyBalance, updated_at: ts }, { onConflict: 'user_id' }),
-    ]);
+    if (isUsdt) {
+      await tronHotWallet.creditFeeToCompany(platformFee, `USDT withdrawal fee from ${txRow.user_id.slice(0, 8)} — CEO-approved`);
+    } else {
+      const { data: companyWallet } = await supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', COMPANY_WALLET_ID).maybeSingle();
+      const newCompanyBalance = parseFloat((parseFloat(companyWallet?.balance_btc || 0) + platformFee).toFixed(8));
+      await Promise.all([
+        hdWallet.setWalletBalance(COMPANY_WALLET_ID, newCompanyBalance),
+        supabaseAdmin.from('user_balances').upsert({ user_id: COMPANY_WALLET_ID, balance_btc: newCompanyBalance, updated_at: ts }, { onConflict: 'user_id' }),
+      ]);
+    }
     await supabaseAdmin.from('wallet_transactions').update({
       status: 'CONFIRMED', tx_hash: result.txid, reviewed_by: ceo.id, reviewed_at: ts,
       notes: `${txRow.notes || ''} — Approved by CEO review ${ts}.`,
     }).eq('id', id);
-    await supabaseAdmin.from('wallet_transactions').insert({
+    await supabaseAdmin.from('wallet_transactions').insert(isUsdt ? {
+      user_id: COMPANY_WALLET_ID, type: 'FEE', currency: 'USDT', amount_usdt: platformFee, status: 'CONFIRMED',
+      tx_hash: `${result.txid}_FEE`, notes: `USDT blockchain fee from user ${txRow.user_id.slice(0, 8)} — CEO-approved withdrawal`, created_at: ts,
+    } : {
       user_id: COMPANY_WALLET_ID, type: 'FEE', amount_btc: platformFee, status: 'CONFIRMED',
       tx_hash: result.txid, notes: `Blockchain fee from user ${txRow.user_id.slice(0, 8)} — CEO-approved withdrawal`, created_at: ts,
     });
 
-    if (targetUser?.email) {
+    // BTC has a dedicated tx-receipt email template; USDT relies on the in-app notification
+    // inserted below for now (scope decision — extending that email template is separate work).
+    if (!isUsdt && targetUser?.email) {
       emailService.sendTxReceiptEmail(
         { id: targetUser.id, email: targetUser.email, username: targetUser.username },
-        { type: 'WITHDRAWAL', amount_btc: parseFloat(txRow.amount_btc), status: 'CONFIRMED',
+        { type: 'WITHDRAWAL', amount_btc: sendAmount, status: 'CONFIRMED',
           destination_address: txRow.destination_address, fee_btc: platformFee, tx_hash: result.txid,
           notes: 'Approved by PRAQEN security review and sent.', created_at: ts }
       ).catch(() => {});
     }
     supabaseAdmin.from('notifications').insert({
       user_id: txRow.user_id, type: 'wallet', title: '✅ Withdrawal Approved & Sent',
-      message: `Your withdrawal of ₿${parseFloat(txRow.amount_btc).toFixed(8)} passed security review and is on its way.`,
+      message: isUsdt
+        ? `Your withdrawal of ₮${sendAmount.toFixed(2)} passed security review and is on its way.`
+        : `Your withdrawal of ₿${sendAmount.toFixed(8)} passed security review and is on its way.`,
       action: '/wallet', is_read: false, created_at: ts,
     }).then(null, () => {});
 
-    console.log(`✅ [CEO] Approved withdrawal ${id} — ₿${txRow.amount_btc} → ${txRow.destination_address} | TX ${result.txid} | by ${ceo.email}`);
+    console.log(`✅ [CEO] Approved withdrawal ${id} — ${isUsdt ? '₮' : '₿'}${sendAmount} → ${txRow.destination_address} | TX ${result.txid} | by ${ceo.email}`);
     res.json({ success: true, txid: result.txid, message: 'Withdrawal approved and broadcast.' });
   } catch (error) {
     console.error('[hdWalletRoutes POST /ceo-withdrawals/:id/approve]', error.message);
-    if (error.message?.startsWith('HOT_WALLET_INSUFFICIENT') || error.message?.startsWith('INSUFFICIENT_UTXOS')) {
+    if (error.message?.startsWith('HOT_WALLET_INSUFFICIENT') || error.message?.startsWith('INSUFFICIENT_UTXOS') || /^HOT_WALLET_(USDT|TRX)_INSUFFICIENT/.test(error.message || '')) {
       return res.status(503).json({ error: 'Hot wallet has insufficient funds to broadcast this right now. Top it up, or retry with "force" to queue it for later.', hotWalletLow: true });
     }
     res.status(500).json({ error: 'Failed to approve withdrawal: ' + error.message });
@@ -976,34 +1129,42 @@ router.post('/ceo-withdrawals/:id/reject', verifyToken, async (req, res) => {
       .from('wallet_transactions').select('*').eq('id', id).eq('status', 'PENDING_APPROVAL').maybeSingle();
     if (!txRow) return res.status(404).json({ error: 'No pending withdrawal found with that ID — it may have already been reviewed.' });
 
-    const refundAmount = parseFloat((parseFloat(txRow.amount_btc) + parseFloat(txRow.platform_fee_btc || 0)).toFixed(8));
+    const isUsdt = txRow.currency === 'USDT';
+    const sendAmount = isUsdt ? parseFloat(txRow.amount_usdt) : parseFloat(txRow.amount_btc);
+    const platformFee = isUsdt ? parseFloat(txRow.platform_fee_usdt || 0) : parseFloat(txRow.platform_fee_btc || 0);
+    const refundAmount = parseFloat((sendAmount + platformFee).toFixed(isUsdt ? 6 : 8));
     const userId = txRow.user_id;
     const ts = new Date().toISOString();
+    const balField = isUsdt ? 'balance_usdt' : 'balance_btc';
 
-    const { data: bal } = await supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', userId).single();
-    const newBalance = parseFloat((parseFloat(bal?.balance_btc || 0) + refundAmount).toFixed(8));
+    const { data: bal } = await supabaseAdmin.from('wallets').select(balField).eq('user_id', userId).single();
+    const newBalance = parseFloat((parseFloat(bal?.[balField] || 0) + refundAmount).toFixed(isUsdt ? 6 : 8));
 
     await Promise.all([
-      supabaseAdmin.from('wallets').update({ balance_btc: newBalance, updated_at: ts }).eq('user_id', userId),
-      supabaseAdmin.from('user_balances').update({ balance_btc: newBalance, updated_at: ts }).eq('user_id', userId),
-      supabaseAdmin.from('user_wallets').update({ balance_btc: newBalance, updated_at: ts }).eq('user_id', userId),
+      supabaseAdmin.from('wallets').update({ [balField]: newBalance, updated_at: ts }).eq('user_id', userId),
+      supabaseAdmin.from('user_balances').update({ [balField]: newBalance, updated_at: ts }).eq('user_id', userId),
+      supabaseAdmin.from('user_wallets').update({ [balField]: newBalance, updated_at: ts }).eq('user_id', userId),
     ]);
 
     await supabaseAdmin.from('wallet_transactions').update({
       status: 'REJECTED', reviewed_by: ceo.id, reviewed_at: ts, rejection_reason: reason,
     }).eq('id', id);
 
+    // BTC has a dedicated rejection-email template; USDT relies on the in-app notification
+    // below for now — same scope decision as the approve handler above.
     const { data: targetUser } = await supabaseAdmin.from('users').select('id, email, username').eq('id', userId).single();
-    if (targetUser?.email) {
-      emailService.sendWithdrawalRejectedEmail(targetUser, parseFloat(txRow.amount_btc), reason).catch(() => {});
+    if (!isUsdt && targetUser?.email) {
+      emailService.sendWithdrawalRejectedEmail(targetUser, sendAmount, reason).catch(() => {});
     }
+    const symbol = isUsdt ? '₮' : '₿';
+    const decimals = isUsdt ? 2 : 8;
     supabaseAdmin.from('notifications').insert({
       user_id: userId, type: 'wallet', title: '⚠️ Withdrawal Declined',
-      message: `Your withdrawal of ₿${parseFloat(txRow.amount_btc).toFixed(8)} was declined during security review and the full amount (₿${refundAmount.toFixed(8)}) was returned to your wallet. Reason: ${reason}`,
+      message: `Your withdrawal of ${symbol}${sendAmount.toFixed(decimals)} was declined during security review and the full amount (${symbol}${refundAmount.toFixed(decimals)}) was returned to your wallet. Reason: ${reason}`,
       action: '/wallet', is_read: false, created_at: ts,
     }).then(null, () => {});
 
-    console.log(`⛔ [CEO] Rejected withdrawal ${id} — ₿${refundAmount} refunded to ${userId.slice(0,8)} | by ${ceo.email} | reason: ${reason}`);
+    console.log(`⛔ [CEO] Rejected withdrawal ${id} — ${symbol}${refundAmount} refunded to ${userId.slice(0,8)} | by ${ceo.email} | reason: ${reason}`);
     res.json({ success: true, message: 'Withdrawal rejected and funds returned to the user.' });
   } catch (error) {
     console.error('[hdWalletRoutes POST /ceo-withdrawals/:id/reject]', error.message);
