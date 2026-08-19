@@ -6286,7 +6286,18 @@ app.get('/api/listings/:id', async (req, res) => {
     // (min > effective max) is impossible to trade — flag it instead of showing a broken range.
     const sellerCanFulfillMin = !capsByBalance || !minLimitUsd || balanceUsd >= minLimitUsd;
 
-    res.json({ listing: { ...listing, users: enrichedSeller.id ? [enrichedSeller] : [], seller_balance_btc: sellerBalanceBtc, seller_balance_usdt: sellerBalanceUsdt, effective_max_usd: effectiveMaxUsd, seller_can_fulfill_min: sellerCanFulfillMin } });
+    // Same "PRAQEN-approved" badge shown on the marketplace card — a buyer opening a
+    // SELL_GIFT_CARD listing to trade should see this right before they commit, not just
+    // in the browse list. Only a never-seized LOCKED deposit counts, matching /api/listings.
+    let sellerHasDeposit;
+    if (listing.listing_type === 'SELL_GIFT_CARD') {
+      const { data: dep } = await supabaseAdmin
+        .from('seller_deposits').select('remaining_amount, amount_usdt')
+        .eq('user_id', listing.seller_id).eq('status', 'LOCKED').maybeSingle();
+      sellerHasDeposit = !!dep && parseFloat(dep.remaining_amount) === parseFloat(dep.amount_usdt);
+    }
+
+    res.json({ listing: { ...listing, users: enrichedSeller.id ? [enrichedSeller] : [], seller_balance_btc: sellerBalanceBtc, seller_balance_usdt: sellerBalanceUsdt, effective_max_usd: effectiveMaxUsd, seller_can_fulfill_min: sellerCanFulfillMin, seller_has_deposit: sellerHasDeposit } });
   } catch (error) {
     console.error('[listings/:id] error:', error);
     res.status(500).json({ error: error.message });

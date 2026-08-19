@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { ArrowRight, BadgeCheck, RefreshCw, Lock, ChevronRight, ThumbsUp, ThumbsDown, Repeat2,
   Gift, CircleDollarSign, Smartphone, Landmark, CreditCard, Satellite, Search, Zap, Star,
-  Mail, Fingerprint, CheckCircle, Info, Video, Scale, AlertTriangle, MessageSquare, Send } from 'lucide-react';
+  Mail, Fingerprint, CheckCircle, Info, Video, Scale, AlertTriangle, MessageSquare, Send, ShieldCheck } from 'lucide-react';
 import { BadgeChip } from '../lib/badge';
 import { toast } from 'react-toastify';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
@@ -528,6 +528,12 @@ const loadAll = useCallback(async (isBackground = false) => {
                 <CountryFlag countryCode={sellerCountryCode} className="w-4 h-3" />
                 <span>{seller?.country || ''}</span>
               </div>
+              {listing?.listing_type === 'SELL_GIFT_CARD' && listing?.seller_has_deposit && (
+                <span title="Seller has locked a $200 security deposit — PRAQEN-approved"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 5, padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 800, backgroundColor: '#DCFCE7', color: '#166534', border: '1px solid rgba(22,101,52,0.2)' }}>
+                  <ShieldCheck size={11} /> S. Deposit
+                </span>
+              )}
             </div>
 
             {/* Tap to view profile */}

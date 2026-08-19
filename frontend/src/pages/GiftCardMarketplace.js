@@ -571,6 +571,13 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
             E-Code
           </span>
         )}
+        {listing.listing_type === 'SELL_GIFT_CARD' && listing.seller_has_deposit && (
+          <span title="Seller has locked a $200 security deposit — PRAQEN-approved"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold"
+            style={{ backgroundColor: '#DCFCE7', color: '#166534', border: '1px solid rgba(22,101,52,0.2)' }}>
+            <ShieldCheck size={12} /> S. Deposit
+          </span>
+        )}
       </div>
 
       <div className="px-3.5 pb-2.5" style={{ borderTop: `1px solid ${ft ? ft.divider : C.g100}` }}>
