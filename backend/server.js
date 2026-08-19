@@ -11868,7 +11868,7 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
         amount_usdt: sendAmount,
         platform_fee_usdt: withdrawalFee,
         destination_address: toAddress,
-        notes: `Awaiting CEO security review. Fee: ${feeLabel}.`,
+        notes: `Awaiting PRAQEN security review. Fee: ${feeLabel}.`,
         created_at: reviewTs,
       })
       .select('id')
@@ -11896,7 +11896,7 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
       supabaseAdmin.from('notifications').insert({
         user_id: ceoU.id, type: 'ceo_approval',
         title: '🔒 USDT Withdrawal Awaiting Approval',
-        message: `${sendUser?.username || req.userId.slice(0, 8)} wants to send ₮${sendAmount.toFixed(2)} to ${toAddress.slice(0, 10)}… — review in CEO Approvals.`,
+        message: `${sendUser?.username || req.userId.slice(0, 8)} wants to send ₮${sendAmount.toFixed(2)} to ${toAddress.slice(0, 10)}… — review in PRAQEN Approvals.`,
         action: '/ceo', is_read: false, created_at: reviewTs,
       }).then(null, () => { });
     }

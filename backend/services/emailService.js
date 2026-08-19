@@ -734,8 +734,8 @@ function ceoApprovalRequestHtml(ceoName, info) {
       <tr><td style="padding:7px 0;color:#64748B;font-size:12px;font-weight:600;">To Address</td><td style="padding:7px 0;color:#94A3B8;font-size:11px;text-align:right;word-break:break-all;">${info.toAddress}</td></tr>
       <tr><td style="padding:7px 0;color:#64748B;font-size:12px;font-weight:600;">Request ID</td><td style="padding:7px 0;color:#94A3B8;font-size:11px;text-align:right;">${info.requestId}</td></tr>
     `)}
-    <p style="color:#64748B;font-size:13px;margin:0 0 16px;">Log in to the admin dashboard's CEO Approvals section to check this user's account history and approve or decline the request.</p>
-    ${ctaButton('Review in CEO Approvals', 'https://praqen.com/admin')}
+    <p style="color:#64748B;font-size:13px;margin:0 0 16px;">Log in to the PRAQEN Approvals dashboard to check this user's account history and approve or decline the request.</p>
+    ${ctaButton('Review in PRAQEN Approvals', 'https://praqen.com/ceo')}
   `);
 }
 

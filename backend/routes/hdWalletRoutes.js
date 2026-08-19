@@ -672,7 +672,7 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
         platform_fee_btc:    platformFee,
         status:              'PENDING_APPROVAL',
         destination_address: toAddress,
-        notes:               `Awaiting CEO security review. Blockchain fee: ${feeLabel} (₿${platformFee.toFixed(8)} / $${platformFeeUsd}).`,
+        notes:               `Awaiting PRAQEN security review. Blockchain fee: ${feeLabel} (₿${platformFee.toFixed(8)} / $${platformFeeUsd}).`,
         created_at:          reviewTs,
       })
       .select('id')
@@ -697,7 +697,7 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
       supabaseAdmin.from('notifications').insert({
         user_id: ceoU.id, type: 'ceo_approval',
         title: '🔒 Withdrawal Awaiting Approval',
-        message: `${sendUser?.username || userId.slice(0,8)} wants to send ₿${amountUserReceives.toFixed(8)} to ${toAddress.slice(0,10)}… — review in CEO Approvals.`,
+        message: `${sendUser?.username || userId.slice(0,8)} wants to send ₿${amountUserReceives.toFixed(8)} to ${toAddress.slice(0,10)}… — review in PRAQEN Approvals.`,
         action: '/admin', is_read: false, created_at: reviewTs,
       }).then(null, () => {});
     }
@@ -1062,7 +1062,7 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
         }
         await supabaseAdmin.from('wallet_transactions').update({
           status: 'PENDING', reviewed_by: ceo.id, reviewed_at: ts,
-          notes: `${txRow.notes || ''} — CEO-approved ${ts}; queued (hot wallet low, force-approved).`,
+          notes: `${txRow.notes || ''} — PRAQEN-approved ${ts}; queued (hot wallet low, force-approved).`,
         }).eq('id', id);
         if (!isUsdt && targetUser?.email) {
           emailService.sendTxReceiptEmail(
@@ -1080,7 +1080,7 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
     // Broadcast succeeded — credit the platform fee and mark this reviewed + confirmed
     const ts = new Date().toISOString();
     if (isUsdt) {
-      await tronHotWallet.creditFeeToCompany(platformFee, `USDT withdrawal fee from ${txRow.user_id.slice(0, 8)} — CEO-approved`);
+      await tronHotWallet.creditFeeToCompany(platformFee, `USDT withdrawal fee from ${txRow.user_id.slice(0, 8)} — PRAQEN-approved`);
     } else {
       const { data: companyWallet } = await supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', COMPANY_WALLET_ID).maybeSingle();
       const newCompanyBalance = parseFloat((parseFloat(companyWallet?.balance_btc || 0) + platformFee).toFixed(8));
@@ -1091,14 +1091,14 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
     }
     await supabaseAdmin.from('wallet_transactions').update({
       status: 'CONFIRMED', tx_hash: result.txid, reviewed_by: ceo.id, reviewed_at: ts,
-      notes: `${txRow.notes || ''} — Approved by CEO review ${ts}.`,
+      notes: `${txRow.notes || ''} — Approved by PRAQEN review ${ts}.`,
     }).eq('id', id);
     await supabaseAdmin.from('wallet_transactions').insert(isUsdt ? {
       user_id: COMPANY_WALLET_ID, type: 'FEE', currency: 'USDT', amount_usdt: platformFee, status: 'CONFIRMED',
-      tx_hash: `${result.txid}_FEE`, notes: `USDT blockchain fee from user ${txRow.user_id.slice(0, 8)} — CEO-approved withdrawal`, created_at: ts,
+      tx_hash: `${result.txid}_FEE`, notes: `USDT blockchain fee from user ${txRow.user_id.slice(0, 8)} — PRAQEN-approved withdrawal`, created_at: ts,
     } : {
       user_id: COMPANY_WALLET_ID, type: 'FEE', amount_btc: platformFee, status: 'CONFIRMED',
-      tx_hash: result.txid, notes: `Blockchain fee from user ${txRow.user_id.slice(0, 8)} — CEO-approved withdrawal`, created_at: ts,
+      tx_hash: result.txid, notes: `Blockchain fee from user ${txRow.user_id.slice(0, 8)} — PRAQEN-approved withdrawal`, created_at: ts,
     });
 
     // BTC has a dedicated tx-receipt email template; USDT relies on the in-app notification
