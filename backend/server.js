@@ -8139,8 +8139,8 @@ app.post('/api/messages', verifyToken, async (req, res) => {
     if (tradeError || !trade) return res.status(404).json({ error: 'Trade not found' });
     const isParticipant = trade.buyer_id === req.userId || trade.seller_id === req.userId;
     const recipientId = trade.buyer_id === req.userId ? trade.seller_id : trade.buyer_id;
-    const { data: userData } = await supabaseAdmin.from('users').select('is_moderator, is_admin, username').eq('id', req.userId).single();
-    const senderRole = (userData?.is_moderator || userData?.is_admin) ? 'moderator' : 'user';
+    const { data: userData } = await supabaseAdmin.from('users').select('is_moderator, is_admin, is_ceo, username').eq('id', req.userId).single();
+    const senderRole = (userData?.is_moderator || userData?.is_admin || userData?.is_ceo) ? 'moderator' : 'user';
     // isSystem: only trusted if the sender is a participant in this trade
     const useSystem = isSystem && isParticipant;
     const { data, error } = await supabaseAdmin.from('messages').insert([{
@@ -8308,8 +8308,8 @@ app.post('/api/trades/:id/dispute', tradeLimiter, verifyToken, async (req, res) 
 
 app.post('/api/trades/:id/moderator-join', verifyToken, async (req, res) => {
   try {
-    const { data: userData } = await supabaseAdmin.from('users').select('is_moderator, is_admin, username').eq('id', req.userId).single();
-    if (!userData?.is_moderator && !userData?.is_admin) return res.status(403).json({ error: 'Moderators only' });
+    const { data: userData } = await supabaseAdmin.from('users').select('is_moderator, is_admin, is_ceo, username').eq('id', req.userId).single();
+    if (!userData?.is_moderator && !userData?.is_admin && !userData?.is_ceo) return res.status(403).json({ error: 'Moderators only' });
     const { data: trade } = await supabaseAdmin.from('trades').select('status, id, buyer_id, seller_id').eq('id', req.params.id).single();
     if (!trade) return res.status(404).json({ error: 'Trade not found' });
     await supabaseAdmin.from('messages').insert([{ trade_id: req.params.id, sender_id: req.userId, recipient_id: null, message_text: `👨‍⚖️ Moderator has joined and is reviewing this dispute.`, message_type: 'SYSTEM', sender_role: 'moderator', created_at: new Date() }]);
@@ -9555,12 +9555,34 @@ async function requireAdmin(req, res) {
   return u;
 }
 
+// Same as requireAdmin, plus is_ceo — used only by the trades-list route the CEO dashboard's
+// Support Chat reads. Deliberately separate from requireAdmin itself so this doesn't widen
+// CEO access to the rest of the (much larger) admin-read surface that helper gates.
+async function requireAdminOrCeo(req, res) {
+  const { data: u } = await supabaseAdmin.from('users').select('is_admin, is_moderator, is_ceo, email').eq('id', req.userId).single();
+  const ok = u?.is_admin || u?.is_moderator || u?.is_ceo || u?.email === ADMIN_EMAIL;
+  if (!ok) { res.status(403).json({ error: 'Admin access required' }); return null; }
+  return u;
+}
+
 // Helper: verify TRUE admin access only — moderators/team members never pass this.
 // Reserved for endpoints that can move funds, ban/delete accounts, grant admin,
 // or broadcast to the whole user base — none of which the Team Portal exposes.
 async function requireFullAdmin(req, res) {
   const { data: u } = await supabaseAdmin.from('users').select('is_admin, email').eq('id', req.userId).single();
   const ok = !!(u?.is_admin || u?.email === ADMIN_EMAIL);
+  if (!ok) { res.status(403).json({ error: 'Admin access required' }); return null; }
+  return u;
+}
+
+// Same as requireFullAdmin, plus is_ceo — used only by the routes the CEO dashboard's
+// Approvals section acts on directly (KYC review/approve/reject/image, p2p-migration
+// approve/reject/list). Deliberately a separate helper (not a change to requireFullAdmin
+// itself) so this doesn't widen CEO access to the rest of the admin surface (bans, revenue,
+// user management, etc.) — just the specific single-approver actions listed above.
+async function requireFullAdminOrCeo(req, res) {
+  const { data: u } = await supabaseAdmin.from('users').select('is_admin, is_ceo, email').eq('id', req.userId).single();
+  const ok = !!(u?.is_admin || u?.is_ceo || u?.email === ADMIN_EMAIL);
   if (!ok) { res.status(403).json({ error: 'Admin access required' }); return null; }
   return u;
 }
@@ -9710,7 +9732,7 @@ app.delete('/api/admin/users/:id', verifyToken, async (req, res) => {
 // GET /api/admin/trades/all — all trades with filter/pagination
 app.get('/api/admin/trades/all', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireAdminOrCeo(req, res); if (!admin) return;
     const { status = '', page = 1, limit = 50, search = '' } = req.query;
     let query = supabaseAdmin.from('trades')
       .select('*, buyer:buyer_id(id, username, email), seller:seller_id(id, username, email)', { count: 'exact' })
@@ -9742,7 +9764,7 @@ app.put('/api/admin/trades/:id', verifyToken, async (req, res) => {
 // GET /api/admin/kyc — pending KYC submissions (resilient to missing columns)
 app.get('/api/admin/kyc', verifyToken, async (req, res) => {
   try {
-    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdminOrCeo(req, res); if (!admin) return;
     const { status = 'pending' } = req.query;
 
     let query = supabaseAdmin.from('users')
@@ -9795,7 +9817,7 @@ app.post('/api/admin/backfill-kyc', verifyToken, async (req, res) => {
 // PUT /api/admin/kyc/:userId/approve
 app.put('/api/admin/kyc/:userId/approve', verifyToken, async (req, res) => {
   try {
-    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdminOrCeo(req, res); if (!admin) return;
     const { data: updated, error } = await supabaseAdmin.from('users')
       .update({ kyc_status: 'approved', is_id_verified: true, kyc_approved_at: new Date(), updated_at: new Date() })
       .eq('id', req.params.userId)
@@ -9815,7 +9837,7 @@ app.put('/api/admin/kyc/:userId/approve', verifyToken, async (req, res) => {
 // PUT /api/admin/kyc/:userId/reject
 app.put('/api/admin/kyc/:userId/reject', verifyToken, async (req, res) => {
   try {
-    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdminOrCeo(req, res); if (!admin) return;
     const { reason = 'Documents unclear or invalid' } = req.body;
     const { data: updated, error } = await supabaseAdmin.from('users')
       .update({ kyc_status: 'rejected', is_id_verified: false, kyc_rejection_reason: reason, updated_at: new Date() })
@@ -9834,7 +9856,7 @@ app.put('/api/admin/kyc/:userId/reject', verifyToken, async (req, res) => {
 // GET /api/admin/kyc/:userId/image?type=front|back
 app.get('/api/admin/kyc/:userId/image', verifyToken, async (req, res) => {
   try {
-    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdminOrCeo(req, res); if (!admin) return;
     const { userId } = req.params;
     const { type = 'front' } = req.query;
 
@@ -9905,7 +9927,7 @@ app.get('/api/admin/kyc/:userId/image', verifyToken, async (req, res) => {
 // GET /api/admin/p2p-migration?status=pending|approved|rejected|all
 app.get('/api/admin/p2p-migration', verifyToken, async (req, res) => {
   try {
-    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdminOrCeo(req, res); if (!admin) return;
     const { status = 'pending' } = req.query;
 
     let query = supabaseAdmin.from('p2p_migration_requests')
@@ -9925,7 +9947,7 @@ app.get('/api/admin/p2p-migration', verifyToken, async (req, res) => {
 // PUT /api/admin/p2p-migration/:id/approve
 app.put('/api/admin/p2p-migration/:id/approve', verifyToken, async (req, res) => {
   try {
-    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdminOrCeo(req, res); if (!admin) return;
     const { usernameSeen = null, feedbackCount = null, notes = null } = req.body;
     const { data: updated, error } = await supabaseAdmin.from('p2p_migration_requests')
       .update({
@@ -9975,7 +9997,7 @@ app.put('/api/admin/p2p-migration/:id/approve', verifyToken, async (req, res) =>
 // PUT /api/admin/p2p-migration/:id/reject
 app.put('/api/admin/p2p-migration/:id/reject', verifyToken, async (req, res) => {
   try {
-    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const admin = await requireFullAdminOrCeo(req, res); if (!admin) return;
     const { notes = null } = req.body;
     const { data: updated, error } = await supabaseAdmin.from('p2p_migration_requests')
       .update({
@@ -11827,124 +11849,79 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
       return res.status(409).json({ error: 'Balance changed — please retry the withdrawal' });
     }
 
-    // ── Step 2: Credit fee to company wallet (internal ledger) ───────────
-    // Must succeed before any on-chain funds move: if the fee can't be reliably
-    // recorded, we'd otherwise still broadcast the real send and the fee
-    // portion the user was charged would vanish from every revenue ledger with
-    // no trace. Abort and fully restore the user's balance instead — same as
-    // a broadcast failure below.
-    try {
-      await tronHotWallet.creditFeeToCompany(
-        withdrawalFee,
-        `withdrawal fee (${feeLabel}) from ${req.userId.slice(0, 8)}`
-      );
-    } catch (feeErr) {
-      console.error('[USDT Send] Fee credit failed — aborting before broadcast, restoring balance:', feeErr.message);
-      const { error: restoreErr } = await supabaseAdmin.from('wallets')
-        .update({ balance_usdt: available, updated_at: new Date().toISOString() })
-        .eq('user_id', req.userId);
-      if (restoreErr) {
-        console.error('[USDT Send] CRITICAL: user balance restore failed!', restoreErr.message, 'user:', req.userId, 'amount:', totalDeduct);
-      }
-      return res.status(500).json({
-        error: 'Sorry, we are experiencing a blockchain issue. Please try again later or contact support. This issue is from the blockchain.',
-      });
-    }
-
-    // ── Step 3: Send net amount from hot wallet on-chain ──────────────────
-    let txResult;
-    try {
-      txResult = await tronHotWallet.sendUsdtToExternal(toAddress, sendAmount);
-    } catch (broadcastErr) {
-      // On-chain send failed — fully restore user balance AND reverse fee credit
-      console.error('[USDT Send] Hot wallet broadcast failed — rolling back:', broadcastErr.message);
-
-      const { error: restoreErr } = await supabaseAdmin.from('wallets')
-        .update({ balance_usdt: available, updated_at: new Date().toISOString() })
-        .eq('user_id', req.userId);
-      if (restoreErr) {
-        console.error('[USDT Send] CRITICAL: user balance restore failed!', restoreErr.message, 'user:', req.userId, 'amount:', totalDeduct);
-      }
-
-      const { data: cw, error: cwErr } = await supabaseAdmin
-        .from('wallets').select('balance_usdt').eq('user_id', COMPANY_WALLET_ID).maybeSingle();
-      if (!cwErr) {
-        const { error: feeRestoreErr } = await supabaseAdmin.from('wallets')
-          .update({ balance_usdt: Math.max(0, parseFloat(cw?.balance_usdt || 0) - withdrawalFee), updated_at: new Date().toISOString() })
-          .eq('user_id', COMPANY_WALLET_ID);
-        if (feeRestoreErr) {
-          console.error('[USDT Send] CRITICAL: company fee reverse failed!', feeRestoreErr.message);
-        }
-      }
-
-      // HOT_WALLET_*_INSUFFICIENT carries internal treasury numbers (exact USDT/TRX
-      // balances) for admin logs — never show that to the end user, who should
-      // just see that withdrawals are temporarily down, not why.
-      const isTreasuryError = /^HOT_WALLET_(USDT|TRX)_INSUFFICIENT/.test(broadcastErr.message || '');
-      const userMessage = isTreasuryError
-        ? 'Sorry, we are experiencing a blockchain issue. Please try again later or contact support. This issue is from the blockchain.'
-        : broadcastErr.message;
-
-      return res.status(500).json({ error: userMessage });
-    }
-
-    // ── Step 4: Record withdrawal transaction (user) + fee credit (company) ──
-    // Each leg needs its own unique tx_hash (wallet_transactions has a UNIQUE constraint
-    // on tx_hash) — these two rows previously both used the bare on-chain txid, so whichever
-    // insert lost the race silently vanished (Supabase resolves with {error} rather than
-    // rejecting, so the .catch() below never caught it). In practice this meant the user's
-    // own WITHDRAWAL record was missing from their transaction history nearly every time,
-    // even though the send succeeded — same _OUT/_IN suffixing already used for internal
-    // transfers elsewhere in this file.
-    const txNow = new Date().toISOString();
-    const [withdrawalLog, feeLog] = await Promise.all([
-      supabaseAdmin.from('wallet_transactions').insert({
+    // ── Step 2: Hold for CEO review instead of broadcasting ────────────────
+    // SECURITY FIX: this route used to credit the fee and broadcast on-chain in
+    // the same request as Step 1's deduction — a compromised/scammer-controlled
+    // account could drain USDT instantly with nothing but 2FA + KYC, no human
+    // review at all, unlike the BTC withdrawal path which has always required
+    // CEO sign-off before broadcasting (see hdWalletRoutes.js POST /send).
+    // Funds are already reserved above; nothing is broadcast and no fee is
+    // credited until a CEO-flagged account approves this request.
+    const reviewTs = new Date().toISOString();
+    const { data: pendingRow, error: pendingErr } = await supabaseAdmin
+      .from('wallet_transactions')
+      .insert({
         user_id: req.userId,
         type: 'WITHDRAWAL',
         currency: 'USDT',
+        status: 'PENDING_APPROVAL',
         amount_usdt: sendAmount,
-        status: 'CONFIRMED',
-        tx_hash: `${txResult.txid}_OUT`,
-        notes: `USDT withdrawal to ${toAddress.slice(0, 16)}…${toAddress.slice(-4)} | fee: ${feeLabel}`,
-        created_at: txNow,
-      }),
-      supabaseAdmin.from('wallet_transactions').insert({
-        user_id: COMPANY_WALLET_ID,
-        type: 'FEE',
-        currency: 'USDT',
-        amount_usdt: withdrawalFee,
-        status: 'CONFIRMED',
-        tx_hash: `${txResult.txid}_FEE`,
-        notes: `USDT withdrawal fee (${feeLabel}) from user ${req.userId.slice(0, 8)} — sent ₮${sendAmount.toFixed(2)} to ${toAddress.slice(0, 10)}…`,
-        created_at: txNow,
-      }),
-    ]);
-    if (withdrawalLog.error) console.error('[USDT Send] WITHDRAWAL log error:', withdrawalLog.error.message);
-    if (feeLog.error) console.error('[USDT Send] FEE log error:', feeLog.error.message);
+        platform_fee_usdt: withdrawalFee,
+        destination_address: toAddress,
+        notes: `Awaiting CEO security review. Fee: ${feeLabel}.`,
+        created_at: reviewTs,
+      })
+      .select('id')
+      .single();
 
-    // ── Step 5: Notify user ───────────────────────────────────────────────
+    if (pendingErr || !pendingRow) {
+      // Insert failed — restore the deducted balance so nothing is lost.
+      console.error('[USDT Send] Failed to queue for review — restoring balance:', pendingErr?.message);
+      const { error: restoreErr } = await supabaseAdmin.from('wallets')
+        .update({ balance_usdt: available, updated_at: new Date().toISOString() })
+        .eq('user_id', req.userId);
+      if (restoreErr) {
+        console.error('[USDT Send] CRITICAL: user balance restore failed!', restoreErr.message, 'user:', req.userId, 'amount:', totalDeduct);
+      }
+      return res.status(500).json({ error: 'Could not queue withdrawal for review. Please try again.' });
+    }
+
+    console.log(`[USDT Send] Withdrawal ${pendingRow.id} queued for CEO review — ₮${sendAmount} from ${req.userId.slice(0, 8)} → ${toAddress}`);
+
+    // Notify every CEO-flagged account so review isn't blocked on one person checking
+    const { data: sendUser } = await supabaseAdmin.from('users').select('username').eq('id', req.userId).single();
+    const { data: ceoUsers } = await supabaseAdmin
+      .from('users').select('id, email, username').or(`is_ceo.eq.true,email.eq.${ADMIN_EMAIL}`);
+    for (const ceoU of (ceoUsers || [])) {
+      supabaseAdmin.from('notifications').insert({
+        user_id: ceoU.id, type: 'ceo_approval',
+        title: '🔒 USDT Withdrawal Awaiting Approval',
+        message: `${sendUser?.username || req.userId.slice(0, 8)} wants to send ₮${sendAmount.toFixed(2)} to ${toAddress.slice(0, 10)}… — review in CEO Approvals.`,
+        action: '/ceo', is_read: false, created_at: reviewTs,
+      }).then(null, () => { });
+    }
+
     await supabaseAdmin.from('notifications').insert({
       user_id: req.userId,
       type: 'wallet',
-      title: '💸 USDT Sent!',
-      message: `₮${sendAmount.toFixed(2)} USDT sent to ${toAddress.slice(0, 8)}…${toAddress.slice(-4)} | fee: ${feeLabel}`,
+      title: '⏳ USDT Withdrawal Submitted',
+      message: `₮${sendAmount.toFixed(2)} USDT to ${toAddress.slice(0, 8)}…${toAddress.slice(-4)} is under security review — you'll be notified once it's approved and sent.`,
       action: '/wallet',
       is_read: false,
-      created_at: new Date().toISOString(),
+      created_at: reviewTs,
     }).then(null, () => { });
-
-    console.log(`[USDT Send] ₮${sendAmount} → ${toAddress} | fee ${feeLabel} | user: ${req.userId.slice(0, 8)} | txid: ${txResult.txid}`);
 
     res.json({
       success: true,
-      txid: txResult.txid,
+      pending: true,
+      requestId: pendingRow.id,
       amount_sent: sendAmount,
       fee: withdrawalFee,
       fee_label: feeLabel,
       total_deducted: totalDeduct,
       to: toAddress,
       new_balance: newBalance,
-      explorer: txResult.explorer_url,
+      message: `Withdrawal submitted for security review. ₮${sendAmount.toFixed(2)} will be sent to ${toAddress} once approved.`,
     });
 
   } catch (error) {
