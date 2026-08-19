@@ -274,8 +274,8 @@ function WithdrawalApprovals() {
   const [busyId, setBusyId]   = useState(null);
   const [loadErr, setLoadErr] = useState('');
 
-  const load = useCallback(async (status) => {
-    setLoading(true);
+  const load = useCallback(async (status, silent = false) => {
+    if (!silent) setLoading(true);
     setLoadErr('');
     try {
       const r = await axios.get(`${API_URL}/hd-wallet/ceo-withdrawals`, { params: { status: status || tab }, headers: authH() });
@@ -283,12 +283,21 @@ function WithdrawalApprovals() {
     } catch (e) {
       const msg = e.response?.data?.error || 'Failed to load withdrawal requests';
       setLoadErr(msg);
-      toast.error(msg);
+      if (!silent) toast.error(msg);
     }
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   }, [tab]);
 
   useEffect(() => { load(tab); }, [tab, load]);
+
+  // Poll the Awaiting Review tab so a new request shows up without a manual refresh — this
+  // list (not a cross-app notification popup) is now the one place a pending approval is
+  // surfaced, so it needs to actually update on its own while the page is open.
+  useEffect(() => {
+    if (tab !== 'PENDING_APPROVAL') return;
+    const iv = setInterval(() => load(tab, true), 20000);
+    return () => clearInterval(iv);
+  }, [tab, load]);
 
   const approve = async (id, force = false) => {
     setBusyId(id);
@@ -1009,16 +1018,24 @@ export default function CeoDashboard({ user: appUser }) {
     finally { setLoadingT(false); }
   }, []);
 
-  const loadPulse = useCallback(async () => {
-    setLoadingP(true);
+  const loadPulse = useCallback(async (silent = false) => {
+    if (!silent) setLoadingP(true);
     try {
       const r = await axios.get(`${API_URL}/hd-wallet/ceo/pulse`, { headers: authH() });
       setPulse(r.data);
-    } catch (e) { toast.error(e.response?.data?.error || 'Failed to load company pulse'); }
-    finally { setLoadingP(false); }
+    } catch (e) { if (!silent) toast.error(e.response?.data?.error || 'Failed to load company pulse'); }
+    finally { if (!silent) setLoadingP(false); }
   }, []);
 
   useEffect(() => { if (ceoUser) { loadTreasury(); loadPulse(); } }, [ceoUser, loadTreasury, loadPulse]);
+
+  // Keeps the Approvals badges (pending KYC/disputes/migration counts) current without a
+  // manual refresh — same reasoning as the withdrawal-list polling below.
+  useEffect(() => {
+    if (!ceoUser) return;
+    const iv = setInterval(() => loadPulse(true), 30000);
+    return () => clearInterval(iv);
+  }, [ceoUser, loadPulse]);
 
   if (!ceoUser) return <CeoLogin onAuth={setCeoUser} />;
 

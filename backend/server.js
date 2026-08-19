@@ -11888,18 +11888,17 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
 
     console.log(`[USDT Send] Withdrawal ${pendingRow.id} queued for CEO review — ₮${sendAmount} from ${req.userId.slice(0, 8)} → ${toAddress}`);
 
-    // Notify every CEO-flagged account so review isn't blocked on one person checking
-    const { data: sendUser } = await supabaseAdmin.from('users').select('username').eq('id', req.userId).single();
-    const { data: ceoUsers } = await supabaseAdmin
-      .from('users').select('id, email, username').or(`is_ceo.eq.true,email.eq.${ADMIN_EMAIL}`);
-    for (const ceoU of (ceoUsers || [])) {
-      supabaseAdmin.from('notifications').insert({
-        user_id: ceoU.id, type: 'ceo_approval',
-        title: '🔒 USDT Withdrawal Awaiting Approval',
-        message: `${sendUser?.username || req.userId.slice(0, 8)} wants to send ₮${sendAmount.toFixed(2)} to ${toAddress.slice(0, 10)}… — review in PRAQEN Approvals.`,
-        action: '/ceo', is_read: false, created_at: reviewTs,
-      }).then(null, () => { });
-    }
+    // Deliberately NOT an in-app `notifications` row — see the identical comment on the
+    // BTC /send handler in hdWalletRoutes.js for why: that table surfaces via the shared
+    // Navbar bell on every page in the main app shell (including /admin), but the CEO page
+    // is standalone with no bell, so it would show up everywhere except the one place it
+    // matters. The CEO page's own "Awaiting Review" list (live via /ceo/pulse) is the single
+    // place this should be visible.
+    //
+    // Note: unlike the BTC path, there's no email sent here either (no USDT-specific
+    // template exists yet — see the approve/reject handlers' same scope note). That means a
+    // pending USDT withdrawal currently has zero proactive alerting to the CEO — only what
+    // shows on /ceo when checked. Flagging this rather than silently leaving a gap.
 
     await supabaseAdmin.from('notifications').insert({
       user_id: req.userId,

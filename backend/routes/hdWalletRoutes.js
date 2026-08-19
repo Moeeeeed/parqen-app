@@ -684,7 +684,13 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
 
     console.log(`[hdWalletRoutes] Withdrawal ${pendingRow.id} queued for CEO review — ₿${amountUserReceives} from ${userId.slice(0,8)} → ${toAddress}`);
 
-    // Notify every CEO-flagged account so review isn't blocked on one person checking
+    // Notify every CEO-flagged account by email so review isn't blocked on one person
+    // checking. Deliberately NOT an in-app `notifications` row: that table is tied to the
+    // account and surfaces via the shared Navbar bell on every page inside the main app
+    // shell (including /admin) — the CEO page is intentionally standalone with no bell, so
+    // a notifications-table entry would show the alert everywhere except the one place it's
+    // supposed to matter. The CEO page's own "Awaiting Review" list (live via /ceo/pulse)
+    // is the single place this should be visible.
     const { data: ceoUsers } = await supabaseAdmin
       .from('users').select('id, email, username').or(`is_ceo.eq.true,email.eq.${ADMIN_EMAIL}`);
     for (const ceoU of (ceoUsers || [])) {
@@ -694,12 +700,6 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
           fromUser: sendUser, fromUserId: userId,
         }).catch(() => {});
       }
-      supabaseAdmin.from('notifications').insert({
-        user_id: ceoU.id, type: 'ceo_approval',
-        title: '🔒 Withdrawal Awaiting Approval',
-        message: `${sendUser?.username || userId.slice(0,8)} wants to send ₿${amountUserReceives.toFixed(8)} to ${toAddress.slice(0,10)}… — review in PRAQEN Approvals.`,
-        action: '/admin', is_read: false, created_at: reviewTs,
-      }).then(null, () => {});
     }
 
     if (sendUser?.email) {
