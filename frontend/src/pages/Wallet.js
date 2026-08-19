@@ -95,12 +95,36 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
     const usd = Math.round(btc * price * 100) / 100;
     return calcFeeByUsd(usd);
   };
-  const { feeUsd, feeBtc: fee, label: feeLabel } = inputMode === 'usd'
+  const { feeUsd, feeBtc: fee } = inputMode === 'usd'
     ? calcFeeByUsd(parseFloat(usdAmount || 0))
     : calcFee(btcAmt);
   const total     = btcAmt + fee;
   const totalUsd  = total * price;
   const hasEnough = total <= parseFloat(balance || 0);
+
+  // Max button: our fee comes out of the balance, not on top of it — find the largest send
+  // amount whose send+fee still fits what's actually in the wallet, so clicking Max never
+  // trips the insufficient-balance check below.
+  const calcMaxSend = () => {
+    const bal = parseFloat(balance || 0);
+    if (bal <= 0) return 0;
+    let lo = 0, hi = bal;
+    for (let i = 0; i < 60; i++) {
+      const mid = (lo + hi) / 2;
+      const { feeBtc: midFee } = calcFee(mid);
+      if (mid + midFee <= bal) lo = mid; else hi = mid;
+    }
+    let result = Math.floor(lo * 1e8) / 1e8;
+    while (result > 0) {
+      const { feeBtc: rFee } = calcFee(result);
+      if (result + rFee <= bal) break;
+      result = Math.floor((result * 1e8 - 1)) / 1e8;
+    }
+    // Below the smallest fee tier, calcFee briefly rounds to $0 as the send amount approaches
+    // zero — that's not a real fee-free send, it's balance too small to cover any real fee.
+    if (result > 0 && calcFee(result).feeUsd <= 0) return 0;
+    return result > 0 ? result : 0;
+  };
 
   const isMainnetAddr = (addr) => {
     if (!addr || addr.length < 26) return false;
@@ -328,7 +352,7 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
                         border: `2px solid ${!amount ? C.g200 : hasEnough ? '#10b981' : '#ef4444'}`,
                         backgroundColor: !amount ? '#fafafa' : hasEnough ? '#f0fdf4' : '#fff5f5',
                       }} />
-                    <button onClick={() => setAmount((parseFloat(balance || 0) * 0.999).toFixed(8))}
+                    <button onClick={() => setAmount(calcMaxSend().toFixed(8))}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black px-2.5 py-1 rounded-xl transition"
                       style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', boxShadow: '0 2px 8px rgba(16,185,129,0.3)' }}>
                       MAX
@@ -371,7 +395,7 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
               <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #e2e8f0' }}>
                 {[
                   { label: 'You send',                             btc: btcAmt, usd: btcAmt * price, icon: '→' },
-                  { label: `Blockchain fee (${feeLabel || '—'})`,  btc: fee,    usd: feeUsd,         icon: <Link2 size={11} /> },
+                  { label: 'Blockchain fee',                       btc: fee,    usd: feeUsd,         icon: <Link2 size={11} /> },
                   { label: 'Total deducted',                       btc: total,  usd: totalUsd,        bold: true },
                 ].map(({ label, btc, usd, bold, icon }, i, arr) => (
                   <div key={label}
