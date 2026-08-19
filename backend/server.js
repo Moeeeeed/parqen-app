@@ -11208,36 +11208,10 @@ app.post('/api/wallet/check-payment', verifyToken, async (req, res) => {
   }
 });
 
+// RETIRED: deducted balance and marked the withdrawal PENDING without 2FA, KYC, or
+// CEO approval — unlike every other external send path. Use /api/hd-wallet/send.
 app.post('/api/wallet/withdraw', verifyToken, authLimiter, requireEmailVerified, async (req, res) => {
-  try {
-    const { address, amountBtc } = req.body;
-    if (!address || !amountBtc || amountBtc <= 0) return res.status(400).json({ error: 'Invalid withdrawal request' });
-
-    // Level 2: Email + phone required to withdraw
-    const { data: withdrawUser } = await supabaseAdmin
-      .from('users').select('is_email_verified, is_phone_verified')
-      .eq('id', req.userId).single();
-    if (!withdrawUser?.is_email_verified || !withdrawUser?.is_phone_verified) {
-      return res.status(403).json({
-        error: 'Please verify your email and phone to withdraw Bitcoin.',
-        requireVerification: 'both'
-      });
-    }
-    // wallets = source of truth (matches escrow/trading/display everywhere else)
-    const { data: bal } = await supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', req.userId).single();
-    const current = parseFloat(bal?.balance_btc || 0);
-    const amount = parseFloat(amountBtc);
-    if (current < amount) return res.status(400).json({ error: `Insufficient balance. You have ${current.toFixed(8)} BTC` });
-    const newBal = parseFloat((current - amount).toFixed(8));
-    // wallets first (source of truth), then keep secondary tables in sync
-    await supabaseAdmin.from('wallets').update({ balance_btc: newBal, updated_at: new Date().toISOString() }).eq('user_id', req.userId);
-    await supabaseAdmin.from('user_balances').update({ balance_btc: newBal, updated_at: new Date().toISOString() }).eq('user_id', req.userId);
-    await supabaseAdmin.from('user_wallets').update({ balance_btc: newBal, updated_at: new Date().toISOString() }).eq('user_id', req.userId);
-    await supabaseAdmin.from('wallet_transactions').insert({ user_id: req.userId, type: 'WITHDRAWAL', amount_btc: amount, status: 'PENDING', destination_address: address, created_at: new Date() }).maybeSingle();
-    res.json({ success: true, message: `Withdrawal of ${amount} BTC to ${address} is pending processing.`, new_balance: newBal, note: 'Withdrawals are processed manually within 24 hours. Contact hello@praqen.com for urgent requests.' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+  res.status(410).json({ error: 'This endpoint has been retired. Use /api/hd-wallet/send.' });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -11754,7 +11728,7 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
     });
   }
   const FEE_FLAT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_FLAT || '5.0');  // flat floor
-  const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.05'); // 5% once it exceeds the floor
+  const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.03'); // 3% once it exceeds the floor
   const MIN_SEND = parseFloat(process.env.USDT_MIN_SEND || '5.0');  // minimum $5
 
   // ── Fee calculator: flat floor, percentage above it — no cliff ────────────

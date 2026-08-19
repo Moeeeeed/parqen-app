@@ -25,7 +25,7 @@ export const TRUST_MAP = {
   PRO:      { label: 'PRO',      level: 4, Icon: Briefcase,  color: '#8B5CF6', solidColor: '#8B5CF6', bg: 'linear-gradient(135deg,#EDE9FE,#DDD6FE)', textColor: '#5B21B6', borderColor: '#8B5CF6', glow: 'rgba(139,92,246,0.4)' },
   TRADER:   { label: 'TRADER',   level: 3, Icon: TrendingUp, color: '#3B82F6', solidColor: '#3B82F6', bg: 'linear-gradient(135deg,#DBEAFE,#BFDBFE)', textColor: '#1E40AF', borderColor: '#3B82F6', glow: 'rgba(59,130,246,0.4)' },
   STAR:     { label: 'STAR',     level: 2, Icon: Star,       color: '#F59E0B', solidColor: '#F59E0B', bg: 'linear-gradient(135deg,#FEF3C7,#FDE68A)', textColor: '#92400E', borderColor: '#F59E0B', glow: 'rgba(245,158,11,0.4)' },
-  BEGINNER: { label: 'BEGINNER', level: 1, Icon: Shield,     color: '#22C55E', solidColor: '#22C55E', bg: 'linear-gradient(135deg,#DCFCE7,#BBF7D0)', textColor: '#166534', borderColor: '#22C55E', glow: 'rgba(34,197,94,0.4)' },
+  BEGINNER: { label: 'MEMBER', level: 1, Icon: Shield,     color: '#22C55E', solidColor: '#22C55E', bg: 'linear-gradient(135deg,#DCFCE7,#BBF7D0)', textColor: '#166534', borderColor: '#22C55E', glow: 'rgba(34,197,94,0.4)' },
 };
 
 export const BADGE_COLORS = Object.fromEntries(

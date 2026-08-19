@@ -739,73 +739,6 @@ function AffiliateSection({ user, profile, earnings, referralData, btcPrice, onW
   );
 }
 
-// ─── Withdraw Modal ────────────────────────────────────────────────────────────
-function WithdrawModal({ balance, onClose, onSuccess }) {
-  const [address, setAddress] = useState('');
-  const [amount, setAmount]   = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const submit = async () => {
-    if (!address.trim()) { toast.error('Enter a Bitcoin address'); return; }
-    if (!amount || parseFloat(amount) <= 0) { toast.error('Enter a valid amount'); return; }
-    if (parseFloat(amount) > balance) { toast.error('Insufficient balance'); return; }
-    setLoading(true);
-    try {
-      await axios.post(`${API_URL}/wallet/withdraw`, { address, amount }, { headers:authH() });
-      toast.success('Withdrawal request submitted!');
-      onSuccess();
-    } catch (e) { toast.error(e.response?.data?.error||'Withdrawal failed'); }
-    finally { setLoading(false); }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-4"
-      style={{backgroundColor:'rgba(0,0,0,0.6)', backdropFilter:'blur(4px)'}}>
-      <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
-        <div className="px-5 py-4 border-b flex items-center justify-between" style={{borderColor:C.g100}}>
-          <div className="flex items-center gap-2">
-            <Bitcoin size={15} style={{color:C.gold}}/>
-            <h3 className="font-black text-sm" style={{color:C.forest}}>Withdraw Bitcoin</h3>
-          </div>
-          <button onClick={onClose} className="w-7 h-7 rounded-xl flex items-center justify-center hover:bg-gray-100"
-            style={{color:C.g500}}><X size={14}/></button>
-        </div>
-        <div className="p-5 space-y-3">
-          <div>
-            <label className="text-xs font-bold mb-1.5 block" style={{color:C.g700}}>Bitcoin Address</label>
-            <input value={address} onChange={e=>setAddress(e.target.value)}
-              placeholder="bc1q..."
-              className="w-full px-3 py-2.5 text-xs border-2 rounded-xl font-mono focus:outline-none"
-              style={{borderColor:address?C.green:C.g200}}/>
-          </div>
-          <div>
-            <label className="text-xs font-bold mb-1.5 block" style={{color:C.g700}}>Amount (BTC)</label>
-            <div className="relative">
-              <input value={amount} onChange={e=>setAmount(e.target.value)} type="number" step="0.00000001"
-                placeholder="0.00000000"
-                className="w-full pl-3 pr-24 py-2.5 text-xs border-2 rounded-xl focus:outline-none"
-                style={{borderColor:amount?C.green:C.g200}}/>
-              <button onClick={()=>setAmount(balance.toFixed(8))}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold px-2 py-1 rounded-lg"
-                style={{backgroundColor:`${C.green}15`, color:C.green}}>MAX</button>
-            </div>
-            <p className="text-xs mt-1" style={{color:C.g400}}>Available: {fmtBtc(balance)} BTC</p>
-          </div>
-          <div className="flex items-start gap-2 p-2.5 rounded-xl" style={{backgroundColor:'#FEF9C3'}}>
-            <AlertCircle size={12} style={{color:C.warn, flexShrink:0, marginTop:1}}/>
-            <p className="text-xs" style={{color:'#854D0E'}}>Double-check the address. Withdrawals are irreversible.</p>
-          </div>
-          <button onClick={submit} disabled={loading}
-            className="w-full py-3 rounded-xl font-black text-sm text-white flex items-center justify-center gap-2 hover:opacity-90 transition disabled:opacity-50"
-            style={{backgroundColor:C.green}}>
-            {loading ? <><RefreshCw size={14} className="animate-spin"/>Processing…</> : <>Withdraw <Send size={14}/></>}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard({ user }) {
   const navigate = useNavigate();
@@ -826,7 +759,6 @@ export default function Dashboard({ user }) {
   const [btcPrice, setBtcPrice]           = useState(0);
   const [walletBalance, setWalletBalance] = useState(0);
   const [showBalance, setShowBalance]     = useState(true);
-  const [showWithdraw, setShowWithdraw]   = useState(false);
   const [loading, setLoading]             = useState(true);
   const [loadError, setLoadError]         = useState(false);
   const VALID_TABS = ['overview','trades','wallet','affiliate','profile'];
@@ -1276,7 +1208,7 @@ export default function Dashboard({ user }) {
                       {label:'Create Offer', icon:PlusCircle, color:C.green,   route:'/create-offer'},
                       {label:'My Trades',    icon:Activity,   color:C.paid,    action:()=>setActiveTab('trades')},
                       {label:'My Offers',    icon:Gift,       color:C.purple,  route:'/my-listings'},
-                      {label:'Withdraw',     icon:Send,       color:C.danger,  action:()=>setShowWithdraw(true)},
+                      {label:'Withdraw',     icon:Send,       color:C.danger,  route:'/wallet'},
                     ].map(({label,icon:Icon,color,route,action})=>(
                       <button key={label} onClick={action||(()=>navigate(route))}
                         className="flex items-center gap-2.5 p-3 rounded-xl border hover:shadow-sm transition text-left"
@@ -1544,7 +1476,7 @@ export default function Dashboard({ user }) {
                 </div>
               </div>
               <div className="flex gap-3">
-                <button onClick={()=>setShowWithdraw(true)}
+                <button onClick={()=>navigate('/wallet')}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm hover:opacity-90 transition"
                   style={{backgroundColor:C.gold, color:C.forest}}>
                   <Send size={14}/> Withdraw
@@ -1679,14 +1611,6 @@ export default function Dashboard({ user }) {
         </div>
       </footer>
 
-      {/* Withdraw modal */}
-      {showWithdraw && (
-        <WithdrawModal
-          balance={walletBalance}
-          onClose={()=>setShowWithdraw(false)}
-          onSuccess={()=>{ setShowWithdraw(false); loadDashboardData(true); }}
-        />
-      )}
     </div>
   );
 }

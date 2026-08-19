@@ -480,9 +480,8 @@ function ProfilePopup({user, label, trade, onClose}) {
       style={{backgroundColor:'rgba(0,0,0,0.6)', backdropFilter:'blur(6px)'}}
       onClick={e => e.target === e.currentTarget && onClose()}>
 
-      <div className="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col"
+      <div className="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[92dvh] sm:max-h-[85vh]"
         style={{
-          maxHeight:'92dvh',
           border:`1px solid ${C.g200}`,
           animation:'slideUp .28s cubic-bezier(0.34,1.56,0.64,1)',
         }}>

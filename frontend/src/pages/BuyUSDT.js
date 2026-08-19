@@ -635,10 +635,8 @@ function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
       style={{backgroundColor:'rgba(0,0,0,0.6)', backdropFilter:'blur(6px)'}}
       onClick={e => e.target === e.currentTarget && onClose()}>
 
-      <div className="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col sm:mb-0"
+      <div className="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[92dvh] sm:max-h-[85vh] mb-[calc(60px_+_env(safe-area-inset-bottom,_0px))] sm:mb-0"
         style={{
-          maxHeight:'92dvh',
-          marginBottom:'calc(60px + env(safe-area-inset-bottom, 0px))',
           border:`1px solid ${C.g200}`,
           animation:'slideUp .28s cubic-bezier(0.34,1.56,0.64,1)',
         }}>
@@ -1951,7 +1949,7 @@ export default function BuyUSDT({user}) {
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:'flex',alignItems:'center',gap:4}}>
                         <span style={{fontSize:10,fontWeight:800,color:C.g800,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:80}}>{u.username}</span>
-                        <span style={{fontSize:7,fontWeight:900,color:bc,background:`${bc}12`,border:`1px solid ${bc}25`,borderRadius:3,padding:'1px 4px',letterSpacing:0.4,flexShrink:0,textTransform:'uppercase'}}>{u.badge||'BEGINNER'}</span>
+                        <BadgeChip user={u} badgeName={u.badge} size="xs" />
                       </div>
                       <span style={{fontSize:8,color:C.g400,fontWeight:500}}>{u.referrals} referral{u.referrals !== 1 ? 's' : ''} · {u.affiliate_trades} ref trade{u.affiliate_trades !== 1 ? 's' : ''}</span>
                     </div>

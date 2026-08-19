@@ -75,8 +75,7 @@ function EditModal({ listing, onClose, onSave, saving, walletBtc, btcPrice }) {
     <div className="fixed inset-0 flex items-end md:items-center justify-center p-0 md:p-4"
       style={{backgroundColor:'rgba(0,0,0,0.6)',backdropFilter:'blur(6px)',zIndex:1100}}>
       {/* flex-col + max-h ensures the footer is ALWAYS on screen, never cut off by the navbar */}
-      <div className="bg-white w-full md:max-w-lg rounded-t-3xl md:rounded-3xl shadow-2xl flex flex-col"
-        style={{maxHeight:'92dvh'}}>
+      <div className="bg-white w-full md:max-w-lg rounded-t-3xl md:rounded-3xl shadow-2xl flex flex-col max-h-[92dvh] md:max-h-[85vh]">
 
         {/* Header — fixed height, never scrolls */}
         <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0" style={{borderColor:C.g100}}>
