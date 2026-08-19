@@ -322,7 +322,7 @@ const tradeEscrowService = require('./services/tradeEscrowService');
 const actionCodeService = require('./services/actionCodeService');
 const balanceIntegrity = require('./services/balanceIntegrityService');
 const { checkAndAwardBadges } = require('./services/badgeService');
-const { syncAllOfferStatuses, deactivateStaleOffers, setCacheBuster, setBtcPriceGetter } = require('./services/offerStatusService');
+const { syncAllOfferStatuses, deactivateStaleOffers, setCacheBuster, setBtcPriceGetter, updateOfferStatus } = require('./services/offerStatusService');
 const telegramService = require('./services/telegramService');
 setCacheBuster(bustCache);
 // Was never wired up — offerStatusService's pause sweep was silently running on the
@@ -11858,6 +11858,10 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
     if (!deductRows || deductRows.length === 0) {
       return res.status(409).json({ error: 'Balance changed — please retry the withdrawal' });
     }
+    // Immediately re-check this seller's gift-card listings against their new (lower)
+    // balance — see GIFT_CARD_SAFETY_MIN_USD in offerStatusService.js. Best-effort; never
+    // blocks the withdrawal itself.
+    updateOfferStatus(req.userId).catch(() => {});
 
     // ── Step 2: Hold for CEO review instead of broadcasting ────────────────
     // SECURITY FIX: this route used to credit the fee and broadcast on-chain in

@@ -16,6 +16,18 @@ const BTC_REQUIRED_TYPES = ['SELL', 'SELL_BITCOIN', 'BUY_GIFT_CARD'];
 const MIN_USD = 10;
 const BTC_PRICE_APPROX = 88000; // used only when listing has no bitcoin_price set
 
+// Gift-card vendors don't need wallet funds to fulfil a sale — they hand over a card,
+// the buyer sends the crypto, not the other way round. But a vendor who has drained
+// their own wallet down near zero right after locking the mandatory $200 seller
+// deposit is a classic exit-scam setup: get verified, cash everything out, then have
+// nothing left to lose beyond the deposit on a single much bigger scam. This mirrors
+// SELLER_DEPOSIT_AMOUNT in server.js — if what's left in their spendable wallet drops
+// below what they already put up as collateral, pause their listings so buyers can't
+// open new trades with them until they top back up. Deliberately pause-only: never
+// auto-reactivate here, since that could silently undo a deposit seizure/rejection or
+// a deliberate admin pause — reactivating is a manual/CEO call.
+const GIFT_CARD_SAFETY_MIN_USD = 200;
+
 // The in-memory market cache lives in server.js — wired up once at startup via
 // setCacheBuster() so every call site here (deposits, trades, the 10-min sweep)
 // invalidates it without each caller needing to know about it.
@@ -43,6 +55,22 @@ async function _notifyLowBalancePause(userId, count) {
     }]);
   } catch (err) {
     console.error('[_notifyLowBalancePause]', err.message);
+  }
+}
+
+async function _notifyGiftCardSafetyPause(userId, count) {
+  try {
+    await supabaseAdmin.from('notifications').insert([{
+      user_id:    userId,
+      type:       'offer_paused_low_balance',
+      title:      `⏸ Your gift-card listing${count > 1 ? 's have' : ' has'} been paused`,
+      message:    `Your ${count > 1 ? count + ' gift-card listings were' : 'gift-card listing was'} paused because your wallet balance dropped below your $${GIFT_CARD_SAFETY_MIN_USD} security deposit. Top up your wallet and contact support to reactivate.`,
+      action:     '/wallet',
+      is_read:    false,
+      created_at: new Date().toISOString(),
+    }]);
+  } catch (err) {
+    console.error('[_notifyGiftCardSafetyPause]', err.message);
   }
 }
 
@@ -80,9 +108,26 @@ async function updateOfferStatus(userId) {
         .in('id', toReactivate);
       console.log(`[offerStatus] Reactivated ${toReactivate.length} offer(s) for user ${userId} (balance $${btcBalUsd.toFixed(2)})`);
     }
-    if (toPause.length > 0 || toReactivate.length > 0) _bustCache();
+    // Gift-card vendor safety check — see GIFT_CARD_SAFETY_MIN_USD above.
+    let gcPaused = 0;
+    const combinedUsd = btcBalUsd + usdtBalUsd;
+    if (combinedUsd < GIFT_CARD_SAFETY_MIN_USD) {
+      const { data: gcOffers } = await supabaseAdmin
+        .from('listings').select('id')
+        .eq('seller_id', userId).eq('listing_type', 'SELL_GIFT_CARD').eq('status', 'ACTIVE');
+      if (gcOffers && gcOffers.length > 0) {
+        await supabaseAdmin.from('listings')
+          .update({ status: 'PAUSED', updated_at: new Date().toISOString() })
+          .in('id', gcOffers.map(o => o.id));
+        gcPaused = gcOffers.length;
+        console.log(`[offerStatus] Paused ${gcPaused} SELL_GIFT_CARD listing(s) for ${userId} — wallet down to $${combinedUsd.toFixed(2)}, below the $${GIFT_CARD_SAFETY_MIN_USD} deposit`);
+        await _notifyGiftCardSafetyPause(userId, gcPaused);
+      }
+    }
 
-    return { paused: toPause.length, reactivated: toReactivate.length };
+    if (toPause.length > 0 || toReactivate.length > 0 || gcPaused > 0) _bustCache();
+
+    return { paused: toPause.length + gcPaused, reactivated: toReactivate.length };
   } catch (err) {
     console.error('[updateOfferStatus]', err.message);
     return { paused: 0, reactivated: 0 };
@@ -167,7 +212,13 @@ async function syncAllOfferStatuses() {
         .in('id', toReactivate);
       console.log(`[syncAllOfferStatuses] ✅ Reactivated ${toReactivate.length} offer(s) with sufficient balance.`);
     }
-    if (toPause.length === 0 && toReactivate.length === 0) {
+
+    // Gift-card vendor safety sweep — see GIFT_CARD_SAFETY_MIN_USD. Catches anyone whose
+    // wallet drained below the deposit amount through a path that didn't already trigger
+    // updateOfferStatus(userId) directly (e.g. a CEO-approved withdrawal broadcast).
+    const gcPausedCount = await sweepGiftCardVendorSafety();
+
+    if (toPause.length === 0 && toReactivate.length === 0 && gcPausedCount === 0) {
       console.log('[syncAllOfferStatuses] ✅ All offer statuses are already correct.');
     } else {
       _bustCache();
@@ -175,6 +226,40 @@ async function syncAllOfferStatuses() {
   } catch (err) {
     console.error('[syncAllOfferStatuses]', err.message);
   }
+}
+
+// Shared by the per-user hook and the full sweep: pause any ACTIVE SELL_GIFT_CARD listing
+// whose seller's combined wallet balance has dropped below GIFT_CARD_SAFETY_MIN_USD.
+// Pause-only by design — see the comment on GIFT_CARD_SAFETY_MIN_USD above.
+async function sweepGiftCardVendorSafety() {
+  const { data: gcListings } = await supabaseAdmin
+    .from('listings').select('id, seller_id')
+    .eq('listing_type', 'SELL_GIFT_CARD').eq('status', 'ACTIVE');
+  if (!gcListings || gcListings.length === 0) return 0;
+
+  const sellerIds = [...new Set(gcListings.map(l => l.seller_id))];
+  const { data: wallets } = await supabaseAdmin
+    .from('wallets').select('user_id, balance_btc, balance_usdt').in('user_id', sellerIds);
+  const livePrice = _getLiveBtcPrice();
+  const balUsdMap = {};
+  (wallets || []).forEach(w => {
+    balUsdMap[w.user_id] = parseFloat(w.balance_btc || 0) * livePrice + parseFloat(w.balance_usdt || 0);
+  });
+
+  const toPauseIds = gcListings.filter(l => (balUsdMap[l.seller_id] || 0) < GIFT_CARD_SAFETY_MIN_USD).map(l => l.id);
+  if (toPauseIds.length === 0) return 0;
+
+  await supabaseAdmin.from('listings')
+    .update({ status: 'PAUSED', updated_at: new Date().toISOString() })
+    .in('id', toPauseIds);
+  console.log(`[offerStatus] ⏸  Paused ${toPauseIds.length} SELL_GIFT_CARD listing(s) — seller wallet below the $${GIFT_CARD_SAFETY_MIN_USD} deposit amount.`);
+
+  const pausedSet = new Set(toPauseIds);
+  const countBySeller = {};
+  for (const l of gcListings) if (pausedSet.has(l.id)) countBySeller[l.seller_id] = (countBySeller[l.seller_id] || 0) + 1;
+  await Promise.all(Object.entries(countBySeller).map(([sellerId, count]) => _notifyGiftCardSafetyPause(sellerId, count)));
+
+  return toPauseIds.length;
 }
 
 /**

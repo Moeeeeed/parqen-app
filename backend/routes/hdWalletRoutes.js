@@ -657,6 +657,10 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
       supabaseAdmin.from('user_balances').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
       supabaseAdmin.from('user_wallets').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
     ]);
+    // Immediately re-check this seller's gift-card listings against their new (lower)
+    // balance — see GIFT_CARD_SAFETY_MIN_USD in offerStatusService.js. Best-effort; never
+    // blocks the withdrawal itself.
+    updateOfferStatus(userId).catch(() => {});
 
     // ── CEO SECURITY REVIEW — funds are already reserved above; nothing is ──
     // broadcast on-chain until a CEO-flagged account approves this request.
