@@ -138,7 +138,7 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
         toast.info('Since you still want to send, you can proceed. Once sent, PRAQEN is not responsible for any loss.', { autoClose: 7000 });
       }
       const r = await onSend(address.trim(), btcAmt, codeInput, riskyAttempt);
-      toast.success(r?.data?.message || 'Withdrawal submitted for security review.', { autoClose: 8000 });
+      toast.success(r?.data?.message || 'Withdrawal submitted — pending 1st confirmation.', { autoClose: 8000 });
       onClose();
     } catch (e) {
       const msg = e?.response?.data?.error || '';
@@ -1037,7 +1037,7 @@ function TxRow({ tx, onClick, btcPrice }) {
                 className="text-[10px] font-black px-1.5 py-0.5 rounded-full flex-shrink-0"
                 style={{ backgroundColor: `${C.warn}20`, color: C.warn }}
               >
-                {tx.status === 'PENDING_APPROVAL' ? 'UNDER REVIEW' : 'PENDING'}
+                {tx.status === 'PENDING_APPROVAL' ? 'PENDING 1ST CONFIRMATION' : 'PENDING'}
               </span>
             )}
           </div>

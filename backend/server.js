@@ -11879,7 +11879,7 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
         amount_usdt: sendAmount,
         platform_fee_usdt: withdrawalFee,
         destination_address: toAddress,
-        notes: `Awaiting PRAQEN security review. Fee: ${feeLabel}.`,
+        notes: `Funds sending — pending 1st confirmation. Fee: ${feeLabel}.`,
         created_at: reviewTs,
       })
       .select('id')
@@ -11915,7 +11915,7 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
       user_id: req.userId,
       type: 'wallet',
       title: '⏳ USDT Withdrawal Submitted',
-      message: `₮${sendAmount.toFixed(2)} USDT to ${toAddress.slice(0, 8)}…${toAddress.slice(-4)} is under security review — you'll be notified once it's approved and sent.`,
+      message: `₮${sendAmount.toFixed(2)} USDT to ${toAddress.slice(0, 8)}…${toAddress.slice(-4)} is pending 1st confirmation — you'll be notified once it's confirmed and sent.`,
       action: '/wallet',
       is_read: false,
       created_at: reviewTs,
@@ -11931,7 +11931,7 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
       total_deducted: totalDeduct,
       to: toAddress,
       new_balance: newBalance,
-      message: `Withdrawal submitted for security review. ₮${sendAmount.toFixed(2)} will be sent to ${toAddress} once approved.`,
+      message: `Withdrawal submitted — pending 1st confirmation. ₮${sendAmount.toFixed(2)} will be sent to ${toAddress} once confirmed — you'll get a notification once it's sent.`,
     });
 
   } catch (error) {

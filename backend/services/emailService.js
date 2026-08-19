@@ -435,7 +435,10 @@ function txReceiptHtml(name, tx) {
   const statusColor = isPending ? '#F59E0B' : '#10B981';
   const statusBg    = isPending ? '#FEF3C7' : '#D1FAE5';
   const statusText  = isPending ? '#92400E' : '#065F46';
-  const statusLabel = isReview ? '🔒 UNDER SECURITY REVIEW' : isPending ? '⏳ PENDING' : '✅ CONFIRMED';
+  // Deliberately not "under review" — that reads as PRAQEN scrutinizing the user, when
+  // this is really just a normal processing step before the first confirmation, same as
+  // any blockchain send. Framed the same way a pending on-chain confirmation would be.
+  const statusLabel = isReview ? '⏳ PENDING 1ST CONFIRMATION' : isPending ? '⏳ PENDING' : '✅ CONFIRMED';
 
   const dateStr = tx.created_at
     ? new Date(tx.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -756,7 +759,7 @@ function withdrawalRejectedHtml(name, amountBtc, reason) {
       <div style="font-size:48px;">⚠️</div>
       <h2 style="color:#991B1B;font-size:22px;margin:8px 0;">Withdrawal Declined</h2>
     </div>
-    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>, your withdrawal request did not pass our security review. The full amount has been returned to your PRAQEN wallet — no funds were lost.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>, we weren't able to complete this withdrawal request. The full amount has been returned to your PRAQEN wallet — no funds were lost.</p>
     ${infoBox(`
       <tr><td style="padding:8px 0;color:#64748B;font-size:13px;font-weight:600;">Amount Returned</td><td style="padding:8px 0;color:#059669;font-size:20px;font-weight:900;text-align:right;">₿ ${parseFloat(amountBtc || 0).toFixed(8)}</td></tr>
       <tr><td style="padding:7px 0;color:#64748B;font-size:12px;font-weight:600;">Reason</td><td style="padding:7px 0;color:#1E293B;font-size:12px;text-align:right;">${reason}</td></tr>

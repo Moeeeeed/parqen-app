@@ -672,7 +672,10 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
         platform_fee_btc:    platformFee,
         status:              'PENDING_APPROVAL',
         destination_address: toAddress,
-        notes:               `Awaiting PRAQEN security review. Blockchain fee: ${feeLabel} (₿${platformFee.toFixed(8)} / $${platformFeeUsd}).`,
+        // User-visible (Wallet.js shows tx.notes directly) — deliberately not "under
+        // review": this reads the same way a normal pending blockchain confirmation would,
+        // not PRAQEN scrutinizing the user's withdrawal.
+        notes:               `Funds sending — pending 1st confirmation. Blockchain fee: ${feeLabel} (₿${platformFee.toFixed(8)} / $${platformFeeUsd}).`,
         created_at:          reviewTs,
       })
       .select('id')
@@ -707,7 +710,7 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
         { id: userId, email: sendUser.email, username: sendUser.username },
         { type: 'WITHDRAWAL', amount_btc: amountUserReceives, status: 'PENDING_APPROVAL',
           destination_address: toAddress, fee_btc: platformFee,
-          notes: `Submitted for PRAQEN security review — you'll get an email once it's approved and sent.`,
+          notes: `Your withdrawal is on its way — pending 1st confirmation. You'll get an email once it's confirmed and sent.`,
           created_at: reviewTs }
       ).catch(() => {});
     }
@@ -722,7 +725,7 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
       fee_label:         `${feeLabel} — PRAQEN withdrawal fee`,
       to:                toAddress,
       new_balance:       newBalance,
-      message:           `Withdrawal submitted for security review. ₿${amountUserReceives.toFixed(8)} will be sent to ${toAddress} once approved — you'll get an email confirmation.`,
+      message:           `Withdrawal submitted — pending 1st confirmation. ₿${amountUserReceives.toFixed(8)} will be sent to ${toAddress} once confirmed — you'll get an email confirmation.`,
     });
 
   } catch (error) {
@@ -1069,7 +1072,7 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
             { id: targetUser.id, email: targetUser.email, username: targetUser.username },
             { type: 'WITHDRAWAL', amount_btc: sendAmount, status: 'PENDING',
               destination_address: txRow.destination_address, fee_btc: platformFee,
-              notes: 'Approved by PRAQEN security review — broadcasting shortly.', created_at: ts }
+              notes: 'Confirmed by PRAQEN — broadcasting shortly.', created_at: ts }
           ).catch(() => {});
         }
         return res.json({ success: true, queued: true, message: 'Approved — queued for broadcast (hot wallet is currently low).' });
@@ -1091,7 +1094,7 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
     }
     await supabaseAdmin.from('wallet_transactions').update({
       status: 'CONFIRMED', tx_hash: result.txid, reviewed_by: ceo.id, reviewed_at: ts,
-      notes: `${txRow.notes || ''} — Approved by PRAQEN review ${ts}.`,
+      notes: `${txRow.notes || ''} — Confirmed by PRAQEN ${ts}.`,
     }).eq('id', id);
     await supabaseAdmin.from('wallet_transactions').insert(isUsdt ? {
       user_id: COMPANY_WALLET_ID, type: 'FEE', currency: 'USDT', amount_usdt: platformFee, status: 'CONFIRMED',
@@ -1108,14 +1111,14 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
         { id: targetUser.id, email: targetUser.email, username: targetUser.username },
         { type: 'WITHDRAWAL', amount_btc: sendAmount, status: 'CONFIRMED',
           destination_address: txRow.destination_address, fee_btc: platformFee, tx_hash: result.txid,
-          notes: 'Approved by PRAQEN security review and sent.', created_at: ts }
+          notes: 'Confirmed by PRAQEN and sent.', created_at: ts }
       ).catch(() => {});
     }
     supabaseAdmin.from('notifications').insert({
       user_id: txRow.user_id, type: 'wallet', title: '✅ Withdrawal Approved & Sent',
       message: isUsdt
-        ? `Your withdrawal of ₮${sendAmount.toFixed(2)} passed security review and is on its way.`
-        : `Your withdrawal of ₿${sendAmount.toFixed(8)} passed security review and is on its way.`,
+        ? `Your withdrawal of ₮${sendAmount.toFixed(2)} has been confirmed and is on its way.`
+        : `Your withdrawal of ₿${sendAmount.toFixed(8)} has been confirmed and is on its way.`,
       action: '/wallet', is_read: false, created_at: ts,
     }).then(null, () => {});
 
@@ -1174,7 +1177,7 @@ router.post('/ceo-withdrawals/:id/reject', verifyToken, async (req, res) => {
     const decimals = isUsdt ? 2 : 8;
     supabaseAdmin.from('notifications').insert({
       user_id: userId, type: 'wallet', title: '⚠️ Withdrawal Declined',
-      message: `Your withdrawal of ${symbol}${sendAmount.toFixed(decimals)} was declined during security review and the full amount (${symbol}${refundAmount.toFixed(decimals)}) was returned to your wallet. Reason: ${reason}`,
+      message: `We weren't able to complete your withdrawal of ${symbol}${sendAmount.toFixed(decimals)} — the full amount (${symbol}${refundAmount.toFixed(decimals)}) was returned to your wallet. Reason: ${reason}`,
       action: '/wallet', is_read: false, created_at: ts,
     }).then(null, () => {});
 
