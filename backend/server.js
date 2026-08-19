@@ -2949,6 +2949,17 @@ async function requireTeam(req, res) {
   return u;
 }
 
+// Same as requireTeam, plus is_ceo — used by routes the Team Portal (moderators + admins)
+// and the CEO dashboard both need to act on: P2P migration review and user
+// suggestions/messages. Neither moves funds or touches identity documents, so — unlike KYC,
+// which stays on requireFullAdminOrCeo — there's no reason to keep moderators out of these.
+async function requireTeamOrCeo(req, res) {
+  const { data: u } = await supabaseAdmin.from('users').select('is_admin, is_moderator, is_ceo, email').eq('id', req.userId).single();
+  const ok = u?.is_admin || u?.is_moderator || u?.is_ceo || u?.email === ADMIN_EMAIL;
+  if (!ok) { res.status(403).json({ error: 'Team access required' }); return null; }
+  return u;
+}
+
 // ── LOANS ──────────────────────────────────────────────────────────────────────
 app.get('/api/team/loans', verifyToken, async (req, res) => {
   try {
@@ -9927,7 +9938,7 @@ app.get('/api/admin/kyc/:userId/image', verifyToken, async (req, res) => {
 // GET /api/admin/p2p-migration?status=pending|approved|rejected|all
 app.get('/api/admin/p2p-migration', verifyToken, async (req, res) => {
   try {
-    const admin = await requireFullAdminOrCeo(req, res); if (!admin) return;
+    const admin = await requireTeamOrCeo(req, res); if (!admin) return;
     const { status = 'pending' } = req.query;
 
     let query = supabaseAdmin.from('p2p_migration_requests')
@@ -9947,7 +9958,7 @@ app.get('/api/admin/p2p-migration', verifyToken, async (req, res) => {
 // PUT /api/admin/p2p-migration/:id/approve
 app.put('/api/admin/p2p-migration/:id/approve', verifyToken, async (req, res) => {
   try {
-    const admin = await requireFullAdminOrCeo(req, res); if (!admin) return;
+    const admin = await requireTeamOrCeo(req, res); if (!admin) return;
     const { usernameSeen = null, feedbackCount = null, notes = null } = req.body;
     const { data: updated, error } = await supabaseAdmin.from('p2p_migration_requests')
       .update({
@@ -9997,7 +10008,7 @@ app.put('/api/admin/p2p-migration/:id/approve', verifyToken, async (req, res) =>
 // PUT /api/admin/p2p-migration/:id/reject
 app.put('/api/admin/p2p-migration/:id/reject', verifyToken, async (req, res) => {
   try {
-    const admin = await requireFullAdminOrCeo(req, res); if (!admin) return;
+    const admin = await requireTeamOrCeo(req, res); if (!admin) return;
     const { notes = null } = req.body;
     const { data: updated, error } = await supabaseAdmin.from('p2p_migration_requests')
       .update({
@@ -10872,7 +10883,7 @@ app.post('/api/suggestions/:id/vote', verifyToken, async (req, res) => {
 // GET /api/admin/suggestions — admin: all suggestions with filters
 app.get('/api/admin/suggestions', verifyToken, async (req, res) => {
   try {
-    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const admin = await requireTeamOrCeo(req, res); if (!admin) return;
     const { sort = 'votes', category = '', status = '', page = 1, limit = 50 } = req.query;
     const offset = (page - 1) * limit;
 
@@ -10894,7 +10905,7 @@ app.get('/api/admin/suggestions', verifyToken, async (req, res) => {
 // PUT /api/admin/suggestions/:id — update status / reply / pin
 app.put('/api/admin/suggestions/:id', verifyToken, async (req, res) => {
   try {
-    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const admin = await requireTeamOrCeo(req, res); if (!admin) return;
     const { status, admin_reply, is_pinned } = req.body;
     const updates = { updated_at: new Date() };
     if (status !== undefined) updates.status = status;
@@ -10926,7 +10937,7 @@ app.put('/api/admin/suggestions/:id', verifyToken, async (req, res) => {
 // DELETE /api/admin/suggestions/:id
 app.delete('/api/admin/suggestions/:id', verifyToken, async (req, res) => {
   try {
-    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const admin = await requireTeamOrCeo(req, res); if (!admin) return;
     const { error } = await supabaseAdmin.from('suggestions').delete().eq('id', req.params.id);
     if (error) return res.status(400).json({ error: error.message });
     res.json({ success: true });

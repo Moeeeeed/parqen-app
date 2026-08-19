@@ -14,6 +14,7 @@ import {
   CalendarDays, Download, Tag, Pin, GripVertical, CheckSquare, Square, FileDown,
   Globe, ShieldOff, UserX, Layers,
   Gift, User, Mail, Smartphone, Circle, Medal, Scale, Minus, MailOpen,
+  Repeat, ChevronUp, Bug, Lightbulb,
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -29,6 +30,26 @@ const C = {
   g400: '#94A3B8', g500: '#64748B', g600: '#475569', g700: '#334155', g800: '#1E293B',
   success: '#10B981', danger: '#EF4444', paid: '#3B82F6', warn: '#F59E0B',
 };
+
+// ─── Suggestion + P2P-migration constants — shared shape with AdminDashboard.js's versions,
+// since these sections are ported from there onto the Team Portal (same backend endpoints,
+// now also open to moderators via requireTeamOrCeo — see server.js).
+const SUGGESTION_CATS = [
+  { id: 'feature',     label: 'Feature Request', icon: <Lightbulb size={14} className="inline-block" /> },
+  { id: 'trading',     label: 'Trading Tip',      icon: <TrendingUp size={14} className="inline-block" /> },
+  { id: 'bug',         label: 'Bug Report',       icon: <Bug size={14} className="inline-block" /> },
+  { id: 'improvement', label: 'Improvement',      icon: <Zap size={14} className="inline-block" /> },
+  { id: 'other',       label: 'Other',            icon: <MessageSquare size={14} className="inline-block" /> },
+];
+const SUGGESTION_STATUS = {
+  open:      { label: 'Open',         color: '#3B82F6', bg: '#EFF6FF'  },
+  reviewing: { label: 'Under Review', color: '#92400E', bg: '#FFFBEB'  },
+  planned:   { label: 'Planned',      color: '#6D28D9', bg: '#F5F3FF'  },
+  building:  { label: 'Building',     color: '#EA580C', bg: '#FFF7ED'  },
+  done:      { label: 'Done',         color: '#166534', bg: '#F0FDF4'  },
+  rejected:  { label: 'Not Planned',  color: '#6B7280', bg: '#F9FAFB'  },
+};
+const MIGRATION_PLATFORM_LABEL = { noones: 'Noones', binance: 'Binance P2P', other: 'Other P2P' };
 
 const authH = () => {
   const t = localStorage.getItem('team_token') || localStorage.getItem('token');
@@ -63,6 +84,34 @@ function Empty({ icon = <MailOpen size={36} className="mx-auto" style={{ color: 
 }
 function Pill({ label, color = '#10B981', bg = '#F0FDF4' }) {
   return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-black" style={{ color, backgroundColor: bg }}>{label}</span>;
+}
+function SectionHead({ title, sub, action }) {
+  return (
+    <div className="flex items-start justify-between mb-5 flex-wrap gap-3">
+      <div>
+        <h2 className="text-lg font-black" style={{ color: C.g800 }}>{title}</h2>
+        {sub && <p className="text-xs mt-0.5" style={{ color: C.g400 }}>{sub}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
+function ImageModal({ src, label, onClose }) {
+  if (!src) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.85)' }} onClick={onClose}>
+      <div className="relative max-w-2xl w-full" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-white text-sm font-bold">{label}</p>
+          <button onClick={onClose} className="p-1.5 rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}>
+            <X size={16} color="#fff" />
+          </button>
+        </div>
+        <img src={src} alt={label} className="w-full h-auto rounded-xl" />
+      </div>
+    </div>
+  );
 }
 function StatCard({ icon, label, value, sub, color = C.forest, bg = '#F0FDF4', pulse }) {
   return (
@@ -3012,6 +3061,544 @@ function OverviewSection({ teamUser }) {
 }
 
 // ================================================================
+// P2P MIGRATION — traders who submitted a screenshot from Noones/Binance/other
+// platforms before signing up. Ported from AdminDashboard.js's P2PMigrationSection
+// (same backend endpoints — now open to moderators too via requireTeamOrCeo).
+// ================================================================
+function P2PMigrationSection() {
+  const [submissions, setSubs] = useState([]);
+  const [loading, setLoading]  = useState(true);
+  const [filter, setFilter]    = useState('pending');
+  const [zoomImg, setZoomImg]  = useState(null);
+  const [acting, setActing]    = useState(false);
+  const [migrationNeeded, setMigrationNeeded] = useState(false);
+  const [migrationHint, setMigrationHint]     = useState('');
+
+  const [approveTarget, setApproveTarget] = useState(null);
+  const [usernameSeen, setUsernameSeen]   = useState('');
+  const [feedbackCount, setFeedbackCount] = useState('');
+  const [approveNotes, setApproveNotes]   = useState('');
+
+  const [rejectTarget, setRejectTarget] = useState(null);
+  const [rejectNotes, setRejectNotes]   = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setMigrationNeeded(false);
+    try {
+      const r = await axios.get(`${API_URL}/admin/p2p-migration`, { headers: authH(), params: { status: filter } });
+      setSubs(r.data.submissions || []);
+      if (r.data.migration_needed) {
+        setMigrationNeeded(true);
+        setMigrationHint(r.data.migration_hint || '');
+      }
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to load P2P migration requests');
+    } finally { setLoading(false); }
+  }, [filter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const openApprove = (s) => {
+    setApproveTarget(s);
+    setUsernameSeen(s.admin_username_seen || '');
+    setFeedbackCount(s.admin_feedback_count || '');
+    setApproveNotes(s.admin_notes || '');
+  };
+
+  const confirmApprove = async () => {
+    if (!approveTarget) return;
+    setActing(true);
+    try {
+      await axios.put(`${API_URL}/admin/p2p-migration/${approveTarget.id}/approve`,
+        { usernameSeen, feedbackCount, notes: approveNotes }, { headers: authH() });
+      toast.success(<span className="inline-flex items-center gap-1"><CheckCircle size={14} /> Approved</span>);
+      setApproveTarget(null); setUsernameSeen(''); setFeedbackCount(''); setApproveNotes('');
+      load();
+    } catch (e) { toast.error(e.response?.data?.error || 'Approval failed'); }
+    finally { setActing(false); }
+  };
+
+  const confirmReject = async () => {
+    if (!rejectTarget) return;
+    setActing(true);
+    try {
+      await axios.put(`${API_URL}/admin/p2p-migration/${rejectTarget.id}/reject`,
+        { notes: rejectNotes }, { headers: authH() });
+      toast.success('Rejected');
+      setRejectTarget(null); setRejectNotes('');
+      load();
+    } catch (e) { toast.error(e.response?.data?.error || 'Rejection failed'); }
+    finally { setActing(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      {zoomImg && <ImageModal src={zoomImg.src} label={zoomImg.label} onClose={() => setZoomImg(null)} />}
+
+      {approveTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+            <h3 className="font-black text-base mb-1" style={{ color: C.g800 }}>Approve Migration Request</h3>
+            <p className="text-xs mb-4" style={{ color: C.g500 }}>
+              Log what you saw on their {MIGRATION_PLATFORM_LABEL[approveTarget.platform] || 'P2P'} profile screenshot for <strong>{approveTarget.email}</strong>.
+            </p>
+            <label className="block text-xs font-bold mb-1" style={{ color: C.g600 }}>Username on that platform</label>
+            <input value={usernameSeen} onChange={e => setUsernameSeen(e.target.value)}
+              placeholder="e.g. trader_jane"
+              className="w-full border rounded-xl p-2.5 text-sm outline-none mb-3" style={{ borderColor: C.g200, color: C.g700 }} />
+            <label className="block text-xs font-bold mb-1" style={{ color: C.g600 }}>Feedback / trade count</label>
+            <input value={feedbackCount} onChange={e => setFeedbackCount(e.target.value)}
+              placeholder="e.g. 412 trades, 99% positive"
+              className="w-full border rounded-xl p-2.5 text-sm outline-none mb-3" style={{ borderColor: C.g200, color: C.g700 }} />
+            <label className="block text-xs font-bold mb-1" style={{ color: C.g600 }}>Notes (optional)</label>
+            <textarea value={approveNotes} onChange={e => setApproveNotes(e.target.value)} rows={2}
+              className="w-full border rounded-xl p-2.5 text-sm outline-none mb-4 resize-none" style={{ borderColor: C.g200, color: C.g700 }} />
+            <div className="flex gap-2">
+              <button onClick={() => setApproveTarget(null)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold border" style={{ borderColor: C.g200, color: C.g600 }}>
+                Cancel
+              </button>
+              <button onClick={confirmApprove} disabled={acting}
+                className="flex-1 py-2.5 rounded-xl text-sm font-black text-white" style={{ backgroundColor: C.forest }}>
+                {acting ? 'Saving…' : <span className="inline-flex items-center gap-1.5"><CheckCircle size={14} /> Approve</span>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {rejectTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+            <h3 className="font-black text-base mb-1" style={{ color: C.g800 }}>Reject Migration Request</h3>
+            <p className="text-xs mb-4" style={{ color: C.g500 }}>Rejecting the request from <strong>{rejectTarget.email}</strong>.</p>
+            <textarea value={rejectNotes} onChange={e => setRejectNotes(e.target.value)}
+              placeholder="e.g. Screenshot doesn't match a real profile…" rows={3}
+              className="w-full border rounded-xl p-3 text-sm outline-none mb-4 resize-none" style={{ borderColor: C.g200, color: C.g700 }} />
+            <div className="flex gap-2">
+              <button onClick={() => setRejectTarget(null)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold border" style={{ borderColor: C.g200, color: C.g600 }}>
+                Cancel
+              </button>
+              <button onClick={confirmReject} disabled={acting}
+                className="flex-1 py-2.5 rounded-xl text-sm font-black text-white" style={{ backgroundColor: '#EF4444' }}>
+                {acting ? 'Rejecting…' : <span className="inline-flex items-center gap-1.5"><XCircle size={14} /> Reject</span>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <SectionHead title="P2P Migration Requests" sub="Traders who submitted a screenshot from Noones / Binance P2P / other platforms before signing up"
+        action={
+          <div className="flex gap-2 items-center">
+            {['pending', 'approved', 'rejected', 'all'].map(s => (
+              <button key={s} onClick={() => setFilter(s)}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition"
+                style={{ backgroundColor: filter === s ? C.forest : C.g100, color: filter === s ? '#fff' : C.g600 }}>
+                {s}
+              </button>
+            ))}
+            <button onClick={load} className="p-2 rounded-xl border hover:bg-gray-50 transition" style={{ borderColor: C.g200 }}>
+              <RefreshCw size={14} style={{ color: C.g500 }} />
+            </button>
+          </div>
+        } />
+
+      {migrationNeeded && (
+        <div className="flex items-start gap-3 p-4 rounded-2xl border-2" style={{ backgroundColor: '#FFFBEB', borderColor: '#F59E0B' }}>
+          <AlertTriangle size={18} style={{ color: '#92400E', flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <p className="text-sm font-black" style={{ color: '#92400E' }}>Database Migration Required</p>
+            <p className="text-xs mt-0.5" style={{ color: '#A16207' }}>{migrationHint}</p>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
+        {loading ? <Spin /> : submissions.length === 0 ? (
+          <Empty icon={<Users size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No P2P migration requests — all clear!" />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead style={{ backgroundColor: C.g50 }}>
+                <tr>
+                  {['Email', 'Platform', 'Screenshot', 'Reviewed Info', 'Submitted', 'Status', 'Actions'].map(h => (
+                    <th key={h} className="text-left px-4 py-3 text-xs font-black uppercase tracking-wide" style={{ color: C.g500 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {submissions.map(s => (
+                  <tr key={s.id} className="border-t hover:bg-gray-50 transition" style={{ borderColor: C.g100 }}>
+                    <td className="px-4 py-3 font-bold text-xs" style={{ color: C.g800 }}>{s.email}</td>
+                    <td className="px-4 py-3">
+                      <span className="text-xs font-black px-2 py-1 rounded-lg" style={{ backgroundColor: '#FFFBEB', color: '#92400E' }}>
+                        {MIGRATION_PLATFORM_LABEL[s.platform] || 'Other'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {s.screenshot_url ? (
+                        <img src={s.screenshot_url} alt="P2P profile screenshot"
+                          onClick={() => setZoomImg({ src: s.screenshot_url, label: s.email })}
+                          className="w-14 h-14 object-cover rounded-lg cursor-pointer border" style={{ borderColor: C.g200 }} />
+                      ) : <span className="text-xs" style={{ color: C.g400 }}>No image</span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs" style={{ color: C.g600 }}>
+                      {s.admin_username_seen || s.admin_feedback_count ? (
+                        <>
+                          {s.admin_username_seen && <p className="font-bold">@{s.admin_username_seen}</p>}
+                          {s.admin_feedback_count && <p style={{ color: C.g400 }}>{s.admin_feedback_count}</p>}
+                        </>
+                      ) : <span style={{ color: C.g400 }}>—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs" style={{ color: C.g500 }}>
+                      {fmtDate(s.created_at)}<br /><span style={{ color: C.g400 }}>{fmtAge(s.created_at)}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Pill label={s.status}
+                        color={s.status === 'approved' ? '#166534' : s.status === 'rejected' ? '#991B1B' : '#92400E'}
+                        bg={s.status === 'approved' ? '#F0FDF4' : s.status === 'rejected' ? '#FEF2F2' : '#FFFBEB'} />
+                    </td>
+                    <td className="px-4 py-3">
+                      {s.status === 'pending' ? (
+                        <div className="flex gap-2">
+                          <button onClick={() => openApprove(s)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-black text-white" style={{ backgroundColor: C.forest }}>
+                            Approve
+                          </button>
+                          <button onClick={() => { setRejectTarget(s); setRejectNotes(''); }}
+                            className="px-3 py-1.5 rounded-lg text-xs font-black" style={{ backgroundColor: '#FEF2F2', color: '#991B1B' }}>
+                            Reject
+                          </button>
+                        </div>
+                      ) : <span className="text-xs" style={{ color: C.g400 }}>Reviewed</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ================================================================
+// USER MESSAGES & SUGGESTIONS — every message/suggestion sent by users, click to read
+// the full message and reply. Ported from AdminDashboard.js's SuggestionsSection (same
+// backend endpoints — now open to moderators too via requireTeamOrCeo).
+// ================================================================
+function TeamSuggestionsSection() {
+  const [suggestions, setSugs] = useState([]);
+  const [total, setTotal]      = useState(0);
+  const [loading, setLoading]  = useState(true);
+  const [selected, setSelected]= useState(null);
+  const [sort, setSort]        = useState('new');
+  const [catFilter, setCat]    = useState('');
+  const [statusFilter, setStat]= useState('');
+  const [acting, setActing]    = useState(false);
+  const [reply, setReply]      = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await axios.get(`${API_URL}/admin/suggestions`, {
+        headers: authH(),
+        params: { sort, category: catFilter, status: statusFilter, limit: 100 },
+      });
+      setSugs(r.data.suggestions || []);
+      setTotal(r.data.total || 0);
+    } catch { toast.error('Failed to load suggestions'); }
+    finally { setLoading(false); }
+  }, [sort, catFilter, statusFilter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const update = async (id, updates) => {
+    setActing(true);
+    try {
+      const r = await axios.put(`${API_URL}/admin/suggestions/${id}`, updates, { headers: authH() });
+      const updated = r.data.suggestion;
+      setSugs(prev => prev.map(s => s.id === id ? updated : s));
+      if (selected?.id === id) setSelected(updated);
+      toast.success(<span className="inline-flex items-center gap-1">Updated <CheckCircle size={14} /></span>);
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+    finally { setActing(false); }
+  };
+
+  const del = async (id) => {
+    if (!window.confirm('Delete this suggestion permanently?')) return;
+    try {
+      await axios.delete(`${API_URL}/admin/suggestions/${id}`, { headers: authH() });
+      setSugs(prev => prev.filter(s => s.id !== id));
+      if (selected?.id === id) setSelected(null);
+      toast.success('Deleted');
+    } catch { toast.error('Delete failed'); }
+  };
+
+  const openModal = (s) => { setSelected(s); setReply(s.admin_reply || ''); };
+  const closeModal = () => { setSelected(null); setReply(''); };
+
+  const submitReply = async () => {
+    if (!reply.trim() || !selected) return;
+    await update(selected.id, { admin_reply: reply.trim() });
+  };
+
+  const counts = {
+    open:     suggestions.filter(s => s.status === 'open').length,
+    pipeline: suggestions.filter(s => ['planned','building','reviewing'].includes(s.status)).length,
+    done:     suggestions.filter(s => s.status === 'done').length,
+  };
+
+  return (
+    <div className="space-y-5">
+      <SectionHead title={`User Messages & Suggestions (${total})`} sub="All messages sent by users — click any row to read the full message, see the username, and reply"
+        action={<button onClick={load} className="p-2 rounded-xl border hover:bg-gray-50 transition" style={{ borderColor: C.g200 }}><RefreshCw size={14} style={{ color: C.g500 }} /></button>} />
+
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          { label: 'Total Ideas',  value: total,           color: C.forest,   bg: '#F0FDF4' },
+          { label: 'Open',         value: counts.open,     color: '#3B82F6',  bg: '#EFF6FF' },
+          { label: 'In Pipeline',  value: counts.pipeline, color: '#6D28D9',  bg: '#F5F3FF' },
+          { label: 'Shipped',     value: counts.done,     color: '#166534',  bg: '#F0FDF4' },
+        ].map(s => (
+          <div key={s.label} className="bg-white rounded-2xl border p-4 text-center" style={{ borderColor: C.g200 }}>
+            <p className="text-2xl font-black" style={{ color: s.color }}>{s.value}</p>
+            <p className="text-xs font-bold mt-1" style={{ color: C.g600 }}>{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        <select value={sort} onChange={e => setSort(e.target.value)}
+          className="bg-white border rounded-xl px-3 py-2 text-sm font-semibold outline-none" style={{ borderColor: C.g200, color: C.g700 }}>
+          <option value="new">Newest First</option>
+          <option value="votes">Most Voted</option>
+        </select>
+        <select value={catFilter} onChange={e => setCat(e.target.value)}
+          className="bg-white border rounded-xl px-3 py-2 text-sm font-semibold outline-none" style={{ borderColor: C.g200, color: C.g700 }}>
+          <option value="">All Categories</option>
+          {SUGGESTION_CATS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </select>
+        <select value={statusFilter} onChange={e => setStat(e.target.value)}
+          className="bg-white border rounded-xl px-3 py-2 text-sm font-semibold outline-none" style={{ borderColor: C.g200, color: C.g700 }}>
+          <option value="">All Statuses</option>
+          {Object.entries(SUGGESTION_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+      </div>
+
+      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
+        {loading ? <Spin /> : suggestions.length === 0 ? <Empty icon={<Lightbulb size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No suggestions yet" /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead style={{ backgroundColor: C.g50 }}>
+                <tr>
+                  {['Votes', 'Title / Message', 'Category', 'Status', 'From User', 'Date', 'Actions'].map(h => (
+                    <th key={h} className="text-left px-4 py-3 text-xs font-black uppercase tracking-wide" style={{ color: C.g500 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {suggestions.map(s => {
+                  const cat  = SUGGESTION_CATS.find(c => c.id === s.category) || SUGGESTION_CATS[4];
+                  const stat = SUGGESTION_STATUS[s.status] || SUGGESTION_STATUS.open;
+                  return (
+                    <tr key={s.id} onClick={() => openModal(s)}
+                      className="border-t hover:bg-green-50 cursor-pointer transition"
+                      style={{ borderColor: C.g100 }}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          <ChevronUp size={13} style={{ color: C.forest }} />
+                          <span className="font-black text-sm" style={{ color: C.forest }}>{s.upvotes || 0}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3" style={{ maxWidth: 300 }}>
+                        <p className="font-bold text-xs mb-0.5 leading-snug" style={{ color: C.g800 }}>
+                          {s.is_pinned && <Pin size={12} className="mr-1 inline-block" />}{s.title}
+                        </p>
+                        {s.body && (
+                          <p className="text-xs leading-relaxed line-clamp-2" style={{ color: C.g500 }}>
+                            {s.body}
+                          </p>
+                        )}
+                        {s.admin_reply && (
+                          <span className="inline-flex items-center gap-1 mt-1 text-xs font-bold px-2 py-0.5 rounded-full"
+                            style={{ backgroundColor: '#F0FDF4', color: '#166534' }}>
+                            <MessageSquare size={10} /> Replied
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-xs px-2 py-0.5 rounded-full font-bold inline-flex items-center gap-1" style={{ backgroundColor: C.g100, color: C.g600 }}>
+                          {cat.icon}{cat.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Pill label={stat.label} color={stat.color} bg={stat.bg} />
+                      </td>
+                      <td className="px-4 py-3 text-xs font-semibold" style={{ color: C.g600 }}>{s.username || 'Anonymous'}</td>
+                      <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.g400 }}>{fmtDate(s.created_at)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          <button onClick={e => { e.stopPropagation(); openModal(s); }}
+                            className="px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 hover:opacity-80 transition"
+                            style={{ backgroundColor: '#EFF6FF', color: '#3B82F6' }}>
+                            <Eye size={11} /> Open
+                          </button>
+                          <button onClick={e => { e.stopPropagation(); del(s.id); }}
+                            className="p-1.5 rounded-lg hover:bg-red-50 transition">
+                            <Trash2 size={12} style={{ color: C.danger }} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {selected && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={closeModal}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl flex flex-col overflow-hidden"
+            style={{ maxHeight: '92vh' }} onClick={e => e.stopPropagation()}>
+
+            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: C.g100 }}>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg"
+                  style={{ backgroundColor: '#F0FDF4' }}>
+                  {(SUGGESTION_CATS.find(c => c.id === selected.category) || SUGGESTION_CATS[4]).icon}
+                </div>
+                <div>
+                  <p className="text-xs font-bold" style={{ color: C.g500 }}>Community Suggestion</p>
+                  <p className="text-xs font-black" style={{ color: C.g800 }}>
+                    {(SUGGESTION_CATS.find(c => c.id === selected.category) || SUGGESTION_CATS[4]).label}
+                  </p>
+                </div>
+              </div>
+              <button onClick={closeModal} className="p-2 rounded-xl hover:bg-gray-100 transition">
+                <X size={18} style={{ color: C.g500 }} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
+
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl"
+                  style={{ backgroundColor: '#F0FDF4', border: '1px solid #86EFAC' }}>
+                  <ChevronUp size={14} style={{ color: C.forest }} />
+                  <span className="font-black text-sm" style={{ color: C.forest }}>{selected.upvotes || 0}</span>
+                  <span className="text-xs font-semibold" style={{ color: C.mint }}>votes</span>
+                </div>
+                <Pill label={(SUGGESTION_STATUS[selected.status] || SUGGESTION_STATUS.open).label}
+                  color={(SUGGESTION_STATUS[selected.status] || SUGGESTION_STATUS.open).color}
+                  bg={(SUGGESTION_STATUS[selected.status] || SUGGESTION_STATUS.open).bg} />
+                {selected.is_pinned && (
+                  <span className="text-xs px-2 py-1 rounded-xl font-bold"
+                    style={{ backgroundColor: '#FFFBEB', color: '#92400E' }}><Pin size={11} className="mr-1 inline-block" /> Pinned</span>
+                )}
+                <span className="ml-auto text-xs font-semibold" style={{ color: C.g400 }}>
+                  {selected.username || 'Anonymous'} · {fmtDate(selected.created_at)}
+                </span>
+              </div>
+
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest mb-2" style={{ color: C.g400 }}>Title</p>
+                <p className="text-lg font-black leading-snug" style={{ color: C.g800 }}>
+                  {selected.title}
+                </p>
+              </div>
+
+              {selected.body ? (
+                <div>
+                  <p className="text-xs font-black uppercase tracking-widest mb-2" style={{ color: C.g400 }}>Full Message</p>
+                  <div className="p-4 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap"
+                    style={{ backgroundColor: C.g50, color: C.g700, border: `1px solid ${C.g200}`, minHeight: 80 }}>
+                    {selected.body}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 rounded-2xl text-sm" style={{ backgroundColor: C.g50, color: C.g400, fontStyle: 'italic' }}>
+                  No additional message — title only.
+                </div>
+              )}
+
+              {selected.admin_reply && (
+                <div>
+                  <p className="text-xs font-black uppercase tracking-widest mb-2" style={{ color: C.g400 }}>Previous Reply</p>
+                  <div className="p-4 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap"
+                    style={{ backgroundColor: '#F0FDF4', border: '1px solid #86EFAC', color: '#166534' }}>
+                    {selected.admin_reply}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest mb-2" style={{ color: C.g400 }}>Update Status</p>
+                <select value={selected.status || 'open'} disabled={acting}
+                  onChange={e => update(selected.id, { status: e.target.value })}
+                  className="w-full border rounded-xl px-4 py-3 text-sm font-semibold outline-none"
+                  style={{ borderColor: C.g200, color: C.g700, backgroundColor: '#fff' }}>
+                  <option value="open">Open</option>
+                  <option value="reviewing">Under Review</option>
+                  <option value="planned">Planned</option>
+                  <option value="building">Building Now</option>
+                  <option value="done">Done / Shipped</option>
+                  <option value="rejected">Not Planned</option>
+                </select>
+              </div>
+
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest mb-2" style={{ color: C.g400 }}>
+                  {selected.admin_reply ? 'Edit Your Reply' : 'Reply to User'}
+                </p>
+                <textarea
+                  value={reply}
+                  onChange={e => setReply(e.target.value)}
+                  rows={4}
+                  placeholder="Write a public reply — the user will be notified via their notification bell…"
+                  className="w-full border rounded-2xl px-4 py-3 text-sm outline-none resize-none"
+                  style={{ borderColor: C.g200, color: C.g700, backgroundColor: '#fff', lineHeight: 1.6 }}
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t flex items-center gap-3" style={{ borderColor: C.g100, backgroundColor: C.g50 }}>
+              <button onClick={submitReply} disabled={acting || !reply.trim()}
+                className="flex-1 py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 transition"
+                style={{
+                  backgroundColor: acting || !reply.trim() ? C.g200 : C.forest,
+                  color: acting || !reply.trim() ? C.g400 : '#fff',
+                  cursor: acting || !reply.trim() ? 'not-allowed' : 'pointer',
+                }}>
+                <Send size={14} />
+                {acting ? 'Saving…' : selected.admin_reply ? 'Update Reply' : 'Send Reply'}
+              </button>
+              <button disabled={acting} onClick={() => update(selected.id, { is_pinned: !selected.is_pinned })}
+                className="px-4 py-3 rounded-xl text-sm font-black transition hover:opacity-80"
+                style={{ backgroundColor: '#FFFBEB', color: '#92400E' }}>
+                <span className="inline-flex items-center gap-1.5">{selected.is_pinned ? <><Pin size={12} /> Unpin</> : <><Pin size={12} /> Pin</>}</span>
+              </button>
+              <button onClick={() => del(selected.id)}
+                className="px-4 py-3 rounded-xl text-sm font-black flex items-center gap-1.5 transition hover:opacity-80"
+                style={{ backgroundColor: '#FEF2F2', color: '#991B1B' }}>
+                <Trash2 size={13} /> Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ================================================================
 // SUPPORT CHAT — join any live trade as support
 // ================================================================
 function SupportChatSection({ teamUser }) {
@@ -4733,6 +5320,8 @@ export default function TeamDashboard({ user: propUser }) {
       { id: 'trade-lookup',   label: 'Trade Lookup',    icon: Hash },
       { id: 'disputes',       label: 'Disputes',        icon: Gavel,        badge: disputeCount },
       { id: 'support-chat',   label: 'Support Chat',    icon: MessageSquare },
+      { id: 'p2p-migration',  label: 'P2P Migration',   icon: Repeat },
+      { id: 'user-messages',  label: 'User Messages',   icon: Lightbulb },
       { id: 'feedback',       label: 'Feedback',        icon: Star },
       { id: 'risk-monitor',   label: 'Risk Monitor',    icon: AlertOctagon },
       { id: 'top-traders',    label: 'Top Traders',     icon: Trophy },
@@ -4919,6 +5508,8 @@ export default function TeamDashboard({ user: propUser }) {
         <main style={{ flex: 1, overflowY: 'auto', padding: '28px 28px 40px', scrollbarWidth: 'thin', scrollbarColor: `${C.g200} transparent` }}>
           {section === 'overview'       && <OverviewSection teamUser={teamUser} />}
           {section === 'support-chat'   && <SupportChatSection teamUser={teamUser} />}
+          {section === 'p2p-migration'  && <P2PMigrationSection />}
+          {section === 'user-messages'  && <TeamSuggestionsSection />}
           {section === 'ai-chat'        && <LiveAIChatSection />}
           {section === 'stats'          && <PlatformStatsSection />}
           {section === 'active-offers'  && <ActiveOffersSection />}
