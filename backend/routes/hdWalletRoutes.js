@@ -977,13 +977,27 @@ router.get('/ceo-withdrawals', verifyToken, async (req, res) => {
     const ceo = await requireCeo(req, res); if (!ceo) return;
     const status = req.query.status || 'PENDING_APPROVAL';
 
-    const { data: rows, error } = await supabaseAdmin
+    let { data: rows, error } = await supabaseAdmin
       .from('wallet_transactions')
       .select('id, user_id, currency, amount_btc, amount_usdt, platform_fee_btc, platform_fee_usdt, destination_address, status, notes, tx_hash, rejection_reason, reviewed_by, reviewed_at, created_at')
       .eq('type', 'WITHDRAWAL')
       .eq('status', status)
       .order('created_at', { ascending: status === 'PENDING_APPROVAL' })
       .limit(100);
+
+    // Resilient to platform_fee_usdt not existing yet (database/fix_usdt_withdrawal_approval_gap.sql
+    // not run) — fall back to the BTC-only column set rather than hiding every withdrawal,
+    // BTC included, behind one missing column. USDT rows just won't show their fee in that case.
+    if (error && /platform_fee_usdt/i.test(error.message || '')) {
+      console.warn('[hdWalletRoutes GET /ceo-withdrawals] platform_fee_usdt missing — run database/fix_usdt_withdrawal_approval_gap.sql. Falling back.');
+      ({ data: rows, error } = await supabaseAdmin
+        .from('wallet_transactions')
+        .select('id, user_id, currency, amount_btc, amount_usdt, platform_fee_btc, destination_address, status, notes, tx_hash, rejection_reason, reviewed_by, reviewed_at, created_at')
+        .eq('type', 'WITHDRAWAL')
+        .eq('status', status)
+        .order('created_at', { ascending: status === 'PENDING_APPROVAL' })
+        .limit(100));
+    }
     if (error) throw error;
 
     const userIds = [...new Set((rows || []).map(r => r.user_id))];
