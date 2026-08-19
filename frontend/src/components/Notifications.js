@@ -920,7 +920,7 @@ function BasicCard({ n, userId, onNavigate }) {
 }
 
 // ─── REFERRAL CARD ────────────────────────────────────────────────────────────
-function ReferralCard({ referral, onChat }) {
+function ReferralCard({ referral, onView }) {
   const tc      = referral.trade_count || 0;
   const joinStr = referral.created_at
     ? new Date(referral.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
@@ -948,7 +948,7 @@ function ReferralCard({ referral, onChat }) {
         </p>
       </div>
       <button
-        onClick={() => onChat(referral)}
+        onClick={() => onView(referral)}
         style={{
           flexShrink: 0, padding: '7px 14px', borderRadius: 9, border: 'none',
           background: `linear-gradient(135deg,${T.forest},${T.mint})`,
@@ -956,7 +956,7 @@ function ReferralCard({ referral, onChat }) {
           display: 'flex', alignItems: 'center', gap: 5,
           boxShadow: '0 2px 8px rgba(27,67,50,0.3)',
         }}>
-        <MessageCircle size={12} /> Chat
+        <UserCircle size={12} /> Profile
       </button>
     </div>
   );
@@ -1205,6 +1205,13 @@ export default function Notifications({ user }) {
   };
 
   // ── Referral helpers ────────────────────────────────────────────────────────
+  // Referral chat is disabled — users could use it to trade contact details and
+  // move trades off-platform. Referrals only link out to the public profile now.
+  const goToReferralProfile = (referral) => {
+    setShowDrop(false);
+    navigate(`/profile/${referral.username}`);
+  };
+
   const loadReferrals = async () => {
     if (!user) return;
     setRefLoading(true);
@@ -1534,7 +1541,7 @@ export default function Notifications({ user }) {
                     <p style={{ fontSize: 11, color: T.mint, fontWeight: 800, margin: '2px 4px 8px', textTransform: 'uppercase', letterSpacing: 0.6 }}>
                       <Crown size={11} style={{ display: 'inline', marginRight: 2, verticalAlign: 'middle' }} /> Your Referrer
                     </p>
-                    <ReferralCard referral={myReferrer} onChat={setChatRef} />
+                    <ReferralCard referral={myReferrer} onView={goToReferralProfile} />
                     {referrals.length > 0 && (
                       <div style={{ height: 1, background: T.g200, margin: '14px 0 12px' }} />
                     )}
@@ -1547,7 +1554,7 @@ export default function Notifications({ user }) {
                       <Link size={11} style={{ display: 'inline', marginRight: 2, verticalAlign: 'middle' }} /> My Referrals · {referrals.length}
                     </p>
                     {referrals.map(r => (
-                      <ReferralCard key={r.id} referral={r} onChat={setChatRef} />
+                      <ReferralCard key={r.id} referral={r} onView={goToReferralProfile} />
                     ))}
                   </>
                 )}

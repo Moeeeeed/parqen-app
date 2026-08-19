@@ -9320,37 +9320,10 @@ app.get('/api/referral-messages/:userId', verifyToken, async (req, res) => {
 });
 
 // POST /api/referral-messages/:userId — send a message to a referral (or referral replies to referrer)
+// Disabled: referral chat let users trade contact details and move trades off-platform.
+// Kept as a 403 (not removed) so old app builds/tabs get a clear message instead of a raw 404.
 app.post('/api/referral-messages/:userId', verifyToken, async (req, res) => {
-  try {
-    const senderId = req.userId;
-    const recipientId = req.params.userId;
-    const { message } = req.body;
-
-    if (!message?.trim()) return res.status(400).json({ error: 'Message required' });
-
-    const { data: msg, error } = await supabaseAdmin
-      .from('referral_messages')
-      .insert({ sender_id: senderId, recipient_id: recipientId, message: message.trim() })
-      .select()
-      .single();
-
-    if (error) return res.status(500).json({ error: error.message });
-
-    // Notify recipient
-    await supabaseAdmin.from('notifications').insert({
-      user_id: recipientId,
-      type: 'referral_message',
-      title: 'New message',
-      message: message.trim().slice(0, 100),
-      is_read: false,
-      created_at: new Date(),
-    }).then(null, () => { });
-
-    res.json({ message: msg });
-  } catch (e) {
-    console.error('[referral-messages POST]', e.message);
-    res.status(500).json({ error: e.message });
-  }
+  res.status(403).json({ error: 'Referral chat is no longer available. You can view a referral\'s profile instead.' });
 });
 
 // ============================================================
