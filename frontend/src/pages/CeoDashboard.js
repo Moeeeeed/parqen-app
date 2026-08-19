@@ -13,7 +13,7 @@ import {
   Bitcoin, Fuel, Wallet, ArrowUpRight, ArrowDownRight, RefreshCw, LogOut, ShieldCheck,
   Shield, Repeat, Clock, CheckCircle, XCircle, Landmark, TrendingUp, Users, ExternalLink,
   Activity, AlertCircle, MessageSquare, Search, X, Send, AlertTriangle, Paperclip,
-  MessageCircle,
+  MessageCircle, Gift, CreditCard,
 } from 'lucide-react';
 
 const API_URL     = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -804,7 +804,10 @@ function SupportChatSection({ ceoUser }) {
                 <MessageCircle size={36} strokeWidth={1.5} style={{ color: C.g400 }} />
                 <p className="text-sm font-semibold" style={{ color: C.g500 }}>No trades found</p>
               </div>
-            ) : trades.map(t => (
+            ) : trades.map(t => {
+              const isGC = !!t.gift_card_brand;
+              const typeLabel = isGC ? `${t.gift_card_brand} Gift Card` : (t.payment_method || 'Payment method —');
+              return (
               <div key={t.id} onClick={() => openTrade(t)}
                 className="bg-white rounded-xl border-2 p-3 cursor-pointer hover:shadow-md transition"
                 style={{ borderColor: selected?.id === t.id ? C.forest : C.g200 }}>
@@ -812,16 +815,30 @@ function SupportChatSection({ ceoUser }) {
                   <Pill label={t.status} color={statusColor(t.status)} bg={`${statusColor(t.status)}15`} />
                   <span className="text-xs font-mono ml-auto" style={{ color: C.g400 }}>#{(t.id || '').slice(0, 8).toUpperCase()}</span>
                 </div>
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white" style={{ backgroundColor: C.green }}>
-                    {(t.buyer?.username || '?')[0].toUpperCase()}
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ backgroundColor: C.green }}>
+                      {(t.buyer?.username || '?')[0].toUpperCase()}
+                    </div>
+                    <div className="leading-tight min-w-0">
+                      <p className="text-[9px] font-bold uppercase tracking-wide" style={{ color: C.g400 }}>Buyer</p>
+                      <p className="text-xs font-bold truncate" style={{ color: C.g700 }}>{t.buyer?.username || '—'}</p>
+                    </div>
                   </div>
-                  <span className="text-xs font-bold" style={{ color: C.g700 }}>{t.buyer?.username || '—'}</span>
-                  <span className="text-xs" style={{ color: C.g400 }}>→</span>
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white" style={{ backgroundColor: '#3B82F6' }}>
-                    {(t.seller?.username || '?')[0].toUpperCase()}
+                  <span className="text-xs flex-shrink-0" style={{ color: C.g400 }}>→</span>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ backgroundColor: '#3B82F6' }}>
+                      {(t.seller?.username || '?')[0].toUpperCase()}
+                    </div>
+                    <div className="leading-tight min-w-0">
+                      <p className="text-[9px] font-bold uppercase tracking-wide" style={{ color: C.g400 }}>Seller</p>
+                      <p className="text-xs font-bold truncate" style={{ color: C.g700 }}>{t.seller?.username || '—'}</p>
+                    </div>
                   </div>
-                  <span className="text-xs font-bold" style={{ color: C.g700 }}>{t.seller?.username || '—'}</span>
+                </div>
+                <div className="flex items-center gap-1.5 mb-2 px-2 py-1 rounded-lg" style={{ backgroundColor: isGC ? '#FEF3C7' : '#F1F5F9' }}>
+                  {isGC ? <Gift size={11} style={{ color: '#B45309', flexShrink: 0 }} /> : <CreditCard size={11} style={{ color: C.g500, flexShrink: 0 }} />}
+                  <span className="text-xs font-bold truncate" style={{ color: isGC ? '#92400E' : C.g600 }}>{typeLabel}</span>
                 </div>
                 <div className="flex items-center justify-between mt-1">
                   <span className="text-xs font-black" style={{ color: C.g800 }}>${fmtUsd(t.amount_usd)}</span>
@@ -833,7 +850,8 @@ function SupportChatSection({ ceoUser }) {
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Chat panel */}
@@ -843,7 +861,7 @@ function SupportChatSection({ ceoUser }) {
                 <div>
                   <p className="font-black text-sm" style={{ color: C.g800 }}>{selected.buyer?.username} ↔ {selected.seller?.username}</p>
                   <p className="text-xs" style={{ color: C.g500 }}>
-                    ${fmtUsd(selected.amount_usd)} · {selected.payment_method || '—'} · #{selected.id.slice(0, 8).toUpperCase()}
+                    ${fmtUsd(selected.amount_usd)} · {selected.gift_card_brand ? `${selected.gift_card_brand} Gift Card` : (selected.payment_method || '—')} · #{selected.id.slice(0, 8).toUpperCase()}
                   </p>
                 </div>
                 <div className="ml-auto flex items-center gap-2">
