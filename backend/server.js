@@ -7896,13 +7896,6 @@ app.post('/api/trades/:id/mark-paid', tradeLimiter, verifyToken, async (req, res
       }
     }
 
-    // Cash/BTC trades: the buyer's word alone is not enough — require a screenshot
-    // or receipt attached before payment can be marked as sent. This is what the
-    // seller (and any moderator, later, on a dispute) sees before BTC is released.
-    const { proofImage } = req.body;
-    if (!isGiftCardTrade && (!proofImage || typeof proofImage !== 'string' || !proofImage.startsWith('data:image/'))) {
-      return res.status(400).json({ error: 'Please attach a screenshot or receipt of your payment before confirming.' });
-    }
 
     const allowedStatuses = ['CREATED', 'FUNDS_LOCKED', 'ESCROW', 'ACTIVE', 'OPEN'];
     if (!allowedStatuses.includes(trade.status)) return res.status(400).json({ error: `Cannot mark as paid — trade status is ${trade.status}` });
@@ -7911,10 +7904,6 @@ app.post('/api/trades/:id/mark-paid', tradeLimiter, verifyToken, async (req, res
     // Prevents a race where auto-cancel fires between our status check above and this write.
     // expires_at is cleared so no cron job or timer can ever expire a paid trade.
     const updatePayload = { status: 'PAYMENT_SENT', buyer_confirmed: true, buyer_confirmed_at: new Date(), expires_at: null };
-    if (!isGiftCardTrade) {
-      updatePayload.payment_proof_url = proofImage;
-      updatePayload.payment_proof_at = new Date();
-    }
     const { data, error } = await supabaseAdmin.from('trades')
       .update(updatePayload)
       .eq('id', req.params.id)
@@ -7937,16 +7926,6 @@ app.post('/api/trades/:id/mark-paid', tradeLimiter, verifyToken, async (req, res
     res.json({ success: true, trade: data });
 
     setImmediate(async () => {
-      // Keep the proof visible in the trade's evidence trail (moderator dispute
-      // view already renders every trade_images row), not just on the trade record.
-      if (!isGiftCardTrade && proofImage) {
-        try {
-          await supabaseAdmin.from('trade_images').insert({
-            trade_id: req.params.id, user_id: req.userId,
-            image_url: proofImage, image_type: 'payment_proof', created_at: new Date(),
-          });
-        } catch (e) { console.warn('[mark-paid] proof image insert failed:', e.message); }
-      }
       try {
         const notifyMsg = isGiftCardTrade
           ? `${actorName} sent the gift card code · Verify and release Bitcoin`

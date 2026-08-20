@@ -171,14 +171,27 @@ function PushEnableCard() {
         <button
             disabled={requesting}
             onClick={async () => {
+              // If browser permission is already blocked, show instructions immediately
+              if (window.Notification?.permission === 'denied') {
+                setPermission('denied');
+                toast.error('Notifications are blocked in your browser. Click the lock icon in the address bar \u2192 Site settings \u2192 Notifications \u2192 Allow.');
+                return;
+              }
               setRequesting(true);
-              const granted = await requestNotificationPermission();
-              setPermission(granted ? "granted" : "denied");
-              setRequesting(false);
-              if (granted)
-                toast.success("Trade alerts enabled! You'll never miss a trade.");
-              else
-                toast.info("Notifications not enabled. You can turn them on later.");
+              try {
+                const granted = await requestNotificationPermission();
+                setPermission(granted ? "granted" : "denied");
+                if (granted)
+                  toast.success("Trade alerts enabled! You'll never miss a trade.");
+                else
+                  toast.info("Notifications not enabled. You can turn them on later.");
+              } catch (e) {
+                console.error('[Push] Permission request error:', e);
+                setPermission("denied");
+                toast.error("Something went wrong. Please try again.");
+              } finally {
+                setRequesting(false);
+              }
             }}
             className="w-full py-3 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-opacity hover:opacity-90"
             style={{ backgroundColor: "#0E7490", color: "#fff" }}

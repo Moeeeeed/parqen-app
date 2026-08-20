@@ -40,38 +40,69 @@ export function isPushSupported() {
 
 export async function getNotificationPermission() {
   if (!isPushSupported()) return 'unsupported';
+
+  // Use the browser-native API as the source of truth — it's always reliable.
+  // OneSignal's `permission` getter returns a string ('default'/'granted'/'denied')
+  // which is always truthy in JS, so we must compare explicitly.
+  const nativePerm = window.Notification?.permission;
+  if (nativePerm === 'granted') return 'granted';
+  if (nativePerm === 'denied') return 'denied';
+
+  // Check OneSignal's state (may track its own subscription state)
   try {
     const OS = await waitForOS(3000);
-    if (!OS) return window.Notification?.permission || 'default';
-
-    if (OS.Notifications) {
-      const granted = await OS.Notifications.permission;
-      return granted ? 'granted' : 'default';
+    if (OS?.Notifications) {
+      const osPerm = await OS.Notifications.permission;
+      if (osPerm === 'granted') return 'granted';
+      if (osPerm === 'denied') return 'denied';
     }
-    return window.Notification?.permission || 'default';
   } catch {
-    return window.Notification?.permission || 'default';
+    // ignore — native check above is authoritative
   }
+
+  return 'default';
 }
 
 export async function requestNotificationPermission() {
   if (!isPushSupported()) return false;
+
+  // Detect browser-level block early — the native prompt won't show again
+  if (window.Notification?.permission === 'denied') {
+    console.warn('[Push] Browser notification permission is already denied');
+    return false;
+  }
+
+  // Safety timeout: if nothing resolves within 15 s, give up and return false
+  const TIMEOUT_MS = 15000;
+  const withTimeout = (promise) =>
+    Promise.race([
+      promise,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Permission request timed out')), TIMEOUT_MS)
+      ),
+    ]);
+
   try {
     const OS = await waitForOS();
     if (!OS) {
-      console.warn('[Push] OneSignal not available');
-      return false;
+      console.warn('[Push] OneSignal not available, trying native API');
+      const result = await withTimeout(Notification.requestPermission());
+      return result === 'granted';
     }
 
     if (OS.Notifications) {
-      const alreadyGranted = await OS.Notifications.permission;
-      if (alreadyGranted) return true;
-      await OS.Notifications.requestPermission();
-      const newPerm = await OS.Notifications.permission;
-      return !!newPerm;
+      // Use the browser-native permission as source of truth
+      if (window.Notification?.permission === 'granted') return true;
+
+      // Request permission with a timeout to prevent permanent hang
+      await withTimeout(OS.Notifications.requestPermission());
+
+      // Always verify the actual browser state after the request
+      return window.Notification?.permission === 'granted';
     }
 
-    const result = await Notification.requestPermission();
+    // OneSignal.Notifications not available — fall back to native API
+    const result = await withTimeout(Notification.requestPermission());
     return result === 'granted';
   } catch (e) {
     console.error('[Push] requestNotificationPermission failed:', e);
