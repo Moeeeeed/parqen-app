@@ -1299,6 +1299,12 @@ export default function BuyUSDT({user}) {
     return 0;
   });
 
+  const handleTradeExpire = (id) => setActiveTrades(prev => prev.filter(t =>
+    t.id !== id ||
+    ['PAYMENT_SENT','DISPUTED'].includes(t.status) ||
+    !t.expires_at
+  ));
+
   const handleCreateOffer = () => {
     if (!user) { navigate('/login?message=Please log in to create an offer'); return; }
     navigate('/create-offer');
