@@ -235,7 +235,11 @@ function ActiveAlert({trade, userId, onDismiss, onExpire}) {
               You Receive
             </p>
             <p className="text-xs font-black" style={{color:isBuyer?C.success:typeColor}}>
-              {isBuyer?`₿${fmtBtc(btcNet)}`:`${sym}${fmt(localAmt,0)} ${cur}`}
+              {isBuyer
+                ? `₿${fmtBtc(btcNet)}`
+                : trade.amount_receive_usd
+                  ? `$${fmt(trade.amount_receive_usd,2)} USD`
+                  : `${sym}${fmt(localAmt,0)} ${cur}`}
             </p>
           </div>
         </div>
@@ -325,7 +329,11 @@ function TradeCard({trade, userId}) {
         <div className="flex justify-between items-center pt-1 border-t" style={{borderColor:C.g100}}>
           <span className="text-xs font-bold uppercase" style={{color:C.g500}}><CheckCircle size={10} className="inline mr-1"/>You Receive</span>
           <span className="font-black text-sm" style={{color:isBuyer?C.success:typeColor}}>
-            {isBuyer ? `₿${btcNet.toFixed(8)}` : payDisplay}
+            {isBuyer
+              ? `₿${btcNet.toFixed(8)}`
+              : trade.amount_receive_usd
+                ? `$${parseFloat(trade.amount_receive_usd).toFixed(2)} USD`
+                : payDisplay}
           </span>
         </div>
       </div>
@@ -414,7 +422,11 @@ function ActiveTradeModal({ trades, userId, onClose }) {
                   <div className="flex justify-between text-xs pt-1 border-t" style={{borderColor:C.g100}}>
                     <span style={{color:C.g500}}><CheckCircle size={10} className="inline mr-1"/>You Receive</span>
                     <span className="font-black" style={{color:isBuyer?C.success:typeColor}}>
-                      {isBuyer?`₿${btcNet.toFixed(8)}`:payDisp}
+                      {isBuyer
+                        ? `₿${btcNet.toFixed(8)}`
+                        : trade.amount_receive_usd
+                          ? `$${parseFloat(trade.amount_receive_usd).toFixed(2)} USD`
+                          : payDisp}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs">

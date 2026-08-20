@@ -421,9 +421,12 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
   const dirLabel = `${isBuyer ? 'Buy' : 'Sell'} ${isUsdt ? 'USDT' : 'BTC'}`;
 
   // USD equivalent of BTC (from amount_usd field, already in DB)
-  const usdRaw   = parseFloat(trade.amount_usd || 0);
-  const usdEqStr = usdRaw > 0 ? `≈ $${usdRaw.toFixed(2)} USD` : null;
-  const fiatStr  = local > 0 ? `${sym}${local.toFixed(2)} ${cur}` : null;
+  const usdRaw       = parseFloat(trade.amount_usd || 0);
+  const usdEqStr     = usdRaw > 0 ? `≈ $${usdRaw.toFixed(2)} USD` : null;
+  const fiatStr      = local > 0 ? `${sym}${local.toFixed(2)} ${cur}` : null;
+  // True receive value — saved at trade creation as btc_amount × market_rate
+  const receiveRaw   = parseFloat(trade.amount_receive_usd || 0);
+  const receiveStr   = receiveRaw > 0 ? `$${receiveRaw.toFixed(2)} USD` : null;
 
   // Build left/right column data based on trade type + user role.
   // Rule: always lead with the amount the current user CARES ABOUT MOST.
@@ -452,19 +455,19 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
       rightSubStr = btcParen;
     } else {
       // Gift card seller (selling BTC to receive gift card):
-      // LEFT: You pay/paid (value + BTC equiv)  |  RIGHT: You receive/received (card value)
+      // LEFT: You pay/paid (value + BTC equiv)  |  RIGHT: You receive/received (true BTC market value)
       leftLabel   = basePay;
       leftStr     = fiatPrimary;
       leftSubStr  = btcParen;
       rightLabel  = baseReceive;
-      rightStr    = fiatPrimary;
+      rightStr    = receiveStr || fiatPrimary;
       rightSubStr = null;
     }
   } else {
     if (!isBuyer) {
-      // BTC seller  →  LEFT: what they RECEIVE (fiat)  |  RIGHT: what they PAY (fiat + BTC equiv on one line)
+      // BTC seller  →  LEFT: what they RECEIVE (true market value)  |  RIGHT: what they PAY (fiat + BTC equiv)
       leftLabel   = baseReceive;
-      leftStr     = fiatStr || '—';
+      leftStr     = receiveStr || fiatStr || '—';
       leftSubStr  = null;
       rightLabel  = basePay;
       rightStr    = fiatStr || `${btcStr} BTC`;
@@ -1000,20 +1003,26 @@ const dedupByTrade = list => {
 function NotifCard({ n, userId, onNavigate }) {
   const type = n.type || '';
   const [trade, setTrade] = useState(n.trade || null);
-
-  // If backend didn't enrich the trade (old notifications), fetch it client-side
+ 
+  // If backend didn't enrich the trade (old notifications), OR the enriched
+  // trade object is missing amount_receive_usd (backend enrichment query
+  // doesn't select that column yet), fetch the full trade client-side so
+  // "You receive" never silently falls back to the "You pay" value.
   useEffect(() => {
-    if (trade) return;
+    if (trade && trade.amount_receive_usd != null) return;
     const isTradeType = type === 'trade' || type === 'message' || type === 'cancelled'
       || /trade|payment|dispute/i.test(type);
     if (!isTradeType) return;
     const uuidMatch = n.action?.match(UUID_RE) || n.data?.trade_id?.match(UUID_RE);
-    const uuid = uuidMatch?.[0] || n.data?.trade_id;
+    const uuid = uuidMatch?.[0] || n.data?.trade_id || trade?.id;
     if (!uuid) return;
     const token = localStorage.getItem('token');
     fetch(`${API_URL}/trades/${uuid}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.trade || d?.id) setTrade(d.trade || d); })
+      .then(d => {
+        const fresh = d?.trade || d;
+        if (fresh?.id) setTrade(prev => ({ ...prev, ...fresh }));
+      })
       .catch(() => {});
   }, [n.action, n.data, type]); // eslint-disable-line
 

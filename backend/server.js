@@ -7774,7 +7774,7 @@ app.post('/api/trades', verifyToken, requireEmailVerified, async (req, res) => {
         : currency || listing.currency || null;
     const tradeSym = currencySymbol || listing.currency_symbol || (tradeCur ? null : null);
 
-    let tradeAmountUsd, verifiedAmountBtc;
+    let tradeAmountUsd, verifiedAmountBtc, amountReceiveUsd;
 
     if (quoteId && tradeLocalAmt > 0 && !listingTypeUpper.includes('GIFT_CARD')) {
       // ── QUOTE PATH: rate was frozen at listing-preview time ────────────────
@@ -7784,6 +7784,8 @@ app.post('/api/trades', verifyToken, requireEmailVerified, async (req, res) => {
       }
       verifiedAmountBtc = parseFloat((tradeLocalAmt / quote.executableRate).toFixed(8));
       tradeAmountUsd = parseFloat((verifiedAmountBtc * quote.components.btcUsd).toFixed(2));
+      // Fiat value of the BTC at market rate — what the buyer actually RECEIVES
+      amountReceiveUsd = tradeAmountUsd; // quote path: btcUsd is the market rate
       console.log(`[Quote] id=${quoteId.slice(0, 8)} rate=${quote.executableRate.toFixed(2)} btc=${verifiedAmountBtc}`);
     } else {
       // ── FALLBACK PATH: live rate re-fetch (no quoteId or gift-card trade) ─
@@ -7820,6 +7822,11 @@ app.post('/api/trades', verifyToken, requireEmailVerified, async (req, res) => {
         verifiedAmountBtc = parseFloat((tradeLocalAmt / finalSellerRateLocal).toFixed(8));
         console.log(`[Rate] market:$${marketRateUSD} btc:${verifiedAmountBtc}`);
       }
+      // Fiat value of the BTC at MARKET rate — what the buyer actually receives.
+      // This differs from tradeAmountUsd whenever the seller has a margin.
+      // For gift-card trades the frontend already baked margin into amount_btc,
+      // so multiplying by the market rate gives the true receive-side fiat value.
+      amountReceiveUsd = parseFloat((verifiedAmountBtc * marketRateUSD).toFixed(2));
     }
 
     const verifiedFee = parseFloat(calculateFee(verifiedAmountBtc));
@@ -7870,6 +7877,7 @@ app.post('/api/trades', verifyToken, requireEmailVerified, async (req, res) => {
       listing_id: listingId, buyer_id: buyerId, seller_id: sellerId, trade_type: resolvedType,
       amount_btc: verifiedAmountBtc, status: 'CREATED',
       amount_usd: tradeAmountUsd,
+      amount_receive_usd: amountReceiveUsd,
       amount_local: tradeLocalAmt > 0 ? tradeLocalAmt : null,
       local_currency: tradeCur || null,
       currency_symbol: tradeSym || null,
