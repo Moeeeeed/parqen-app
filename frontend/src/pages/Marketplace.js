@@ -162,7 +162,7 @@ export default function Marketplace({ user }) {
                       {(() => {
                         const cc = (seller.country_code || seller.country || '').toUpperCase();
                         const flag = cc.length === 2
-                          ? cc.replace(/./g, c => String.fromCodePoint(0x1F1E0 + c.charCodeAt(0) - 65))
+                          ? cc.replace(/./g, c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65))
                           : '';
                         return `${seller.country_name || seller.country} ${flag}`;
                       })()}

@@ -195,7 +195,22 @@ const fmt  = (n, d=0) => new Intl.NumberFormat('en-US', {minimumFractionDigits:0
 const fUsdt = (n) => parseFloat(n||0).toFixed(2);
 
 const getUser     = (u) => Array.isArray(u) ? u[0] : (u||{});
-const getDisplayName = (u) => (u?.username || '');
+// Prefer the backend-computed display_name (respects the trader's Name Display
+// preference in Settings — full name, initial, or hide) so buyers see the name
+// on their ID, not just their handle. Falls back to computing it locally for
+// objects that only carry the raw fields (e.g. review authors), then username.
+const getDisplayName = (u) => {
+  if (!u) return '';
+  if (u.display_name) return u.display_name;
+  const full = (u.full_name || '').trim();
+  const mode = u.name_display || (u.hide_full_name ? 'hide' : 'full');
+  if (mode === 'hide' || !full) return u.username || '';
+  if (mode === 'initial') {
+    const parts = full.split(/\s+/);
+    return parts.length < 2 ? full : parts[0] + ' ' + parts.slice(1).map(p => p[0] + '.').join(' ');
+  }
+  return full;
+};
 const isVerified  = (u) => !!(u?.kyc_verified||u?.is_verified||u?.is_id_verified||u?.is_email_verified);
 const getTrades   = (u) => parseInt(u?.total_trades ?? u?.trade_count ?? 0);
 const getLastSeen = (u) => {
@@ -842,7 +857,7 @@ function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
                   {label:'Country', value: (() => {
                     const cc = (u.country||'').slice(0,2).toUpperCase();
                     if (!cc) return '—';
-                    const flag = cc.replace(/./g,c=>String.fromCodePoint(0x1F1E0+c.charCodeAt(0)-65));
+                    const flag = cc.replace(/./g,c=>String.fromCodePoint(0x1F1E6+c.charCodeAt(0)-65));
                     return `${flag} ${u.country || cc}`;
                   })()},
                   {label:'Member since', value: u.created_at ? new Date(u.created_at).toLocaleDateString('en-US',{month:'short',year:'numeric'}) : '—'},
@@ -984,7 +999,7 @@ function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
                   const raw = listing?.country_name || u.country || '';
                   if (!raw) return '—';
                   const cc = raw.slice(0,2).toUpperCase();
-                  const flag = cc.replace(/./g,c=>String.fromCodePoint(0x1F1E0+c.charCodeAt(0)-65));
+                  const flag = cc.replace(/./g,c=>String.fromCodePoint(0x1F1E6+c.charCodeAt(0)-65));
                   return `${flag} ${raw}`;
                 })()},
               ].map(({label,value}) => (

@@ -220,14 +220,6 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
             </button>
           </div>
 
-          {/* ── Temporary notice: external sends delayed while blockchain is under maintenance ── */}
-          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl mb-4" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
-            <AlertTriangle size={13} style={{ color: '#D97706', flexShrink: 0 }} />
-            <p className="text-xs font-semibold" style={{ color: '#92400E' }}>
-              External wallet sending is temporarily delayed — blockchain is under maintenance. Send to a PRAQEN user instead or trade in our P2P market for now. Sorry for the inconvenience, we're fixing it soon.
-            </p>
-          </div>
-
           {/* ── KYC gate ── */}
           {kycStatus && !(kycStatus.email && kycStatus.phone && kycStatus.kyc) ? (
             <div className="space-y-4">
@@ -341,19 +333,22 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
               {inputMode === 'btc' ? (
                 <div>
                   <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-base" style={{ color: C.g400 }}>₿</span>
                     <input type="number" value={amount} onChange={e => setAmount(e.target.value)}
                       placeholder="0.00000000" step="0.00000001"
-                      className="w-full pl-8 pr-16 py-3.5 text-sm rounded-2xl focus:outline-none font-mono transition"
+                      className="w-full pl-4 pr-24 py-4 text-xl rounded-2xl focus:outline-none font-black font-mono transition"
                       style={{
                         border: `2px solid ${!amount ? C.g200 : hasEnough ? '#10b981' : '#ef4444'}`,
                         backgroundColor: !amount ? '#fafafa' : hasEnough ? '#f0fdf4' : '#fff5f5',
+                        color: C.g800,
                       }} />
-                    <button onClick={() => setAmount(calcMaxSend().toFixed(8))}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black px-2.5 py-1 rounded-xl transition"
-                      style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', boxShadow: '0 2px 8px rgba(16,185,129,0.3)' }}>
-                      MAX
-                    </button>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                      <span className="text-xs font-black" style={{ color: C.g500 }}>BTC</span>
+                      <button onClick={() => setAmount(calcMaxSend().toFixed(8))}
+                        className="text-xs font-black px-2.5 py-1 rounded-xl transition"
+                        style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', boxShadow: '0 2px 8px rgba(16,185,129,0.3)' }}>
+                        MAX
+                      </button>
+                    </div>
                   </div>
                   {btcAmt > 0 && (
                     <p className="text-xs mt-1.5 font-bold" style={{ color: C.g400 }}>≈ {fmtUsdVal(btcAmt * price)} USD</p>
@@ -362,17 +357,18 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
               ) : (
                 <div>
                   <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-base" style={{ color: C.g400 }}>$</span>
                     <input type="number" value={usdAmount} onChange={e => setUsdAmount(e.target.value)}
                       placeholder="0.00" min="0"
-                      className="w-full pl-8 pr-4 py-3.5 text-sm rounded-2xl focus:outline-none transition"
+                      className="w-full pl-4 pr-16 py-4 text-xl rounded-2xl focus:outline-none font-black transition"
                       style={{
                         border: `2px solid ${!usdAmount ? C.g200 : hasEnough ? '#10b981' : '#ef4444'}`,
                         backgroundColor: !usdAmount ? '#fafafa' : hasEnough ? '#f0fdf4' : '#fff5f5',
+                        color: C.g800,
                       }} />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-black" style={{ color: C.g500 }}>USD</span>
                   </div>
                   {parseFloat(usdAmount) > 0 && (
-                    <p className="text-xs mt-1.5 font-bold" style={{ color: '#10b981' }}>≈ ₿ {btcAmt.toFixed(8)}</p>
+                    <p className="text-xs mt-1.5 font-bold" style={{ color: '#10b981' }}>≈ {btcAmt.toFixed(8)} BTC</p>
                   )}
                 </div>
               )}
@@ -391,10 +387,10 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
             {btcAmt > 0 && (
               <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #e2e8f0' }}>
                 {[
-                  { label: 'You send',                             btc: btcAmt, usd: btcAmt * price, icon: '→' },
-                  { label: 'Blockchain fee',                       btc: fee,    usd: feeUsd,         icon: <Link2 size={11} /> },
-                  { label: 'Total deducted',                       btc: total,  usd: totalUsd,        bold: true },
-                ].map(({ label, btc, usd, bold, icon }, i, arr) => (
+                  { label: 'You send',                             btc: btcAmt, icon: '→' },
+                  { label: 'Withdrawal fee',                       btc: fee,    icon: <Link2 size={11} /> },
+                  { label: 'Total deducted',                       btc: total,  bold: true },
+                ].map(({ label, btc, bold, icon }, i, arr) => (
                   <div key={label}
                     className="flex justify-between items-center px-4 py-2.5"
                     style={{
@@ -407,8 +403,7 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
                     </span>
                     <div className="text-right">
                       <span className={`text-xs ${bold ? 'font-black' : 'font-bold'}`}
-                        style={{ color: bold ? '#1e293b' : C.g700 }}>₿ {fmt(btc)}</span>
-                      <span className="ml-1.5 text-xs font-medium" style={{ color: C.g400 }}>(≈ ₮{parseFloat(usd || 0).toFixed(2)})</span>
+                        style={{ color: bold ? '#1e293b' : C.g700 }}>{fmt(btc)} BTC</span>
                     </div>
                   </div>
                 ))}
@@ -545,9 +540,9 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
                   </div>
                   {[
                     { label: 'To address',    val: `${sendResult.address.slice(0, 10)}…${sendResult.address.slice(-6)}` },
-                    { label: 'Amount',        val: `₿ ${fmt(sendResult.amount)} (≈ ₮${parseFloat(sendResult.amountUsd || 0).toFixed(2)})` },
-                    { label: 'Network fee',   val: `₿ ${fmt(sendResult.fee)} (≈ ₮${parseFloat(sendResult.feeUsd || 0).toFixed(2)})` },
-                    { label: 'Total deducted', val: `₿ ${fmt(sendResult.total)} (≈ ₮${parseFloat(sendResult.totalUsd || 0).toFixed(2)})` },
+                    { label: 'Amount',        val: `${fmt(sendResult.amount)} BTC` },
+                    { label: 'Withdrawal fee', val: `${fmt(sendResult.fee)} BTC` },
+                    { label: 'Total deducted', val: `${fmt(sendResult.total)} BTC` },
                     { label: 'Status',        val: 'Pending review' },
                   ].map(({ label, val }, i) => (
                     <div key={label} className="flex items-center justify-between px-4 py-2.5"
@@ -1479,14 +1474,6 @@ function InternalTransferModal({ balance, btcPrice, displayCurrency, fxRate, cur
                 </div>
               </div>
 
-              {/* ── Temporary notice: external sends delayed while blockchain is under maintenance ── */}
-              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
-                <AlertTriangle size={13} style={{ color: '#D97706', flexShrink: 0 }} />
-                <p className="text-xs font-semibold" style={{ color: '#92400E' }}>
-                  External wallet sending is temporarily delayed — blockchain is under maintenance. Send to a PRAQEN user instead or trade in our P2P market for now. Sorry for the inconvenience, we're fixing it soon.
-                </p>
-              </div>
-
               {/* Balance */}
               <div className="flex items-center justify-between px-4 py-3 rounded-2xl"
                 style={{ background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', border: '1px solid #bbf7d0' }}>
@@ -1649,30 +1636,21 @@ function UsdtWithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoF
   const [sendError,     setSendError]     = useState('');
   const [sendResult,    setSendResult]    = useState(null);
 
-  // Fee = max($5 flat floor, 2% of amount) — mirrors backend calcFee() in
-  // POST /api/wallet/usdt/send. The floor means the fee never drops as the
-  // amount goes up: 2% only takes over once it clears $5, at amounts above
-  // $250 ($5 / 2%). No boundary where a bigger withdrawal costs less fee.
-  const FEE_FLAT    = 5.00;
+  // Fee = flat 2% of amount, no flat-dollar floor — mirrors backend calcFee()
+  // in POST /api/wallet/usdt/send.
   const FEE_PERCENT = 0.02;
   const MIN_SEND    = 5.00;
-  const FEE_SWITCH  = FEE_FLAT / FEE_PERCENT; // $250 — where percent first exceeds the floor
 
-  const calcFee = (amt) => Math.max(FEE_FLAT, parseFloat((amt * FEE_PERCENT).toFixed(2)));
+  const calcFee = (amt) => parseFloat((amt * FEE_PERCENT).toFixed(2));
 
   const usdtAmt     = parseFloat(amount || 0);
   const fee         = usdtAmt > 0 ? calcFee(usdtAmt) : 0;
   const totalDeduct = usdtAmt > 0 ? parseFloat((usdtAmt + fee).toFixed(2)) : 0;
   const bal         = parseFloat(balance || 0);
-  const feeLabel    = usdtAmt > 0
-    ? (usdtAmt <= FEE_SWITCH ? `₮${fee.toFixed(2)} flat fee` : `₮${fee.toFixed(2)} (${(FEE_PERCENT * 100).toFixed(0)}%)`)
-    : '';
+  const feeLabel    = usdtAmt > 0 ? `₮${fee.toFixed(2)} (${(FEE_PERCENT * 100).toFixed(0)}%)` : '';
 
   // Calculate true max sendable so that amount + fee(amount) ≤ balance
   const calcMax = (b) => {
-    if (b <= FEE_FLAT + MIN_SEND) return 0;
-    const tryFlat = parseFloat((b - FEE_FLAT).toFixed(2));
-    if (tryFlat > 0 && tryFlat <= FEE_SWITCH) return tryFlat;
     const tryPct = parseFloat((b / (1 + FEE_PERCENT)).toFixed(2));
     return tryPct >= MIN_SEND ? tryPct : 0;
   };
@@ -1920,20 +1898,16 @@ function UsdtWithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoF
             {usdtAmt > 0 && (
               <div className="pt-2 space-y-1.5" style={{ borderTop: `1px solid ${C.g100}` }}>
                 {[
-                  { label: `Platform fee (${usdtAmt <= FEE_SWITCH ? `₮${FEE_FLAT.toFixed(0)} flat` : `${(FEE_PERCENT * 100).toFixed(0)}%`})`, val: `₮${fee.toFixed(2)}`, btcEq: fee / btcPx },
-                  { label: 'Total deducted', val: `₮${totalDeduct.toFixed(2)}`, btcEq: totalDeduct / btcPx, bold: true },
-                ].map(({ label, val, btcEq, bold }) => (
+                  { label: 'Platform fee', val: `₮${fee.toFixed(2)}` },
+                  { label: 'Total deducted', val: `₮${totalDeduct.toFixed(2)}`, bold: true },
+                ].map(({ label, val, bold }) => (
                   <div key={label} className="flex justify-between items-center">
                     <span className={`text-xs ${bold ? 'font-black' : 'font-semibold'}`} style={{ color: bold ? C.g700 : C.g400 }}>{label}</span>
                     <span className="text-right">
                       <span className={`text-xs ${bold ? 'font-black' : 'font-bold'}`} style={{ color: bold ? C.forest : C.g600 }}>{val}</span>
-                      <span className="ml-1.5 text-xs font-medium" style={{ color: C.g400 }}>(≈ ₿{btcEq.toFixed(8)})</span>
                     </span>
                   </div>
                 ))}
-                <p className="text-xs font-semibold pt-0.5" style={{ color: C.green }}>
-                  Recipient gets exactly ₮{usdtAmt.toFixed(2)} — fee is separate
-                </p>
               </div>
             )}
           </div>
@@ -1992,7 +1966,7 @@ function UsdtWithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoF
               <div className="rounded-2xl overflow-hidden" style={{ border: '1.5px solid #e2e8f0' }}>
                 {[
                   { label: 'Recipient gets',  val: `₮${usdtAmt.toFixed(2)}`,     color: '#10b981' },
-                  { label: `Fee (${usdtAmt <= FEE_SWITCH ? `₮${FEE_FLAT.toFixed(0)} flat` : `${(FEE_PERCENT * 100).toFixed(0)}%`})`,          val: `₮${fee.toFixed(2)}`,       color: '#d97706' },
+                  { label: `Fee (${(FEE_PERCENT * 100).toFixed(0)}%)`,          val: `₮${fee.toFixed(2)}`,       color: '#d97706' },
                   { label: 'Total deducted',  val: `₮${totalDeduct.toFixed(2)}`,  color: '#1e293b', bold: true },
                 ].map(({ label, val, color, bold }, i) => (
                   <div key={label} className="flex justify-between items-center px-4 py-2.5"

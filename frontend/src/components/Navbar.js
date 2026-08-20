@@ -526,7 +526,7 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
                   {/* Nav links */}
                   <div style={{ padding: '6px 0' }}>
                     {[
-                      { to: '/profile',     icon: User,     label: 'Your Profile',  color: C.green },
+                      { to: '/profile',     icon: User,     label: 'My Profile',    color: C.green },
                       { to: '/my-trades',   icon: List,     label: 'My Trades',     color: C.green },
                       { to: '/my-listings', icon: BarChart3, label: 'My Offers',    color: C.green },
                       { to: '/gift-cards',  icon: Gift,     label: 'Gift Cards',    color: C.purple },

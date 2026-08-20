@@ -71,12 +71,27 @@ class SweepService {
     try {
       const hotAddress = hdWallet.getHotWalletAddress();
 
-      // Get all user deposit addresses from user_wallets
-      const { data: wallets, error } = await supabaseAdmin
+      // Get all user deposit addresses from user_wallets (last_onchain_btc is the
+      // amount DepositMonitor has already credited to the user's wallets balance —
+      // needed below so we never sweep BTC ahead of it being credited).
+      let { data: wallets, error } = await supabaseAdmin
         .from('user_wallets')
-        .select('user_id, btc_address')
+        .select('user_id, btc_address, last_onchain_btc')
         .not('btc_address', 'is', null)
         .neq('btc_address', '');
+
+      // Same fallback DepositMonitor uses if the column isn't migrated yet — don't
+      // let a missing column stop the whole cycle from sweeping anyone.
+      if (error) {
+        console.warn('[SweepService] last_onchain_btc column missing — retrying without it:', error.message);
+        const retry = await supabaseAdmin
+          .from('user_wallets')
+          .select('user_id, btc_address')
+          .not('btc_address', 'is', null)
+          .neq('btc_address', '');
+        wallets = retry.data;
+        error   = retry.error;
+      }
 
       if (error) {
         console.error('[SweepService] Could not load user wallets:', error.message);
@@ -102,13 +117,16 @@ class SweepService {
       for (const w of wallets) {
         if (w.btc_address && !seen.has(w.btc_address) && w.btc_address !== hotAddress) {
           seen.add(w.btc_address);
-          toSweep.push({ userId: w.user_id, address: w.btc_address });
+          toSweep.push({ userId: w.user_id, address: w.btc_address, lastOnchainBtc: w.last_onchain_btc });
         }
       }
       for (const u of (users || [])) {
         if (u.bitcoin_wallet_address && !seen.has(u.bitcoin_wallet_address) && u.bitcoin_wallet_address !== hotAddress) {
           seen.add(u.bitcoin_wallet_address);
-          toSweep.push({ userId: u.id, address: u.bitcoin_wallet_address });
+          // No user_wallets row for these (legacy accounts) — lastOnchainBtc is
+          // resolved from wallet_transactions inside _sweepOne, same fallback
+          // DepositMonitor itself uses when the column/row is missing.
+          toSweep.push({ userId: u.id, address: u.bitcoin_wallet_address, lastOnchainBtc: null });
         }
       }
 
@@ -122,7 +140,7 @@ class SweepService {
         await this._sleep(2500);
 
         try {
-          const sweptBtc = await this._sweepOne(entry.userId, entry.address, hotAddress);
+          const sweptBtc = await this._sweepOne(entry.userId, entry.address, hotAddress, entry.lastOnchainBtc);
           if (sweptBtc > 0) {
             sweptCount++;
             totalSwept += sweptBtc;
@@ -147,7 +165,9 @@ class SweepService {
 
   // ── Sweep one address to the hot wallet ───────────────────────────────────
   // Returns the amount swept in BTC, or 0 if nothing was swept.
-  async _sweepOne(userId, fromAddress, hotAddress) {
+  // lastOnchainBtc: what DepositMonitor has already credited to this user's wallets
+  // balance for this address (undefined = caller didn't look it up — resolve here).
+  async _sweepOne(userId, fromAddress, hotAddress, lastOnchainBtc) {
     // Prevent concurrent sweeps of the same address
     if (this._inProgress.has(fromAddress)) {
       console.log(`[SweepService] ${fromAddress.slice(0, 20)}… already sweeping — skipping`);
@@ -160,8 +180,33 @@ class SweepService {
       const utxos = await hdWallet.getUTXOs(fromAddress);
       if (!utxos || utxos.length === 0) return 0;
 
+      // Step 1b — Never sweep BTC that DepositMonitor hasn't credited to the user's
+      // wallets balance yet. Sweeping moves the UTXOs off this address, so once swept
+      // the on-chain balance drops back down and DepositMonitor's "new deposit"
+      // comparison (blockchainBTC vs last_onchain_btc) can never see it again — the
+      // deposit is credited nowhere. This raced in production: SweepService's
+      // independent 30-min cycle swept a user's deposit before DepositMonitor's own
+      // cycle had credited it, leaving the on-chain BTC safely in the hot wallet but
+      // the user's wallets.balance_btc permanently at 0 until manually corrected.
+      const totalSatsOnChain = utxos.reduce((sum, u) => sum + u.value, 0);
+      const onChainBtc       = parseFloat((totalSatsOnChain / 1e8).toFixed(8));
+      let creditedBtc = lastOnchainBtc;
+      if (creditedBtc === null || creditedBtc === undefined) {
+        const { data: dtxs } = await supabaseAdmin
+          .from('wallet_transactions')
+          .select('amount_btc')
+          .eq('user_id', userId)
+          .eq('type', 'DEPOSIT');
+        creditedBtc = (dtxs || []).reduce((s, t) => s + parseFloat(t.amount_btc || 0), 0);
+      }
+      creditedBtc = parseFloat((creditedBtc || 0).toFixed(8));
+      if (onChainBtc > creditedBtc + 0.000000009) {
+        console.log(`[SweepService] ${fromAddress.slice(0, 20)}… has ₿${onChainBtc} on-chain but only ₿${creditedBtc} credited — waiting for DepositMonitor to credit before sweeping`);
+        return 0;
+      }
+
       // Step 2 — Calculate how much we can sweep after network fee
-      const totalSats     = utxos.reduce((sum, u) => sum + u.value, 0);
+      const totalSats     = totalSatsOnChain;
       // hdWallet.sendBitcoin() always budgets for 2 outputs (destination + possible
       // change, in case the sweep amount doesn't consume the exact UTXO value) — this
       // pre-check must match that assumption or it can underestimate the fee sendBitcoin

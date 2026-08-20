@@ -150,7 +150,7 @@ async function _warmListingsCache() {
 
     const { data: usersData } = await Promise.race([
       supabaseAdmin.from('users').select(
-        'id, username, full_name, average_rating, total_trades, completion_rate, is_id_verified, is_email_verified, last_login, last_seen_at, total_feedback_count, positive_feedback, negative_feedback, country, bio, badge, avatar_url'
+        'id, username, full_name, name_display, hide_full_name, average_rating, total_trades, completion_rate, is_id_verified, is_email_verified, last_login, last_seen_at, total_feedback_count, positive_feedback, negative_feedback, country, bio, badge, avatar_url'
       ).in('id', sellerIdSet),
       new Promise(resolve => setTimeout(() => resolve({ data: [] }), 5000)),
     ]);
@@ -201,10 +201,23 @@ const supabaseAdmin = createClient(
 
 // ── 4. Other services ──────────────────────────────────────────────────────
 
-// Show the user's username (handle) in market cards.
+// Show the user's real name in market/trader cards when they've opted into it —
+// mirrors the exact precedence the "Name Display" preview in Settings.js uses
+// (frontend/src/pages/Settings.js ~line 1646), so what a trader picks there is
+// what buyers actually see on their trade card. Defaults to 'full' (not 'hide')
+// so a verified full name — the trust signal buyers rely on — shows unless the
+// user explicitly hid it.
 function computeDisplayName(user) {
   if (!user) return '';
-  return user.username || '';
+  const full = (user.full_name || '').trim();
+  const username = user.username || '';
+  const mode = user.name_display || (user.hide_full_name ? 'hide' : 'full');
+  if (mode === 'hide' || !full) return username;
+  if (mode === 'initial') {
+    const parts = full.split(/\s+/);
+    return parts.length < 2 ? full : parts[0] + ' ' + parts.slice(1).map(p => p[0] + '.').join(' ');
+  }
+  return full; // 'full'
 }
 
 // avatar_url is sometimes a raw base64 data: URI (legacy uploads, before the frontend
@@ -4990,14 +5003,24 @@ const MIGRATION_PLATFORM_LABELS = { noones: 'Noones', binance: 'Binance P2P', ot
 // Shown as a welcome step on /register before a user creates an account. No auth
 // required (they don't have an account yet). Admin reviews the screenshot by hand
 // and approves/rejects manually — see /api/admin/p2p-migration/* below.
-app.post('/api/p2p-migration/submit', authLimiter, async (req, res) => {
+app.post('/api/p2p-migration/submit', authLimiter, optionalAuth, async (req, res) => {
   try {
-    const { email, platform, screenshot } = req.body;
+    const { email, platform, screenshot, fullName, feedbackCount } = req.body;
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ error: 'A valid email address is required' });
     }
     if (!screenshot) {
       return res.status(400).json({ error: 'Please upload a screenshot of your P2P profile' });
+    }
+    // Only enforced for the logged-in Profile page flow (req.userId set) — the
+    // pre-registration form on /register doesn't collect these yet.
+    if (req.userId) {
+      if (!fullName || !fullName.trim()) {
+        return res.status(400).json({ error: 'Please enter your full name as it appears on your P2P profile' });
+      }
+      if (!feedbackCount || !String(feedbackCount).trim()) {
+        return res.status(400).json({ error: 'Please enter your feedback count' });
+      }
     }
     const normalizedPlatform = ['noones', 'binance'].includes(platform) ? platform : 'other';
     const normalizedEmail = email.toLowerCase().trim();
@@ -5027,6 +5050,9 @@ app.post('/api/p2p-migration/submit', authLimiter, async (req, res) => {
       platform: normalizedPlatform,
       screenshot_url: screenshotUrl,
       status: 'pending',
+      user_id: req.userId || null,
+      full_name: fullName ? fullName.trim() : null,
+      feedback_count: feedbackCount ? String(feedbackCount).trim() : null,
     });
     if (insertErr) {
       console.error('[p2p-migration/submit] DB insert error:', insertErr.message);
@@ -5038,6 +5064,29 @@ app.post('/api/p2p-migration/submit', authLimiter, async (req, res) => {
   } catch (err) {
     console.error('[p2p-migration/submit] error:', err.message);
     res.status(500).json({ error: 'Submission failed. Please try again.' });
+  }
+});
+
+// GET /api/p2p-migration/my-status — lets the logged-in Profile page know whether
+// this user already has a pending/rejected submission on load, instead of the
+// upload form re-showing empty every time the page is refreshed.
+app.get('/api/p2p-migration/my-status', verifyToken, async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('p2p_migration_requests')
+      .select('id, platform, status, full_name, feedback_count, created_at, admin_notes')
+      .eq('user_id', req.userId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      // Column may not exist yet if the migration hasn't been run — treat as no submission.
+      console.warn('[p2p-migration/my-status] query error (run database/add_p2p_migration_claim_fields.sql):', error.message);
+      return res.json({ submission: null });
+    }
+    res.json({ submission: data || null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -5398,6 +5447,7 @@ app.get('/api/users/:userId', async (req, res) => {
         negative_feedback: real_negative,
         total_feedback_count: real_positive + real_negative,
         average_rating: parseFloat(real_rating.toFixed(2)),
+        display_name: computeDisplayName(data),
       },
       reviews: reviews.slice(0, 20), // cap list sent to frontend to avoid large payloads
     });
@@ -6586,11 +6636,12 @@ app.get('/api/offers/:id', async (req, res) => {
 
     const { data: seller } = await supabaseAdmin
       .from('users')
-      .select('id, username, badge, country, average_rating, total_trades, completion_rate, avatar_url, created_at, total_feedback_count, positive_feedback, negative_feedback, last_login, last_seen_at, is_id_verified, is_email_verified, is_phone_verified, bio')
+      .select('id, username, full_name, name_display, hide_full_name, badge, country, average_rating, total_trades, completion_rate, avatar_url, created_at, total_feedback_count, positive_feedback, negative_feedback, last_login, last_seen_at, is_id_verified, is_email_verified, is_phone_verified, bio')
       .eq('id', offer.seller_id)
       .single();
 
-    res.json({ offer: { ...offer, type: (offer.listing_type || '').toLowerCase(), user_id: offer.seller_id, seller } });
+    const sellerWithDisplayName = seller ? { ...seller, display_name: computeDisplayName(seller) } : seller;
+    res.json({ offer: { ...offer, type: (offer.listing_type || '').toLowerCase(), user_id: offer.seller_id, seller: sellerWithDisplayName } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -8265,6 +8316,41 @@ app.post('/api/messages', verifyToken, async (req, res) => {
           }
         } catch (e) {
           console.error('[Message notification] Failed:', e.message);
+        }
+      });
+    }
+
+    // ── Update sender's avg_response_time — how fast they engage after a trade
+    // opens, in minutes, as an exponential moving average. This is what powers
+    // the "Avg. response" stat on the trader card, which previously always read
+    // "-" because nothing ever wrote to it. Only counts a trader's FIRST message
+    // in a given trade (later messages aren't a "response to a new trade"), and
+    // ignores unreasonably old trades (reopened/stale) so one outlier can't skew
+    // the average. Requires database/add_avg_response_time_column.sql to be run —
+    // fails silently (existing "column may not exist yet" pattern) until then.
+    if (!useSystem && isParticipant) {
+      setImmediate(async () => {
+        try {
+          const { data: priorMsgs } = await supabaseAdmin
+            .from('messages')
+            .select('id')
+            .eq('trade_id', tradeId)
+            .eq('sender_id', req.userId)
+            .neq('id', data[0].id)
+            .limit(1);
+          if (priorMsgs && priorMsgs.length > 0) return; // not their first message here
+
+          const { data: tFull } = await supabaseAdmin.from('trades').select('created_at').eq('id', tradeId).maybeSingle();
+          if (!tFull?.created_at) return;
+          const deltaMin = (new Date(data[0].created_at) - new Date(tFull.created_at)) / 60000;
+          if (deltaMin <= 0 || deltaMin > 1440) return; // ignore clock skew / stale-trade outliers
+
+          const { data: u } = await supabaseAdmin.from('users').select('avg_response_time').eq('id', req.userId).maybeSingle();
+          const prevAvg = parseFloat(u?.avg_response_time || 0);
+          const newAvg  = prevAvg > 0 ? (prevAvg * 0.8 + deltaMin * 0.2) : deltaMin;
+          await supabaseAdmin.from('users').update({ avg_response_time: parseFloat(newAvg.toFixed(2)) }).eq('id', req.userId);
+        } catch (e) {
+          console.warn('[avg_response_time] update failed (run database/add_avg_response_time_column.sql if missing):', e.message);
         }
       });
     }
@@ -11777,12 +11863,11 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
       error: 'Withdrawals are temporarily disabled for maintenance. Trading and internal transfers are unaffected — please try again later.',
     });
   }
-  const FEE_FLAT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_FLAT || '5.0');  // flat floor
-  const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.02'); // 2% once it exceeds the floor
+  const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.02'); // flat 2% — no flat-dollar floor
   const MIN_SEND = parseFloat(process.env.USDT_MIN_SEND || '5.0');  // minimum $5
 
-  // ── Fee calculator: flat floor, percentage above it — no cliff ────────────
-  const calcFee = (amt) => Math.max(FEE_FLAT, parseFloat((amt * FEE_PERCENT).toFixed(6)));
+  // ── Fee calculator: straight percentage, no flat-dollar floor ─────────────
+  const calcFee = (amt) => parseFloat((amt * FEE_PERCENT).toFixed(6));
 
   try {
     const { toAddress, amount, actionCode } = req.body;
@@ -11848,13 +11933,10 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
       });
     }
 
-    // ── Calculate fee: flat floor vs percentage, whichever is higher ──────
+    // ── Calculate fee: flat 2% ─────────────────────────────────────────────
     const withdrawalFee = calcFee(sendAmount);
     const totalDeduct = parseFloat((sendAmount + withdrawalFee).toFixed(6));
-    const percentWouldBe = parseFloat((sendAmount * FEE_PERCENT).toFixed(6));
-    const feeLabel = percentWouldBe <= FEE_FLAT
-      ? `₮${withdrawalFee.toFixed(2)} flat`
-      : `${(FEE_PERCENT * 100).toFixed(0)}% (₮${withdrawalFee.toFixed(2)})`;
+    const feeLabel = `${(FEE_PERCENT * 100).toFixed(0)}% (₮${withdrawalFee.toFixed(2)})`;
 
     // ── Check user balance (must cover amount + fee) ──────────────────────
     const { data: walRow } = await supabaseAdmin

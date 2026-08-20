@@ -227,9 +227,23 @@ class TradeEscrowService {
       updated_at:    new Date().toISOString(),
     };
 
-    const { error: deductErr } = await supabaseAdmin
-      .from('wallets').update(updateFields).eq('user_id', btcProviderId);
+    // Optimistic concurrency: only write if the balance/locked fields still match what
+    // we just read. Without this, two near-simultaneous lockFundsInEscrow calls for the
+    // same provider (e.g. two buyers opening trades against the same SELL offer at once)
+    // both read the same currentBalance, both compute a deduction from it, and the second
+    // UPDATE silently overwrites the first — the loser's escrow_locks row and FUNDS_LOCKED
+    // trade go on to exist with no real balance behind them ("phantom funds"), because the
+    // wallet was only ever debited once for BTC that got promised twice.
+    const { data: deductRows, error: deductErr } = await supabaseAdmin
+      .from('wallets').update(updateFields)
+      .eq('user_id', btcProviderId)
+      .eq(balField, currentBalance)
+      .eq(lockedField, parseFloat(walletRow[lockedField] || 0))
+      .select('user_id');
     if (deductErr) throw new Error(`Failed to lock funds: ${deductErr.message}`);
+    if (!deductRows || deductRows.length === 0) {
+      throw new Error(`Balance changed while locking funds — please retry (concurrent trade likely claimed this balance first).`);
+    }
 
     // ── 4. Deterministic lock reference ───────────────────────────────────
     const crypto = require('crypto');

@@ -29,7 +29,7 @@ const C = {
 const CUR_SYM = {GHS:'₵',NGN:'₦',KES:'KSh',ZAR:'R',USD:'$',GBP:'£',EUR:'€',UGX:'USh',TZS:'TSh',XAF:'CFA',XOF:'CFA',RWF:'RF',ETB:'Br',AUD:'A$',CAD:'C$',SGD:'S$',INR:'₹'};
 const fmt    = (n,d=0) => new Intl.NumberFormat('en-US',{minimumFractionDigits:0,maximumFractionDigits:d}).format(n||0);
 const authH  = () => { const t=localStorage.getItem('token'); return t?{Authorization:`Bearer ${t}`}:{}; };
-const flag   = code => !code||code.length!==2?<Globe size={13} className="inline-block" />:code.toUpperCase().replace(/./g,c=>String.fromCodePoint(0x1F1E0+c.charCodeAt(0)-65));
+const flag   = code => !code||code.length!==2?<Globe size={13} className="inline-block" />:code.toUpperCase().replace(/./g,c=>String.fromCodePoint(0x1F1E6+c.charCodeAt(0)-65));
 
 const tabOf = l => {
   const lt = (l.listing_type||'').toUpperCase();

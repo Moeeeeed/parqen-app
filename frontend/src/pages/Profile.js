@@ -40,16 +40,34 @@ const MIGRATION_PLATFORMS = [
 ];
 
 // ── Move-my-feedback card ── for a logged-in user who hasn't migrated a P2P
-// reputation yet. They're already signed in here, so this only asks for the
-// platform + a screenshot — no email step needed.
+// reputation yet. Collects exactly what admin needs to verify the claim:
+// account email (from the PRAQEN account, read-only), full name, feedback
+// count, and a screenshot showing that name + count. Checks on mount whether
+// this user already has a submission on file so a pending/rejected request
+// survives a page reload instead of the form re-showing empty every time —
+// and once submitted, the form locks (read-only "waiting for approval") until
+// admin reviews it.
 function MigrateFeedbackCard({ email, autoOpen }) {
   const [open, setOpen] = useState(!!autoOpen);
   const [platform, setPlatform] = useState(null);
+  const [fullName, setFullName] = useState('');
+  const [feedbackCount, setFeedbackCount] = useState('');
   const [screenshotFile, setScreenshotFile] = useState(null);
   const [screenshotPreview, setScreenshotPreview] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
+  const [checkingStatus, setCheckingStatus] = useState(true);
+  const [existing, setExisting] = useState(null); // { status, platform, full_name, feedback_count, admin_notes } | null
+
+  useEffect(() => {
+    const tk = localStorage.getItem('token');
+    if (!tk) { setCheckingStatus(false); return; }
+    axios.get(`${API_URL}/p2p-migration/my-status`, { headers: { Authorization: `Bearer ${tk}` } })
+      .then(r => setExisting(r.data?.submission || null))
+      .catch(() => {})
+      .finally(() => setCheckingStatus(false));
+  }, []);
 
   const compressScreenshot = (file, maxPx = 1200, quality = 0.8) =>
     new Promise((resolve, reject) => {
@@ -78,44 +96,90 @@ function MigrateFeedbackCard({ email, autoOpen }) {
 
   const submit = async () => {
     if (!platform) { setError('Choose which platform you traded on'); return; }
+    if (!fullName.trim()) { setError('Enter your full name as it appears on your P2P profile'); return; }
+    if (!feedbackCount.trim()) { setError('Enter your feedback count'); return; }
     if (!screenshotFile) { setError('Please upload a screenshot of your P2P profile'); return; }
     setSubmitting(true); setError('');
     try {
       const screenshot = await compressScreenshot(screenshotFile);
-      await axios.post(`${API_URL}/p2p-migration/submit`, { email, platform, screenshot });
+      const tk = localStorage.getItem('token');
+      await axios.post(`${API_URL}/p2p-migration/submit`,
+        { email, platform, screenshot, fullName: fullName.trim(), feedbackCount: feedbackCount.trim() },
+        tk ? { headers: { Authorization: `Bearer ${tk}` } } : {});
       setSubmitted(true);
     } catch (err) {
       setError(err.response?.data?.error || 'Something went wrong. Please try again.');
     } finally { setSubmitting(false); }
   };
 
-  if (submitted) {
+  if (checkingStatus) return null;
+
+  // Locked "waiting for approval" view — either just submitted this session,
+  // or reloaded the page and a pending request already exists on file.
+  const pendingExisting = existing && existing.status === 'pending';
+  if (submitted || pendingExisting) {
+    const shown = existing || { platform, full_name: fullName, feedback_count: feedbackCount };
     return (
-      <div className="mt-4 rounded-2xl p-4 text-center" style={{ background: '#ECFDF5', border: '1px solid #A7F3D0' }}>
-        <CheckCircle size={18} style={{ color: '#059669', margin: '0 auto 6px' }} />
-        <p style={{ fontSize: 12.5, fontWeight: 800, color: '#065F46', margin: 0 }}>Submitted! We'll review and reach out soon.</p>
+      <div className="mt-4 rounded-2xl p-4" style={{ background: '#FFFBEB', border: '1px solid #FDE68A', textAlign: 'left' }}>
+        <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+          <Clock size={16} style={{ color: '#D97706', flexShrink: 0 }} />
+          <p style={{ fontSize: 12.5, fontWeight: 800, color: '#92400E', margin: 0 }}>Waiting for approval</p>
+        </div>
+        <p style={{ fontSize: 11.5, color: '#92400E', margin: '0 0 10px', lineHeight: 1.5 }}>
+          Your {MIGRATION_PLATFORM_LABELS[shown.platform] || 'P2P'} reputation submission is locked in and under review — we'll notify you once it's approved.
+        </p>
+        <div style={{ borderRadius: 10, background: '#fff', border: '1px solid #FDE68A', padding: '8px 12px' }}>
+          {[
+            ['Email', email],
+            ['Full name', shown.full_name],
+            ['Feedback count', shown.feedback_count],
+          ].map(([label, val]) => (
+            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 11.5 }}>
+              <span style={{ color: '#92400E', opacity: 0.7 }}>{label}</span>
+              <span style={{ color: '#92400E', fontWeight: 700 }}>{val || '—'}</span>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
+
+  // Rejected — show the reason (if any) and let them resubmit.
+  const wasRejected = existing && existing.status === 'rejected';
 
   if (!open) {
     return (
       <button onClick={() => setOpen(true)}
         className="mt-4 w-full flex items-center gap-2 justify-center"
         style={{ padding: '10px 16px', borderRadius: 99, border: 'none', background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 100%)`, color: C.gold, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
-        <Globe size={14} style={{ color: C.gold }} /> Already trading on Noones or Binance P2P? Move your feedback here →
+        <Globe size={14} style={{ color: C.gold }} />
+        {wasRejected ? 'Resubmit your P2P feedback →' : 'Already trading on Noones or Binance P2P? Move your feedback here →'}
       </button>
     );
   }
 
   return (
     <div className="mt-4 rounded-2xl p-4" style={{ background: C.g50, border: `1px solid ${C.g200}`, textAlign: 'left' }}>
-      <p style={{ fontSize: 12.5, fontWeight: 800, color: C.forest, margin: '0 0 10px' }}>Move your feedback from another P2P platform</p>
+      <p style={{ fontSize: 12.5, fontWeight: 800, color: C.forest, margin: '0 0 4px' }}>Move your feedback from another P2P platform</p>
+      <p style={{ fontSize: 11, color: C.g500, margin: '0 0 10px', lineHeight: 1.5 }}>
+        We need your full name and feedback count, plus a screenshot of your P2P profile that clearly shows both — this is how our team verifies the claim.
+      </p>
+      {wasRejected && (
+        <div style={{ padding: '8px 12px', borderRadius: 10, fontSize: 11.5, background: '#FEF2F2', color: '#991B1B', marginBottom: 10 }}>
+          Your last submission wasn't approved{existing.admin_notes ? `: ${existing.admin_notes}` : '.'} You can fix and resubmit below.
+        </div>
+      )}
       {error && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 10, fontSize: 11.5, background: '#FEF2F2', color: '#EF4444', marginBottom: 10 }}>
           <AlertTriangle size={12} />{error}
         </div>
       )}
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', borderRadius: 10, background: '#fff', border: `1px solid ${C.g200}`, marginBottom: 10 }}>
+        <span style={{ fontSize: 11.5, color: C.g500, fontWeight: 600 }}>Your account email</span>
+        <span style={{ fontSize: 11.5, color: C.g700, fontWeight: 800 }}>{email}</span>
+      </div>
+
       <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
         {MIGRATION_PLATFORMS.map(p => (
           <button key={p.id} onClick={() => { setPlatform(p.id); setError(''); }}
@@ -124,6 +188,15 @@ function MigrateFeedbackCard({ email, autoOpen }) {
           </button>
         ))}
       </div>
+
+      <input type="text" value={fullName} onChange={e => { setFullName(e.target.value); setError(''); }}
+        placeholder="Full name (as shown on your P2P profile)"
+        style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1.5px solid ${C.g200}`, fontSize: 12.5, marginBottom: 8, boxSizing: 'border-box', color: C.g800 }} />
+
+      <input type="text" value={feedbackCount} onChange={e => { setFeedbackCount(e.target.value); setError(''); }}
+        placeholder="Feedback count (e.g. 793)"
+        style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1.5px solid ${C.g200}`, fontSize: 12.5, marginBottom: 10, boxSizing: 'border-box', color: C.g800 }} />
+
       <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, padding: screenshotPreview ? 0 : '18px 12px', borderRadius: 12, border: `2px dashed ${screenshotPreview ? C.green : C.g200}`, cursor: 'pointer', overflow: 'hidden', background: screenshotPreview ? 'transparent' : '#fff', marginBottom: 10 }}>
         <input type="file" accept="image/*" onChange={e => handleFile(e.target.files?.[0])} style={{ display: 'none' }} />
         {screenshotPreview ? (
@@ -131,7 +204,7 @@ function MigrateFeedbackCard({ email, autoOpen }) {
         ) : (
           <>
             <FileText size={18} style={{ color: C.g400 }} />
-            <span style={{ fontSize: 11.5, color: C.g500, fontWeight: 600 }}>Tap to upload a screenshot of your profile</span>
+            <span style={{ fontSize: 11.5, color: C.g500, fontWeight: 600, textAlign: 'center' }}>Upload a screenshot of your profile showing your full name and feedback count</span>
           </>
         )}
       </label>
