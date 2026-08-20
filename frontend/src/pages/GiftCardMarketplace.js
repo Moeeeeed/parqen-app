@@ -286,22 +286,7 @@ const fmt = (n, d = 0) => new Intl.NumberFormat('en-US', { minimumFractionDigits
 const fBtc = (n) => parseFloat(n || 0).toFixed(8);
 
 const getUser = (u) => Array.isArray(u) ? u[0] : (u || {});
-// Prefer the backend-computed display_name (respects the trader's Name Display
-// preference in Settings — full name, initial, or hide) so buyers see the name
-// on their ID, not just their handle. Falls back to computing it locally for
-// objects that only carry the raw fields (e.g. review authors), then username.
-const getDisplayName = (u) => {
-  if (!u) return '';
-  if (u.display_name) return u.display_name;
-  const full = (u.full_name || '').trim();
-  const mode = u.name_display || (u.hide_full_name ? 'hide' : 'full');
-  if (mode === 'hide' || !full) return u.username || '';
-  if (mode === 'initial') {
-    const parts = full.split(/\s+/);
-    return parts.length < 2 ? full : parts[0] + ' ' + parts.slice(1).map(p => p[0] + '.').join(' ');
-  }
-  return full;
-};
+const getDisplayName = (u) => (u?.username || '');
 const isVerified = (u) => !!(u?.kyc_verified || u?.is_verified || u?.is_id_verified || u?.is_email_verified);
 const getTrades = (u) => parseInt(u?.total_trades ?? u?.trade_count ?? 0);
 const getLastSeen = (u) => {
@@ -908,6 +893,15 @@ function SellerModal({ seller, listing, onClose, onTrade, btcPriceUSD }) {
               <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${C.g200}` }}>
                 <p className="text-xs font-bold px-3 py-2 uppercase tracking-wider"
                   style={{ color: C.g500, backgroundColor: C.g50 }}>Verification</p>
+                {u.full_name && u.name_display !== 'hide' && !u.hide_full_name && (
+                  <div className="flex items-center justify-between px-3 py-2.5 border-t" style={{ borderColor: C.g100 }}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm flex items-center"><User size={14} className="text-gray-500" /></span>
+                      <span className="text-xs font-semibold" style={{ color: C.g700 }}>Full Name</span>
+                    </div>
+                    <span className="text-xs font-black" style={{ color: C.g800 }}>{u.full_name}</span>
+                  </div>
+                )}
                 {[
                   { label: 'Phone Number', ok: phoneOk, icon: <Phone size={14} className="text-gray-500" /> },
                   { label: 'Email Address', ok: emailOk, icon: <Mail size={14} className="text-gray-500" /> },
@@ -1140,6 +1134,7 @@ export default function GiftCards({ user }) {
   const isGcListing = (l) => l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD';
   const _gcNow = () => { const a = _cacheAll(); return a ? a.filter(isGcListing) : []; };
   const [listings, setListings] = useState(() => _gcNow());
+  const [traderOfWeek, setTraderOfWeek] = useState(null); // auto-picked winner from the backend, not hardcoded
   const [loading, setLoading] = useState(() => _gcNow().length === 0);
   const [loadError, setLoadError] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -1244,6 +1239,13 @@ export default function GiftCards({ user }) {
     loadListings();
     const interval = setInterval(() => loadListings(1, true), 60000);
     return () => clearInterval(interval);
+  }, []);
+  // Auto-picked "Active Trader of the Week" — backend rotates this weekly based on
+  // real trade counts, replacing what used to be a hardcoded username here.
+  useEffect(() => {
+    axios.get(`${API_URL}/trader-of-week`)
+      .then(r => setTraderOfWeek(r.data?.winners?.gift_card || null))
+      .catch(() => {});
   }, []);
   useEffect(() => {
     const tk = localStorage.getItem('token');
@@ -1407,12 +1409,9 @@ useEffect(() => {
   const onlineCnt = listings.filter(l => (Date.now() - new Date(l.users?.last_seen_at || l.users?.last_login || 0)) / 1000 < 300).length;
   const sellerCount = new Set(listings.map(l => l.seller_id)).size;
 
-  // Fast Responder of the Week — pinned by username, stable for 1 week
-  const ACTIVE_TRADER_USERNAME = 'kingkong79-pro';
-  const activeTraderListingId = listings.find(l =>
-    (l.users?.username || '').toLowerCase() === ACTIVE_TRADER_USERNAME &&
-    getCardRange(l)
-  )?.id || null;
+  // Active Trader of the Week — auto-picked weekly by the backend (services/
+  // traderOfWeekService.js) from real trade counts, not a hardcoded username.
+  const activeTraderListingId = traderOfWeek?.listing_id || null;
   const hasFilters = amountInput.trim() !== '' || selBrand !== 'All Brands' || selCountry.code !== 'ALL' || traderSearch.trim() !== '' || sortBy !== 'rate_low';
 
   return (

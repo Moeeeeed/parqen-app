@@ -336,6 +336,7 @@ const actionCodeService = require('./services/actionCodeService');
 const balanceIntegrity = require('./services/balanceIntegrityService');
 const { checkAndAwardBadges } = require('./services/badgeService');
 const { syncAllOfferStatuses, deactivateStaleOffers, setCacheBuster, setBtcPriceGetter, updateOfferStatus } = require('./services/offerStatusService');
+const { syncTraderOfWeek, getAllWinners: getTraderOfWeekWinners } = require('./services/traderOfWeekService');
 const telegramService = require('./services/telegramService');
 setCacheBuster(bustCache);
 // Was never wired up — offerStatusService's pause sweep was silently running on the
@@ -6647,6 +6648,19 @@ app.get('/api/offers/:id', async (req, res) => {
   }
 });
 
+// GET /api/trader-of-week — the current auto-picked "Active Trader of the Week"
+// for each market category (buy_bitcoin, sell_bitcoin, gift_card). Replaces the
+// hardcoded usernames the Buy/Sell/Gift Card pages used to pin in source code —
+// see services/traderOfWeekService.js for the selection + weekly rotation logic.
+app.get('/api/trader-of-week', async (req, res) => {
+  try {
+    const winners = await getTraderOfWeekWinners();
+    res.json({ success: true, winners });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Track offer views — fires when ProfileModal opens in BuyBitcoin/SellBitcoin
 app.post('/api/offers/:id/view', optionalAuth, async (req, res) => {
   try {
@@ -12705,6 +12719,11 @@ app.listen(PORT, () => {
   deactivateStaleOffers().catch(err => console.error('[startup] deactivateStaleOffers:', err.message));
   setInterval(() => deactivateStaleOffers().catch(err => console.error('[interval] deactivateStaleOffers:', err.message)), 6 * 60 * 60 * 1000);
   console.log('🔕 Stale offer cron: pauses offers from sellers inactive 10+ days — checks every 6 hours');
+
+  // "Active Trader of the Week" auto-pick — runs at startup then checked every 6 hours;
+  // each category only actually re-picks once its own 7-day rotation window is due.
+  syncTraderOfWeek().catch(err => console.error('[startup] syncTraderOfWeek:', err.message));
+  setInterval(() => syncTraderOfWeek().catch(err => console.error('[interval] syncTraderOfWeek:', err.message)), 6 * 60 * 60 * 1000);
 
   // Backfill missing country codes for existing users using phone/KYC data
   backfillCountriesFromPhone().catch(err => console.error('[startup] backfillCountries:', err.message));

@@ -194,22 +194,7 @@ const fmt   = (n, d=0) => new Intl.NumberFormat('en-US', {minimumFractionDigits:
 const fUsdt = (n)       => parseFloat(n||0).toFixed(2);
 
 const getUser     = (u) => Array.isArray(u) ? u[0] : (u||{});
-// Prefer the backend-computed display_name (respects the trader's Name Display
-// preference in Settings — full name, initial, or hide) so buyers see the name
-// on their ID, not just their handle. Falls back to computing it locally for
-// objects that only carry the raw fields (e.g. review authors), then username.
-const getDisplayName = (u) => {
-  if (!u) return '';
-  if (u.display_name) return u.display_name;
-  const full = (u.full_name || '').trim();
-  const mode = u.name_display || (u.hide_full_name ? 'hide' : 'full');
-  if (mode === 'hide' || !full) return u.username || '';
-  if (mode === 'initial') {
-    const parts = full.split(/\s+/);
-    return parts.length < 2 ? full : parts[0] + ' ' + parts.slice(1).map(p => p[0] + '.').join(' ');
-  }
-  return full;
-};
+const getDisplayName = (u) => (u?.username || '');
 const isVerified  = (u) => !!(u?.kyc_verified||u?.is_verified||u?.is_id_verified||u?.is_email_verified);
 const getTrades   = (u) => parseInt(u?.total_trades ?? u?.trade_count ?? 0);
 const getLastSeen = (u) => {
@@ -644,6 +629,15 @@ function BuyerModal({buyer, listing, onClose, onTrade, usdtPriceUSD}) {
               <div className="rounded-xl overflow-hidden" style={{border:`1px solid ${C.g200}`}}>
                 <p className="text-xs font-black px-3 py-2 uppercase tracking-wider"
                   style={{color:C.g500, backgroundColor:C.g50}}>Verification</p>
+                {u.full_name && u.name_display !== 'hide' && !u.hide_full_name && (
+                  <div className="flex items-center justify-between px-3 py-2.5 border-t" style={{borderColor:C.g100}}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm flex items-center"><User size={14}/></span>
+                      <span className="text-xs font-semibold" style={{color:C.g700}}>Full Name</span>
+                    </div>
+                    <span className="text-xs font-black" style={{color:C.g800}}>{u.full_name}</span>
+                  </div>
+                )}
                 {[
                   {label:'Phone Number', ok:phoneOk, icon:<Smartphone size={14} className="inline-block"/>},
                   {label:'Email Address',ok:emailOk, icon:<Mail size={14} className="inline-block"/>},

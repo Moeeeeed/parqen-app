@@ -1196,7 +1196,14 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
       console.error(`🚨 [hdWalletRoutes] Withdrawal ${id} may have broadcast on-chain but failed to finalize in the DB — left at PROCESSING, needs manual reconciliation. Error: ${error.message}`);
     }
     if (error.message?.startsWith('HOT_WALLET_INSUFFICIENT') || error.message?.startsWith('INSUFFICIENT_UTXOS') || /^HOT_WALLET_(USDT|TRX)_INSUFFICIENT/.test(error.message || '')) {
-      return res.status(503).json({ error: 'Hot wallet has insufficient funds to broadcast this right now. Top it up, or retry with "force" to queue it for later.', hotWalletLow: true });
+      // Surface the specific shortage (e.g. "TRX gas" vs "USDT balance") instead of a
+      // generic message — USDT balance and TRX gas are two different things to top up,
+      // and collapsing them into one message left the CEO guessing which one was short.
+      const detail = error.message.replace(/^HOT_WALLET_(USDT|TRX)_INSUFFICIENT:\s*/, '').replace(/^HOT_WALLET_INSUFFICIENT:\s*/, '');
+      return res.status(503).json({
+        error: `Hot wallet has insufficient funds to broadcast this right now — ${detail} Or retry with "force" to queue it for later.`,
+        hotWalletLow: true,
+      });
     }
     res.status(500).json({ error: 'Failed to approve withdrawal: ' + error.message });
   }
