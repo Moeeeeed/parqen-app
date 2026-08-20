@@ -1275,7 +1275,8 @@ export default function SellBitcoin({user}) {
       if (data.length > 0) {
         setOffers(data);
         try { localStorage.setItem('praqen_market_all', JSON.stringify({ data: all, ts: Date.now() })); } catch {}
-      } else {
+      } else if (!offers.length) {
+        // Truly empty marketplace — show empty state but don't cache
         setOffers([]);
       }
     } catch (err) {

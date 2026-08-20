@@ -938,7 +938,7 @@ function SellerModal({ seller, listing, onClose, onTrade, btcPriceUSD }) {
                     label: 'Country', value: (() => {
                       const cc = (u.country || '').slice(0, 2).toUpperCase();
                       if (!cc) return '—';
-                      const flag = cc.replace(/./g, c => String.fromCodePoint(0x1F1E0 + c.charCodeAt(0) - 65));
+                      const flag = cc.replace(/./g, c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65));
                       return `${flag} ${u.country || cc}`;
                     })()
                   },
@@ -1082,7 +1082,7 @@ function SellerModal({ seller, listing, onClose, onTrade, btcPriceUSD }) {
                     const raw = listing?.country_name || u.country || '';
                     if (!raw) return '—';
                     const cc = raw.slice(0, 2).toUpperCase();
-                    const flag = cc.replace(/./g, c => String.fromCodePoint(0x1F1E0 + c.charCodeAt(0) - 65));
+                    const flag = cc.replace(/./g, c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65));
                     return `${flag} ${raw}`;
                   })()
                 },
@@ -1139,6 +1139,7 @@ export default function GiftCards({ user }) {
   const isGcListing = (l) => l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD';
   const _gcNow = () => { const a = _cacheAll(); return a ? a.filter(isGcListing) : []; };
   const [listings, setListings] = useState(() => _gcNow());
+  const [traderOfWeek, setTraderOfWeek] = useState(null); // auto-picked winner from the backend, not hardcoded
   const [loading, setLoading] = useState(() => _gcNow().length === 0);
   const [loadError, setLoadError] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -1243,6 +1244,13 @@ export default function GiftCards({ user }) {
     loadListings();
     const interval = setInterval(() => loadListings(1, true), 60000);
     return () => clearInterval(interval);
+  }, []);
+  // Auto-picked "Active Trader of the Week" — backend rotates this weekly based on
+  // real trade counts, replacing what used to be a hardcoded username here.
+  useEffect(() => {
+    axios.get(`${API_URL}/trader-of-week`)
+      .then(r => setTraderOfWeek(r.data?.winners?.gift_card || null))
+      .catch(() => {});
   }, []);
   useEffect(() => {
     const tk = localStorage.getItem('token');
@@ -1406,12 +1414,9 @@ useEffect(() => {
   const onlineCnt = listings.filter(l => (Date.now() - new Date(l.users?.last_seen_at || l.users?.last_login || 0)) / 1000 < 300).length;
   const sellerCount = new Set(listings.map(l => l.seller_id)).size;
 
-  // Fast Responder of the Week — pinned by username, stable for 1 week
-  const ACTIVE_TRADER_USERNAME = 'kingkong79-pro';
-  const activeTraderListingId = listings.find(l =>
-    (l.users?.username || '').toLowerCase() === ACTIVE_TRADER_USERNAME &&
-    getCardRange(l)
-  )?.id || null;
+  // Active Trader of the Week — auto-picked weekly by the backend (services/
+  // traderOfWeekService.js) from real trade counts, not a hardcoded username.
+  const activeTraderListingId = traderOfWeek?.listing_id || null;
   const hasFilters = amountInput.trim() !== '' || selBrand !== 'All Brands' || selCountry.code !== 'ALL' || traderSearch.trim() !== '' || sortBy !== 'rate_low';
 
   return (
