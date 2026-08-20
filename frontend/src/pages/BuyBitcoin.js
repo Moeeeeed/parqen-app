@@ -1465,6 +1465,14 @@ export default function BuyBitcoin({user}) {
             </button>
           </div>
 
+          <div className="flex-1">
+            <button onClick={()=>navigate('/gift-cards')}
+              className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1"
+              style={{color:C.g400}}>
+              <Gift size={13}/> Gift Cards
+            </button>
+          </div>
+
           {/* ── 3rd Dropdown: Crypto Filter (All Crypto / BTC / USDT) ── */}
           <div className="flex-1 relative">
             <button onClick={() => setShowCryptoMenu(v => !v)}

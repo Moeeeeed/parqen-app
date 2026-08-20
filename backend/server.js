@@ -2698,7 +2698,7 @@ app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
 
 // ── Team portal: explicit email allowlist ────────────────────────────────────
 // Deliberately a hand-maintained list of exact addresses, not a domain check.
-const MODERATOR_EMAIL_ALLOWLIST = ['zeinudeen.team@praqen.com'];
+const MODERATOR_EMAIL_ALLOWLIST = ['zeinudeen.team@praqen.com', 'kenigho18@gmail.com'];
 
 // ── Team portal: direct login — password THEN a mandatory email OTP ──────────
 // No path through this route ever issues a token on password alone. Reuses the
@@ -7469,13 +7469,21 @@ app.post('/api/debug/update-feedback/:username', async (req, res) => {
 // TRADES ROUTES
 // ============================================================
 
+// Optional query params: search, dateFrom, dateTo — applied server-side so a search or
+// date filter can find any trade in a user's full history, not just whatever page of
+// results the client happened to already have loaded (that was the previous behavior:
+// the frontend filtered only the trades already fetched, so anything older than the last
+// "Load More" click silently looked like it didn't exist).
 app.get('/api/my-trades', verifyToken, async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(50, parseInt(req.query.limit) || 30);
     const offset = (page - 1) * limit;
+    const search   = (req.query.search   || '').trim();
+    const dateFrom = (req.query.dateFrom || '').trim();
+    const dateTo   = (req.query.dateTo   || '').trim();
 
-    const { data, error, count } = await supabaseAdmin.from('trades')
+    let query = supabaseAdmin.from('trades')
       .select(
         `id, status, trade_type, trade_ref, amount_btc, amount_usd, amount_local,
          local_currency, currency_symbol, payment_method, gift_card_brand,
@@ -7486,7 +7494,41 @@ app.get('/api/my-trades', verifyToken, async (req, res) => {
          seller:seller_id(id, username, avatar_url, badge, total_trades, completion_rate, positive_feedback, negative_feedback, last_login, last_seen_at, country)`,
         { count: 'exact' }
       )
-      .or(`buyer_id.eq.${req.userId},seller_id.eq.${req.userId}`)
+      .or(`buyer_id.eq.${req.userId},seller_id.eq.${req.userId}`);
+
+    if (dateFrom) query = query.gte('created_at', dateFrom);
+    if (dateTo) {
+      const end = new Date(dateTo);
+      if (!isNaN(end.getTime())) { end.setUTCHours(23, 59, 59, 999); query = query.lte('created_at', end.toISOString()); }
+    }
+
+    if (search) {
+      // Counterpart username search needs a separate lookup first — PostgREST's .or()
+      // can only filter columns on the base table (trades), not on a joined table's
+      // columns, so "search matches the other trader's username" has to become
+      // "search matches one of these resolved user ids" before it can join the .or().
+      const { data: matchedUsers } = await supabaseAdmin
+        .from('users').select('id').ilike('username', `%${search}%`).limit(200);
+      const idList = (matchedUsers || []).map(u => u.id);
+
+      const orParts = [
+        `payment_method.ilike.%${search}%`,
+        `gift_card_brand.ilike.%${search}%`,
+        `trade_ref.ilike.%${search}%`,
+      ];
+      // trade id is a uuid column — ilike on it errors with a type mismatch, so only
+      // attempt an id match when the search string is actually a well-formed UUID.
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search)) {
+        orParts.push(`id.eq.${search}`);
+      }
+      if (idList.length) {
+        orParts.push(`buyer_id.in.(${idList.join(',')})`);
+        orParts.push(`seller_id.in.(${idList.join(',')})`);
+      }
+      query = query.or(orParts.join(','));
+    }
+
+    const { data, error, count } = await query
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -7550,13 +7592,17 @@ app.get('/api/trades/:id', verifyToken, async (req, res) => {
     // Step 2: fetch listing + buyer + seller in parallel — each capped at 5s, failures tolerated
     const USER_COLS = 'id, username, avatar_url, average_rating, total_trades, completion_rate, last_login, last_seen_at, badge, positive_feedback, negative_feedback, country';
     const timeout5s = () => new Promise(resolve => setTimeout(() => resolve({ data: null }), 5000));
+    // Feedback counts once per trading partner (not per trade — see POST /trades/:id/feedback),
+    // so "already gave feedback" must be checked against the counterparty, not this trade_id,
+    // or the Rate Your Trade prompt would keep reappearing for repeat trades with the same person.
+    const counterpartyId = String(data.buyer_id) === String(req.userId) ? data.seller_id : data.buyer_id;
     const [listingRes, buyerRes, sellerRes, reviewRes] = await Promise.allSettled([
       data.listing_id
         ? Promise.race([supabaseAdmin.from('listings').select('*').eq('id', data.listing_id).single(), timeout5s()])
         : Promise.resolve({ data: null }),
       Promise.race([supabaseAdmin.from('users').select(USER_COLS).eq('id', data.buyer_id).single(), timeout5s()]),
       Promise.race([supabaseAdmin.from('users').select(USER_COLS).eq('id', data.seller_id).single(), timeout5s()]),
-      Promise.race([supabaseAdmin.from('reviews').select('id').eq('trade_id', req.params.id).eq('reviewer_id', req.userId).maybeSingle(), timeout5s()]),
+      Promise.race([supabaseAdmin.from('reviews').select('id').eq('reviewer_id', req.userId).eq('reviewee_id', counterpartyId).maybeSingle(), timeout5s()]),
     ]);
 
     data.listing = listingRes.status === 'fulfilled' ? (listingRes.value?.data || null) : null;
@@ -8814,8 +8860,12 @@ app.post('/api/trades/:id/feedback', verifyToken, async (req, res) => {
     if (!trade) return res.status(404).json({ error: 'Trade not found' });
     if (trade.status !== 'COMPLETED') return res.status(400).json({ error: 'Feedback can only be submitted after a trade is completed' });
     if (req.userId !== trade.buyer_id && req.userId !== trade.seller_id) return res.status(403).json({ error: 'Not a participant in this trade' });
-    const { data: existing } = await supabaseAdmin.from('reviews').select('id').eq('trade_id', req.params.id).eq('reviewer_id', req.userId).single();
-    if (existing) return res.status(400).json({ error: 'Feedback already submitted for this trade' });
+    // Feedback counts once per trading PARTNER, not per trade — otherwise the same two
+    // accounts could trade repeatedly (e.g. always picking the same payment method) and
+    // rack up unlimited positive reviews on each other, inflating total_feedback_count
+    // and the badge tier it gates (see lib/badge.js) without ever serving new customers.
+    const { data: existing } = await supabaseAdmin.from('reviews').select('id').eq('reviewer_id', req.userId).eq('reviewee_id', toUserId).maybeSingle();
+    if (existing) return res.status(400).json({ error: 'You already left feedback for this trading partner — feedback only counts once per person, no matter how many trades you do together.' });
     const { data: review, error } = await supabaseAdmin.from('reviews').insert([{ trade_id: req.params.id, reviewer_id: req.userId, reviewee_id: toUserId, rating: parseInt(rating), comment: comment || '', created_at: new Date() }]).select();
     if (error) return res.status(400).json({ error: error.message });
 
@@ -12403,45 +12453,11 @@ app.get('/api/admin/usdt-wallet', verifyToken, async (req, res) => {
   }
 });
 
-// POST /api/admin/hot-wallet/send-usdt — admin manually sends USDT straight
-// from the hot wallet to any external Tron address. Unlike collect-fees, this
-// does not touch the company internal ledger — it is a raw treasury move of
-// whatever USDT is actually sitting in the hot wallet (e.g. rebalancing to
-// cold storage). Real on-chain funds move immediately; there is no undo.
+// RETIRED: let any full-admin (not just the CEO) broadcast an unreviewed,
+// immediate on-chain USDT send straight from the hot wallet — no sign-off,
+// no second approval, unlike every other external send path in this app.
 app.post('/api/admin/hot-wallet/send-usdt', verifyToken, async (req, res) => {
-  try {
-    const admin = await requireFullAdmin(req, res); if (!admin) return;
-
-    const { toAddress, amountUsdt, note } = req.body;
-    const amount = parseFloat(amountUsdt);
-
-    if (!toAddress || !tronWalletService.isValidTronAddress(toAddress)) {
-      return res.status(400).json({ error: 'Valid Tron destination address required' });
-    }
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ error: 'Positive USDT amount required' });
-    }
-
-    const result = await tronHotWallet.sendUsdtToExternal(toAddress, amount);
-
-    await supabaseAdmin.from('wallet_transactions').insert({
-      user_id: COMPANY_WALLET_ID,
-      type: 'WITHDRAWAL',
-      currency: 'USDT',
-      amount_usdt: amount,
-      status: 'CONFIRMED',
-      tx_hash: result.txid,
-      notes: `Admin manual send → ${toAddress.slice(0, 16)}…${toAddress.slice(-4)} by ${req.userId.slice(0, 8)}${note ? ` — ${note}` : ''}`,
-      created_at: new Date().toISOString(),
-    }).then(null, () => {});
-
-    logAdminAction(req, 'HOT_WALLET_SEND_USDT', null, `${amount} USDT → ${toAddress}`).catch(() => {});
-
-    res.json({ success: true, ...result });
-  } catch (e) {
-    console.error('[POST /admin/hot-wallet/send-usdt]', e.message);
-    res.status(500).json({ error: e.message });
-  }
+  res.status(410).json({ error: 'This endpoint has been retired. Hot wallet treasury moves now require CEO sign-off.' });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -2308,9 +2308,6 @@ function UsdtWalletCard() {
   const [loading,  setLoading]  = useState(true);
   const [busy,     setBusy]     = useState(false);
   const [copied,   setCopied]   = useState('');
-  const [sendTo,   setSendTo]   = useState('');
-  const [sendAmt,  setSendAmt]  = useState('');
-  const [sending,  setSending]  = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2341,24 +2338,6 @@ function UsdtWalletCard() {
       toast.error(e.response?.data?.error || 'Failed to process sweeps');
     } finally {
       setBusy(false);
-    }
-  };
-
-  const sendUsdt = async () => {
-    const amount = parseFloat(sendAmt);
-    if (!sendTo || !amount || amount <= 0) { toast.error('Enter a valid address and amount'); return; }
-    if (!window.confirm(`Send ₮${amount.toFixed(2)} USDT from the hot wallet to ${sendTo}? This broadcasts on-chain immediately and cannot be undone.`)) return;
-    setSending(true);
-    try {
-      const r = await axios.post(`${API_URL}/admin/hot-wallet/send-usdt`,
-        { toAddress: sendTo, amountUsdt: amount }, { headers: authH() });
-      toast.success(`Sent ₮${amount.toFixed(2)} USDT — txid ${r.data.txid?.slice(0, 10)}…`);
-      setSendTo(''); setSendAmt('');
-      await load();
-    } catch (e) {
-      toast.error(e.response?.data?.error || 'Send failed');
-    } finally {
-      setSending(false);
     }
   };
 
@@ -2447,25 +2426,6 @@ function UsdtWalletCard() {
                 {busy ? 'Processing…' : 'Process Pending Sweeps'}
               </button>
             </div>
-          </div>
-
-          {/* Admin — send USDT externally */}
-          <div className="px-5 py-4 border-t" style={{ borderColor: C.g100, backgroundColor: C.g50 }}>
-            <p className="text-[11px] font-black uppercase tracking-wide mb-2 inline-flex items-center gap-1.5" style={{ color: C.g500 }}>
-              <Send size={12} /> Send USDT From Hot Wallet (external)
-            </p>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input value={sendTo} onChange={e => setSendTo(e.target.value)} placeholder="Destination Tron address (T…)"
-                className="flex-1 text-xs font-mono px-3 py-2 rounded-lg border" style={{ borderColor: C.g200 }} />
-              <input value={sendAmt} onChange={e => setSendAmt(e.target.value)} placeholder="Amount USDT" type="number" min="0" step="0.01"
-                className="sm:w-32 text-xs font-bold px-3 py-2 rounded-lg border" style={{ borderColor: C.g200 }} />
-              <button onClick={sendUsdt} disabled={sending}
-                className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-black transition hover:opacity-80 disabled:opacity-50 flex-shrink-0"
-                style={{ backgroundColor: '#DC2626', color: '#fff' }}>
-                <Send size={12} /> {sending ? 'Sending…' : 'Send'}
-              </button>
-            </div>
-            <p className="text-[10px] mt-1.5" style={{ color: C.g400 }}>Moves real on-chain USDT immediately — for treasury rebalancing / cold storage moves, not user withdrawals.</p>
           </div>
         </>
       ) : (

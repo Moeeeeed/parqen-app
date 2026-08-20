@@ -1904,7 +1904,28 @@ useEffect(() => {
               <Gift size={44} style={{ color: C.g400 }} />
             </div>
             <p className="font-bold text-base mb-1" style={{ color: C.g800 }}>No gift card offers found</p>
-            <p className="text-sm" style={{ color: C.g400 }}>Try a different brand or be the first to post</p>
+            {/* If this side (Buy/Sell) is empty only because of the current gcMode filter — not
+                because the whole market is quiet — point at the side that actually has offers
+                instead of leaving the page looking dead. */}
+            {(() => {
+              const otherType = gcMode === 'sell' ? 'BUY_GIFT_CARD' : gcMode === 'buy' ? 'SELL_GIFT_CARD' : null;
+              const otherCount = otherType ? listings.filter(l => l.listing_type === otherType).length : 0;
+              if (otherType && otherCount > 0) {
+                return (
+                  <>
+                    <p className="text-sm" style={{ color: C.g400 }}>
+                      No one's posted a {gcMode === 'sell' ? 'Sell' : 'Buy'} offer yet — but the {gcMode === 'sell' ? 'Buy' : 'Sell'} side has {otherCount} active offer{otherCount !== 1 ? 's' : ''} right now.
+                    </p>
+                    <button onClick={() => setGcMode(gcMode === 'sell' ? 'buy' : 'sell')}
+                      className="mt-4 px-6 py-2.5 rounded-xl text-sm font-black hover:opacity-90 transition mr-2"
+                      style={{ backgroundColor: C.g100, color: C.g700 }}>
+                      View {gcMode === 'sell' ? 'Buy' : 'Sell'} Offers
+                    </button>
+                  </>
+                );
+              }
+              return <p className="text-sm" style={{ color: C.g400 }}>Try a different brand or be the first to post</p>;
+            })()}
             <button onClick={() => navigate('/create-offer')}
               className="mt-4 px-6 py-2.5 rounded-xl text-white text-sm font-black hover:opacity-90 transition"
               style={{ backgroundColor: C.forest }}>

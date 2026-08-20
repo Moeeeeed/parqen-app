@@ -50,17 +50,26 @@ async function waitForConfirmation(txid, { timeoutMs = 90000, intervalMs = 3000 
       const info = await tw.trx.getTransactionInfo(txid);
       if (info && info.id) {
         if (info.receipt?.result) {
-          return { confirmed: info.receipt.result === 'SUCCESS', info, reason: `on-chain result: ${info.receipt.result}` };
+          const ok = info.receipt.result === 'SUCCESS';
+          // reverted=true only when TronGrid actually looked up the tx and reports
+          // a non-success on-chain result — a genuine, verified on-chain failure.
+          return { confirmed: ok, reverted: !ok, info, reason: `on-chain result: ${info.receipt.result}` };
         }
         // Plain TRX transfer — no contract receipt, but landing in a block is confirmation
-        if (info.blockNumber) return { confirmed: true, info };
+        if (info.blockNumber) return { confirmed: true, reverted: false, info };
       }
     } catch (err) {
       // Transient lookup failure — keep polling until deadline
     }
     await new Promise(r => setTimeout(r, intervalMs));
   }
-  return { confirmed: false, reason: `not confirmed within ${timeoutMs}ms — never broadcast, still pending, or expired` };
+  // Deadline hit without ever finding the tx info — this is NOT proof of failure.
+  // TronGrid's public (unauthenticated) API is frequently rate-limited/slow enough
+  // that a transfer which already succeeded on-chain isn't visible via
+  // getTransactionInfo within this window. reverted=false here on purpose: callers
+  // must not treat "we couldn't verify in time" the same as "it failed" — the tx
+  // may already be broadcast and irreversible.
+  return { confirmed: false, reverted: false, reason: `not confirmed within ${timeoutMs}ms — could not verify (may still have succeeded on-chain)` };
 }
 
 class TronWalletService {
@@ -229,7 +238,20 @@ class TronWalletService {
     // broadcast — confirm it actually landed before reporting success.
     const confirmation = await waitForConfirmation(txid);
     if (!confirmation.confirmed) {
-      throw new Error(`USDT transfer did not confirm on-chain (txid ${txid}): ${confirmation.reason}`);
+      if (confirmation.reverted) {
+        // TronGrid actually looked this tx up and reports it failed on-chain —
+        // a verified failure, safe to report as an error.
+        throw new Error(`USDT transfer failed on-chain (txid ${txid}): ${confirmation.reason}`);
+      }
+      // We simply couldn't verify within the timeout (public TronGrid rate limits/
+      // lag) — the transfer was already broadcast and may well have succeeded.
+      // Do NOT throw here: throwing after a real broadcast previously caused the
+      // caller to lose the txid entirely and leave the withdrawal stuck as
+      // "pending" while the funds had actually already left the hot wallet —
+      // with no safeguard against the CEO retrying and double-sending. Instead,
+      // report success (with confirmed:false) so the caller still records the
+      // txid and marks the withdrawal handled.
+      console.warn(`⚠️  [TronWallet] USDT tx ${txid} broadcast but could not verify confirmation in time — treating as sent. ${confirmation.reason}`);
     }
 
     console.log(`✅ [TronWallet] USDT sent! txid: ${txid}`);
@@ -237,6 +259,7 @@ class TronWalletService {
 
     return {
       success:      true,
+      confirmed:    confirmation.confirmed,
       txid,
       from:         fromAddress,
       to:           toAddress,

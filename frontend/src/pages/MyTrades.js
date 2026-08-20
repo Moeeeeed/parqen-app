@@ -485,6 +485,7 @@ export default function MyTrades({user}) {
     setDateFrom(''); setDateTo(''); setAmountMin(''); setAmountMax('');
   };
   const timerRef = useRef(null);
+  const skipNextSearchEffect = useRef(true); // the mount effect below already does the initial load
 
   // sessionStorage helpers — same key as ActiveTradeBanner so both share seen state
   const getSeenIds = () => {
@@ -518,16 +519,30 @@ export default function MyTrades({user}) {
 
   const LIMIT = 30;
 
+  // search/dateFrom/dateTo are sent to the server — the trade you're looking for is very
+  // often older than whatever's already paginated into the browser, and filtering only
+  // the loaded page made it look like older trades didn't exist at all.
+  const searchParams = () => {
+    const p = new URLSearchParams();
+    if (search.trim()) p.set('search', search.trim());
+    if (dateFrom) p.set('dateFrom', dateFrom);
+    if (dateTo) p.set('dateTo', dateTo);
+    return p.toString();
+  };
+
   const load = async(showSpinner = false)=>{
     if (showSpinner) setLoading(true);
     try{
-      const r = await axios.get(`${API_URL}/my-trades?page=1&limit=${LIMIT}`,{headers:authH()});
+      const extra = searchParams();
+      const r = await axios.get(`${API_URL}/my-trades?page=1&limit=${LIMIT}${extra ? '&' + extra : ''}`,{headers:authH()});
       const data = r.data.trades||[];
       const total = r.data.total||0;
       setTrades(data);
       setPage(1);
       setHasMore(total > LIMIT);
-      try { sessionStorage.setItem('praqen_trades', JSON.stringify({data, ts:Date.now()})); } catch {}
+      // Only cache the plain, unfiltered recent-trades view — a search/date-filtered
+      // result set shouldn't get treated as "your last 30 trades" on the next visit.
+      if (!extra) { try { sessionStorage.setItem('praqen_trades', JSON.stringify({data, ts:Date.now()})); } catch {} }
     }catch(e){ console.error('Failed to load trades',e); }
     finally{ setLoading(false); }
   };
@@ -537,7 +552,8 @@ export default function MyTrades({user}) {
     setLoadingMore(true);
     try{
       const nextPage = page + 1;
-      const r = await axios.get(`${API_URL}/my-trades?page=${nextPage}&limit=${LIMIT}`,{headers:authH()});
+      const extra = searchParams();
+      const r = await axios.get(`${API_URL}/my-trades?page=${nextPage}&limit=${LIMIT}${extra ? '&' + extra : ''}`,{headers:authH()});
       const more = r.data.trades||[];
       const total = r.data.total||0;
       setTrades(prev => [...prev, ...more]);
@@ -548,6 +564,9 @@ export default function MyTrades({user}) {
   };
 
   const silentRefresh = async()=>{
+    // Skip while an active search/date filter is applied — a silent background refresh
+    // shouldn't stomp filtered results the user is actively looking at.
+    if (searchParams()) return;
     try{
       const r = await axios.get(`${API_URL}/my-trades?page=1&limit=${LIMIT}`,{headers:authH()});
       const data = r.data.trades||[];
@@ -557,6 +576,17 @@ export default function MyTrades({user}) {
       try { sessionStorage.setItem('praqen_trades', JSON.stringify({data, ts:Date.now()})); } catch {}
     }catch{}
   };
+
+  // Re-query the server (debounced) whenever search or date filters change — this is
+  // what actually makes them search the user's FULL trade history instead of only
+  // whatever page happened to already be loaded.
+  useEffect(() => {
+    if (!user) return;
+    if (skipNextSearchEffect.current) { skipNextSearchEffect.current = false; return; }
+    const t = setTimeout(() => { load(false); }, search.trim() ? 400 : 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, dateFrom, dateTo]);
 
   // Called when a trade's 30-min timer hits 0 — mark it cancelled locally instantly
   const handleExpire = (tradeId) => {

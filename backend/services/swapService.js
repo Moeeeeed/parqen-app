@@ -18,29 +18,55 @@ const SWAP_FEE_RATE     = 0.002; // 0.2% fee
 const BINANCE_URL       = process.env.BINANCE_API_URL || 'https://api.binance.com/api/v3';
 const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
 
+// Short-lived cache for the last known-good rate. Two reasons this exists:
+//  1. Every source below is queried fresh on every single call otherwise — the swap
+//     UI polls this on every tab switch, and CoinGecko's free tier rate-limits
+//     (429) well before that adds up across all users, which then looked
+//     indistinguishable from the rate being genuinely unreachable.
+//  2. If every live source fails at once (seen in practice: Binance and Coinbase
+//     both intermittently fail DNS resolution from this host, even though they're
+//     not actually down), a recent cached rate lets a swap still go through instead
+//     of hard-failing — much better than blocking real swaps over a transient DNS hiccup.
+const RATE_CACHE_TTL = 20000; // 20s
+let _rateCache = 0;
+let _rateCacheAt = 0;
+
 class SwapService {
 
   // ── Fetch live BTC/USDT rate ──────────────────────────────────────────────
   async getBtcUsdtRate() {
-    // Primary: Binance (most accurate, real-time)
-    try {
-      const resp = await axios.get(`${BINANCE_URL}/ticker/price?symbol=BTCUSDT`, { timeout: 8000 });
-      const rate = parseFloat(resp.data?.price);
-      if (rate > 100) return rate; // sanity check
-    } catch (e) {
-      console.warn('[SwapService] Binance rate fetch failed:', e.message);
+    if (_rateCache > 0 && (Date.now() - _rateCacheAt) < RATE_CACHE_TTL) {
+      return _rateCache;
     }
 
-    // Fallback: CoinGecko (no API key required)
-    try {
-      const resp = await axios.get(
-        'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd',
-        { timeout: 8000 }
-      );
-      const rate = parseFloat(resp.data?.bitcoin?.usd);
-      if (rate > 100) return rate;
-    } catch (e) {
-      console.warn('[SwapService] CoinGecko fallback failed:', e.message);
+    // Try every source, most-reliable-from-this-host first. Order matters less than
+    // simply having more than two — losing any single one (DNS hiccup, rate limit)
+    // must not be able to take the whole swap feature down with it.
+    const sources = [
+      ['CoinGecko', () => axios.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', { timeout: 8000 }).then(r => parseFloat(r.data?.bitcoin?.usd))],
+      ['Binance',   () => axios.get(`${BINANCE_URL}/ticker/price?symbol=BTCUSDT`, { timeout: 8000 }).then(r => parseFloat(r.data?.price))],
+      ['Coinbase',  () => axios.get('https://api.coinbase.com/v2/prices/BTC-USD/spot', { timeout: 8000 }).then(r => parseFloat(r.data?.data?.amount))],
+      ['Kraken',    () => axios.get('https://api.kraken.com/0/public/Ticker?pair=XBTUSD', { timeout: 8000 }).then(r => parseFloat(Object.values(r.data?.result || {})[0]?.c?.[0]))],
+    ];
+
+    for (const [name, fetchRate] of sources) {
+      try {
+        const rate = await fetchRate();
+        if (rate > 100) { // sanity check
+          _rateCache = rate;
+          _rateCacheAt = Date.now();
+          return rate;
+        }
+      } catch (e) {
+        console.warn(`[SwapService] ${name} rate fetch failed:`, e.message);
+      }
+    }
+
+    // Every live source failed — fall back to the last known-good rate rather than
+    // blocking the swap outright, as long as it isn't too stale to trust.
+    if (_rateCache > 0 && (Date.now() - _rateCacheAt) < 10 * 60 * 1000) {
+      console.warn('[SwapService] All live rate sources failed — using cached rate from', new Date(_rateCacheAt).toISOString());
+      return _rateCache;
     }
 
     throw new Error('Unable to fetch BTC/USDT rate — all price APIs unreachable. Please try again.');
@@ -219,6 +245,21 @@ class SwapService {
     if (updateErr) throw new Error(`Swap failed: ${updateErr.message}`);
     if (!swapRows || swapRows.length === 0) throw new Error('Balance changed — please retry the swap');
 
+    // Re-certify the new BTC balance in balance_audit — _assertLedgerTrueBtc above
+    // compares wallets.balance_btc against the LAST row here on every BTC→USDT swap.
+    // Without this, a successful swap moves the balance away from that last-audited
+    // figure but never re-stamps it, so the very next swap attempt always fails the
+    // check it just passed. Fire-and-forget like every other balance_audit write in
+    // this codebase (tradeEscrowService.js) — logged loudly on failure since a missed
+    // stamp here silently re-introduces the false-positive block for this user.
+    supabaseAdmin.from('balance_audit').insert({
+      user_id:     userId,
+      change_btc:  -amount,
+      new_balance: newBtc,
+      reason:      'SWAP',
+      created_at:  new Date().toISOString(),
+    }).then(null, (e) => console.error(`[SwapService] ⚠️ balance_audit stamp failed after BTC→USDT swap for ${userId.slice(0, 8)} — their next swap may be falsely blocked:`, e.message));
+
     // Platform fee → company wallet (in USDT). The user's own swap already
     // committed above — don't fail their successful swap over an internal
     // accounting hiccup, but never let it fail silently either.
@@ -290,6 +331,18 @@ class SwapService {
       .select('balance_usdt');
     if (updateErr) throw new Error(`Swap failed: ${updateErr.message}`);
     if (!swapRows || swapRows.length === 0) throw new Error('Balance changed — please retry the swap');
+
+    // This swap also changes wallets.balance_btc (it's the BTC side of the trade), even
+    // though the ledger-true check only runs on the BTC→USDT direction. Re-stamp it here
+    // too, or a later BTC→USDT swap will falsely fail against a now-stale audit figure —
+    // see the identical stamp in swapBtcToUsdt for the full explanation.
+    supabaseAdmin.from('balance_audit').insert({
+      user_id:     userId,
+      change_btc:  netBtc,
+      new_balance: newBtc,
+      reason:      'SWAP',
+      created_at:  new Date().toISOString(),
+    }).then(null, (e) => console.error(`[SwapService] ⚠️ balance_audit stamp failed after USDT→BTC swap for ${userId.slice(0, 8)} — their next BTC→USDT swap may be falsely blocked:`, e.message));
 
     // Platform fee → company wallet (in BTC). The user's own swap already
     // committed above — don't fail their successful swap over an internal

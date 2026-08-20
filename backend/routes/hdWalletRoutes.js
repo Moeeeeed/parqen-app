@@ -1023,6 +1023,9 @@ router.get('/ceo-withdrawals', verifyToken, async (req, res) => {
 // POST /api/hd-wallet/ceo-withdrawals/:id/approve
 router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
   const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
+  // Declared here (not inside the try block) so the catch block below can still see it —
+  // it tracks whether it's safe to release the PROCESSING claim back to PENDING_APPROVAL.
+  let revertOnFailure = true;
   try {
     const ceo = await requireCeo(req, res); if (!ceo) return;
     const { id } = req.params;
@@ -1031,6 +1034,25 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
     const { data: txRow } = await supabaseAdmin
       .from('wallet_transactions').select('*').eq('id', id).eq('status', 'PENDING_APPROVAL').maybeSingle();
     if (!txRow) return res.status(404).json({ error: 'No pending withdrawal found with that ID — it may have already been reviewed.' });
+
+    // Atomically claim this row before sending anything — flips PENDING_APPROVAL -> PROCESSING
+    // only if it's still PENDING_APPROVAL. A double-click, a duplicate approve request, or two
+    // CEO sessions hitting approve at once will only ever have ONE of them win this update;
+    // the rest get a 409 instead of a second on-chain send of the same withdrawal.
+    const { data: claimed, error: claimErr } = await supabaseAdmin
+      .from('wallet_transactions')
+      .update({ status: 'PROCESSING' })
+      .eq('id', id)
+      .eq('status', 'PENDING_APPROVAL')
+      .select('id');
+    if (claimErr) throw claimErr;
+    if (!claimed || claimed.length === 0) {
+      return res.status(409).json({ error: 'This withdrawal is already being processed by another approval request — refresh and check its status before retrying.' });
+    }
+    // If anything below fails WITHOUT a broadcast having happened, revertOnFailure (declared
+    // above the try block) stays true and we put this row back to PENDING_APPROVAL so the CEO
+    // can safely retry. Once a send actually broadcasts, it flips to false — every code path
+    // after that ends in a terminal status (CONFIRMED or queued PENDING).
 
     const isUsdt = txRow.currency === 'USDT';
     const platformFee = isUsdt ? parseFloat(txRow.platform_fee_usdt || 0) : parseFloat(txRow.platform_fee_btc || 0);
@@ -1078,7 +1100,13 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
       throw sendErr;
     }
 
-    // Broadcast succeeded — credit the platform fee and mark this reviewed + confirmed
+    // Broadcast succeeded — from this point on, funds have (or may have) already moved
+    // on-chain. Never revert this row back to PENDING_APPROVAL after this point, even if
+    // something below fails (fee crediting, DB update) — that would let the CEO retry and
+    // send a second payout for a withdrawal that already went out.
+    revertOnFailure = false;
+
+    // Credit the platform fee and mark this reviewed + confirmed
     const ts = new Date().toISOString();
     if (isUsdt) {
       await tronHotWallet.creditFeeToCompany(platformFee, `USDT withdrawal fee from ${txRow.user_id.slice(0, 8)} — PRAQEN-approved`);
@@ -1124,6 +1152,21 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
     res.json({ success: true, txid: result.txid, message: 'Withdrawal approved and broadcast.' });
   } catch (error) {
     console.error('[hdWalletRoutes POST /ceo-withdrawals/:id/approve]', error.message);
+    const id = req.params.id;
+    if (revertOnFailure) {
+      // Nothing broadcast yet — safe to release the claim so the CEO can retry.
+      await supabaseAdmin.from('wallet_transactions')
+        .update({ status: 'PENDING_APPROVAL' })
+        .eq('id', id).eq('status', 'PROCESSING')
+        .then(null, (e) => console.error(`[hdWalletRoutes] failed to release PROCESSING claim on ${id}:`, e.message));
+    } else {
+      // Funds already left the hot wallet but something after that failed (fee credit,
+      // DB update). Leaving this at PROCESSING on purpose — it must NOT go back to
+      // PENDING_APPROVAL, or a retry would send a second payout. This needs a human to
+      // reconcile: check the on-chain tx history for this row's destination/amount and
+      // manually mark it CONFIRMED with the real tx_hash.
+      console.error(`🚨 [hdWalletRoutes] Withdrawal ${id} may have broadcast on-chain but failed to finalize in the DB — left at PROCESSING, needs manual reconciliation. Error: ${error.message}`);
+    }
     if (error.message?.startsWith('HOT_WALLET_INSUFFICIENT') || error.message?.startsWith('INSUFFICIENT_UTXOS') || /^HOT_WALLET_(USDT|TRX)_INSUFFICIENT/.test(error.message || '')) {
       return res.status(503).json({ error: 'Hot wallet has insufficient funds to broadcast this right now. Top it up, or retry with "force" to queue it for later.', hotWalletLow: true });
     }

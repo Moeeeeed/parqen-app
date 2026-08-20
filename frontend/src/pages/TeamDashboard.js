@@ -5265,18 +5265,27 @@ export default function TeamDashboard({ user: propUser }) {
   useEffect(() => {
     const token = localStorage.getItem('team_token');
     const stored = localStorage.getItem('team_user');
+    let validSession = false;
     if (token && stored) {
-      const u = JSON.parse(stored);
-      if (u.is_moderator || u.is_admin) {
+      let u = null;
+      try { u = JSON.parse(stored); } catch { /* corrupt — treat as invalid below */ }
+      if (u && (u.is_moderator || u.is_admin)) {
         setTeamUser(u); setLoggedIn(true);
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        validSession = true;
       } else {
+        // Stale/invalid saved session (e.g. from before this account had team access,
+        // or corrupt JSON) — clear it and fall through to try the admin-session
+        // auto-login below instead of leaving the user stuck on the login form with
+        // no way back in short of manually clearing storage themselves.
         localStorage.removeItem('team_token'); localStorage.removeItem('team_user');
       }
-    } else if (propUser && (propUser.is_moderator || propUser.is_admin) && localStorage.getItem('token')) {
+    }
+    if (!validSession && propUser && (propUser.is_moderator || propUser.is_admin) && localStorage.getItem('token')) {
       const t = localStorage.getItem('token');
       localStorage.setItem('team_token', t); localStorage.setItem('team_user', JSON.stringify(propUser));
       setTeamUser(propUser); setLoggedIn(true);
+      axios.defaults.headers.common['Authorization'] = `Bearer ${t}`;
     }
   }, [propUser]);
 

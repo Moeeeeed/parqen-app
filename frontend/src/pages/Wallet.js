@@ -69,10 +69,11 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
   const [confirm,   setConfirm]   = useState(false);
   const [sending,   setSending]   = useState(false);
   // 2FA step
-  const [step,       setStep]       = useState('form'); // 'form' | 'code'
+  const [step,       setStep]       = useState('form'); // 'form' | 'code' | 'success'
   const [codeInput,  setCodeInput]  = useState('');
   const [sending2FA, setSending2FA] = useState(false);
   const [riskyAttempt, setRiskyAttempt] = useState(false); // true after first risky-wallet warning
+  const [sendResult, setSendResult] = useState(null);
 
   const price  = btcPrice || 88000;
 
@@ -80,15 +81,11 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
     ? parseFloat((parseFloat(usdAmount || 0) / price).toFixed(8))
     : parseFloat(amount || 0);
 
-  // Tiered withdrawal fee — mirrors backend calcWithdrawalFee()
+  // Flat 4% withdrawal fee — mirrors backend calcWithdrawalFee()
   // Use raw USD input when in USD mode to avoid BTC round-trip floating-point boundary errors
   const calcFeeByUsd = (usd) => {
-    if (usd <= 0)    return { feeUsd: 0,  feeBtc: 0,            label: '' };
-    if (usd < 50)    return { feeUsd: 5,  feeBtc: 5  / price,   label: '$5 flat fee' };
-    if (usd < 100)   return { feeUsd: 10, feeBtc: 10 / price,   label: '$10 flat fee' };
-    if (usd < 250)   return { feeUsd: 15, feeBtc: 15 / price,   label: '$15 flat fee' };
-    if (usd < 500)   return { feeUsd: 25, feeBtc: 25 / price,   label: '$25 flat fee' };
-    return { feeUsd: usd * 0.05, feeBtc: (usd * 0.05) / price,  label: '5% fee' };
+    if (usd <= 0) return { feeUsd: 0, feeBtc: 0, label: '' };
+    return { feeUsd: usd * 0.04, feeBtc: (usd * 0.04) / price, label: '4% fee' };
   };
   const calcFee = (btc) => {
     // Round to nearest cent before tier comparison to avoid floating-point boundary mismatches
@@ -162,8 +159,8 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
         toast.info('Since you still want to send, you can proceed. Once sent, PRAQEN is not responsible for any loss.', { autoClose: 7000 });
       }
       const r = await onSend(address.trim(), btcAmt, codeInput, riskyAttempt);
-      toast.success(r?.data?.message || 'Withdrawal submitted — pending 1st confirmation.', { autoClose: 8000 });
-      onClose();
+      setSendResult({ address: address.trim(), amount: btcAmt, amountUsd: btcAmt * price, fee, feeUsd, total, totalUsd, message: r?.data?.message });
+      setStep('success');
     } catch (e) {
       const msg = e?.response?.data?.error || '';
       if (msg.toLowerCase().includes('risky') || msg.toLowerCase().includes('blockchain issue')) {
@@ -411,7 +408,7 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
                     <div className="text-right">
                       <span className={`text-xs ${bold ? 'font-black' : 'font-bold'}`}
                         style={{ color: bold ? '#1e293b' : C.g700 }}>₿ {fmt(btc)}</span>
-                      <span className="ml-1.5 text-xs font-medium" style={{ color: C.g400 }}>({fmtUsdVal(usd)})</span>
+                      <span className="ml-1.5 text-xs font-medium" style={{ color: C.g400 }}>(≈ ₮{parseFloat(usd || 0).toFixed(2)})</span>
                     </div>
                   </div>
                 ))}
@@ -522,6 +519,50 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
                       : <span className="flex items-center justify-center gap-2"><Send size={15} /> Confirm Send</span>}
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* ── Step 3: Success ── */}
+            {step === 'success' && sendResult && (
+              <div className="text-center py-3 space-y-5">
+                <div className="w-24 h-24 rounded-full flex items-center justify-center mx-auto"
+                  style={{ background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 60%, #F7931A 100%)`, boxShadow: `0 16px 48px ${C.forest}55` }}>
+                  <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                    <path d="M8 20l9 9 15-17" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+
+                <div>
+                  <p className="text-2xl font-black" style={{ color: C.forest }}>Withdrawal Submitted!</p>
+                  <p className="text-sm font-semibold mt-1" style={{ color: C.g500 }}>
+                    Held for review before it broadcasts — this protects your funds
+                  </p>
+                </div>
+
+                <div className="rounded-2xl overflow-hidden text-left" style={{ border: `1.5px solid ${C.g200}` }}>
+                  <div className="px-4 py-3" style={{ background: C.mist, borderBottom: `1px solid ${C.g100}` }}>
+                    <p className="text-xs font-black uppercase tracking-widest" style={{ color: C.green }}>Withdrawal Receipt</p>
+                  </div>
+                  {[
+                    { label: 'To address',    val: `${sendResult.address.slice(0, 10)}…${sendResult.address.slice(-6)}` },
+                    { label: 'Amount',        val: `₿ ${fmt(sendResult.amount)} (≈ ₮${parseFloat(sendResult.amountUsd || 0).toFixed(2)})` },
+                    { label: 'Network fee',   val: `₿ ${fmt(sendResult.fee)} (≈ ₮${parseFloat(sendResult.feeUsd || 0).toFixed(2)})` },
+                    { label: 'Total deducted', val: `₿ ${fmt(sendResult.total)} (≈ ₮${parseFloat(sendResult.totalUsd || 0).toFixed(2)})` },
+                    { label: 'Status',        val: 'Pending review' },
+                  ].map(({ label, val }, i) => (
+                    <div key={label} className="flex items-center justify-between px-4 py-2.5"
+                      style={{ borderTop: i > 0 ? `1px solid ${C.g100}` : 'none', backgroundColor: i % 2 === 0 ? C.g50 : '#fff' }}>
+                      <span className="text-xs font-semibold" style={{ color: C.g500 }}>{label}</span>
+                      <span className="text-xs font-black" style={{ color: C.forest, fontFamily: label === 'To address' ? 'monospace' : 'inherit' }}>{val}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <button onClick={onClose}
+                  className="w-full py-4 rounded-2xl text-white font-black text-sm transition active:scale-[0.98]"
+                  style={{ background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 100%)`, boxShadow: `0 8px 24px ${C.forest}45` }}>
+                  Done
+                </button>
               </div>
             )}
           </div>
@@ -1594,24 +1635,26 @@ function InternalTransferModal({ balance, btcPrice, displayCurrency, fxRate, cur
 }
 
 // ─── USDT Withdraw Modal ──────────────────────────────────────────────────────
-function UsdtWithdrawModal({ balance, onClose, onSend, kycStatus, twoFactorEnabled, onSwitchToInternal }) {
+function UsdtWithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFactorEnabled, onSwitchToInternal }) {
+  const btcPx = btcPrice || 88000;
   const [address,       setAddress]       = useState('');
   const [amount,        setAmount]        = useState('');
   const [inputMode,     setInputMode]     = useState('usdt'); // 'usdt' | 'usd'
   const [usdInput,      setUsdInput]      = useState('');
   const [confirm,       setConfirm]       = useState(false);
-  const [step,          setStep]          = useState('form');
+  const [step,          setStep]          = useState('form'); // 'form' | 'code' | 'success'
   const [codeInput,     setCodeInput]     = useState('');
   const [sending2FA,    setSending2FA]    = useState(false);
   const [sending,       setSending]       = useState(false);
   const [sendError,     setSendError]     = useState('');
+  const [sendResult,    setSendResult]    = useState(null);
 
-  // Fee = max($5 flat floor, 5% of amount) — mirrors backend calcFee() in
+  // Fee = max($5 flat floor, 3% of amount) — mirrors backend calcFee() in
   // POST /api/wallet/usdt/send. The floor means the fee never drops as the
-  // amount goes up: 5% only takes over once it clears $5, at amounts above
-  // $100 ($5 / 5%). No boundary where a bigger withdrawal costs less fee.
+  // amount goes up: 3% only takes over once it clears $5, at amounts above
+  // ~$167 ($5 / 3%). No boundary where a bigger withdrawal costs less fee.
   const FEE_FLAT    = 5.00;
-  const FEE_PERCENT = 0.05;
+  const FEE_PERCENT = 0.03;
   const MIN_SEND    = 5.00;
   const FEE_SWITCH  = FEE_FLAT / FEE_PERCENT; // $100 — where percent first exceeds the floor
 
@@ -1657,9 +1700,14 @@ function UsdtWithdrawModal({ balance, onClose, onSend, kycStatus, twoFactorEnabl
     if (!codeInput || codeInput.length !== 6) { toast.error('Enter the 6-digit code from your email.'); return; }
     setSending(true); setSendError('');
     try {
-      await onSend(address.trim(), usdtAmt, codeInput);
-      toast.success('USDT sent! Transaction broadcast to Tron network.', { autoClose: 6000 });
-      onClose();
+      const r = await onSend(address.trim(), usdtAmt, codeInput);
+      setSendResult({
+        address: address.trim(),
+        amount: r?.data?.amount_sent ?? usdtAmt,
+        fee: r?.data?.fee ?? fee,
+        total: r?.data?.total_deducted ?? totalDeduct,
+      });
+      setStep('success');
     } catch (e) {
       const msg = e?.response?.data?.error || 'Send failed. Your funds are safe — please try again.';
       setSendError(msg);
@@ -1689,17 +1737,17 @@ function UsdtWithdrawModal({ balance, onClose, onSend, kycStatus, twoFactorEnabl
             </button>
           </div>
         </div>
-        <div className="p-5 overflow-y-auto space-y-4" style={{ maxHeight: '75vh' }}>
+        <div className="p-5 overflow-y-auto space-y-3" style={{ maxHeight: '75vh', backgroundColor: C.g50 }}>
 
           {/* ── Destination toggle: external wallet (this modal) vs PRAQEN user ── */}
           <div className="flex rounded-2xl overflow-hidden" style={{ border: `1.5px solid ${C.g200}` }}>
-            <div className="flex-1 py-3 text-center font-black text-xs"
-              style={{ background: 'linear-gradient(135deg, #1a1a2e, #16213e)', color: '#fff' }}>
+            <div className="flex-1 py-3 text-center font-black text-xs text-white"
+              style={{ background: `linear-gradient(135deg, ${C.forest}, ${C.green})` }}>
               External Wallet
             </div>
             <button onClick={onSwitchToInternal}
               className="flex-1 py-3 text-center font-black text-xs transition hover:bg-gray-50"
-              style={{ color: C.g500 }}>
+              style={{ color: C.g500, backgroundColor: '#fff' }}>
               PRAQEN User
             </button>
           </div>
@@ -1747,79 +1795,64 @@ function UsdtWithdrawModal({ balance, onClose, onSend, kycStatus, twoFactorEnabl
             </div>
           ) : <>
 
-          {/* ── Fee notice ── */}
-          <div className="rounded-2xl overflow-hidden" style={{ border: '1.5px solid #fde68a' }}>
-            <div className="px-4 py-3 flex items-center gap-2.5" style={{ backgroundColor: '#fffbeb' }}>
-              <AlertTriangle size={13} style={{ color: '#d97706', flexShrink: 0 }} />
-              <p className="text-xs font-semibold leading-relaxed" style={{ color: '#92400e' }}>
-                A send fee applies. You'll see the exact amount before you confirm.
-              </p>
+          {/* ── Balance card ── */}
+          <div className="rounded-2xl p-4" style={{ backgroundColor: C.g50, border: `1.5px solid ${C.g200}` }}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold mb-0.5" style={{ color: C.g500 }}>Available USDT</p>
+                <p className="font-black text-2xl" style={{ color: C.forest }}>₮ {bal.toFixed(2)}</p>
+              </div>
+              <span className="text-xs font-black px-2.5 py-1 rounded-full flex-shrink-0" style={{ backgroundColor: `${C.green}15`, color: C.green }}>TRC-20</span>
+            </div>
+            <div className="flex items-center justify-between mt-2 pt-2" style={{ borderTop: `1px solid ${C.g200}` }}>
+              <span className="text-xs font-semibold" style={{ color: C.g400 }}>A send fee applies — exact amount shown before you confirm</span>
+              {calcMax(bal) > 0 && <span className="text-xs font-bold flex-shrink-0" style={{ color: C.g600 }}>Max: ₮{calcMax(bal).toFixed(2)}</span>}
             </div>
           </div>
 
-          {/* ── Balance pill ── */}
-          <div className="flex items-center justify-between px-4 py-3 rounded-2xl"
-            style={{ background: 'linear-gradient(135deg, #eff6ff, #dbeafe)', border: '1px solid #bfdbfe' }}>
-            <div>
-              <p className="text-xs font-bold mb-0.5" style={{ color: '#1e40af' }}>Available USDT</p>
-              <p className="font-black text-xl" style={{ color: '#1d4ed8' }}>₮ {bal.toFixed(2)}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs font-bold" style={{ color: '#3b82f6' }}>TRC-20</p>
-              {calcMax(bal) > 0 && (
-                <p className="text-xs font-semibold mt-0.5" style={{ color: '#60a5fa' }}>
-                  Max send: ₮{calcMax(bal).toFixed(2)}
-                </p>
-              )}
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-black mb-2" style={{ color: C.g700 }}>Recipient Tron Address</label>
+          {/* ── Recipient card ── */}
+          <div className="rounded-2xl p-4 space-y-2.5" style={{ backgroundColor: '#fff', border: `1.5px solid ${C.g200}` }}>
+            <label className="block text-xs font-black" style={{ color: C.g500 }}>Recipient Tron Address</label>
             <div className="relative">
               <input type="text" value={address} onChange={e => setAddress(e.target.value)}
                 placeholder="T… (starts with T, 34 characters)"
-                className="w-full px-4 py-3.5 text-sm rounded-2xl focus:outline-none font-mono transition"
+                className="w-full px-4 py-3 text-sm rounded-xl focus:outline-none font-mono transition"
                 style={{
-                  border: `2px solid ${!address ? C.g200 : addrOk ? '#10b981' : '#ef4444'}`,
-                  backgroundColor: !address ? '#fafafa' : addrOk ? '#f0fdf4' : '#fff5f5',
+                  border: `1.5px solid ${!address ? C.g200 : addrOk ? C.green : '#ef4444'}`,
+                  backgroundColor: C.g50,
                   color: C.g800, paddingRight: address ? '40px' : '16px',
                 }} />
               {address && (
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  {addrOk ? <CheckCircle size={16} style={{ color: '#10b981' }} /> : <AlertTriangle size={16} style={{ color: '#ef4444' }} />}
+                  {addrOk ? <CheckCircle size={16} style={{ color: C.green }} /> : <AlertTriangle size={16} style={{ color: '#ef4444' }} />}
                 </div>
               )}
             </div>
             {address.length > 3 && !addrOk && (
-              <p className="text-xs mt-1.5 font-semibold flex items-center gap-1" style={{ color: '#ef4444' }}>
+              <p className="text-xs font-semibold flex items-center gap-1" style={{ color: '#ef4444' }}>
                 <AlertTriangle size={11} /> Must start with T, 34 characters (Tron mainnet)
               </p>
             )}
-            {addrOk && <p className="text-xs mt-1.5 font-semibold flex items-center gap-1" style={{ color: '#10b981' }}><CheckCircle size={11} /> Valid Tron address</p>}
-          </div>
-
-          {/* ── Wrong-address responsibility warning ── */}
-          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
-            <AlertTriangle size={13} style={{ color: '#D97706', flexShrink: 0 }} />
-            <p className="text-xs font-semibold" style={{ color: '#92400E' }}>
+            {addrOk && <p className="text-xs font-semibold flex items-center gap-1" style={{ color: C.green }}><CheckCircle size={11} /> Valid Tron address</p>}
+            <p className="text-xs leading-relaxed" style={{ color: C.g400 }}>
               Double-check this address before sending. If it's wrong, your funds are gone for good — PRAQEN can't recover or refund a send to the wrong wallet.
             </p>
           </div>
 
-          <div>
-            {/* ── Input mode toggle ── */}
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-black" style={{ color: C.g700 }}>Amount</label>
-              <div className="flex rounded-xl overflow-hidden" style={{ border: '1.5px solid #e2e8f0' }}>
+          {/* ── Amount card ── */}
+          <div className="rounded-2xl p-4 space-y-2.5" style={{ backgroundColor: '#fff', border: `1.5px solid ${C.g200}` }}>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-black" style={{ color: C.g500 }}>Amount</label>
+              <div className="flex rounded-lg overflow-hidden" style={{ border: `1.5px solid ${C.g200}` }}>
                 {[
                   { key: 'usdt', label: '₮ USDT' },
                   { key: 'usd',  label: '$ USD'  },
                 ].map(({ key, label }) => (
                   <button key={key}
                     onClick={() => { setInputMode(key); }}
-                    className="px-3 py-1.5 text-xs font-black transition"
+                    className="px-3 py-1 text-xs font-black transition"
                     style={{
-                      background: inputMode === key ? 'linear-gradient(135deg, #1d4ed8, #2563eb)' : '#fff',
+                      background: inputMode === key ? C.forest : 'transparent',
                       color: inputMode === key ? '#fff' : C.g500,
                     }}>
                     {label}
@@ -1832,29 +1865,22 @@ function UsdtWithdrawModal({ balance, onClose, onSend, kycStatus, twoFactorEnabl
             {inputMode === 'usd' && (
               <div className="space-y-1.5">
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-base" style={{ color: '#2563eb' }}>$</span>
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-base" style={{ color: C.g400 }}>$</span>
                   <input type="number" value={usdInput}
                     onChange={e => { setUsdInput(e.target.value); setAmount(e.target.value); }}
                     placeholder="10.00" min="0" step="0.01"
-                    className="w-full pl-8 pr-16 py-3.5 text-sm rounded-2xl focus:outline-none transition"
+                    className="w-full pl-8 pr-16 py-3.5 text-xl font-black rounded-xl focus:outline-none transition"
                     style={{
-                      border: `2px solid ${!usdInput ? C.g200 : hasEnough ? '#10b981' : '#ef4444'}`,
-                      backgroundColor: !usdInput ? '#fafafa' : hasEnough ? '#f0fdf4' : '#fff5f5',
+                      border: `1.5px solid ${!usdInput ? C.g200 : hasEnough ? C.green : '#ef4444'}`,
+                      backgroundColor: C.g50, color: C.g800,
                     }} />
                   <button onClick={() => { const m = calcMax(bal); if (m > 0) { setUsdInput(m.toFixed(2)); setAmount(m.toFixed(2)); } }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black px-2.5 py-1 rounded-xl"
-                    style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff' }}>MAX</button>
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black px-2.5 py-1.5 rounded-lg"
+                    style={{ background: `linear-gradient(135deg, ${C.forest}, ${C.green})`, color: '#fff' }}>MAX</button>
                 </div>
-                {parseFloat(usdInput) > 0 && (
-                  <p className="text-xs font-semibold px-1" style={{ color: '#2563eb' }}>
-                    = ₮{parseFloat(usdInput || 0).toFixed(2)} USDT · Min: $5.00 · Max: ${calcMax(bal).toFixed(2)}
-                  </p>
-                )}
-                {!usdInput && (
-                  <p className="text-xs font-semibold px-1" style={{ color: C.g400 }}>
-                    Min: $5.00 · Max: ${calcMax(bal).toFixed(2)} · 1 USD = 1 USDT
-                  </p>
-                )}
+                <p className="text-xs font-semibold px-1" style={{ color: C.g400 }}>
+                  {parseFloat(usdInput) > 0 ? `= ₮${parseFloat(usdInput || 0).toFixed(2)} USDT · ` : ''}Min: $5.00 · Max: ${calcMax(bal).toFixed(2)}
+                </p>
               </div>
             )}
 
@@ -1866,78 +1892,60 @@ function UsdtWithdrawModal({ balance, onClose, onSend, kycStatus, twoFactorEnabl
                   <input type="number" value={amount}
                     onChange={e => { setAmount(e.target.value); setUsdInput(e.target.value); }}
                     placeholder="0.00" min="0" step="0.01"
-                    className="w-full pl-8 pr-16 py-3.5 text-sm rounded-2xl focus:outline-none transition"
+                    className="w-full pl-8 pr-16 py-3.5 text-xl font-black rounded-xl focus:outline-none transition"
                     style={{
-                      border: `2px solid ${!amount ? C.g200 : hasEnough ? '#10b981' : '#ef4444'}`,
-                      backgroundColor: !amount ? '#fafafa' : hasEnough ? '#f0fdf4' : '#fff5f5',
+                      border: `1.5px solid ${!amount ? C.g200 : hasEnough ? C.green : '#ef4444'}`,
+                      backgroundColor: C.g50, color: C.g800,
                     }} />
                   <button onClick={() => { const m = calcMax(bal); if (m > 0) { setAmount(m.toFixed(2)); setUsdInput(m.toFixed(2)); } }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black px-2.5 py-1 rounded-xl"
-                    style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff' }}>MAX</button>
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black px-2.5 py-1.5 rounded-lg"
+                    style={{ background: `linear-gradient(135deg, ${C.forest}, ${C.green})`, color: '#fff' }}>MAX</button>
                 </div>
-                {usdtAmt > 0 && (
-                  <p className="text-xs font-semibold px-1" style={{ color: '#10b981' }}>
-                    = ${usdtAmt.toFixed(2)} USD · Min: ₮{MIN_SEND.toFixed(2)} · Max: ₮{calcMax(bal).toFixed(2)}
-                  </p>
-                )}
-                {!amount && (
-                  <p className="text-xs font-semibold px-1" style={{ color: C.g400 }}>
-                    Min: ₮{MIN_SEND.toFixed(2)} · Max: ₮{calcMax(bal).toFixed(2)} · 1 USDT = $1.00
-                  </p>
-                )}
+                <p className="text-xs font-semibold px-1" style={{ color: C.g400 }}>
+                  {usdtAmt > 0 ? `= $${usdtAmt.toFixed(2)} USD · ` : ''}Min: ₮{MIN_SEND.toFixed(2)} · Max: ₮{calcMax(bal).toFixed(2)}
+                </p>
               </div>
             )}
 
             {usdtAmt > 0 && !hasEnough && (
-              <div className="flex items-center gap-1.5 mt-2 px-3 py-2 rounded-xl" style={{ backgroundColor: '#fff5f5', border: '1px solid #fecaca' }}>
+              <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl" style={{ backgroundColor: '#fff5f5', border: '1px solid #fecaca' }}>
                 <AlertTriangle size={12} style={{ color: '#ef4444', flexShrink: 0 }} />
                 <p className="text-xs font-semibold" style={{ color: '#dc2626' }}>
                   Need ₮{totalDeduct.toFixed(2)} (₮{usdtAmt.toFixed(2)} + {fee.toFixed(2)} fee) — only ₮{bal.toFixed(2)} available
                 </p>
               </div>
             )}
-          </div>
 
-          {/* ── Live fee breakdown ── */}
-          {usdtAmt > 0 && (
-            <div className="rounded-2xl overflow-hidden" style={{ border: '1.5px solid #e2e8f0' }}>
-              {[
-                { label: 'You send',        val: `₮${usdtAmt.toFixed(2)}`,      icon: '→',  bold: false },
-                { label: `Platform fee (${usdtAmt <= FEE_SWITCH ? `₮${FEE_FLAT.toFixed(0)} flat` : `${(FEE_PERCENT * 100).toFixed(0)}%`})`, val: `₮${fee.toFixed(2)}`, icon: <DollarSign size={11} />, bold: false, warn: true },
-                { label: 'Total deducted',  val: `₮${totalDeduct.toFixed(2)}`,  icon: null, bold: true  },
-              ].map(({ label, val, icon, bold, warn }, i) => (
-                <div key={label} className="flex justify-between items-center px-4 py-3"
-                  style={{
-                    backgroundColor: bold ? '#f8fafc' : '#fff',
-                    borderTop: bold ? '2px solid #e2e8f0' : i > 0 ? '1px solid #f1f5f9' : 'none',
-                  }}>
-                  <span className="text-xs font-semibold flex items-center gap-1.5"
-                    style={{ color: warn ? '#d97706' : bold ? '#334155' : '#64748b' }}>
-                    {icon && <span>{icon}</span>}{label}
-                  </span>
-                  <span className={`text-xs ${bold ? 'font-black' : 'font-bold'}`}
-                    style={{ color: warn ? '#d97706' : bold ? '#1e293b' : '#475569' }}>
-                    {val}
-                  </span>
-                </div>
-              ))}
-              <div className="px-4 py-2.5 flex items-center gap-2"
-                style={{ backgroundColor: '#f0fdf4', borderTop: '1px solid #dcfce7' }}>
-                <CheckCircle size={12} style={{ color: '#10b981', flexShrink: 0 }} />
-                <p className="text-xs font-semibold" style={{ color: '#166534' }}>
-                  Recipient gets exactly <strong>₮{usdtAmt.toFixed(2)}</strong> · fee is separate
+            {/* ── Fee breakdown — compact, matches the card's own accent instead of a separate table ── */}
+            {usdtAmt > 0 && (
+              <div className="pt-2 space-y-1.5" style={{ borderTop: `1px solid ${C.g100}` }}>
+                {[
+                  { label: `Platform fee (${usdtAmt <= FEE_SWITCH ? `₮${FEE_FLAT.toFixed(0)} flat` : `${(FEE_PERCENT * 100).toFixed(0)}%`})`, val: `₮${fee.toFixed(2)}`, btcEq: fee / btcPx },
+                  { label: 'Total deducted', val: `₮${totalDeduct.toFixed(2)}`, btcEq: totalDeduct / btcPx, bold: true },
+                ].map(({ label, val, btcEq, bold }) => (
+                  <div key={label} className="flex justify-between items-center">
+                    <span className={`text-xs ${bold ? 'font-black' : 'font-semibold'}`} style={{ color: bold ? C.g700 : C.g400 }}>{label}</span>
+                    <span className="text-right">
+                      <span className={`text-xs ${bold ? 'font-black' : 'font-bold'}`} style={{ color: bold ? C.forest : C.g600 }}>{val}</span>
+                      <span className="ml-1.5 text-xs font-medium" style={{ color: C.g400 }}>(≈ ₿{btcEq.toFixed(8)})</span>
+                    </span>
+                  </div>
+                ))}
+                <p className="text-xs font-semibold pt-0.5" style={{ color: C.green }}>
+                  Recipient gets exactly ₮{usdtAmt.toFixed(2)} — fee is separate
                 </p>
               </div>
-            </div>
-          )}
-          <label className="flex items-start gap-3 cursor-pointer p-3 rounded-2xl transition"
-            style={{ backgroundColor: confirm ? '#f0fdf4' : '#fafafa', border: `1.5px solid ${confirm ? '#bbf7d0' : C.g200}` }}>
+            )}
+          </div>
+
+          <label className="flex items-start gap-3 cursor-pointer p-3.5 rounded-2xl transition"
+            style={{ backgroundColor: confirm ? `${C.green}0d` : C.g50, border: `1.5px solid ${confirm ? C.green : C.g200}` }}>
             <div className="mt-0.5 w-4 h-4 rounded-md flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: confirm ? '#10b981' : '#fff', border: `2px solid ${confirm ? '#10b981' : C.g300}` }}>
+              style={{ backgroundColor: confirm ? C.green : '#fff', border: `2px solid ${confirm ? C.green : C.g300}` }}>
               {confirm && <CheckCircle size={10} color="#fff" strokeWidth={3} />}
             </div>
             <input type="checkbox" checked={confirm} onChange={e => setConfirm(e.target.checked)} className="sr-only" />
-            <p className="text-xs font-semibold leading-relaxed" style={{ color: confirm ? '#166534' : C.g600 }}>
+            <p className="text-xs font-semibold leading-relaxed" style={{ color: confirm ? C.forest : C.g600 }}>
               I've double-checked this address is correct. I understand USDT-TRC20 sends are irreversible, and PRAQEN is not responsible if I send to the wrong wallet.
             </p>
           </label>
@@ -2028,6 +2036,49 @@ function UsdtWithdrawModal({ balance, onClose, onSend, kycStatus, twoFactorEnabl
                     : <span className="flex items-center justify-center gap-2"><Send size={15} /> Confirm Send</span>}
                 </button>
               </div>
+            </div>
+          )}
+
+          {step === 'success' && sendResult && (
+            <div className="text-center py-3 space-y-5">
+              <div className="w-24 h-24 rounded-full flex items-center justify-center mx-auto"
+                style={{ background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 60%, #26A17B 100%)`, boxShadow: `0 16px 48px ${C.forest}55` }}>
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                  <path d="M8 20l9 9 15-17" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+
+              <div>
+                <p className="text-2xl font-black" style={{ color: C.forest }}>Withdrawal Submitted!</p>
+                <p className="text-sm font-semibold mt-1" style={{ color: C.g500 }}>
+                  Held for review before it broadcasts — this protects your funds
+                </p>
+              </div>
+
+              <div className="rounded-2xl overflow-hidden text-left" style={{ border: `1.5px solid ${C.g200}` }}>
+                <div className="px-4 py-3" style={{ background: C.mist, borderBottom: `1px solid ${C.g100}` }}>
+                  <p className="text-xs font-black uppercase tracking-widest" style={{ color: C.green }}>Withdrawal Receipt</p>
+                </div>
+                {[
+                  { label: 'To address',     val: `${sendResult.address.slice(0, 10)}…${sendResult.address.slice(-6)}` },
+                  { label: 'Amount',         val: `₮ ${parseFloat(sendResult.amount).toFixed(2)} (≈ ₿${(parseFloat(sendResult.amount) / btcPx).toFixed(8)})` },
+                  { label: 'Platform fee',   val: `₮ ${parseFloat(sendResult.fee).toFixed(2)} (≈ ₿${(parseFloat(sendResult.fee) / btcPx).toFixed(8)})` },
+                  { label: 'Total deducted', val: `₮ ${parseFloat(sendResult.total).toFixed(2)} (≈ ₿${(parseFloat(sendResult.total) / btcPx).toFixed(8)})` },
+                  { label: 'Status',         val: 'Pending review' },
+                ].map(({ label, val }, i) => (
+                  <div key={label} className="flex items-center justify-between px-4 py-2.5"
+                    style={{ borderTop: i > 0 ? `1px solid ${C.g100}` : 'none', backgroundColor: i % 2 === 0 ? C.g50 : '#fff' }}>
+                    <span className="text-xs font-semibold" style={{ color: C.g500 }}>{label}</span>
+                    <span className="text-xs font-black" style={{ color: C.forest, fontFamily: label === 'To address' ? 'monospace' : 'inherit' }}>{val}</span>
+                  </div>
+                ))}
+              </div>
+
+              <button onClick={onClose}
+                className="w-full py-4 rounded-2xl text-white font-black text-sm transition active:scale-[0.98]"
+                style={{ background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 100%)`, boxShadow: `0 8px 24px ${C.forest}45` }}>
+                Done
+              </button>
             </div>
           )}
           </>}
@@ -2603,6 +2654,64 @@ function AssetPickerSheet({ title, subtitle, onPick, onClose }) {
   );
 }
 
+// ─── Swap Receipt — persistent confirmation shown after a completed BTC↔USDT swap ──
+// Stays open until the user dismisses it (no auto-close), so they can actually read it.
+function SwapReceiptModal({ receipt, onClose, onViewHistory }) {
+  const isBtcToUsdt = receipt.from_currency === 'BTC';
+  const fee      = isBtcToUsdt ? (receipt.fee_usdt || 0) : (receipt.fee_btc || 0);
+  const feeLabel = fee > 0 ? (isBtcToUsdt ? `${fee.toFixed(2)} USDT` : `${fee.toFixed(8)} BTC`) : (isBtcToUsdt ? '0 USDT' : '0 BTC');
+  const fromLabel = isBtcToUsdt ? `${parseFloat(receipt.from_amount || 0).toFixed(8)} BTC` : `${parseFloat(receipt.from_amount || 0).toFixed(2)} USDT`;
+  const toLabel   = isBtcToUsdt ? `${parseFloat(receipt.to_amount || 0).toFixed(2)} USDT` : `${parseFloat(receipt.to_amount || 0).toFixed(8)} BTC`;
+  const rateLabel = `${(receipt.rate || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })} USDT/BTC`;
+
+  const rows = [
+    ['Account', 'PRAQEN Wallet'],
+    ['Conversion Rate', rateLabel],
+    ['From', fromLabel],
+    ['To', toLabel],
+    ['Fee', feeLabel],
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)' }}
+      onClick={onClose}>
+      <div className="bg-white w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl p-6"
+        style={{ animation: 'swapReceiptPop .22s cubic-bezier(0.34,1.56,0.64,1)' }}
+        onClick={e => e.stopPropagation()}>
+        <style>{`@keyframes swapReceiptPop{from{transform:scale(0.92);opacity:0}to{transform:scale(1);opacity:1}}`}</style>
+
+        <div className="flex flex-col items-center text-center mb-5">
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: `${C.green}18` }}>
+            <CheckCircle size={34} style={{ color: C.green }} strokeWidth={2.5} />
+          </div>
+          <h2 className="font-black text-lg" style={{ color: C.g800 }}>Conversion Completed</h2>
+        </div>
+
+        <div className="rounded-2xl p-4 mb-5 space-y-3" style={{ backgroundColor: C.g50 }}>
+          {rows.map(([label, value]) => (
+            <div key={label} className="flex items-center justify-between gap-3">
+              <span className="text-xs font-semibold flex-shrink-0" style={{ color: C.g400 }}>{label}</span>
+              <span className="text-xs font-black text-right" style={{ color: C.g800 }}>{value}</span>
+            </div>
+          ))}
+        </div>
+
+        <button onClick={onClose}
+          className="w-full py-3.5 rounded-2xl text-white font-black text-sm mb-2.5 hover:opacity-90 active:scale-[0.98] transition"
+          style={{ background: `linear-gradient(135deg, ${C.forest}, ${C.green})` }}>
+          Done
+        </button>
+        <button onClick={onViewHistory}
+          className="w-full py-3.5 rounded-2xl font-bold text-sm hover:bg-gray-50 active:scale-[0.98] transition"
+          style={{ backgroundColor: C.g100, color: C.g700 }}>
+          View Swap History
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Asset Action Sheet — shown when an Assets row (Bitcoin / Tether) is tapped ──
 // Coin is already known here, so it skips straight to Send/Receive/Transfer/Swap for it.
 function AssetActionSheet({ asset, balanceLabel, usdLabel, onAction, onClose }) {
@@ -2848,6 +2957,7 @@ export default function WalletPage({ user }) {
   const [swapInputMode, setSwapInputMode] = useState('native'); // 'native' | 'usd'
   const [swapUsdAmount, setSwapUsdAmount] = useState('');
   const [swapping,      setSwapping]      = useState(false);
+  const [swapReceipt,   setSwapReceipt]   = useState(null); // last completed swap — shown in a persistent receipt modal
   const [checkingUsdt,  setCheckingUsdt]  = useState(false);
   const [scanCooldown,  setScanCooldown]  = useState(0); // seconds remaining
   const [loadingUsdt,   setLoadingUsdt]   = useState(false);
@@ -3225,14 +3335,14 @@ export default function WalletPage({ user }) {
     try {
       if (swapFrom === 'BTC') {
         const r = await axios.post(`${API_URL}/swap/btc-to-usdt`, { btcAmount: effAmt }, { headers: authH() });
-        toast.success(`Swapped ₿${effAmt} BTC → ₮${r.data.to_amount?.toFixed(2)} USDT`, { autoClose: 6000 });
         setWalletData(prev => prev ? { ...prev, balance_btc: r.data.new_btc_balance, available_btc: r.data.new_btc_balance } : prev);
         setUsdtData(prev => prev ? { ...prev, balance_usdt: r.data.new_usdt_balance } : prev);
+        setSwapReceipt(r.data);
       } else {
         const r = await axios.post(`${API_URL}/swap/usdt-to-btc`, { usdtAmount: effAmt }, { headers: authH() });
-        toast.success(`Swapped ₮${effAmt} USDT → ₿${r.data.to_amount?.toFixed(8)} BTC`, { autoClose: 6000 });
         setUsdtData(prev => prev ? { ...prev, balance_usdt: r.data.new_usdt_balance } : prev);
         setWalletData(prev => prev ? { ...prev, balance_btc: r.data.new_btc_balance, available_btc: r.data.new_btc_balance } : prev);
+        setSwapReceipt(r.data);
       }
       setSwapAmount('');
       setSwapUsdAmount('');
@@ -3622,91 +3732,32 @@ export default function WalletPage({ user }) {
         {/* ══════════════════ SWAP VIEW ══════════════════ */}
         {activeCoin === 'SWAP' && (<>
 
-        {/* ── SWAP WIDGET ── */}
-        <div className="rounded-3xl overflow-hidden shadow-lg" style={{ border: `1.5px solid ${C.g200}` }}>
+        {/* ── SWAP WIDGET — Convert-style: From / To / single swap button ── */}
+        <div className="rounded-3xl overflow-hidden shadow-lg bg-white" style={{ border: `1.5px solid ${C.g200}` }}>
           {/* Header */}
-          <div className="p-5 pb-4" style={{ background: `linear-gradient(145deg, ${C.forest} 0%, ${C.green} 100%)` }}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl flex items-center justify-center"
-                  style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.2)' }}>
-                  <ArrowLeftRight size={17} color="#fff" strokeWidth={2.3} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="font-black text-white text-base tracking-wide">BTC ↔ USDT</p>
-                    <WalletSwitcher activeCoin={activeCoin} onSelect={setActiveCoin} dark />
-                  </div>
-                  <p className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.55)' }}>Instant swap · {(SWAP_FEE_PERCENT * 100).toFixed(1)}% fee · No blockchain delay</p>
-                </div>
-              </div>
-              <div className="text-right">
-                {swapRate ? (
-                  <div className="rounded-xl px-3 py-1.5" style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)' }}>
-                    <p className="text-xs font-bold text-white/60 mb-0.5">Live Rate</p>
-                    <p className="text-sm font-black text-white">${swapRate.toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
-                  </div>
-                ) : (
-                  <button onClick={loadSwapRate}
-                    className="rounded-xl px-3 py-2 text-xs font-bold flex items-center gap-1.5"
-                    style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.7)' }}>
-                    <RefreshCw size={11} /> Fetch Rate
-                  </button>
-                )}
-              </div>
+          <div className="px-5 pt-5 pb-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <p className="font-black text-base" style={{ color: C.g800 }}>Convert</p>
+              <WalletSwitcher activeCoin={activeCoin} onSelect={setActiveCoin} />
             </div>
-
-            {/* Coin badges */}
-            <div className="flex items-center justify-center gap-3 mt-4">
-              <div className="flex items-center gap-2 px-3 py-2 rounded-2xl"
-                style={{ background: swapFrom === 'BTC' ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)', border: `1px solid ${swapFrom === 'BTC' ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.12)'}`, transition: 'all 0.2s' }}>
-                <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: '#F7931A' }}>
-                  <span className="text-white font-black text-xs">₿</span>
-                </div>
-                <div>
-                  <p className="text-white font-black text-xs">Bitcoin</p>
-                  <p className="text-white/50 text-xs font-semibold">₿{fmt(availableBal, 6)}</p>
-                </div>
-              </div>
-              <button onClick={() => { setSwapFrom(f => f === 'BTC' ? 'USDT' : 'BTC'); setSwapAmount(''); }}
-                className="w-9 h-9 rounded-full flex items-center justify-center transition active:scale-90"
-                style={{ background: 'rgba(255,255,255,0.18)', border: '1.5px solid rgba(255,255,255,0.3)', boxShadow: '0 3px 10px rgba(0,0,0,0.2)' }}>
-                <ArrowLeftRight size={14} color="#fff" strokeWidth={2.5} />
+            {swapRate ? (
+              <button onClick={loadSwapRate} className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-lg transition hover:bg-gray-50"
+                style={{ color: C.g500 }}>
+                <span style={{ color: C.g400 }}>1 BTC =</span>
+                <span style={{ color: C.forest }}>${swapRate.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+                <RefreshCw size={11} style={{ color: C.g400 }} />
               </button>
-              <div className="flex items-center gap-2 px-3 py-2 rounded-2xl"
-                style={{ background: swapFrom === 'USDT' ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)', border: `1px solid ${swapFrom === 'USDT' ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.12)'}`, transition: 'all 0.2s' }}>
-                <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: '#26A17B' }}>
-                  <span className="text-white font-black text-xs">₮</span>
-                </div>
-                <div>
-                  <p className="text-white font-black text-xs">Tether</p>
-                  <p className="text-white/50 text-xs font-semibold">₮{(usdtData?.balance_usdt || 0).toFixed(2)}</p>
-                </div>
-              </div>
-            </div>
+            ) : (
+              <button onClick={loadSwapRate}
+                className="rounded-lg px-2.5 py-1.5 text-xs font-black flex items-center gap-1.5"
+                style={{ backgroundColor: `${C.gold}18`, color: C.gold }}>
+                <RefreshCw size={11} /> Get Rate
+              </button>
+            )}
           </div>
 
           {/* Swap form body */}
-          <div className="bg-white p-5 space-y-4">
-            {/* Direction tabs */}
-            <div className="flex rounded-2xl overflow-hidden" style={{ border: `1.5px solid ${C.g200}`, backgroundColor: C.g50 }}>
-              {[
-                { dir: 'BTC',  label: '₿ Bitcoin  →  ₮ USDT' },
-                { dir: 'USDT', label: '₮ USDT  →  ₿ Bitcoin' },
-              ].map(({ dir, label }) => (
-                <button key={dir} onClick={() => { setSwapFrom(dir); setSwapAmount(''); setSwapUsdAmount(''); }}
-                  className="flex-1 py-2.5 text-xs font-black transition"
-                  style={{
-                    background: swapFrom === dir ? `linear-gradient(135deg, ${C.forest}, ${C.green})` : 'transparent',
-                    color: swapFrom === dir ? '#fff' : C.g500,
-                    borderRight: dir === 'BTC' ? `1.5px solid ${C.g200}` : 'none',
-                    borderRadius: dir === 'BTC' ? '14px 0 0 14px' : '0 14px 14px 0',
-                  }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-
+          <div className="px-5 pb-5 pt-2 space-y-1">
             {/* You send — with $ USD / native toggle */}
             {(() => {
               // Derive effective native amount for preview regardless of input mode
@@ -3717,164 +3768,137 @@ export default function WalletPage({ user }) {
                 : natVal;
               const maxNative = swapFrom === 'BTC' ? availableBal : (usdtData?.balance_usdt || 0);
               const maxUsd    = swapFrom === 'BTC' ? availableBal * (swapRate || 0) : (usdtData?.balance_usdt || 0);
-              const minUsd    = swapFrom === 'BTC' ? 1 : 1; // $1 minimum
               const hasInput  = swapInputMode === 'usd' ? usdVal > 0 : natVal > 0;
               const insufficient = swapInputMode === 'usd'
                 ? (swapFrom === 'BTC' ? effNative > availableBal : usdVal > (usdtData?.balance_usdt || 0))
                 : (effNative > maxNative);
+              const isB2U = swapFrom === 'BTC';
+              const gross = hasInput && swapRate ? (isB2U ? effNative * swapRate : effNative / swapRate) : 0;
+              const fee   = gross * SWAP_FEE_PERCENT;
+              const net   = gross - fee;
+              const showReceive = hasInput && !insufficient && swapRate && effNative > 0;
+
+              const floorTo2 = (n) => (Math.floor(n * 100) / 100).toFixed(2);
+              const fillMax = () => {
+                // Truncate down (never round up) — the underlying balance carries more
+                // precision than the 2dp shown on screen, so rounding up could pre-fill
+                // more than the real balance, tripping "insufficient" on the next check.
+                if (swapInputMode === 'usd') { setSwapUsdAmount(floorTo2(maxUsd)); }
+                else { setSwapAmount(swapFrom === 'BTC' ? fmt(availableBal, 8) : floorTo2(maxNative)); }
+              };
 
               return (
                 <>
-                <div>
-                  {/* Input mode toggle */}
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-black" style={{ color: C.g500 }}>YOU SEND</label>
-                    <div className="flex rounded-xl overflow-hidden" style={{ border: `1.5px solid ${C.g200}` }}>
-                      {[
-                        { mode: 'native', label: swapFrom === 'BTC' ? '₿ BTC' : '₮ USDT' },
-                        { mode: 'usd',    label: '$ USD' },
-                      ].map(({ mode, label }) => (
-                        <button key={mode}
-                          onClick={() => { setSwapInputMode(mode); setSwapAmount(''); setSwapUsdAmount(''); }}
-                          className="px-3 py-1.5 text-xs font-black transition"
-                          style={{
-                            background: swapInputMode === mode ? 'linear-gradient(135deg, #1a1a2e, #16213e)' : 'transparent',
-                            color: swapInputMode === mode ? '#fff' : C.g500,
-                          }}>
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 p-4 rounded-2xl" style={{ background: C.g50, border: `1.5px solid ${insufficient ? '#ef4444' : C.g200}` }}>
-                    <div className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center shadow-md"
-                      style={{ backgroundColor: swapInputMode === 'usd' ? '#22c55e' : (swapFrom === 'BTC' ? '#F7931A' : '#26A17B') }}>
-                      <span className="text-white font-black text-base">{swapInputMode === 'usd' ? '$' : (swapFrom === 'BTC' ? '₿' : '₮')}</span>
-                    </div>
-                    <div className="flex-1">
-                      {swapInputMode === 'usd' ? (
-                        <>
-                          <input type="number" value={swapUsdAmount} onChange={e => setSwapUsdAmount(e.target.value)}
-                            placeholder="10.00" step="0.01" min="0"
-                            className="w-full text-xl font-black bg-transparent focus:outline-none"
-                            style={{ color: C.g800 }} />
-                          <p className="text-xs font-semibold mt-0.5" style={{ color: C.g400 }}>
-                            US Dollars
-                            {usdVal > 0 && swapRate && (
-                              <span style={{ color: C.green }}>
-                                {' '}≈ {swapFrom === 'BTC' ? `₿${effNative.toFixed(8)}` : `₮${effNative.toFixed(2)}`}
-                              </span>
-                            )}
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <input type="number" value={swapAmount} onChange={e => setSwapAmount(e.target.value)}
-                            placeholder={swapFrom === 'BTC' ? '0.00000000' : '0.00'}
-                            step={swapFrom === 'BTC' ? '0.00000001' : '0.01'} min="0"
-                            className="w-full text-xl font-black bg-transparent focus:outline-none"
-                            style={{ color: C.g800 }} />
-                          <p className="text-xs font-semibold mt-0.5" style={{ color: C.g400 }}>
-                            {swapFrom === 'BTC' ? 'Bitcoin' : 'Tether USDT'}
-                            {natVal > 0 && swapRate && (
-                              <span style={{ color: C.green }}>
-                                {' '}≈ ${swapFrom === 'BTC' ? (natVal * swapRate).toFixed(2) : natVal.toFixed(2)}
-                              </span>
-                            )}
-                          </p>
-                        </>
-                      )}
-                    </div>
-                    <button onClick={() => {
-                      // Truncate down (never round up) when pre-filling MAX — the underlying
-                      // USDT balance carries more precision than the 2dp shown on screen, so
-                      // rounding .toFixed(2) up could fill in an amount that's actually more
-                      // than the real balance, tripping "insufficient" on the very next check.
-                      const floorTo2 = (n) => (Math.floor(n * 100) / 100).toFixed(2);
-                      if (swapInputMode === 'usd') { setSwapUsdAmount(floorTo2(maxUsd)); }
-                      else { setSwapAmount(swapFrom === 'BTC' ? fmt(availableBal, 8) : floorTo2(maxNative)); }
-                    }}
-                      className="text-xs font-black px-2.5 py-1.5 rounded-xl transition"
-                      style={{ background: `linear-gradient(135deg, ${C.forest}, ${C.green})`, color: '#fff', boxShadow: `0 2px 8px ${C.forest}40` }}>
-                      MAX
-                    </button>
-                  </div>
-
-                  {/* Min / Max info row */}
-                  <div className="flex items-center justify-between mt-2 px-1">
-                    <span className="text-xs font-semibold" style={{ color: C.g400 }}>
-                      Min: <span style={{ color: C.g600 }}>${minUsd.toFixed(2)}</span>
-                    </span>
-                    <span className="text-xs font-semibold" style={{ color: C.g400 }}>
-                      Max: <span style={{ color: C.green }}>${maxUsd.toFixed(2)}</span>
-                      {' '}
-                      <span style={{ color: C.g400 }}>
-                        ({swapFrom === 'BTC' ? `₿${fmt(availableBal, 6)}` : `₮${maxNative.toFixed(2)}`})
-                      </span>
-                    </span>
-                  </div>
-
-                  {/* Insufficient balance warning */}
-                  {hasInput && insufficient && (
-                    <div className="flex items-center gap-1.5 mt-2 px-3 py-2 rounded-xl" style={{ backgroundColor: '#fff5f5', border: '1px solid #fecaca' }}>
-                      <AlertTriangle size={12} style={{ color: '#ef4444', flexShrink: 0 }} />
-                      <p className="text-xs font-semibold" style={{ color: '#dc2626' }}>
-                        Insufficient {swapFrom} balance
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* You receive preview */}
-                {hasInput && !insufficient && swapRate && effNative > 0 && (() => {
-                  const gross = swapFrom === 'BTC' ? effNative * swapRate : effNative / swapRate;
-                  const fee   = gross * SWAP_FEE_PERCENT;
-                  const net   = gross - fee;
-                  const isB2U = swapFrom === 'BTC';
-                  const sendUsd = swapInputMode === 'usd' ? usdVal : (swapFrom === 'BTC' ? effNative * swapRate : effNative);
-                  return (
-                    <div>
-                      <label className="block text-xs font-black mb-2" style={{ color: C.g500 }}>YOU RECEIVE</label>
-                      <div className="flex items-center gap-3 p-4 rounded-2xl"
-                        style={{ background: `linear-gradient(135deg, ${C.mist}, #f0fdf6)`, border: `1.5px solid ${C.sage}40` }}>
-                        <div className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center shadow-md"
-                          style={{ backgroundColor: isB2U ? '#26A17B' : '#F7931A' }}>
-                          <span className="text-white font-black text-base">{isB2U ? '₮' : '₿'}</span>
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-xl font-black" style={{ color: C.forest }}>
-                            {isB2U ? net.toFixed(2) : net.toFixed(8)}
-                          </p>
-                          <p className="text-xs font-semibold mt-0.5" style={{ color: C.green }}>
-                            {isB2U ? 'Tether USDT' : 'Bitcoin'} · after {(SWAP_FEE_PERCENT * 100).toFixed(1)}% fee
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xs font-black" style={{ color: C.forest }}>≈ ${isB2U ? net.toFixed(2) : (net * swapRate).toFixed(2)}</p>
-                          <p className="text-xs font-semibold" style={{ color: C.g400 }}>USD value</p>
-                        </div>
-                      </div>
-
-                      {/* Fee breakdown */}
-                      <div className="mt-2 rounded-xl overflow-hidden" style={{ border: `1px solid ${C.g200}` }}>
+                {/* ── FROM ── */}
+                <div className="rounded-2xl p-4" style={{ background: C.g50, border: `1.5px solid ${insufficient ? '#ef4444' : C.g200}` }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-black" style={{ color: C.g400 }}>From</span>
+                    <div className="flex items-center gap-2">
+                      {/* $ / native input-mode toggle — compact pill */}
+                      <div className="flex rounded-lg overflow-hidden" style={{ border: `1px solid ${C.g200}` }}>
                         {[
-                          { label: isB2U ? 'BTC sent'        : 'USDT sent',   val: `${isB2U ? '₿' : '₮'}${isB2U ? fmt(effNative, 8) : effNative.toFixed(2)}` },
-                          { label: 'USD equivalent',                            val: `$${sendUsd.toFixed(2)}` },
-                          { label: 'Rate',                                      val: `1 BTC = $${swapRate.toLocaleString('en-US', { maximumFractionDigits: 0 })}` },
-                          { label: `Platform fee (${(SWAP_FEE_PERCENT * 100).toFixed(1)}%)`,          val: `${isB2U ? '₮' : '₿'}${isB2U ? fee.toFixed(2) : fee.toFixed(8)}  ≈ $${(fee * (isB2U ? 1 : swapRate)).toFixed(2)}` },
-                          { label: `${isB2U ? 'USDT' : 'BTC'} received`,       val: `${isB2U ? '₮' : '₿'}${isB2U ? net.toFixed(2) : net.toFixed(8)}`, bold: true },
-                        ].map(({ label, val, bold }, i) => (
-                          <div key={label} className="flex items-center justify-between px-3.5 py-2"
-                            style={{ backgroundColor: bold ? C.g50 : '#fff', borderTop: i > 0 ? `1px solid ${C.g100}` : 'none' }}>
-                            <span className={`text-xs ${bold ? 'font-black' : 'font-semibold'}`} style={{ color: bold ? C.g700 : C.g500 }}>{label}</span>
-                            <span className={`text-xs ${bold ? 'font-black' : 'font-bold'}`} style={{ color: bold ? C.forest : C.g700 }}>{val}</span>
-                          </div>
+                          { mode: 'native', label: swapFrom },
+                          { mode: 'usd',    label: 'USD' },
+                        ].map(({ mode, label }) => (
+                          <button key={mode}
+                            onClick={() => { setSwapInputMode(mode); setSwapAmount(''); setSwapUsdAmount(''); }}
+                            className="px-2 py-0.5 text-[10px] font-black transition"
+                            style={{
+                              background: swapInputMode === mode ? C.forest : 'transparent',
+                              color: swapInputMode === mode ? '#fff' : C.g500,
+                            }}>
+                            {label}
+                          </button>
                         ))}
                       </div>
+                      <button onClick={fillMax} className="text-xs font-semibold" style={{ color: C.g400 }}>
+                        Avail: <span style={{ color: C.g700 }}>{swapFrom === 'BTC' ? `₿${fmt(availableBal, 6)}` : `₮${maxNative.toFixed(2)}`}</span>{' '}
+                        <span className="font-black" style={{ color: C.gold }}>Max</span>
+                      </button>
                     </div>
-                  );
-                })()}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    {swapInputMode === 'usd' ? (
+                      <input type="number" value={swapUsdAmount} onChange={e => setSwapUsdAmount(e.target.value)}
+                        placeholder="0.00" step="0.01" min="0" autoFocus
+                        className="flex-1 min-w-0 text-2xl font-black bg-transparent focus:outline-none"
+                        style={{ color: C.g800 }} />
+                    ) : (
+                      <input type="number" value={swapAmount} onChange={e => setSwapAmount(e.target.value)}
+                        placeholder={swapFrom === 'BTC' ? '0.00000000' : '0.00'}
+                        step={swapFrom === 'BTC' ? '0.00000001' : '0.01'} min="0" autoFocus
+                        className="flex-1 min-w-0 text-2xl font-black bg-transparent focus:outline-none"
+                        style={{ color: C.g800 }} />
+                    )}
+                    <div className="flex items-center gap-1.5 px-3 py-2 rounded-full flex-shrink-0" style={{ backgroundColor: '#fff', border: `1.5px solid ${C.g200}` }}>
+                      <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+                        style={{ backgroundColor: swapInputMode === 'usd' ? C.gold : (swapFrom === 'BTC' ? '#F7931A' : '#26A17B') }}>
+                        <span className="text-white font-black" style={{ fontSize: 10 }}>{swapInputMode === 'usd' ? '$' : (swapFrom === 'BTC' ? '₿' : '₮')}</span>
+                      </div>
+                      <span className="text-xs font-black" style={{ color: C.g800 }}>{swapInputMode === 'usd' ? 'USD' : swapFrom}</span>
+                    </div>
+                  </div>
+                  <p className="text-xs font-semibold mt-1" style={{ color: C.g400 }}>
+                    {swapInputMode === 'usd'
+                      ? (usdVal > 0 && swapRate ? `≈ ${swapFrom === 'BTC' ? `₿${effNative.toFixed(8)}` : `₮${effNative.toFixed(2)}`}` : ' ')
+                      : (natVal > 0 && swapRate ? `≈ $${(swapFrom === 'BTC' ? natVal * swapRate : natVal).toFixed(2)}` : ' ')}
+                  </p>
+                </div>
+
+                {/* ── Swap direction toggle — overlaps between the two cards ── */}
+                <div className="flex justify-center" style={{ height: 0, position: 'relative', zIndex: 2 }}>
+                  <button onClick={() => { setSwapFrom(f => f === 'BTC' ? 'USDT' : 'BTC'); setSwapAmount(''); setSwapUsdAmount(''); }}
+                    className="w-9 h-9 rounded-2xl flex items-center justify-center transition active:scale-90"
+                    style={{
+                      marginTop: -14, background: `linear-gradient(135deg, ${C.forest}, ${C.green})`,
+                      border: '3px solid #fff', boxShadow: `0 4px 12px ${C.forest}50`,
+                    }}>
+                    <ArrowLeftRight size={14} color="#fff" strokeWidth={2.5} style={{ transform: 'rotate(90deg)' }} />
+                  </button>
+                </div>
+
+                {/* ── TO ── */}
+                <div className="rounded-2xl p-4" style={{ background: `linear-gradient(135deg, ${C.mist}, #f0fdf6)`, border: `1.5px solid ${C.sage}40` }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-black" style={{ color: C.g400 }}>To</span>
+                    <span className="text-xs font-semibold" style={{ color: C.g400 }}>You receive</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="flex-1 min-w-0 truncate text-2xl font-black" style={{ color: showReceive ? C.forest : C.g300 }}>
+                      {showReceive ? (isB2U ? net.toFixed(2) : net.toFixed(8)) : '--'}
+                    </p>
+                    <div className="flex items-center gap-1.5 px-3 py-2 rounded-full flex-shrink-0" style={{ backgroundColor: '#fff', border: `1.5px solid ${C.sage}40` }}>
+                      <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: isB2U ? '#26A17B' : '#F7931A' }}>
+                        <span className="text-white font-black" style={{ fontSize: 10 }}>{isB2U ? '₮' : '₿'}</span>
+                      </div>
+                      <span className="text-xs font-black" style={{ color: C.g800 }}>{isB2U ? 'USDT' : 'BTC'}</span>
+                    </div>
+                  </div>
+                  <p className="text-xs font-semibold mt-1" style={{ color: C.green }}>
+                    {showReceive ? `≈ $${(isB2U ? net : net * swapRate).toFixed(2)} · after ${(SWAP_FEE_PERCENT * 100).toFixed(1)}% fee` : ' '}
+                  </p>
+                </div>
+
+                {/* Insufficient balance warning */}
+                {hasInput && insufficient && (
+                  <div className="flex items-center gap-1.5 mt-1 px-3 py-2 rounded-xl" style={{ backgroundColor: '#fff5f5', border: '1px solid #fecaca' }}>
+                    <AlertTriangle size={12} style={{ color: '#ef4444', flexShrink: 0 }} />
+                    <p className="text-xs font-semibold" style={{ color: '#dc2626' }}>Insufficient {swapFrom} balance</p>
+                  </div>
+                )}
+
+                {/* Compact rate + fee line */}
+                {showReceive && (
+                  <div className="flex items-center justify-between px-1 pt-1 pb-1">
+                    <span className="text-xs font-semibold" style={{ color: C.g400 }}>
+                      Fee: <span style={{ color: C.g600 }}>{isB2U ? `₮${fee.toFixed(2)}` : `₿${fee.toFixed(8)}`}</span>
+                    </span>
+                    <span className="text-xs font-semibold" style={{ color: C.g400 }}>
+                      Rate: <span style={{ color: C.g600 }}>1 BTC = ${swapRate.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+                    </span>
+                  </div>
+                )}
                 </>
               );
             })()}
@@ -4040,7 +4064,7 @@ export default function WalletPage({ user }) {
       {selectedTx && <TxReceiptModal tx={selectedTx} btcPrice={btcPrice} user={user} tradeParties={tradeParties} onClose={() => setSelectedTx(null)}
           onRepeat={(username) => { setSelectedTx(null); setRepeatUsername(username); setShowInternal(true); }} />}
       {showSend && <WithdrawModal balance={availableBal} btcPrice={btcPrice} onClose={() => setShowSend(false)} onSend={sendBitcoin} kycStatus={userVerif} twoFactorEnabled={user?.two_factor_enabled} onSwitchToInternal={() => { setShowSend(false); setShowInternal(true); }} />}
-      {showUsdtSend && <UsdtWithdrawModal balance={usdtData?.balance_usdt || 0} onClose={() => setShowUsdtSend(false)} onSend={sendUsdt} kycStatus={userVerif} twoFactorEnabled={user?.two_factor_enabled} onSwitchToInternal={() => { setShowUsdtSend(false); setShowUsdtInternal(true); }} />}
+      {showUsdtSend && <UsdtWithdrawModal balance={usdtData?.balance_usdt || 0} btcPrice={btcPrice} onClose={() => setShowUsdtSend(false)} onSend={sendUsdt} kycStatus={userVerif} twoFactorEnabled={user?.two_factor_enabled} onSwitchToInternal={() => { setShowUsdtSend(false); setShowUsdtInternal(true); }} />}
       {showUsdtInternal && <UsdtInternalTransferModal balance={usdtData?.balance_usdt || 0} onClose={() => setShowUsdtInternal(false)} onTransfer={doUsdtInternalTransfer} onSwitchToExternal={() => { setShowUsdtInternal(false); setShowUsdtSend(true); }} />}
       {showRecv && (
         <ReceiveModal
@@ -4069,6 +4093,13 @@ export default function WalletPage({ user }) {
           onClose={() => setAssetPicker(null)}
         />
       )}
+      {swapReceipt && (
+        <SwapReceiptModal
+          receipt={swapReceipt}
+          onClose={() => setSwapReceipt(null)}
+          onViewHistory={() => { setSwapReceipt(null); setActiveCoin('SWAP'); }}
+        />
+      )}
       {assetActionSheet && (
         <AssetActionSheet
           asset={assetActionSheet}
@@ -4094,9 +4125,11 @@ export default function WalletPage({ user }) {
           onClose={() => { setShowInternal(false); setRepeatUsername(null); }}
           onSwitchToExternal={() => { setShowInternal(false); setRepeatUsername(null); setShowSend(true); }}
           onDone={(newBal) => {
+            // Update the balance in the background only — do NOT close the modal here.
+            // The modal has its own "Sent!" success screen; closing on onDone used to
+            // unmount it before it ever got a chance to render. It closes itself when
+            // the user taps Done (via onClose), same as every other send flow.
             setWalletData(prev => prev ? { ...prev, available_btc: newBal, balance_btc: newBal } : prev);
-            setShowInternal(false);
-            setRepeatUsername(null);
             setTimeout(() => loadWallet(), 600);
           }}
         />
