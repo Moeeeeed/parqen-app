@@ -1043,7 +1043,8 @@ export default function TradeDetail({user}) {
     return () => clearInterval(iv);
   }, [isPaid, isCompleted, isCancelled, isDisputed, trade?.buyer_confirmed_at, trade?.paid_at, trade?.updated_at]);
 
-  const loadAll=async()=>{
+
+  const loadAll=async()=>{
     await Promise.all([loadTrade(), loadMessages(), loadImages()]);
   };
 
@@ -2483,7 +2484,7 @@ export default function TradeDetail({user}) {
           submitting={submitting}
         />
       )}
-      )}
+      
 
       {/* ── Release confirmation modal ───────────────────────────────── */}
       {showRelConfirm && (
