@@ -873,8 +873,7 @@ export default function TradeDetail({user}) {
   const [timeLeft,  setTimeLeft]  = useState(null);
   const [showCancel,     setShowCancel]     = useState(false);
   const [showPayConfirm, setShowPayConfirm] = useState(false);
-  const [payProofPreview, setPayProofPreview] = useState(null);
-  const payProofRef = useRef(null);
+
   const [showRelConfirm, setShowRelConfirm] = useState(false);
   const [showFb,         setShowFb]         = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -895,9 +894,14 @@ export default function TradeDetail({user}) {
   const [infoOpen,  setInfoOpen]  = useState(false);
   const [showDisputeModal,  setShowDisputeModal]  = useState(false);
   const [disputeSubmitting, setDisputeSubmitting] = useState(false);
+  const [disputeCountdownLeft, setDisputeCountdownLeft] = useState(null);
   const [cpTyping,  setCpTyping]  = useState(false);
   const [activeTab, setActiveTab]  = useState('chat');
   const [showAttachMenu, setShowAttachMenu] = useState(false);
+
+  // ── Multi-image staging (preview before sending) ─────────────────────
+  const [stagedImages, setStagedImages]     = useState([]);
+  const [stagedPreviews, setStagedPreviews] = useState([]);
 
   const status = (trade?.status||'').toUpperCase();
   const isBuyer     = user&&trade&&String(user.id)===String(trade.buyer_id);
@@ -983,6 +987,11 @@ export default function TradeDetail({user}) {
     }
   },[isCompleted, trade?.user_gave_feedback, tradeCompleted, id]);
 
+  // Cleanup staged preview URLs on unmount
+  useEffect(()=>{
+    return()=>{stagedPreviews.forEach(u=>URL.revokeObjectURL(u));};
+  },[]);
+
   useEffect(()=>{
     if(messages.length===0)return;
     const isNewMsg=messages.length>prevMsgCount.current;
@@ -1007,8 +1016,32 @@ export default function TradeDetail({user}) {
       }
     } else {
       setPaidAt(null);
+    }  }, [isPaid, trade?.paid_at, trade?.updated_at]);
+
+  // ── Dispute cooldown: 30-minute timer after payment is marked ──────────────
+  // Neither party can open a dispute until 30 minutes after the buyer marks
+  // payment as sent. The button is visible but disabled during the countdown.
+  useEffect(() => {
+    if (!isPaid || isCompleted || isCancelled || isDisputed) {
+      setDisputeCountdownLeft(null);
+      return;
     }
-  }, [isPaid, trade?.paid_at, trade?.updated_at]);
+    const confirmedAt = trade?.buyer_confirmed_at || trade?.paid_at || trade?.updated_at;
+    if (!confirmedAt) { setDisputeCountdownLeft(0); return; }
+    const toUTC = s => s ? new Date(/[Z+]/.test(s) ? s : s + 'Z') : null;
+    const deadline = toUTC(confirmedAt)?.getTime();
+    if (!deadline) { setDisputeCountdownLeft(0); return; }
+    const DISPUTE_COOLDOWN_MS = 30 * 60 * 1000;
+    const update = () => {
+      const remaining = Math.max(0, Math.floor((deadline + DISPUTE_COOLDOWN_MS - Date.now()) / 1000));
+      setDisputeCountdownLeft(remaining);
+      return remaining;
+    };
+    if (update() <= 0) return;
+    const iv = setInterval(() => { if (update() <= 0) clearInterval(iv); }, 1000);
+    return () => clearInterval(iv);
+  }, [isPaid, isCompleted, isCancelled, isDisputed, trade?.buyer_confirmed_at, trade?.paid_at, trade?.updated_at]);
+
 
   const loadAll=async()=>{
     await Promise.all([loadTrade(), loadMessages(), loadImages()]);
@@ -1090,87 +1123,101 @@ export default function TradeDetail({user}) {
     catch(e){console.error('[postSys] failed to post system message:',e?.response?.status,e?.response?.data||e?.message);}
   };
 
-  const sendMessage=async(e)=>{
-    e.preventDefault();
-    if(!msg.trim())return;
-    setSending(true);
-    try{
-      await axios.post(`${API_URL}/messages`,{tradeId:id,message:msg},{headers:authH()});
-      setMsg('');await loadMessages();
-      setTimeout(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},100);
-    }catch(error){const serverError=error?.response?.data?.error||error?.response?.data?.message;toast.error(serverError||'Send failed');}
-    finally{setSending(false);}
-  };
-
   const MAX_IMAGES_PER_SEND = 5;
 
-  const uploadSingleImage=async(file)=>{
-    const b64=await new Promise((res,rej)=>{const rd=new FileReader();rd.onload=()=>res(rd.result);rd.onerror=rej;rd.readAsDataURL(file);});
-    await axios.post(`${API_URL}/trades/${id}/upload-image`,{image:b64,type:isBuyer?'payment':'giftcard'},{headers:authH()});
-    // Send as a real chat message so both users see the image inline
-    await axios.post(`${API_URL}/messages`,{tradeId:id,message:b64},{headers:authH()});
+  const sendMessage=async(e)=>{
+    if(e)e.preventDefault();
+    const hasText=msg.trim().length>0;
+    const hasImages=stagedImages.length>0;
+    if(!hasText&&!hasImages)return;
+    if(sending||uploading)return;
+
+    setSending(true);
+    try{
+      // ── Send staged images first ──
+      if(hasImages){
+        setUploading(true);
+        let successCount=0;
+        for(const f of stagedImages){
+          try{
+            const b64=await new Promise((res,rej)=>{const rd=new FileReader();rd.onload=()=>res(rd.result);rd.onerror=rej;rd.readAsDataURL(f);});
+            await axios.post(`${API_URL}/trades/${id}/upload-image`,{image:b64,type:isBuyer?'payment':'giftcard'},{headers:authH()});
+            await axios.post(`${API_URL}/messages`,{tradeId:id,message:b64},{headers:authH()});
+            successCount++;
+          }catch{
+            toast.error(`Failed to send an image`);
+          }
+        }
+        clearStagedImages();
+        setUploading(false);
+        if(successCount>0) toast.success(successCount===1?'Image sent!':`${successCount} images sent!`);
+      }
+
+      // ── Send text message (if any) ──
+      if(hasText){
+        await axios.post(`${API_URL}/messages`,{tradeId:id,message:msg},{headers:authH()});
+        setMsg('');
+      }
+
+      await loadImages();await loadMessages();
+      setTimeout(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},100);
+    }catch(error){const serverError=error?.response?.data?.error||error?.response?.data?.message;toast.error(serverError||'Send failed');}
+    finally{setSending(false);setUploading(false);}
   };
 
-  const uploadImage=async(fileList)=>{
+  // ── Stage images for preview (instead of sending immediately) ───────────
+  const stageImages=(fileList)=>{
     const files=Array.from(fileList||[]);
-    if(files.length===0)return;
+    if(!files.length)return;
 
-    if(files.length>MAX_IMAGES_PER_SEND){
-      toast.error(`You can only send up to ${MAX_IMAGES_PER_SEND} images at a time.`);
-      if(fileRef.current)fileRef.current.value='';
-      return;
-    }
-
-    // Validate every file up front — images only, 5MB max each — before uploading any of them
+    // Validate files
+    const validFiles=[];
     for(const f of files){
       if(!f.type.startsWith('image/')){
-        toast.error('Only images can be sent here.');
-        if(fileRef.current)fileRef.current.value='';
-        return;
+        toast.error(`"${f.name}" is not a supported image format.`);
+        continue;
       }
       if(f.size>5*1024*1024){
         toast.error(`"${f.name}" is over 5MB — please choose a smaller image.`);
-        if(fileRef.current)fileRef.current.value='';
-        return;
+        continue;
       }
+      validFiles.push(f);
     }
+    if(!validFiles.length)return;
 
-    setUploading(true);
-    let successCount=0;
-    try{
-      for(const f of files){
-        try{
-          await uploadSingleImage(f);
-          successCount++;
-        }catch{
-          toast.error(`Failed to send "${f.name}"`);
-        }
-      }
-      if(successCount>0){
-        toast.success(successCount===1 ? 'Image sent!' : `${successCount} images sent!`);
-        await loadImages();await loadMessages();
-        setTimeout(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},100);
-      }
-    }finally{
-      setUploading(false);
-      if(fileRef.current)fileRef.current.value='';
-    }
-  };
-
-  const handlePayProofSelect=(file)=>{
-    if(!file)return;
-    if(!file.type.startsWith('image/')){toast.error('Please attach an image — a screenshot or photo of your receipt.');return;}
-    if(file.size>5*1024*1024){toast.error('Image is over 5MB — please choose a smaller one.');return;}
-    const rd=new FileReader();
-    rd.onload=()=>setPayProofPreview(rd.result);
-    rd.readAsDataURL(file);
-  };
-
-  const markPaid=async()=>{
-    if(!isGiftCardTrade&&!payProofPreview){
-      toast.error('Please attach a screenshot or receipt of your payment first.');
+    // Enforce max
+    const remaining=MAX_IMAGES_PER_SEND-stagedImages.length;
+    if(remaining<=0){
+      toast.error('You can send up to 5 images at once. Remove some before adding more.');
       return;
     }
+    const toAdd=validFiles.slice(0,remaining);
+    if(validFiles.length>remaining){
+      toast.error(`Only ${remaining} more image${remaining!==1?'s':''} can be added. ${validFiles.length-remaining} were not added.`);
+    }
+
+    const newUrls=toAdd.map(f=>URL.createObjectURL(f));
+    setStagedImages(prev=>[...prev,...toAdd]);
+    setStagedPreviews(prev=>[...prev,...newUrls]);
+  };
+
+  const removeStagedImage=(index)=>{
+    URL.revokeObjectURL(stagedPreviews[index]);
+    setStagedImages(prev=>prev.filter((_,i)=>i!==index));
+    setStagedPreviews(prev=>prev.filter((_,i)=>i!==index));
+  };
+
+  const clearStagedImages=()=>{
+    stagedPreviews.forEach(u=>URL.revokeObjectURL(u));
+    setStagedImages([]);
+    setStagedPreviews([]);
+    if(fileRef.current)fileRef.current.value='';
+    if(cameraRef.current)cameraRef.current.value='';
+    if(docRef.current)docRef.current.value='';
+  };
+
+
+  const markPaid=async()=>{
     setShowPayConfirm(false);
     setSubmitting(true);
     // Block auto-cancel IMMEDIATELY — before the API round-trip completes.
@@ -1178,17 +1225,16 @@ export default function TradeDetail({user}) {
     autoCancelled.current = true;
     try{
       await axios.post(`${API_URL}/trades/${id}/mark-paid`,
-        isGiftCardTrade?{}:{proofImage:payProofPreview},
+        {},
         {headers:authH()});
-      setPayProofPreview(null);
       setPaidAt(Date.now()); // Record the paid timestamp shown in the system message
-      toast.success(isGiftCardTrade ? 'Code sent! Waiting for buyer to verify.' : 'Payment confirmed!');
+      toast.success(isGiftCardTrade ? 'Code sent! Waiting for seller to verify.' : 'Payment confirmed!');
       // Post this as a real system message in the chat (matches the "Trade
       // Complete"/"Trade Cancelled" system messages below) instead of only a
       // floating banner outside the message flow — the isPmt card renderer
       // in the message list picks this up from the "confirmed payment" text.
       await postSys(isGiftCardTrade
-        ? 'Seller confirmed sending the gift card code. Buyer: please verify the code, then release Bitcoin.'
+        ? `Buyer confirmed sending the gift card code. Seller: please verify the code, then release Bitcoin.`
         : `Buyer confirmed payment via ${payMethod}. Seller: please check your account now.`);
       await loadTrade();
     }catch(e){
@@ -1400,24 +1446,24 @@ export default function TradeDetail({user}) {
     grad: `linear-gradient(135deg, ${C.forest}, ${C.green})`,
   };
 
-  const showMarkPaid  = isGiftCardTrade ? (isSeller&&isEscrow&&isActive) : (isBuyer&&isEscrow&&isActive);
-  const showRelease   = isGiftCardTrade ? (isBuyer&&isPaid&&isActive)    : (isSeller&&isPaid&&isActive);
-  // Either side can open a dispute at any point during an active trade — not
-  // just after payment is marked sent. The backend places no status gate on
-  // /api/trades/:id/dispute either, so this just lets users reach a moderator
-  // as soon as something feels wrong instead of waiting on the other party.
-  const showDispute   = isActive&&!isDisputed&&(isBuyer||isSeller);
+  // Gift card trade: BUYER pays with gift card (sends code), SELLER verifies & releases BTC
+  // BTC trade:       BUYER sends payment, SELLER confirms & releases BTC
+  const showMarkPaid  = isGiftCardTrade ? (isBuyer&&isEscrow&&isActive)  : (isBuyer&&isEscrow&&isActive);
+  const showRelease   = isGiftCardTrade ? (isSeller&&isPaid&&isActive)   : (isSeller&&isPaid&&isActive);
+  // Dispute is only available AFTER payment has been confirmed as sent.
+  // Before that, there's nothing to dispute — the buyer hasn't even indicated
+  // they've sent payment yet.
+  const showDispute   = isActive&&isPaid&&!isDisputed&&(isBuyer||isSeller);
 
   // ── Cancel eligibility ────────────────────────────────────────────────────
-  // Mirrors the backend rule in POST /api/trades/:id/cancel exactly:
-  // - While DISPUTED: ONLY the person who opened the dispute can cancel it — the
-  //   other side can't cancel their way out of a dispute filed against them, and
-  //   legacy disputes with no recorded opener can't be self-cancelled by anyone.
-  // - Otherwise (not yet disputed): only the BUYER can cancel. Sellers hold the
-  //   escrowed BTC — letting them cancel on demand would let a dishonest seller
-  //   pocket a payment and still reclaim the BTC, or strong-arm the buyer. A
-  //   seller who wants out must open a dispute instead.
-  const showCancelBtn = isActive && (isBuyer || isSeller) && (
+  // Both buyer AND seller can cancel an active trade before it's completed.
+  // The backend enforces the actual permission rules (e.g. seller can't cancel
+  // after buyer releases). Showing the button lets either party back out; the
+  // server rejects the request if it's not allowed.
+  // While DISPUTED: ONLY the person who opened the dispute can cancel.
+  // Only the buyer can cancel a trade — sellers never see Cancel Trade.
+  // While DISPUTED: only the person who opened the dispute can cancel.
+  const showCancelBtn = isActive && (
     isDisputed
       ? !!trade?.disputed_by && String(trade.disputed_by) === String(user?.id)
       : isBuyer
@@ -1479,9 +1525,9 @@ export default function TradeDetail({user}) {
                 <div className="p-3 rounded-xl text-xs font-semibold border"
                   style={{backgroundColor:'#FFFBEB',borderColor:'#FDE68A',color:'#92400E'}}>
                   {isGiftCardTrade
-                    ? isSeller
-                      ? <><Gift size={14} style={{flexShrink:0}}/> Your turn: Send your gift card code to the buyer in the chat, then click "I SENT THE CODE".</>
-                      : <><Clock size={14} style={{flexShrink:0}}/> Waiting for the card seller to send you the gift card code&hellip;</>
+                    ? isBuyer
+                      ? <><Gift size={14} style={{flexShrink:0}}/> Your turn: Send your gift card code to the seller in the chat, then click "I SENT THE CODE".</>
+                      : <><Clock size={14} style={{flexShrink:0}}/> Waiting for the buyer to send you the gift card code&hellip;</>
                     : isBuyer
                       ? <><CreditCard size={14} style={{flexShrink:0}}/> Your turn: Send {payMethod} payment now, then click "I HAVE PAID" to notify the seller.</>
                       : <><Clock size={14} style={{flexShrink:0}}/> Waiting for the buyer to send payment&hellip;</>}
@@ -1490,9 +1536,9 @@ export default function TradeDetail({user}) {
               {isActive&&isPaid&&isGiftCardTrade&&(
                 <div className="p-3 rounded-xl text-xs font-semibold border"
                   style={{backgroundColor:'#F0FDF4',borderColor:'#86EFAC',color:'#166534'}}>
-                  {isBuyer
-                    ? <><CheckCircle size={14} style={{flexShrink:0}}/> Code received! Test it — if it works, click RELEASE BITCOIN to pay the seller.</>
-                    : <><Clock size={14} style={{flexShrink:0}}/> Buyer is verifying your gift card code. Bitcoin releases once they confirm.</>}
+                  {isSeller
+                    ? <><CheckCircle size={14} style={{flexShrink:0}}/> Gift card code received! Test it — if it works, click RELEASE BITCOIN.</>
+                    : <><Clock size={14} style={{flexShrink:0}}/> Code sent! Seller is verifying your gift card. Bitcoin releases once they confirm.</>}
                 </div>
               )}
 
@@ -1537,22 +1583,32 @@ export default function TradeDetail({user}) {
                 </button>
               )}
               {showDispute&&(
+                <>
                 <button onClick={openDispute}
-                  className="w-full py-2 rounded-lg font-semibold text-xs shadow-sm flex items-center justify-center gap-1.5 transition hover:opacity-90"
+                  disabled={isPaid && disputeCountdownLeft !== null && disputeCountdownLeft > 0}
+                  className="w-full py-2 rounded-lg font-semibold text-xs shadow-sm flex items-center justify-center gap-1.5 transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                   style={{
-                    backgroundColor: '#9333EA',
+                    backgroundColor: isPaid && disputeCountdownLeft !== null && disputeCountdownLeft > 0 ? '#C4B5FD' : '#9333EA',
                     color: '#fff',
-                    cursor: 'pointer',
+                    cursor: isPaid && disputeCountdownLeft !== null && disputeCountdownLeft > 0 ? 'not-allowed' : 'pointer',
                   }}>
                   <Flag size={12}/>
-                  Open Dispute
+                  {isPaid && disputeCountdownLeft !== null && disputeCountdownLeft > 0
+                    ? `Dispute in ${fmtTimer(disputeCountdownLeft)}`
+                    : 'Open Dispute'}
                 </button>
+                {isPaid && disputeCountdownLeft !== null && disputeCountdownLeft > 0 && (
+                  <p className="text-center text-xs font-semibold mt-0.5" style={{color:'#7C3AED'}}>
+                    Cooldown — dispute opens after timer
+                  </p>
+                )}
+                </>
               )}
-              {showCancelBtn && !isPaid && (
+              {showCancelBtn && (
                 <button onClick={()=>setShowCancel(true)}
-                  className="w-full py-2 rounded-xl font-semibold text-xs border hover:bg-gray-50 transition"
-                  style={{borderColor:C.g200,color:C.g500}}>
-                  Cancel Trade
+                  className="w-full py-2.5 rounded-xl font-bold text-xs border-2 transition hover:bg-red-50"
+                  style={{borderColor:'#FECACA',color:'#DC2626'}}>
+                  {isPaid ? '✕ I didn\'t pay — Cancel Trade' : '✕ Cancel Trade'}
                 </button>
               )}
               {isCompleted&&(
@@ -1877,11 +1933,13 @@ export default function TradeDetail({user}) {
                         <div className="w-full max-w-[95%] rounded-2xl p-4" style={{backgroundColor:'#F0FDF4', border:'1px solid #86EFAC'}}>
                           <p className="text-sm font-black mb-1.5" style={{color:'#15803D'}}>System message</p>
                           <p className="text-sm leading-relaxed font-semibold" style={{color:'#166534'}}>
-                            {isBuyer
-                              ? 'Partner is now verifying your payment. Once partner confirms the payment, funds will be sent to you.'
-                              : isSeller
-                                ? <>Buyer confirmed payment via {payMethod}. Check your account — if received, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Payment not received? Open a dispute so a moderator can help.</>
-                                : text}
+                            {isGiftCardTrade
+                              ? (isBuyer
+                                ? 'Your gift card code has been sent. The seller is verifying it now. Once they confirm, Bitcoin will be released to you automatically.'
+                                : <>The buyer has sent a gift card code. Verify the code — if valid, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Code not working? Open a dispute so a moderator can help.</>)
+                              : (isBuyer
+                                ? 'Partner is now verifying your payment. Once partner confirms the payment, funds will be sent to you.'
+                                : <>Buyer confirmed payment via {payMethod}. Check your account — if received, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Payment not received? Open a dispute so a moderator can help.</>)}
                           </p>
                           <p className="text-xs font-semibold mt-2.5" style={{color:'#4D7C0F'}}>{ts}</p>
                         </div>
@@ -1966,7 +2024,23 @@ export default function TradeDetail({user}) {
                   );
 
                   /* ── USER chat bubbles ───────────────────────────────── */
-                  const isImage = text.startsWith('data:image/');
+                  // Parse images: supports single base64, JSON {caption, images}, or legacy array
+                  let imageSrcs=[];
+                  let caption='';
+                  if(text.startsWith('data:image/')){
+                    imageSrcs=[text];
+                  }else if(text.startsWith('{')||text.startsWith('[')){
+                    try{
+                      const parsed=JSON.parse(text);
+                      if(parsed&&Array.isArray(parsed.images)){
+                        imageSrcs=parsed.images.filter(s=>typeof s==='string'&&s.startsWith('data:image/'));
+                        caption=parsed.caption||'';
+                      }else if(Array.isArray(parsed)){
+                        imageSrcs=parsed.filter(s=>typeof s==='string'&&s.startsWith('data:image/'));
+                      }
+                    }catch{/* not JSON */}
+                  }
+                  const isImage=imageSrcs.length>0;
                   /* Group messages from same sender — tighter gap */
                   const prevMsg = i > 0 ? messages[i-1] : null;
                   const prevIsSameSender = prevMsg && String(prevMsg.sender_id) === String(m.sender_id);
@@ -1986,41 +2060,53 @@ export default function TradeDetail({user}) {
                           </div>
                         </button>
                       )}
-                      <div className="max-w-[72%] flex flex-col">
-                        {isImage?(
-                          <div className="rounded-2xl overflow-hidden shadow-sm"
-                            style={{border:`2px solid ${isOwn?'#0B8FD9':'#14532D'}`}}>
-                            {/* Sender name inside bubble — top */}
-                            {!isOwn && (
-                              <div className="flex items-center justify-between px-3 pt-2.5 pb-1"
-                                style={{background:'#14532D'}}>
-                                <p className="text-xs font-bold" style={{color:'rgba(255,255,255,0.7)'}}>
-                                  {cp?.username || 'User'}
+                      <div className="max-w-[72%] flex flex-col">                        {isImage?(
+                          (()=>{
+                            return(
+                            <div className="rounded-2xl overflow-hidden shadow-sm"
+                              style={{border:`2px solid ${isOwn?'#0B8FD9':'#14532D'}`}}>
+                              {/* Sender name inside bubble — top */}
+                              {!isOwn && (
+                                <div className="flex items-center justify-between px-3 pt-2.5 pb-1"
+                                  style={{background:'#14532D'}}>
+                                  <p className="text-xs font-bold" style={{color:'rgba(255,255,255,0.7)'}}>
+                                    {cp?.username || 'User'}
+                                  </p>
+                                </div>
+                              )}
+                              {/* Hidden placeholder — tap to view */}
+                              <button type="button" onClick={()=>setImgSrc(imageSrcs[0])}
+                                className="block w-full text-left cursor-pointer hover:opacity-90 transition"
+                                style={{width:260}}>
+                                <div className="flex flex-col items-center justify-center gap-1.5 px-4 py-5"
+                                  style={{background:isOwn?'rgba(11,143,217,0.08)':'rgba(20,83,45,0.10)'}}>
+                                  <div className="w-9 h-9 rounded-lg flex items-center justify-center"
+                                    style={{background:isOwn?'rgba(11,143,217,0.15)':'rgba(20,83,45,0.18)'}}>
+                                    <Camera size={18} style={{color:isOwn?'#334155':'#14532D'}} />
+                                  </div>
+                                  <span className="text-xs font-bold" style={{color:isOwn?'#334155':'#14532D'}}>
+                                    Image attached — tap to view
+                                  </span>
+                                  {imageSrcs.length>1&&<span className="text-xs" style={{color:isOwn?'#555':'rgba(255,255,255,0.5)'}}>{imageSrcs.length} images</span>}
+                                </div>
+                              </button>
+                              {/* Caption */}
+                              {caption&&(
+                                <div className="px-3 py-2" style={{background:isOwn?'#DCFCE7':'#14532D'}}>
+                                  <p className="text-sm break-words font-bold" style={{color:isOwn?'#166534':'#fff'}}>{caption}</p>
+                                </div>
+                              )}
+                              {/* Timestamp inside bubble — bottom */}
+                              <div className="px-3 pb-2.5 pt-1"
+                                style={{background:isOwn?'#0B8FD9':'#14532D'}}>
+                                <p className="text-xs" style={{color:'rgba(255,255,255,0.6)'}}>
+                                  {new Date(m.created_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})} {new Date(m.created_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})}
+                                  {imageSrcs.length>1&&<span className="ml-1 opacity-70">· {imageSrcs.length} images</span>}
                                 </p>
                               </div>
-                            )}
-                            <button type="button" onClick={()=>setImgSrc(text)}
-                              className="block w-full text-left cursor-pointer"
-                              style={{width:260}}>
-                              <div className="flex flex-col items-center justify-center gap-1.5 px-4"
-                                style={{height:130,background:isOwn?'rgba(11,143,217,0.08)':'rgba(20,83,45,0.10)'}}>
-                                <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-                                  style={{background:isOwn?'rgba(11,143,217,0.15)':'rgba(20,83,45,0.18)'}}>
-                                  <Camera size={18} style={{color:isOwn?'#334155':'#14532D'}} />
-                                </div>
-                                <span className="text-xs font-bold" style={{color:isOwn?'#334155':'#14532D'}}>
-                                  Image attached — tap to view
-                                </span>
-                              </div>
-                            </button>
-                            {/* Timestamp inside bubble — bottom */}
-                            <div className="px-3 pb-2.5 pt-1"
-                              style={{background:isOwn?'#0B8FD9':'#14532D'}}>
-                              <p className="text-xs" style={{color:'rgba(255,255,255,0.6)'}}>
-                                {new Date(m.created_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})} {new Date(m.created_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})}
-                              </p>
                             </div>
-                          </div>
+                            );
+                          })()
                         ):(
                           <div className={`rounded-2xl px-4 shadow-sm ${isOwn ? 'py-3' : 'pt-3 pb-1.5'}`}
                             style={{ background: isOwn ? '#DCFCE7' : '#14532D', border: isOwn ? '1px solid #BBF7D0' : 'none' }}>
@@ -2189,9 +2275,13 @@ export default function TradeDetail({user}) {
                     <div className="rounded-2xl p-4" style={{backgroundColor:'#EFF6FF', border:'1px solid #93C5FD'}}>
                       <p className="text-sm font-black mb-1.5" style={{color:'#1D4ED8'}}>System message</p>
                       <p className="text-sm leading-relaxed font-semibold" style={{color:'#1E40AF'}}>
-                        {isBuyer
-                          ? 'Your payment has been sent successfully. The seller has been notified and will check their account now. Once they confirm receipt, your Bitcoin will be released to you automatically.'
-                          : <>The buyer has confirmed payment. Please check your {payMethod} account right now. Check your account — if payment received, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Payment not received? Open a dispute so a moderator can help.</>}
+                        {isGiftCardTrade
+                          ? (isBuyer
+                            ? 'Your gift card code has been sent. The seller is now verifying it. Once they confirm the code is valid, Bitcoin will be released to you automatically.'
+                            : <>The buyer has sent a gift card code. Please verify the code — if valid, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Code not working? Open a dispute so a moderator can help.</>)
+                          : (isBuyer
+                            ? 'Your payment has been sent successfully. The seller has been notified and will check their account now. Once they confirm receipt, your Bitcoin will be released to you automatically.'
+                            : <>The buyer has confirmed payment. Please check your {payMethod} account right now. Check your account — if payment received, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Payment not received? Open a dispute so a moderator can help.</>)}
                       </p>
                       <p className="text-xs font-semibold mt-2.5" style={{color:'#3B82F6'}}>{paidLabel}</p>
                     </div>
@@ -2209,6 +2299,34 @@ export default function TradeDetail({user}) {
                   <div>
                     <p className="font-black text-sm" style={{color:'#fff'}}>Dispute Under Review</p>
                     <p className="text-xs font-semibold" style={{color:'#EDE9FE'}}>PRAQEN Moderator reviewing within 24h — keep chatting here, it's logged for review.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── IMAGE PREVIEW STRIP (staged before sending) ── */}
+              {stagedPreviews.length>0&&(
+                <div className="flex-shrink-0 px-4 py-2 bg-[#F9FAFB] border-t" style={{borderColor:C.g200}}>
+                  <div className="flex gap-2 overflow-x-auto pb-1" style={{scrollbarWidth:'none'}}>
+                    {stagedPreviews.map((url,i)=>(
+                      <div key={i} className="relative flex-shrink-0 w-16 h-16 rounded-xl overflow-hidden border" style={{borderColor:C.g200}}>
+                        <img src={url} alt={`Preview ${i+1}`} className="w-full h-full object-cover"/>
+                        <button type="button" onClick={()=>removeStagedImage(i)}
+                          className="absolute top-0.5 right-0.5 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center shadow-lg hover:bg-black/80 transition z-10"
+                          title="Remove image">
+                          <X size={14} strokeWidth={2.5}/>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between mt-1.5">
+                    <span className="text-xs font-semibold" style={{color:C.g400}}>
+                      {stagedImages.length}/{MAX_IMAGES_PER_SEND} images
+                    </span>
+                    <button type="button" onClick={clearStagedImages}
+                      className="text-xs font-bold px-3 py-1.5 rounded-lg border transition hover:bg-gray-50"
+                      style={{borderColor:C.g200,color:C.g400}}>
+                      Clear all
+                    </button>
                   </div>
                 </div>
               )}
@@ -2256,25 +2374,25 @@ export default function TradeDetail({user}) {
                     </div>
 
                     {/* Gallery — normal photo picker */}
-                    <input ref={fileRef} type="file" accept="image/*" multiple onChange={e=>{uploadImage(e.target.files);e.target.value='';}} className="hidden"/>
+                    <input ref={fileRef} type="file" accept="image/*" multiple onChange={e=>{stageImages(e.target.files);e.target.value='';}} className="hidden"/>
                     {/* Camera — opens the device camera directly on mobile */}
-                    <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={e=>{uploadImage(e.target.files);e.target.value='';}} className="hidden"/>
+                    <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={e=>{stageImages(e.target.files);e.target.value='';}} className="hidden"/>
                     {/* Files — broader picker (still only images are accepted server-side) */}
-                    <input ref={docRef} type="file" multiple onChange={e=>{uploadImage(e.target.files);e.target.value='';}} className="hidden"/>
+                    <input ref={docRef} type="file" multiple onChange={e=>{stageImages(e.target.files);e.target.value='';}} className="hidden"/>
 
                     <input type="text" value={msg}
                       onChange={e=>{setMsg(e.target.value);sendTypingPing();}}
                       placeholder="Write a message..."
                       className="flex-1 min-w-0 px-2 py-2 font-medium bg-transparent border-0 focus:outline-none focus:ring-0 text-slate-800 placeholder-slate-400"
                       style={{fontSize:15}}/>
-                    <button type="submit" disabled={!msg.trim()||sending}
+                    <button type="submit" disabled={(!msg.trim()&&stagedImages.length===0)||sending||uploading}
                       className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition disabled:cursor-not-allowed"
                       style={{
-                        background: !msg.trim()||sending ? '#F1F5F9' : `linear-gradient(135deg,${C.forest},${C.mint})`,
-                        color: !msg.trim()||sending ? '#94A3B8' : '#ffffff',
-                        boxShadow: !msg.trim()||sending ? 'none' : `0 2px 10px ${C.mint}66`,
+                        background: (!msg.trim()&&stagedImages.length===0)||sending||uploading ? '#F1F5F9' : `linear-gradient(135deg,${C.forest},${C.mint})`,
+                        color: (!msg.trim()&&stagedImages.length===0)||sending||uploading ? '#94A3B8' : '#ffffff',
+                        boxShadow: (!msg.trim()&&stagedImages.length===0)||sending||uploading ? 'none' : `0 2px 10px ${C.mint}66`,
                       }}>
-                      {sending?<RefreshCw size={14} className="animate-spin"/>:<Send size={15}/>}
+                      {sending||uploading?<RefreshCw size={14} className="animate-spin"/>:<Send size={15}/>}
                     </button>
                   </form>
                 </div>
@@ -2349,9 +2467,9 @@ export default function TradeDetail({user}) {
           iconBg={C.gold}
           title={isGiftCardTrade ? 'Confirm Gift Card Sent?' : 'Confirm Payment Sent?'}
           lines={isGiftCardTrade ? [
-            {icon:<Gift size={16}/>, text:'You are confirming you have sent the gift card code to the buyer in the chat.'},
+            {icon:<Gift size={16}/>, text:'You are confirming you have sent the gift card code to the seller in the chat.'},
             {icon:<AlertTriangle size={16} style={{color:C.warn}}/>, text:'Only confirm if you have already shared the code. This cannot be undone.'},
-            {icon:<Lock size={16}/>, text:'The buyer will verify the code before Bitcoin is released.'},
+            {icon:<Lock size={16}/>, text:'The seller will verify the code before Bitcoin is released.'},
           ] : [
             {icon:<CreditCard size={16}/>, text:`You are confirming you have sent the full payment via ${payMethod}.`},
             {icon:<AlertTriangle size={16} style={{color:C.warn}}/>, text:'Only confirm if you have already completed the transfer. This cannot be undone.'},
@@ -2363,31 +2481,9 @@ export default function TradeDetail({user}) {
           onClose={()=>setShowPayConfirm(false)}
           onConfirm={markPaid}
           submitting={submitting}
-          confirmDisabled={!isGiftCardTrade&&!payProofPreview}
-        >
-          {!isGiftCardTrade&&(
-            <div style={{padding:'0 16px 16px'}}>
-              <input ref={payProofRef} type="file" accept="image/*" style={{display:'none'}}
-                onChange={e=>handlePayProofSelect(e.target.files?.[0])}/>
-              {payProofPreview ? (
-                <div style={{display:'flex',alignItems:'center',gap:10,padding:10,borderRadius:12,backgroundColor:'#F0FDF4',border:'1px solid #86EFAC'}}>
-                  <img src={payProofPreview} alt="Payment proof" style={{width:44,height:44,borderRadius:8,objectFit:'cover',flexShrink:0}}/>
-                  <span style={{fontSize:12,fontWeight:700,color:'#166534',flex:1}}>Proof attached</span>
-                  <button type="button" onClick={()=>payProofRef.current?.click()}
-                    style={{fontSize:11,fontWeight:700,color:C.forest,background:'none',border:'none',cursor:'pointer'}}>
-                    Change
-                  </button>
-                </div>
-              ) : (
-                <button type="button" onClick={()=>payProofRef.current?.click()}
-                  style={{width:'100%',padding:'12px',borderRadius:12,border:'2px dashed #CBD5E1',backgroundColor:'#F8FAFC',color:'#475569',fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-                  <Paperclip size={14}/> Attach payment screenshot or receipt (required)
-                </button>
-              )}
-            </div>
-          )}
-        </ConfirmActionModal>
+        />
       )}
+      
 
       {/* ── Release confirmation modal ───────────────────────────────── */}
       {showRelConfirm && (
