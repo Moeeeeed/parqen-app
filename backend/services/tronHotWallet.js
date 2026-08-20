@@ -394,52 +394,6 @@ class TronHotWallet {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // ADMIN — COLLECT FEES TO COLD WALLET
-  // ══════════════════════════════════════════════════════════════════════════
-
-  /**
-   * Admin: cash out accumulated USDT fees from hot wallet to a cold wallet.
-   * Deducts from company wallet's internal balance and sends on-chain.
-   *
-   * @param {number} amountUsdt  - Amount to cash out
-   * @param {string} toAddress   - Cold wallet destination address
-   */
-  async collectFeesToColdWallet(amountUsdt, toAddress) {
-    if (!tronWallet.isValidTronAddress(toAddress)) {
-      throw new Error('Invalid cold wallet Tron address');
-    }
-
-    // Check company wallet has enough credited
-    const { data: cw } = await supabase
-      .from('wallets').select('balance_usdt').eq('user_id', COMPANY_WALLET_ID).maybeSingle();
-    const companyBal = parseFloat(cw?.balance_usdt || 0);
-    if (companyBal < amountUsdt) {
-      throw new Error(`Company wallet only has ₮${companyBal.toFixed(2)} — cannot collect ₮${amountUsdt.toFixed(2)}`);
-    }
-
-    // Deduct from company balance first
-    const newCompanyBal = parseFloat((companyBal - amountUsdt).toFixed(6));
-    await supabase.from('wallets')
-      .update({ balance_usdt: newCompanyBal, updated_at: new Date().toISOString() })
-      .eq('user_id', COMPANY_WALLET_ID);
-
-    // Send from hot wallet
-    let result;
-    try {
-      result = await this.sendUsdtToExternal(toAddress, amountUsdt);
-    } catch (sendErr) {
-      // Restore company balance if send fails
-      await supabase.from('wallets')
-        .update({ balance_usdt: companyBal, updated_at: new Date().toISOString() })
-        .eq('user_id', COMPANY_WALLET_ID);
-      throw sendErr;
-    }
-
-    console.log(`[HotWallet] 🏦 Fee collection: ₮${amountUsdt} → ${toAddress} | txid: ${result.txid}`);
-    return { ...result, new_company_balance: newCompanyBal };
-  }
-
-  // ══════════════════════════════════════════════════════════════════════════
   // STATUS
   // ══════════════════════════════════════════════════════════════════════════
 

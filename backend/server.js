@@ -11763,8 +11763,8 @@ app.get('/api/wallet/usdt', verifyToken, async (req, res) => {
 
 // POST /api/wallet/usdt/send — withdraw USDT to external Tron address (2FA required)
 // Sends from PRAQEN hot wallet. Tiered fee credited to company wallet.
-// Fee = max($5 flat floor, 5% of amount) — floor keeps small withdrawals from
-// costing less than the flat minimum; once 5% clears the floor (amount > $100)
+// Fee = max($5 flat floor, 2% of amount) — floor keeps small withdrawals from
+// costing less than the flat minimum; once 2% clears the floor (amount > $250)
 // the percentage takes over. No boundary where a bigger withdrawal ever costs
 // less fee than a smaller one — that gap let users dodge the flat fee by
 // nudging just above the old $50 cutoff.
@@ -11778,7 +11778,7 @@ app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
     });
   }
   const FEE_FLAT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_FLAT || '5.0');  // flat floor
-  const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.03'); // 3% once it exceeds the floor
+  const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.02'); // 2% once it exceeds the floor
   const MIN_SEND = parseFloat(process.env.USDT_MIN_SEND || '5.0');  // minimum $5
 
   // ── Fee calculator: flat floor, percentage above it — no cliff ────────────
@@ -12337,11 +12337,17 @@ app.post('/api/admin/hot-wallet/process-sweeps', verifyToken, async (req, res) =
 });
 
 // POST /api/admin/hot-wallet/collect-fees
-// Cash out accumulated company USDT fees from hot wallet to a cold wallet address
+// Queue a cash-out of accumulated company USDT fees from hot wallet to a cold wallet
+// address for CEO review. CEO-only, and — same as every other external send in this
+// app — nothing broadcasts here. The company balance is reserved immediately (so two
+// requests can't both queue the same fee revenue), a PENDING_APPROVAL row is inserted,
+// and it only actually leaves the hot wallet once a CEO-flagged account approves it via
+// POST /api/hd-wallet/ceo-withdrawals/:id/approve (see hdWalletRoutes.js), which already
+// branches on currency to call tronHotWallet.sendUsdtToExternal for USDT.
 app.post('/api/admin/hot-wallet/collect-fees', verifyToken, async (req, res) => {
   try {
-    const { data: me } = await supabaseAdmin.from('users').select('is_admin').eq('id', req.userId).single();
-    if (!me?.is_admin) return res.status(403).json({ error: 'Admin only' });
+    const { data: me } = await supabaseAdmin.from('users').select('is_ceo, email').eq('id', req.userId).single();
+    if (!me?.is_ceo && me?.email !== ADMIN_EMAIL) return res.status(403).json({ error: 'CEO access required' });
 
     const { toAddress, amountUsdt } = req.body;
     const amount = parseFloat(amountUsdt);
@@ -12353,21 +12359,62 @@ app.post('/api/admin/hot-wallet/collect-fees', verifyToken, async (req, res) => 
       return res.status(400).json({ error: 'Positive USDT amount required' });
     }
 
-    const result = await tronHotWallet.collectFeesToColdWallet(amount, toAddress);
+    // ── Reserve from the company wallet balance first (optimistic lock) — same
+    // deduct-then-queue pattern as /api/wallet/usdt/send.
+    const { data: cw } = await supabaseAdmin
+      .from('wallets').select('balance_usdt').eq('user_id', COMPANY_WALLET_ID).maybeSingle();
+    const companyBal = parseFloat(cw?.balance_usdt || 0);
+    if (companyBal < amount) {
+      return res.status(400).json({ error: `Company wallet only has ₮${companyBal.toFixed(2)} — cannot collect ₮${amount.toFixed(2)}` });
+    }
+    const newCompanyBal = parseFloat((companyBal - amount).toFixed(6));
+    const { data: deductRows, error: deductErr } = await supabaseAdmin.from('wallets')
+      .update({ balance_usdt: newCompanyBal, updated_at: new Date().toISOString() })
+      .eq('user_id', COMPANY_WALLET_ID)
+      .eq('balance_usdt', companyBal) // optimistic lock
+      .select('balance_usdt');
+    if (deductErr) return res.status(500).json({ error: 'Failed to reserve company funds — please try again' });
+    if (!deductRows || deductRows.length === 0) {
+      return res.status(409).json({ error: 'Company balance changed — please retry' });
+    }
 
-    // Log the collection
-    await supabaseAdmin.from('wallet_transactions').insert({
-      user_id: COMPANY_WALLET_ID,
-      type: 'WITHDRAWAL',
-      currency: 'USDT',
-      amount_usdt: amount,
-      status: 'CONFIRMED',
-      tx_hash: result.txid,
-      notes: `Admin fee collection → ${toAddress.slice(0, 16)}… by ${req.userId.slice(0, 8)}`,
-      created_at: new Date().toISOString(),
-    }).then(null, () => { });
+    const reviewTs = new Date().toISOString();
+    const { data: pendingRow, error: pendingErr } = await supabaseAdmin
+      .from('wallet_transactions')
+      .insert({
+        user_id: COMPANY_WALLET_ID,
+        type: 'WITHDRAWAL',
+        currency: 'USDT',
+        status: 'PENDING_APPROVAL',
+        amount_usdt: amount,
+        platform_fee_usdt: 0,
+        destination_address: toAddress,
+        notes: `Fee collection to cold wallet — requested by ${req.userId.slice(0, 8)}, pending CEO review.`,
+        created_at: reviewTs,
+      })
+      .select('id')
+      .single();
 
-    res.json({ success: true, ...result });
+    if (pendingErr || !pendingRow) {
+      console.error('[collect-fees] Failed to queue for review — restoring company balance:', pendingErr?.message);
+      const { error: restoreErr } = await supabaseAdmin.from('wallets')
+        .update({ balance_usdt: companyBal, updated_at: new Date().toISOString() })
+        .eq('user_id', COMPANY_WALLET_ID);
+      if (restoreErr) {
+        console.error('[collect-fees] CRITICAL: company balance restore failed!', restoreErr.message, 'amount:', amount);
+      }
+      return res.status(500).json({ error: 'Could not queue fee collection for review. Please try again.' });
+    }
+
+    console.log(`[collect-fees] Withdrawal ${pendingRow.id} queued for CEO review — ₮${amount} → ${toAddress} | requested by ${req.userId.slice(0, 8)}`);
+
+    res.json({
+      success: true,
+      pending: true,
+      requestId: pendingRow.id,
+      new_balance: newCompanyBal,
+      message: `Fee collection of ₮${amount.toFixed(2)} queued — it will broadcast once a CEO approves it in the withdrawal review queue.`,
+    });
   } catch (e) {
     console.error('[POST /admin/hot-wallet/collect-fees]', e.message);
     res.status(500).json({ error: e.message });

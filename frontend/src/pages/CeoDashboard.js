@@ -384,9 +384,18 @@ function WithdrawalApprovals() {
                 return (
                   <tr key={w.id} className="border-t align-top" style={{ borderColor: C.g100 }}>
                     <td className="px-3 py-2.5">
-                      <p className="font-bold" style={{ color: C.g800 }}>{w.user?.username || w.user_id?.slice(0, 8)}</p>
-                      <p style={{ color: C.g400 }}>{w.user?.email}</p>
-                      <VerifBadges user={w.user} />
+                      {w.is_fee_collection ? (
+                        <>
+                          <Pill label="🏦 PRAQEN Fee Collection" color="#92400E" bg="#FEF3C7" />
+                          <p className="mt-1" style={{ color: C.g400 }}>Company wallet — not a customer</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-bold" style={{ color: C.g800 }}>{w.user?.username || w.user_id?.slice(0, 8)}</p>
+                          <p style={{ color: C.g400 }}>{w.user?.email}</p>
+                          <VerifBadges user={w.user} />
+                        </>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 font-bold whitespace-nowrap" style={{ color: C.g700 }}>
                       {w.currency === 'USDT' ? `₮${fmtUsdt(w.amount_usdt)}` : `₿${fmtBtc(w.amount_btc)}`}

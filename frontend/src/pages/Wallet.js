@@ -81,11 +81,11 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
     ? parseFloat((parseFloat(usdAmount || 0) / price).toFixed(8))
     : parseFloat(amount || 0);
 
-  // Flat 4% withdrawal fee — mirrors backend calcWithdrawalFee()
+  // Flat 3% withdrawal fee — mirrors backend calcWithdrawalFee()
   // Use raw USD input when in USD mode to avoid BTC round-trip floating-point boundary errors
   const calcFeeByUsd = (usd) => {
     if (usd <= 0) return { feeUsd: 0, feeBtc: 0, label: '' };
-    return { feeUsd: usd * 0.04, feeBtc: (usd * 0.04) / price, label: '4% fee' };
+    return { feeUsd: usd * 0.03, feeBtc: (usd * 0.03) / price, label: '3% fee' };
   };
   const calcFee = (btc) => {
     // Round to nearest cent before tier comparison to avoid floating-point boundary mismatches
@@ -1649,14 +1649,14 @@ function UsdtWithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoF
   const [sendError,     setSendError]     = useState('');
   const [sendResult,    setSendResult]    = useState(null);
 
-  // Fee = max($5 flat floor, 3% of amount) — mirrors backend calcFee() in
+  // Fee = max($5 flat floor, 2% of amount) — mirrors backend calcFee() in
   // POST /api/wallet/usdt/send. The floor means the fee never drops as the
-  // amount goes up: 3% only takes over once it clears $5, at amounts above
-  // ~$167 ($5 / 3%). No boundary where a bigger withdrawal costs less fee.
+  // amount goes up: 2% only takes over once it clears $5, at amounts above
+  // $250 ($5 / 2%). No boundary where a bigger withdrawal costs less fee.
   const FEE_FLAT    = 5.00;
-  const FEE_PERCENT = 0.03;
+  const FEE_PERCENT = 0.02;
   const MIN_SEND    = 5.00;
-  const FEE_SWITCH  = FEE_FLAT / FEE_PERCENT; // $100 — where percent first exceeds the floor
+  const FEE_SWITCH  = FEE_FLAT / FEE_PERCENT; // $250 — where percent first exceeds the floor
 
   const calcFee = (amt) => Math.max(FEE_FLAT, parseFloat((amt * FEE_PERCENT).toFixed(2)));
 
@@ -3415,6 +3415,31 @@ export default function WalletPage({ user }) {
             </button>
           </div>
         </div>
+
+        {/* ── BECOME A GIFT-CARD VENDOR — shown to users with no deposit on file yet.
+             Wires up the existing lockSecurityDeposit()/loadDepositStatus() calls above,
+             which previously had no button in the Wallet UI triggering them. ── */}
+        {depositStatus && !depositStatus.has_deposit && (
+          <div className="rounded-2xl bg-white shadow-sm border p-4 sm:p-5" style={{ borderColor: C.g200 }}>
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: C.mist }}>
+                <Shield size={18} style={{ color: C.forest }} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-black" style={{ color: C.g800 }}>Become a Gift-Card Vendor</p>
+                <p className="text-xs mt-0.5 leading-relaxed" style={{ color: C.g500 }}>
+                  Lock a one-time $200 USDT security deposit to start selling gift cards. Covers unlimited listings,
+                  refundable after 7 days with no open trades. Your USDT balance: ₮{fmtUsd(usdtBal).replace('$', '')}.
+                </p>
+                <button onClick={lockSecurityDeposit} disabled={depositLockLoading || usdtBal < 200}
+                  className="mt-3 px-4 py-2 rounded-xl text-xs font-black text-white"
+                  style={{ backgroundColor: depositLockLoading ? C.g400 : (usdtBal < 200 ? C.g400 : C.green) }}>
+                  {depositLockLoading ? 'Locking…' : usdtBal < 200 ? `Need ₮${(200 - usdtBal).toFixed(2)} more USDT` : 'Lock $200 Security Deposit'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── SELLER SECURITY DEPOSIT — only shown to users who have (or had) one ── */}
         {depositStatus?.has_deposit && (

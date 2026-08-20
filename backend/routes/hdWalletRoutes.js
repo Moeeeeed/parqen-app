@@ -74,12 +74,12 @@ async function getLiveBtcPrice() {
     return _btcPriceCache.price; // return last known price rather than hard-coded fallback
 }
 
-// ── Withdrawal fee — flat 4% — returns { feeUsd, feeBtc, label } ─────────────
+// ── Withdrawal fee — flat 3% — returns { feeUsd, feeBtc, label } ─────────────
 function calcWithdrawalFee(amountBtc, btcPrice) {
   const amountUsd = Math.round(amountBtc * btcPrice * 100) / 100;
-  const feeUsd = amountUsd * 0.04;
+  const feeUsd = amountUsd * 0.03;
   const feeBtc = parseFloat((feeUsd / btcPrice).toFixed(8));
-  return { feeUsd: parseFloat(feeUsd.toFixed(2)), feeBtc, label: '4% fee' };
+  return { feeUsd: parseFloat(feeUsd.toFixed(2)), feeBtc, label: '3% fee' };
 }
 
 // ============================================================
@@ -756,7 +756,15 @@ router.post('/send', verifyToken, sendLimiter, async (req, res) => {
 // Every external send lands in wallet_transactions as PENDING_APPROVAL
 // (see POST /send above). Only a CEO-flagged account (or ADMIN_EMAIL as a
 // break-glass fallback) can push it on-chain or send the funds back.
+//
+// The same queue also carries company fee-collection cash-outs (see
+// POST /api/admin/hot-wallet/collect-fees in server.js) — those rows are
+// tagged by user_id === COMPANY_WALLET_ID rather than a real customer, so
+// they route through this exact approve/reject flow but skip the
+// customer-facing fee-credit and "your withdrawal" notification steps below.
 // ============================================================
+const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
+
 async function requireCeo(req, res) {
   const { data: u } = await supabaseAdmin
     .from('users').select('id, is_ceo, email, username').eq('id', req.userId).single();
@@ -1012,7 +1020,14 @@ router.get('/ceo-withdrawals', verifyToken, async (req, res) => {
 
     res.json({
       success:     true,
-      withdrawals: (rows || []).map(r => ({ ...r, user: userMap[r.user_id] || null })),
+      // Fee-collection cash-outs (PRAQEN's own accumulated fees, not a customer
+      // withdrawal) share this queue — flagged so the CEO dashboard can tell them
+      // apart instead of showing the company wallet as if it were a user.
+      withdrawals: (rows || []).map(r => ({
+        ...r,
+        user: userMap[r.user_id] || null,
+        is_fee_collection: r.user_id === COMPANY_WALLET_ID,
+      })),
     });
   } catch (error) {
     console.error('[hdWalletRoutes GET /ceo-withdrawals]', error.message);
@@ -1022,7 +1037,6 @@ router.get('/ceo-withdrawals', verifyToken, async (req, res) => {
 
 // POST /api/hd-wallet/ceo-withdrawals/:id/approve
 router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
-  const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
   // Declared here (not inside the try block) so the catch block below can still see it —
   // it tracks whether it's safe to release the PROCESSING claim back to PENDING_APPROVAL.
   let revertOnFailure = true;
@@ -1055,6 +1069,13 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
     // after that ends in a terminal status (CONFIRMED or queued PENDING).
 
     const isUsdt = txRow.currency === 'USDT';
+    // Company fee-collection cash-outs (see server.js POST /api/admin/hot-wallet/collect-fees)
+    // share this exact queue and approve flow, tagged by user_id === COMPANY_WALLET_ID instead
+    // of a real customer. platformFee is always 0 on those rows, so the fee-credit calls below
+    // are no-ops for them regardless — this flag only controls the FEE ledger row and the
+    // notification wording, which would otherwise misleadingly describe PRAQEN's own cash-out
+    // as "a fee from user <company wallet id>" / "your withdrawal."
+    const isFeeCollection = txRow.user_id === COMPANY_WALLET_ID;
     const platformFee = isUsdt ? parseFloat(txRow.platform_fee_usdt || 0) : parseFloat(txRow.platform_fee_btc || 0);
     const sendAmount = isUsdt ? parseFloat(txRow.amount_usdt) : parseFloat(txRow.amount_btc);
     const { data: targetUser } = await supabaseAdmin
@@ -1122,13 +1143,17 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
       status: 'CONFIRMED', tx_hash: result.txid, reviewed_by: ceo.id, reviewed_at: ts,
       notes: `${txRow.notes || ''} — Confirmed by PRAQEN ${ts}.`,
     }).eq('id', id);
-    await supabaseAdmin.from('wallet_transactions').insert(isUsdt ? {
-      user_id: COMPANY_WALLET_ID, type: 'FEE', currency: 'USDT', amount_usdt: platformFee, status: 'CONFIRMED',
-      tx_hash: `${result.txid}_FEE`, notes: `USDT blockchain fee from user ${txRow.user_id.slice(0, 8)} — PRAQEN-approved withdrawal`, created_at: ts,
-    } : {
-      user_id: COMPANY_WALLET_ID, type: 'FEE', amount_btc: platformFee, status: 'CONFIRMED',
-      tx_hash: result.txid, notes: `Blockchain fee from user ${txRow.user_id.slice(0, 8)} — PRAQEN-approved withdrawal`, created_at: ts,
-    });
+    // A fee-collection row has no platform fee to log against itself — skip the FEE
+    // ledger entry entirely rather than insert a $0 "fee from user <company wallet id>" row.
+    if (!isFeeCollection) {
+      await supabaseAdmin.from('wallet_transactions').insert(isUsdt ? {
+        user_id: COMPANY_WALLET_ID, type: 'FEE', currency: 'USDT', amount_usdt: platformFee, status: 'CONFIRMED',
+        tx_hash: `${result.txid}_FEE`, notes: `USDT blockchain fee from user ${txRow.user_id.slice(0, 8)} — PRAQEN-approved withdrawal`, created_at: ts,
+      } : {
+        user_id: COMPANY_WALLET_ID, type: 'FEE', amount_btc: platformFee, status: 'CONFIRMED',
+        tx_hash: result.txid, notes: `Blockchain fee from user ${txRow.user_id.slice(0, 8)} — PRAQEN-approved withdrawal`, created_at: ts,
+      });
+    }
 
     // BTC has a dedicated tx-receipt email template; USDT relies on the in-app notification
     // inserted below for now (scope decision — extending that email template is separate work).
@@ -1141,14 +1166,17 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
       ).catch(() => {});
     }
     supabaseAdmin.from('notifications').insert({
-      user_id: txRow.user_id, type: 'wallet', title: '✅ Withdrawal Approved & Sent',
-      message: isUsdt
-        ? `Your withdrawal of ₮${sendAmount.toFixed(2)} has been confirmed and is on its way.`
-        : `Your withdrawal of ₿${sendAmount.toFixed(8)} has been confirmed and is on its way.`,
+      user_id: txRow.user_id, type: 'wallet',
+      title: isFeeCollection ? '✅ Fee Collection Sent' : '✅ Withdrawal Approved & Sent',
+      message: isFeeCollection
+        ? `Fee collection of ₮${sendAmount.toFixed(2)} to the cold wallet has been confirmed.`
+        : (isUsdt
+          ? `Your withdrawal of ₮${sendAmount.toFixed(2)} has been confirmed and is on its way.`
+          : `Your withdrawal of ₿${sendAmount.toFixed(8)} has been confirmed and is on its way.`),
       action: '/wallet', is_read: false, created_at: ts,
     }).then(null, () => {});
 
-    console.log(`✅ [CEO] Approved withdrawal ${id} — ${isUsdt ? '₮' : '₿'}${sendAmount} → ${txRow.destination_address} | TX ${result.txid} | by ${ceo.email}`);
+    console.log(`✅ [CEO] Approved ${isFeeCollection ? 'fee collection' : 'withdrawal'} ${id} — ${isUsdt ? '₮' : '₿'}${sendAmount} → ${txRow.destination_address} | TX ${result.txid} | by ${ceo.email}`);
     res.json({ success: true, txid: result.txid, message: 'Withdrawal approved and broadcast.' });
   } catch (error) {
     console.error('[hdWalletRoutes POST /ceo-withdrawals/:id/approve]', error.message);
@@ -1188,6 +1216,7 @@ router.post('/ceo-withdrawals/:id/reject', verifyToken, async (req, res) => {
     if (!txRow) return res.status(404).json({ error: 'No pending withdrawal found with that ID — it may have already been reviewed.' });
 
     const isUsdt = txRow.currency === 'USDT';
+    const isFeeCollection = txRow.user_id === COMPANY_WALLET_ID;
     const sendAmount = isUsdt ? parseFloat(txRow.amount_usdt) : parseFloat(txRow.amount_btc);
     const platformFee = isUsdt ? parseFloat(txRow.platform_fee_usdt || 0) : parseFloat(txRow.platform_fee_btc || 0);
     const refundAmount = parseFloat((sendAmount + platformFee).toFixed(isUsdt ? 6 : 8));
@@ -1217,13 +1246,16 @@ router.post('/ceo-withdrawals/:id/reject', verifyToken, async (req, res) => {
     const symbol = isUsdt ? '₮' : '₿';
     const decimals = isUsdt ? 2 : 8;
     supabaseAdmin.from('notifications').insert({
-      user_id: userId, type: 'wallet', title: '⚠️ Withdrawal Declined',
-      message: `We weren't able to complete your withdrawal of ${symbol}${sendAmount.toFixed(decimals)} — the full amount (${symbol}${refundAmount.toFixed(decimals)}) was returned to your wallet. Reason: ${reason}`,
+      user_id: userId, type: 'wallet',
+      title: isFeeCollection ? '⚠️ Fee Collection Declined' : '⚠️ Withdrawal Declined',
+      message: isFeeCollection
+        ? `Fee collection of ${symbol}${sendAmount.toFixed(decimals)} was declined — the full amount was returned to the company wallet. Reason: ${reason}`
+        : `We weren't able to complete your withdrawal of ${symbol}${sendAmount.toFixed(decimals)} — the full amount (${symbol}${refundAmount.toFixed(decimals)}) was returned to your wallet. Reason: ${reason}`,
       action: '/wallet', is_read: false, created_at: ts,
     }).then(null, () => {});
 
-    console.log(`⛔ [CEO] Rejected withdrawal ${id} — ${symbol}${refundAmount} refunded to ${userId.slice(0,8)} | by ${ceo.email} | reason: ${reason}`);
-    res.json({ success: true, message: 'Withdrawal rejected and funds returned to the user.' });
+    console.log(`⛔ [CEO] Rejected ${isFeeCollection ? 'fee collection' : 'withdrawal'} ${id} — ${symbol}${refundAmount} refunded to ${userId.slice(0,8)} | by ${ceo.email} | reason: ${reason}`);
+    res.json({ success: true, message: isFeeCollection ? 'Fee collection rejected and funds returned to the company wallet.' : 'Withdrawal rejected and funds returned to the user.' });
   } catch (error) {
     console.error('[hdWalletRoutes POST /ceo-withdrawals/:id/reject]', error.message);
     res.status(500).json({ error: 'Failed to reject withdrawal: ' + error.message });
