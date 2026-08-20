@@ -167,11 +167,8 @@ export default function LandingPage({ user }) {
               {/* headline */}
               <h1 className={`text-[1.6rem] sm:text-5xl lg:text-6xl font-black leading-[1.1] mb-4 text-white ${heroOn ? 'anim-up' : ''}`}
                 style={{ opacity: heroOn ? 1 : 0, fontFamily: "'Syne',sans-serif", animationDelay: '.1s' }}>
-                The Safest Way to<br />
-                <span className="grad-text">Buy &amp; Sell Bitcoin &amp; USDT</span><br />
-                <span className="text-sm sm:text-xl font-bold" style={{ color: 'rgba(255,255,255,.65)' }}>
-                  Peer-to-Peer · Worldwide
-                </span>
+                Buy Bitcoin in Ghana <br />
+                <span className="grad-text">Instantly with Mobile Money</span><br /
               </h1>
 
               {/* sub */}
