@@ -109,6 +109,11 @@ setInterval(() => {
 // In-memory market cache — serves offers/listings without hitting DB on every page load
 const _marketCache = new Map(); // key -> { data, ts }
 const MARKET_CACHE_TTL = 300000; // 5 minutes
+// Shared with the default (no-params) branch of GET /api/listings below — _warmListingsCache
+// used to hardcode its own separate 200 here, so raising the limit in the request handler did
+// nothing for the 'listings|||' key: the warm cache populated it first, on this old cap, and
+// every real request just served that cache hit without ever reaching the fixed query.
+const DEFAULT_LISTINGS_LIMIT = 500;
 // Pagination metadata for /api/listings, keyed the same as _marketCache. Kept separate from
 // _marketCache itself (rather than changing what getCached()/setCached() store) because
 // hasMore/nextCursor must reflect the RAW query page (before balance-based filtering removes
@@ -141,7 +146,7 @@ async function _warmListingsCache() {
     const { data: rawListings } = await Promise.race([
       supabaseAdmin.from('listings').select(
         'id, seller_id, listing_type, asset, gift_card_brand, status, bitcoin_price, margin, pricing_type, currency, currency_symbol, country, country_name, payment_method, payment_methods, amount_usd, min_limit_usd, max_limit_usd, min_limit_local, max_limit_local, time_limit, trade_instructions, listing_terms, description, created_at, card_values, card_type, face_value'
-      ).eq('status', 'ACTIVE').order('created_at', { ascending: false }).limit(200),
+      ).eq('status', 'ACTIVE').order('created_at', { ascending: false }).limit(DEFAULT_LISTINGS_LIMIT),
       new Promise(resolve => setTimeout(() => resolve({ data: [] }), 6000)),
     ]);
     if (!rawListings || rawListings.length === 0) return;
@@ -336,7 +341,7 @@ const tradeEscrowService = require('./services/tradeEscrowService');
 const actionCodeService = require('./services/actionCodeService');
 const balanceIntegrity = require('./services/balanceIntegrityService');
 const { checkAndAwardBadges } = require('./services/badgeService');
-const { syncAllOfferStatuses, deactivateStaleOffers, setCacheBuster, setBtcPriceGetter, updateOfferStatus } = require('./services/offerStatusService');
+const { syncAllOfferStatuses, deactivateStaleOffers, reactivateReturnedSellers, setCacheBuster, setBtcPriceGetter, updateOfferStatus } = require('./services/offerStatusService');
 const { syncTraderOfWeek, getAllWinners: getTraderOfWeekWinners } = require('./services/traderOfWeekService');
 const telegramService = require('./services/telegramService');
 setCacheBuster(bustCache);
@@ -6074,7 +6079,7 @@ app.get('/api/listings', async (req, res) => {
     // + 30 BUY_GIFT_CARD) the old 200 cap was silently dropping the oldest ~78 real, active
     // offers from every page — sorted out by created_at before the per-page type filter ever
     // saw them. Raised well past current volume; still a hard cap, not a fix for pagination.
-    const effectiveLimit = (Number.isFinite(requestedLimit) && requestedLimit > 0) ? Math.min(requestedLimit, 50) : 500;
+    const effectiveLimit = (Number.isFinite(requestedLimit) && requestedLimit > 0) ? Math.min(requestedLimit, 50) : DEFAULT_LISTINGS_LIMIT;
     if (req.query.limit) cacheKey += `|l:${effectiveLimit}`;
 
     const cursor = parseListingsCursor(req.query.cursor);
@@ -12906,6 +12911,11 @@ app.listen(PORT, () => {
   deactivateStaleOffers().catch(err => console.error('[startup] deactivateStaleOffers:', err.message));
   setInterval(() => deactivateStaleOffers().catch(err => console.error('[interval] deactivateStaleOffers:', err.message)), 6 * 60 * 60 * 1000);
   console.log('🔕 Stale offer cron: pauses offers from sellers inactive 10+ days — checks every 6 hours');
+
+  // Companion to the sweep above — brings a listing back once its seller is active
+  // again, so going quiet for 10 days doesn't mean permanently losing the offer.
+  reactivateReturnedSellers().catch(err => console.error('[startup] reactivateReturnedSellers:', err.message));
+  setInterval(() => reactivateReturnedSellers().catch(err => console.error('[interval] reactivateReturnedSellers:', err.message)), 6 * 60 * 60 * 1000);
 
   // "Active Trader of the Week" auto-pick — runs at startup then checked every 6 hours;
   // each category only actually re-picks once its own 7-day rotation window is due.
