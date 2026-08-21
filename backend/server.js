@@ -5505,7 +5505,12 @@ app.get('/api/users/:userId', async (req, res) => {
         total_trades: real_total_trades,
         positive_feedback: real_positive,
         negative_feedback: real_negative,
-        total_feedback_count: real_positive + real_negative,
+        // real_positive/real_negative are deliberately never reduced (Math.max above) so a
+        // legacy-inflated counter never visibly drops — but that means they can massively
+        // overstate the real review count (seen live: 4156 here vs. 1 actual row in `reviews`,
+        // the same array shipped two lines below). total_feedback_count is what the Reviews
+        // tab's count label uses, so it must track what's actually in `reviews`, not this sum.
+        total_feedback_count: reviews.length > 0 ? reviews.length : (data.total_feedback_count || 0),
         average_rating: parseFloat(real_rating.toFixed(2)),
         display_name: computeDisplayName(data),
       },

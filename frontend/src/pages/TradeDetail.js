@@ -437,6 +437,9 @@ function ProfilePopup({user, label, trade, onClose}) {
   const neg        = parseInt(u.negative_feedback || 0);
   const total      = pos + neg;
   const trust      = total > 0 ? Math.round(pos / total * 100) : trades > 0 ? 100 : 0;
+  // pos/neg is a legacy trust counter that's never allowed to decrease and can be wildly
+  // inflated relative to real reviews — the tab count must match what actually loads there.
+  const reviewCount = parseInt(u.total_feedback_count ?? total);
   const compRate   = parseFloat(u.completion_rate || 0);
   const phoneOk    = !!(u.is_phone_verified || u.phone_verified);
   const emailOk    = !!(u.is_email_verified || u.email_verified);
@@ -461,7 +464,7 @@ function ProfilePopup({user, label, trade, onClose}) {
 
   const TABS = [
     { id:'overview',  label:'Profile' },
-    { id:'feedback',  label:`Reviews (${total})` },
+    { id:'feedback',  label:`Reviews (${reviewCount})` },
     { id:'rules',     label:'Rules' },
     { id:'trade',     label:'Trade' },
   ];

@@ -614,6 +614,11 @@ function BuyerModal({buyer, listing, onClose, onTrade, btcPriceUSD}) {
   const neg      = parseInt(u.negative_feedback || 0);
   const total    = pos + neg;
   const trust    = total > 0 ? Math.round(pos / total * 100) : trades > 0 ? 100 : 0;
+  // pos/neg can be a legacy-inflated trust counter that's never allowed to decrease —
+  // real seen case: 4156 positive_feedback against 1 actual row in the reviews table.
+  // The Reviews tab count must match what the tab actually fetches and displays, not
+  // that inflated sum, or it reads as "feedback isn't showing" when the tab opens.
+  const reviewCount = parseInt(u.total_feedback_count ?? total);
   const compRate = parseFloat(u.completion_rate || 0);
   const blocks   = parseInt(u.blocks_received || u.blocks_count || 0);
   const ccCode   = resolveCode(u.country || u.location);
@@ -637,7 +642,7 @@ function BuyerModal({buyer, listing, onClose, onTrade, btcPriceUSD}) {
 
   const TABS = [
     { id:'overview', label:<span className="inline-flex items-center gap-1"><User size={12} className="inline-block"/>Profile</span>},
-    { id:'feedback', label:<span className="inline-flex items-center gap-1"><MessageCircle size={12} className="inline-block"/>Reviews ({total})</span>},
+    { id:'feedback', label:<span className="inline-flex items-center gap-1"><MessageCircle size={12} className="inline-block"/>Reviews ({reviewCount})</span>},
     { id:'rules',    label:<span className="inline-flex items-center gap-1"><ClipboardList size={12} className="inline-block"/>Rules</span>},
     { id:'offer',    label:<span className="inline-flex items-center gap-1"><BarChart3 size={12} className="inline-block"/>Offer</span>},
   ];

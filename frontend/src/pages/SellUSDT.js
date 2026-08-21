@@ -440,6 +440,9 @@ function BuyerModal({buyer, listing, onClose, onTrade, usdtPriceUSD}) {
   const neg      = parseInt(u.negative_feedback || 0);
   const total    = pos + neg;
   const trust    = total > 0 ? Math.round(pos / total * 100) : trades > 0 ? 100 : 0;
+  // pos/neg is a legacy trust counter that's never allowed to decrease and can be wildly
+  // inflated relative to real reviews — the tab count must match what actually loads there.
+  const reviewCount = parseInt(u.total_feedback_count ?? total);
   const compRate = parseFloat(u.completion_rate || 0);
   const ccCode   = resolveCode(u.country || u.location);
   const avgReply = u.avg_response_time || u.avg_reply_minutes;
@@ -462,7 +465,7 @@ function BuyerModal({buyer, listing, onClose, onTrade, usdtPriceUSD}) {
 
   const TABS = [
     { id:'overview', label:<span className="inline-flex items-center gap-1"><User size={12} className="inline-block"/>Profile</span> },
-    { id:'feedback', label:<span className="inline-flex items-center gap-1"><MessageCircle size={12} className="inline-block"/>Reviews ({total})</span>},
+    { id:'feedback', label:<span className="inline-flex items-center gap-1"><MessageCircle size={12} className="inline-block"/>Reviews ({reviewCount})</span>},
     { id:'rules',    label:<span className="inline-flex items-center gap-1"><ClipboardList size={12} className="inline-block"/>Rules</span> },
     { id:'offer',    label:<span className="inline-flex items-center gap-1"><BarChart3 size={12} className="inline-block"/>Offer</span> },
   ];

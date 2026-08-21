@@ -601,6 +601,9 @@ function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
   const neg     = parseInt(u.negative_feedback || 0);
   const total   = pos + neg;
   const trust   = total > 0 ? Math.round(pos / total * 100) : trades > 0 ? 100 : 0;
+  // pos/neg is a legacy trust counter that's never allowed to decrease and can be wildly
+  // inflated relative to real reviews — the tab count must match what actually loads there.
+  const reviewCount = parseInt(u.total_feedback_count ?? total);
   const compRate = parseFloat(u.completion_rate || 0);
   const blocks  = parseInt(u.blocks_received || u.blocks_count || 0);
   const ccCode  = resolveCode(u.country || u.location);
@@ -625,7 +628,7 @@ function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
 
   const TABS = [
     { id:'overview',  label:<span className="inline-flex items-center gap-1.5"><User size={14}/>Profile</span> },
-    { id:'feedback',  label:<span className="inline-flex items-center gap-1.5"><MessageSquare size={14}/>Reviews ({total})</span>},
+    { id:'feedback',  label:<span className="inline-flex items-center gap-1.5"><MessageSquare size={14}/>Reviews ({reviewCount})</span>},
     { id:'rules',     label:<span className="inline-flex items-center gap-1.5"><List size={14}/>Rules</span> },
     { id:'offer',     label:<span className="inline-flex items-center gap-1.5"><BarChart2 size={14}/>Offer</span> },
   ];
