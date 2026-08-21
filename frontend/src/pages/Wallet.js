@@ -2693,7 +2693,7 @@ function AssetActionSheet({ asset, balanceLabel, usdLabel, onAction, onClose }) 
   const isBtc = asset === 'BTC';
   const actions = [
     { key: 'send',     label: 'Send',     icon: Send },
-    { key: 'receive',  label: 'Receive',  icon: Download },
+    { key: 'receive',  label: 'Deposit',  icon: Download },
     { key: 'transfer', label: 'Transfer', icon: ArrowUpRight },
     { key: 'swap',     label: 'Swap',     icon: ArrowLeftRight },
   ];
@@ -3534,16 +3534,18 @@ export default function WalletPage({ user }) {
              to the correct BTC/USDT modal. No new logic; just a single unified entry point. */}
         <div className="grid grid-cols-4 gap-2 sm:gap-3">
           {[
-            { label: 'Send',     icon: Send,           action: () => setAssetPicker({ type: 'send' }) },
-            { label: 'Receive',  icon: Download,       action: () => setAssetPicker({ type: 'receive' }) },
-            { label: 'Transfer', icon: ArrowUpRight,   action: () => setAssetPicker({ type: 'transfer' }) },
-            { label: 'Swap',     icon: ArrowLeftRight, action: () => setActiveCoin('SWAP') },
-          ].map(({ label, icon: Icon, action }) => (
+            { label: 'Send',     icon: Send,           action: () => setAssetPicker({ type: 'send' }),     primary: false },
+            { label: 'Deposit',  icon: Download,       action: () => setAssetPicker({ type: 'receive' }),  primary: true  },
+            { label: 'Transfer', icon: ArrowUpRight,   action: () => setAssetPicker({ type: 'transfer' }), primary: false },
+            { label: 'Swap',     icon: ArrowLeftRight, action: () => setActiveCoin('SWAP'),                primary: false },
+          ].map(({ label, icon: Icon, action, primary }) => (
             <button key={label} onClick={action}
-              className="bg-white rounded-2xl border shadow-sm p-3 sm:p-4 flex flex-col items-center gap-2 transition hover:shadow-md hover:-translate-y-0.5"
-              style={{ borderColor: C.g100 }}>
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: C.mist }}>
-                <Icon size={16} style={{ color: C.green }} />
+              className="flex flex-col items-center gap-2 py-1 transition active:scale-95">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition hover:brightness-95"
+                style={primary
+                  ? { background: `linear-gradient(135deg, ${C.gold}, #E08E0F)`, boxShadow: `0 4px 14px ${C.gold}55` }
+                  : { backgroundColor: C.mist, border: `1px solid ${C.green}20` }}>
+                <Icon size={20} style={{ color: primary ? '#fff' : C.forest }} />
               </div>
               <span className="text-xs font-bold" style={{ color: C.g700 }}>{label}</span>
             </button>
