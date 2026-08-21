@@ -419,6 +419,7 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   // Convert local currency value into USD equivalent for crypto calculation
   const refUSD = localVal > 0 ? (usdRate > 0 ? localVal / usdRate : localVal) : 1;
   const btcOut = refUSD / (rateUSD || 1);
+  const receiveUSD = btcOut * btcPriceUSD;
   const viewerIsBuyingCard = listing.listing_type === 'BUY_GIFT_CARD';
   const cryptoSide = { val: `${fBtc(btcOut)} BTC`, sub: `≈ $${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}` };
   const youGive    = viewerIsBuyingCard ? cardSide   : cryptoSide;
