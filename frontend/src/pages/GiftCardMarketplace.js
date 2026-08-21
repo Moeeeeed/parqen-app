@@ -299,8 +299,15 @@ const getLastSeen = (u) => {
   const dy = ~~(s / 86400); return { label: `${dy} ${dy === 1 ? 'day' : 'days'} ago`, online: false };
 };
 const getRateUSD = (l, btcPrice) => {
-  if (l.pricing_type === 'fixed') { const s = parseFloat(l.bitcoin_price || 0); if (s > 100) return s; }
-  return btcPrice * (1 + parseFloat(l.margin || 0) / 100);
+  // Gift cards trade against both BTC and USDT (see the crypto filter below) — a
+  // USDT-asset listing priced at 'market' must use the ~$1 USDT peg, not the BTC
+  // rate, or its amounts come out ~88,000x too high.
+  const isUsdt = l.asset === 'USDT';
+  if (l.pricing_type === 'fixed') {
+    const s = parseFloat(l.bitcoin_price || 0);
+    if (s > (isUsdt ? 0.01 : 100)) return s;
+  }
+  return (isUsdt ? 1 : btcPrice) * (1 + parseFloat(l.margin || 0) / 100);
 };
 const getBrand = (l) => l.gift_card_brand || l.giftCardBrand || l.card_brand || 'Gift Card';
 const getFaceVal = (l) => { const v = l.face_value || l.card_value || l.amount_usd; return v ? parseFloat(v) : null; };
@@ -420,10 +427,14 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   const refUSD = localVal > 0 ? (usdRate > 0 ? localVal / usdRate : localVal) : 1;
   const btcOut = refUSD / (rateUSD || 1);
   const viewerIsBuyingCard = listing.listing_type === 'BUY_GIFT_CARD';
-  
+  const isUsdtCard = (listing.asset || 'BTC').toUpperCase() === 'USDT';
+  // Spot price (no margin) for the offer's actual asset — was hardcoded to
+  // btcPriceUSD, which overstated a USDT listing's local value by ~88,000x.
+  const spotPriceUSD = isUsdtCard ? 1 : btcPriceUSD;
+
   // Crypto side value formatted in local offer currency (e.g., £, C$, ₵, $) matching the offer currency
-  const receiveLocal = btcOut * (btcPriceUSD * usdRate || 0);
-  const cryptoSide = { val: `${sym}${receiveLocal < 1 ? receiveLocal.toFixed(2) : fmt(receiveLocal, 2)}`, sub: `≈ ${fBtc(btcOut)} BTC` };
+  const receiveLocal = btcOut * (spotPriceUSD * usdRate || 0);
+  const cryptoSide = { val: `${sym}${receiveLocal < 1 ? receiveLocal.toFixed(2) : fmt(receiveLocal, 2)}`, sub: `≈ ${isUsdtCard ? btcOut.toFixed(2) : fBtc(btcOut)} ${isUsdtCard ? 'USDT' : 'BTC'}` };
   const youGive    = viewerIsBuyingCard ? cardSide   : cryptoSide;
   const youReceive = viewerIsBuyingCard ? cryptoSide : cardSide;
 

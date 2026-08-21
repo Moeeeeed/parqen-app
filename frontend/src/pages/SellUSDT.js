@@ -247,7 +247,7 @@ function Avatar({user, size=36, radius='rounded-xl'}) {
 }
 
 // ── Buyer Offer Card (Sell USDT) ───────────────────────────────────────────────
-function OfferCard({listing, usdtPriceUSD, onViewBuyer, onSell, liked, onToggleLike, liveSeenAt, userSellAmt}) {
+function OfferCard({listing, usdtPriceUSD, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLike, liveSeenAt, userSellAmt}) {
   const { rates: USD_RATES } = useRates();
   const u         = getUser(listing.users);
   const [seen, setSeen] = useState(() => getLastSeen({ ...u, last_seen_at: liveSeenAt || u.last_seen_at }));
@@ -261,7 +261,12 @@ function OfferCard({listing, usdtPriceUSD, onViewBuyer, onSell, liked, onToggleL
   const cur       = listing.currency || 'GHS';
   const sym       = listing.currency_symbol || CUR_SYM[cur] || '₵';
   const usdRate   = USD_RATES[cur] || 1;
-  const rateLocal = getRateUSD(listing, usdtPriceUSD) * usdRate;
+  const asset     = (listing.asset || 'BTC').toUpperCase();
+  // This page shows both USDT and BTC offers (via the crypto filter) — 'market'
+  // pricing must price a BTC listing off the live BTC rate, not the ~$1 USDT
+  // peg, or a BTC offer's amounts come out ~88,000x too low.
+  const basePriceUSD = asset === 'USDT' ? usdtPriceUSD : (btcPriceUSD || 88000);
+  const rateLocal = getRateUSD(listing, basePriceUSD) * usdRate;
 
   const minLocal = listing.min_limit_local || (listing.min_limit_usd ? listing.min_limit_usd*usdRate : 100*usdRate);
   const maxLocal = listing.max_limit_local || (listing.max_limit_usd ? listing.max_limit_usd*usdRate : 1000*usdRate);
@@ -269,12 +274,12 @@ function OfferCard({listing, usdtPriceUSD, onViewBuyer, onSell, liked, onToggleL
   const examplePay = (userSellAmt && parseFloat(userSellAmt) > 0)
     ? parseFloat(userSellAmt)
     : (minLocal || Math.round(100*usdRate));
-  const usdtAmount = examplePay / rateLocal;
-  // Market value of that USDT at the real USDT/USD rate — NOT the buyer's
-  // marked-up rate. Deliberately different from examplePay whenever margin
-  // != 0, so the margin's effect is visible instead of the "you sell" line
-  // just echoing "you receive" back unchanged.
-  const usdtMarketFiat = parseFloat((usdtAmount * (usdtPriceUSD || 1) * usdRate).toFixed(2));
+  const cryptoAmount = examplePay / rateLocal;
+  // Market value of that crypto at the real rate — NOT the buyer's marked-up
+  // rate. Deliberately different from examplePay whenever margin != 0, so the
+  // margin's effect is visible instead of the "you sell" line just echoing
+  // "you receive" back unchanged.
+  const cryptoMarketFiat = parseFloat((cryptoAmount * (basePriceUSD || 1) * usdRate).toFixed(2));
 
   const marginLabel = margin===0 ? 'Market rate' : margin>0 ? `+${margin}%` : `${Math.abs(margin)}%`;
   const marginBg    = margin>0 ? C.danger : margin<0 ? C.success : C.g400;
@@ -360,9 +365,9 @@ function OfferCard({listing, usdtPriceUSD, onViewBuyer, onSell, liked, onToggleL
         <div>
           <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{color:C.g500}}>YOU SELL</p>
           <p className="text-lg font-bold leading-tight truncate" style={{color:C.g800}}>
-            {sym}{fmt(usdtMarketFiat, 2)}
+            {sym}{fmt(cryptoMarketFiat, 2)}
           </p>
-          <p className="text-xs font-semibold mt-0.5" style={{color:C.g500}}>≈ USDT {fUsdt(usdtAmount)}</p>
+          <p className="text-xs font-semibold mt-0.5" style={{color:C.g500}}>≈ {asset} {asset === 'USDT' ? fUsdt(cryptoAmount) : cryptoAmount.toFixed(6)}</p>
         </div>
         <div className="border-l pl-3" style={{borderColor:C.g100}}>
           <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{color:C.g500}}>YOU RECEIVE</p>
@@ -400,7 +405,7 @@ function OfferCard({listing, usdtPriceUSD, onViewBuyer, onSell, liked, onToggleL
         <button onClick={onSell}
           className="flex-1 h-11 rounded-xl text-white font-black text-base flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition"
           style={{background:`linear-gradient(135deg,${C.sell},${C.gold})`, boxShadow:'0 4px 14px rgba(217,119,6,0.35)'}}>
-          SELL USDT <ArrowRight size={15}/>
+          SELL {(listing.asset || 'BTC').toUpperCase()} <ArrowRight size={15}/>
         </button>
       </div>
     </div>
@@ -408,7 +413,7 @@ function OfferCard({listing, usdtPriceUSD, onViewBuyer, onSell, liked, onToggleL
 }
 
 // ── Buyer Modal ───────────────────────────────────────────────────────────────
-function BuyerModal({buyer, listing, onClose, onTrade, usdtPriceUSD}) {
+function BuyerModal({buyer, listing, onClose, onTrade, usdtPriceUSD, btcPriceUSD}) {
   const [tab,        setTab]        = useState('overview');
   const [reviews,    setReviews]    = useState([]);
   const [rvLoad,     setRvLoad]     = useState(false);
@@ -431,7 +436,8 @@ function BuyerModal({buyer, listing, onClose, onTrade, usdtPriceUSD}) {
   const cur    = listing?.currency || 'GHS';
   const sym    = listing?.currency_symbol || CUR_SYM[cur] || '₵';
   const usdRate   = USD_RATES[cur] || 1;
-  const rateLocal = getRateUSD(listing || {}, usdtPriceUSD || 1) * usdRate;
+  const asset     = (listing?.asset || 'BTC').toUpperCase();
+  const rateLocal = getRateUSD(listing || {}, asset === 'USDT' ? (usdtPriceUSD || 1) : (btcPriceUSD || 88000)) * usdRate;
 
   const phoneOk  = !!(u.is_phone_verified || u.phone_verified);
   const emailOk  = !!(u.is_email_verified || u.email_verified);
@@ -799,7 +805,7 @@ function BuyerModal({buyer, listing, onClose, onTrade, usdtPriceUSD}) {
             <div className="rounded-xl overflow-hidden" style={{border:`1px solid ${C.g200}`}}>
               {[
                 {label:'Payment Method', value:listing?.payment_method||'—'},
-                {label:'Rate / USDT',    value:`${sym}${fmt(rateLocal,2)} ${cur}`},
+                {label:`Rate / ${(listing?.asset || 'BTC').toUpperCase()}`, value:`${sym}${fmt(rateLocal,2)} ${cur}`},
                 {label:'Margin',         value:margin===0?'At market':margin>0?`+${margin}% above market`:`${margin}% below market`},
                 {label:'Trade Limits',   value:listing?.min_limit_local && listing?.max_limit_local
                   ? `${sym}${fmt(listing.min_limit_local)} – ${sym}${fmt(listing.max_limit_local)} ${cur}`
@@ -846,7 +852,7 @@ function BuyerModal({buyer, listing, onClose, onTrade, usdtPriceUSD}) {
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function SellUSDT({user}) {
   const navigate = useNavigate();
-  const { rates: USD_RATES } = useRates();
+  const { rates: USD_RATES, btcUsd: contextBtcUsd } = useRates();
   const _cacheAll = () => {
     try {
       const c = JSON.parse(localStorage.getItem('praqen_market_all') || 'null');
@@ -854,7 +860,7 @@ export default function SellUSDT({user}) {
     } catch {}
     return null;
   };
-  const _buyNow   = () => { const a=_cacheAll(); return a?a.filter(l=>((l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN')&&l.asset==='USDT')):[]; };
+  const _buyNow   = () => { const a=_cacheAll(); return a?a.filter(l=>(l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN')):[]; };
   const [offers,       setOffers]       = useState(()=>_buyNow());
   const [loading,      setLoading]      = useState(()=>_buyNow().length===0);
   const [loadError,    setLoadError]    = useState(false);
@@ -959,7 +965,7 @@ export default function SellUSDT({user}) {
           const age = Date.now() - (c.ts || 0);
           const hasProfiles = c.data.some(l => l.users && (l.users.id || l.users.username));
           if (age < 300000 && hasProfiles) {
-            const buyOffers = c.data.filter(l => ((l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN')&&l.asset==='USDT'));
+            const buyOffers = c.data.filter(l => (l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN'));
             if (buyOffers.length > 0) {
               setOffers(buyOffers);
               setLoading(false);
@@ -977,7 +983,7 @@ export default function SellUSDT({user}) {
       const all = (r.data.listings || []).map(l => ({
         ...l, users: Array.isArray(l.users) ? l.users[0] : l.users,
       }));
-      const data = all.filter(l => ((l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN')&&l.asset==='USDT'));
+      const data = all.filter(l => (l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN'));
       if (all.length > 0) {
         try { localStorage.setItem('praqen_market_all', JSON.stringify({ data: all, ts: Date.now() })); } catch {}
       }
@@ -994,7 +1000,7 @@ export default function SellUSDT({user}) {
         try {
           const c = JSON.parse(localStorage.getItem('praqen_market_all') || 'null');
           if (c && Array.isArray(c.data)) {
-            const buyOffers = c.data.filter(l => ((l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN')&&l.asset==='USDT'));
+            const buyOffers = c.data.filter(l => (l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN'));
             if (buyOffers.length > 0) {
               setOffers(buyOffers);
               toast.warn('Showing cached offers — server is busy. Prices may be outdated.', { autoClose: 6000 });
@@ -1591,6 +1597,7 @@ export default function SellUSDT({user}) {
                 <OfferCard
                   listing={l}
                   usdtPriceUSD={usdtPrice}
+                  btcPriceUSD={contextBtcUsd}
                   userSellAmt={sellAmt}
                   featuredType={null}
                   liveSeenAt={liveStatus[getUser(l.users)?.id] || null}
@@ -1680,6 +1687,7 @@ export default function SellUSDT({user}) {
           buyer={modal.buyer}
           listing={modal.listing}
           usdtPriceUSD={usdtPrice}
+          btcPriceUSD={contextBtcUsd}
           onClose={()=>setModal(null)}
           onTrade={()=>handleSell(modal.listing?.id)}
         />
