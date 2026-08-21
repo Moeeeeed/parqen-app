@@ -311,11 +311,16 @@ const getCardRange = (l) => {
     if (arr.startsWith('{')) arr = arr.replace(/[{}]/g, '').split(',').map(Number).filter(Boolean);
     else { try { arr = JSON.parse(arr); } catch { arr = arr.split(',').map(Number).filter(Boolean); } }
   }
-  if (Array.isArray(arr) && arr.length) return arr.map(v => parseFloat(v)).filter(Boolean).sort((a, b) => a - b);
+  if (Array.isArray(arr) && arr.length) {
+    const parsed = arr.map(v => parseFloat(v)).filter(v => !isNaN(v) && v > 0).sort((a, b) => a - b);
+    if (parsed.length) return parsed;
+  }
   const fv = getFaceVal(l);
-  if (fv) return [fv];
-  const min = l.min_face_value || l.min_card_value; const max = l.max_face_value || l.max_card_value;
-  if (min && max) return [{ min: parseFloat(min), max: parseFloat(max), isRange: true }];
+  if (fv && fv > 0) return [fv];
+  const min = parseFloat(l.min_face_value || l.min_card_value || l.min_limit_local || l.min_amount || l.min_limit || 0);
+  const max = parseFloat(l.max_face_value || l.max_card_value || l.max_limit_local || l.max_amount || l.max_limit || 0);
+  if (min > 0 && max > 0) return [{ min, max, isRange: true }];
+  if (min > 0) return [min];
   return null;
 };
 
@@ -395,25 +400,34 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
 
   const cardType = listing.card_type || 'both';
   const cardRange = getCardRange(listing);
-  // Card-value side of the trade — always the gift card's face value, regardless of
-  // which direction this listing runs.
+
+  // Fallback local starting value if range not found
+  const localVal = cardRange
+    ? (cardRange[0]?.isRange ? cardRange[0].min : cardRange[0])
+    : (listing.min_limit_local || listing.min_amount || fv || 0);
+
+  // Card-value side of the trade — always the gift card's face value, regardless of which direction this listing runs.
   const cardSide = (() => {
-    if (!cardRange) { const ml = listing.min_limit_local || (fv ? fv * usdRate : 0); return { val: `${sym}${fmt(ml)}`, sub: cur }; }
+    if (!cardRange) {
+      return { val: localVal > 0 ? `${sym}${fmt(localVal)}` : 'Flexible', sub: localVal > 0 ? `${cur} starting` : cur };
+    }
     if (cardRange[0]?.isRange) return { val: `${sym}${fmt(cardRange[0].min)}`, sub: `${cur} starting` };
     if (cardRange.length === 1) return { val: `${sym}${fmt(cardRange[0])}`, sub: `${cur} card` };
     return { val: `${sym}${fmt(cardRange[0])}`, sub: `${cur} starting` };
   })();
-  const refUSD = cardRange ? (cardRange[0]?.isRange ? cardRange[0].min : cardRange[0]) : (fv || 1);
-  const btcOut = refUSD / rateUSD;
-  const receiveUSD = btcOut * btcPriceUSD;
-  // BUY_GIFT_CARD listings are posted by vendors selling crypto for gift cards, so trading against
-  // one under the "Buy" tab means the viewer is BUYING crypto with their gift card.
+
+  // Convert local currency value into USD equivalent for crypto calculation
+  const refUSD = localVal > 0 ? (usdRate > 0 ? localVal / usdRate : localVal) : 1;
+  const btcOut = refUSD / (rateUSD || 1);
   const viewerIsBuyingCard = listing.listing_type === 'BUY_GIFT_CARD';
-  const cryptoSide = { val: `$${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}`, sub: `≈ ${fBtc(btcOut)} BTC` };
+  
+  // Crypto side value formatted in local offer currency (e.g., £, C$, ₵, $) matching the offer currency
+  const receiveLocal = btcOut * (rateLocal || (btcPriceUSD * usdRate) || 0);
+  const cryptoSide = { val: `${sym}${receiveLocal < 1 ? receiveLocal.toFixed(2) : fmt(receiveLocal, 2)}`, sub: `≈ ${fBtc(btcOut)} BTC` };
   const youGive    = viewerIsBuyingCard ? cardSide   : cryptoSide;
   const youReceive = viewerIsBuyingCard ? cryptoSide : cardSide;
 
-  const rangeLabel = !cardRange ? 'Any value'
+  const rangeLabel = !cardRange ? (localVal > 0 ? `${sym}${fmt(localVal)}+` : 'Any value')
     : cardRange[0]?.isRange ? `${sym}${fmt(cardRange[0].min)} – ${sym}${fmt(cardRange[0].max)}`
     : cardRange.map(v => `${sym}${fmt(v)}`).join(' | ');
 
@@ -894,15 +908,6 @@ function SellerModal({ seller, listing, onClose, onTrade, btcPriceUSD }) {
               <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${C.g200}` }}>
                 <p className="text-xs font-bold px-3 py-2 uppercase tracking-wider"
                   style={{ color: C.g500, backgroundColor: C.g50 }}>Verification</p>
-                {u.full_name && u.name_display !== 'hide' && !u.hide_full_name && (
-                  <div className="flex items-center justify-between px-3 py-2.5 border-t" style={{ borderColor: C.g100 }}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm flex items-center"><User size={14} className="text-gray-500" /></span>
-                      <span className="text-xs font-semibold" style={{ color: C.g700 }}>Full Name</span>
-                    </div>
-                    <span className="text-xs font-black" style={{ color: C.g800 }}>{u.full_name}</span>
-                  </div>
-                )}
                 {[
                   { label: 'Phone Number', ok: phoneOk, icon: <Phone size={14} className="text-gray-500" /> },
                   { label: 'Email Address', ok: emailOk, icon: <Mail size={14} className="text-gray-500" /> },

@@ -1073,6 +1073,7 @@ export default function BuyUSDT({user}) {
   const countryRef  = useRef(null);
   const paymentRef  = useRef(null);
   const sortRef     = useRef(null);
+  const cryptoRef   = useRef(null);
   const [activeGuide, setActiveGuide] = useState(null);
   const guideTimer   = useRef(null);
 
@@ -1221,6 +1222,7 @@ export default function BuyUSDT({user}) {
       if (countryRef.current && !countryRef.current.contains(e.target)) { setShowCountry(false); setCountrySearch(''); }
       if (paymentRef.current && !paymentRef.current.contains(e.target)) { setShowPayment(false); setPaymentSearch(''); }
       if (sortRef.current && !sortRef.current.contains(e.target)) { setShowSortMenu(false); }
+      if (cryptoRef.current && !cryptoRef.current.contains(e.target)) { setShowCryptoMenu(false); }
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
@@ -1399,7 +1401,7 @@ export default function BuyUSDT({user}) {
           </div>
 
           {/* ── 3rd Dropdown: Crypto Filter (All Crypto / BTC / USDT) ── */}
-          <div className="flex-1 relative">
+          <div className="flex-1 relative" ref={cryptoRef}>
             <button onClick={() => setShowCryptoMenu(v => !v)}
               className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1.5"
               style={{ color: cryptoFilter === 'ALL' ? '#1c7d5e' : C.g700 }}>
