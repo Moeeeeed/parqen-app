@@ -6435,9 +6435,17 @@ app.put('/api/listings/:id', verifyToken, async (req, res) => {
     if (min_limit_usd !== undefined && parseFloat(min_limit_usd) < 10) {
       return res.status(400).json({ error: 'Minimum trade amount must be at least $10 USD.' });
     }
+    const isSellListing = ['SELL', 'SELL_BITCOIN'].includes((listing.listing_type || '').toUpperCase());
+    // Sell Bitcoin offers only: same margin cap as offer creation — editing a
+    // listing was the other unvalidated path into an above-market margin.
+    if (isSellListing && margin !== undefined && margin !== null && margin !== '') {
+      const marginNum = parseFloat(margin);
+      if (isNaN(marginNum) || marginNum < -10 || marginNum > 10) {
+        return res.status(400).json({ error: 'Margin must be between -10% and +10% for Sell Bitcoin offers.' });
+      }
+    }
     // For SELL offers: cap max_limit_usd at seller's actual wallet balance
     if (max_limit_usd !== undefined) {
-      const isSellListing = ['SELL', 'SELL_BITCOIN'].includes((listing.listing_type || '').toUpperCase());
       if (isSellListing) {
         const { data: sellerWallet } = await supabaseAdmin
           .from('wallets').select('balance_btc, balance_usdt').eq('user_id', req.userId).maybeSingle();
@@ -6822,6 +6830,18 @@ app.post('/api/offers', verifyToken, requireNotBanned, async (req, res) => {
 
     if (!isGiftCard && !payment_method) {
       return res.status(400).json({ error: 'Missing payment_method' });
+    }
+
+    // Sell Bitcoin offers only: cap the margin so a seller can't post a wildly
+    // above-market rate (nothing enforced this before — margin was inserted
+    // straight from the request body with no bound at all, which is how a
+    // +69% offer got onto the marketplace). Buy Bitcoin and gift card offers
+    // are untouched — the ask was specifically for the sell page.
+    if (['SELL', 'SELL_BITCOIN'].includes((mappedType || '').toUpperCase())) {
+      const marginNum = parseFloat(margin);
+      if (margin !== undefined && margin !== null && margin !== '' && (isNaN(marginNum) || marginNum < -10 || marginNum > 10)) {
+        return res.status(400).json({ error: 'Margin must be between -10% and +10% for Sell Bitcoin offers.' });
+      }
     }
 
     // Sellers must hold an active, never-seized $200 USDT security deposit
