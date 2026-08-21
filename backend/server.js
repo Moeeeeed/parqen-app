@@ -6068,7 +6068,13 @@ app.get('/api/listings', async (req, res) => {
     if (type) cacheKey += `|t:${type}`;
 
     const requestedLimit = parseInt(req.query.limit, 10);
-    const effectiveLimit = (Number.isFinite(requestedLimit) && requestedLimit > 0) ? Math.min(requestedLimit, 50) : 200;
+    // Buy Bitcoin / Sell Bitcoin / Gift Card Marketplace all call this with no limit or type
+    // param, expecting the entire active market back in one shot, then filter client-side —
+    // none of them consume hasMore/nextCursor. At 278 live ACTIVE listings (223 BUY + 25 SELL
+    // + 30 BUY_GIFT_CARD) the old 200 cap was silently dropping the oldest ~78 real, active
+    // offers from every page — sorted out by created_at before the per-page type filter ever
+    // saw them. Raised well past current volume; still a hard cap, not a fix for pagination.
+    const effectiveLimit = (Number.isFinite(requestedLimit) && requestedLimit > 0) ? Math.min(requestedLimit, 50) : 500;
     if (req.query.limit) cacheKey += `|l:${effectiveLimit}`;
 
     const cursor = parseListingsCursor(req.query.cursor);
@@ -6970,7 +6976,10 @@ app.post('/api/offers', verifyToken, requireNotBanned, async (req, res) => {
         pricing_type: pricing_type || 'market',
         currency: cur,
         currency_symbol: curSym,
-        country: country || 'GH',
+        // No silent 'GH' fallback — an offer with no real country resolved should be
+        // globally visible (see the country filter fix on the marketplace pages), not
+        // mislabeled as Ghana for every seller who didn't get auto-detected correctly.
+        country: country || '',
         payment_method: payment_method,
         amount_usd: amount_usd || min_limit_usd || 100,
         min_limit_usd: min_limit_usd || amount_usd || 10,

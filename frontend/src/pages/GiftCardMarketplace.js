@@ -1377,10 +1377,17 @@ useEffect(() => {
       if (range[0]?.isRange) return amt >= range[0].min && amt <= range[0].max;
       return range.some(v => Math.abs(v - amt) < 0.01);
     });
-    if (selCountry.code !== 'ALL') list = list.filter(l =>
-      (l.country_code || '').toUpperCase() === selCountry.code ||
-      (l.users?.country_code || '').toUpperCase() === selCountry.code
-    );
+    // l.country_code / l.users?.country_code never come back from /api/listings — the
+    // listings select only returns `country`, and the users select doesn't include a
+    // country field at all — so this filter was matching against two always-undefined
+    // fields and silently emptying the whole page for anyone with a country selected
+    // (which happens automatically on load via IP/profile auto-detect above). Matches
+    // BuyBitcoin.js's pattern: real `country` field, with no-country listings treated
+    // as globally visible instead of hidden.
+    if (selCountry.code !== 'ALL') list = list.filter(l => {
+      const offerCountry = (l.country || '').toUpperCase();
+      return offerCountry === '' || offerCountry === selCountry.code;
+    });
     if (traderSearch.trim()) list = list.filter(l =>
       (l.users?.username || '').toLowerCase().includes(traderSearch.trim().toLowerCase())
     );
@@ -1422,7 +1429,18 @@ useEffect(() => {
 
   // Active Trader of the Week — auto-picked weekly by the backend (services/
   // traderOfWeekService.js) from real trade counts, not a hardcoded username.
+  // Exactly one featured badge per page: use the weekly pick if their listing is
+  // still live here, otherwise fall back to today's top offer by trade count — this
+  // page previously had no fallback, so the badge silently never showed whenever the
+  // weekly winner's listing had gone stale.
   const activeTraderListingId = traderOfWeek?.listing_id || null;
+  const activeTraderIsLive = !!activeTraderListingId && listings.some(l => l.id === activeTraderListingId);
+  const rankedByTrades = [...listings]
+    .filter(l => l.id !== activeTraderListingId && getTrades(l.users) > 0)
+    .sort((a, b) => getTrades(b.users) - getTrades(a.users));
+  const fastResponderListingId = activeTraderIsLive ? null : (rankedByTrades[0]?.id || null);
+  const featuredListingId = activeTraderIsLive ? activeTraderListingId : fastResponderListingId;
+  const featuredBadgeType = activeTraderIsLive ? 'active_trader' : 'fast_responder';
   const hasFilters = amountInput.trim() !== '' || selBrand !== 'All Brands' || selCountry.code !== 'ALL' || traderSearch.trim() !== '' || sortBy !== 'rate_low';
 
   return (
@@ -1965,7 +1983,7 @@ useEffect(() => {
                   key={l.id}
                   listing={l}
                   btcPriceUSD={btcPrice}
-                  featuredType={l.id === activeTraderListingId ? 'fast_responder' : undefined}
+                  featuredType={l.id === featuredListingId ? featuredBadgeType : undefined}
                   onViewSeller={() => setModal({ seller: l.users || {}, listing: l })}
                   onTrade={() => handleTrade(l.id)}
                 />

@@ -678,6 +678,31 @@ export default function CreateOffer({ user }) {
   const isGC = offerType === 'gc_buy' || offerType === 'gc_sell';
   const steps = isGC ? GC_STEPS : BTC_STEPS;
 
+  // Auto-detect the seller's own country on load — this defaulted to 'GH' for every
+  // seller regardless of where they actually are. Anyone who didn't notice the country
+  // dropdown got their offer tagged Ghana no matter where they live, so it never showed
+  // up for buyers filtering by their own (different) real country — reads as "my offer
+  // isn't visible" but is really a mislabeled country on the listing itself. Matches the
+  // auto-detect already used on the Buy/Sell Bitcoin and Gift Card marketplace pages.
+  useEffect(() => {
+    const applyCountry = (code) => {
+      const c = COUNTRIES.find(x => x.code === (code || '').toUpperCase());
+      if (!c) return false;
+      setCountry(c.code);
+      if (!isGC || FOREIGN_CURRENCY_CODES.includes(c.currency)) {
+        setCurrencyCode(c.currency);
+        setCurrencySymbol(c.symbol);
+      }
+      return true;
+    };
+    const profileCode = user?.country_code || (user?.country?.length === 2 ? user.country : null);
+    if (applyCountry(profileCode)) return;
+    fetch('https://ipapi.co/json/')
+      .then(r => r.json())
+      .then(data => { if (data?.country_code) applyCountry(data.country_code); })
+      .catch(() => {});
+  }, []);
+
   // Restrict currency to foreign currencies when offerType is gift card
   useEffect(() => {
     if (isGC && !FOREIGN_CURRENCY_CODES.includes(currencyCode)) {

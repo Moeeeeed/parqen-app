@@ -1413,15 +1413,16 @@ export default function BuyBitcoin({user}) {
 
   // Active Trader of the Week — auto-picked weekly by the backend (services/
   // traderOfWeekService.js) from real trade counts, not a hardcoded username.
+  // Exactly one featured badge per page: use the weekly pick if their listing is
+  // still live here, otherwise fall back to today's top offer by trade count.
   const activeTraderListingId = traderOfWeek?.listing_id || null;
-
-  // Fast Responder / Hot Offer — runners-up by the same real trade-count ranking,
-  // so every top offer gets a featured design instead of just the single weekly pick.
+  const activeTraderIsLive = !!activeTraderListingId && listings.some(l => l.id === activeTraderListingId);
   const rankedByTrades = [...listings]
     .filter(l => l.id !== activeTraderListingId && getTrades(l.users) > 0)
     .sort((a, b) => getTrades(b.users) - getTrades(a.users));
-  const fastResponderListingId = rankedByTrades[0]?.id || null;
-  const hotOfferListingId      = rankedByTrades[1]?.id || null;
+  const fastResponderListingId = activeTraderIsLive ? null : (rankedByTrades[0]?.id || null);
+  const featuredListingId = activeTraderIsLive ? activeTraderListingId : fastResponderListingId;
+  const featuredBadgeType = activeTraderIsLive ? 'active_trader' : 'fast_responder';
 
   const hasFilters = selPayment !== 'all' || buyAmt || selCountry.code !== 'ALL' || selCurrency.code !== 'USD' || !!traderSearch.trim();
 
@@ -1910,7 +1911,7 @@ export default function BuyBitcoin({user}) {
                   listing={l}
                   btcPriceUSD={btcPrice}
                   userBuyAmt={buyAmt}
-                  featuredType={l.id === activeTraderListingId ? 'active_trader' : l.id === fastResponderListingId ? 'fast_responder' : l.id === hotOfferListingId ? 'hot_offer' : undefined}
+                  featuredType={l.id === featuredListingId ? featuredBadgeType : undefined}
                   liveSeenAt={liveStatus[l.users?.id] || null}
                   onViewSeller={()=>{
                     setModal({seller:l.users||{}, listing:l});

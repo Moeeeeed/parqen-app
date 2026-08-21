@@ -1302,7 +1302,13 @@ export default function SellBitcoin({user}) {
     let list = [...offers];
     if (cryptoFilter === 'BTC') list = list.filter(l => (l.asset || 'BTC').toUpperCase() === 'BTC');
     if (cryptoFilter === 'USDT') list = list.filter(l => (l.asset || 'BTC').toUpperCase() === 'USDT');
-    if (selCountry.code!=='ALL') list=list.filter(l=>l.country===selCountry.code);
+    // No-country listings treated as globally visible, matching BuyBitcoin.js — a real
+    // offer with country left blank should still be reachable, not just hidden the
+    // instant a specific country gets auto-selected.
+    if (selCountry.code!=='ALL') list=list.filter(l=>{
+      const offerCountry=(l.country||'').toUpperCase();
+      return offerCountry==='' || offerCountry===selCountry.code;
+    });
     if (selPayment!=='all')      list=list.filter(l=>String(l.payment_method||'').toLowerCase().includes(selPayment));
     if (sellAmt && parseFloat(sellAmt)>0) {
       const a = parseFloat(sellAmt);
@@ -1358,19 +1364,16 @@ export default function SellBitcoin({user}) {
 
   // Active Trader of the Week — auto-picked weekly by the backend (services/
   // traderOfWeekService.js) from real trade counts, not a hardcoded username.
+  // Exactly one featured badge per page: use the weekly pick if their listing is
+  // still live here, otherwise fall back to today's top offer by trade count.
   const activeTraderListingId = traderOfWeek?.listing_id || null;
-
-  // Fast Buyer / Hot Offer of the Week — picked dynamically from real trade counts,
-  // same as Active Trader above. Previously these were hardcoded to fixed usernames
-  // ('lhord_exchange', 'king_cash1'), which silently stopped matching the moment that
-  // trader's account was renamed or their listing changed — the badge just vanished
-  // from the market card with no error. Ranking by trade count instead means the
-  // actual best/most-active offers get featured, always, with no code deploy needed.
+  const activeTraderIsLive = !!activeTraderListingId && offers.some(l => l.id === activeTraderListingId);
   const rankedByTrades = [...offers]
     .filter(l => l.id !== activeTraderListingId && getTrades(l.users) > 0)
     .sort((a, b) => getTrades(b.users) - getTrades(a.users));
-  const fastBuyerListingId = rankedByTrades[0]?.id || null;
-  const hotOfferListingId  = rankedByTrades[1]?.id || null;
+  const fastBuyerListingId = activeTraderIsLive ? null : (rankedByTrades[0]?.id || null);
+  const featuredListingId = activeTraderIsLive ? activeTraderListingId : fastBuyerListingId;
+  const featuredBadgeType = activeTraderIsLive ? 'active_trader' : 'fast_buyer';
   const hasFilters  = selPayment!=='all' || sellAmt || selCountry.code!=='ALL' || selCurrency.code!=='USD' || !!traderSearch.trim();
 
   return (
@@ -1857,7 +1860,7 @@ export default function SellBitcoin({user}) {
                 <OfferCard
                   listing={l}
                   btcPriceUSD={btcPrice}
-                  featuredType={l.id === activeTraderListingId ? 'active_trader' : l.id === fastBuyerListingId ? 'fast_buyer' : l.id === hotOfferListingId ? 'hot_offer' : undefined}
+                  featuredType={l.id === featuredListingId ? featuredBadgeType : undefined}
                   liveSeenAt={liveStatus[l.users?.id] || null}
                   onViewBuyer={()=>{
                     setModal({buyer:l.users||{}, listing:l});
