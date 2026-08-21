@@ -1859,11 +1859,20 @@ export default function TradeDetail({user}) {
                   <Stamp size={14} style={{color:'#fff'}}/>
                 </div>
                 <p className="text-xs leading-snug font-black uppercase tracking-wide" style={{color:'#fff'}}>
-                  {isBuyer
-                    ? `YOU ARE BUYING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
-                    : isSeller
-                      ? `YOU ARE SELLING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
-                      : `PAY ${userPays.toFixed(2)} (${cur}) VIA ${payMethod} FOR ${fmtBtc(btcReceived)} BTC`
+                  {/* Gift card trades flip who's "buying"/"selling" BTC: the card bringer
+                      (seller_id) is spending the card to ACQUIRE BTC — they're buying it.
+                      The BTC holder (buyer_id) is giving up BTC to get the card — selling. */}
+                  {isGiftCardTrade
+                    ? (isSeller
+                        ? `YOU ARE BUYING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
+                        : isBuyer
+                          ? `YOU ARE SELLING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
+                          : `PAY ${userPays.toFixed(2)} (${cur}) VIA ${payMethod} FOR ${fmtBtc(btcReceived)} BTC`)
+                    : (isBuyer
+                        ? `YOU ARE BUYING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
+                        : isSeller
+                          ? `YOU ARE SELLING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
+                          : `PAY ${userPays.toFixed(2)} (${cur}) VIA ${payMethod} FOR ${fmtBtc(btcReceived)} BTC`)
                   }
                 </p>
               </div>
@@ -1878,7 +1887,11 @@ export default function TradeDetail({user}) {
                   const openedRaw = trade.created_at;
                   const openedDate = openedRaw ? new Date(/[Z+]/.test(openedRaw)?openedRaw:openedRaw+'Z') : new Date();
                   const openedLabel = `${String(openedDate.getDate()).padStart(2,'0')}/${String(openedDate.getMonth()+1).padStart(2,'0')}/${openedDate.getFullYear()} ${String(openedDate.getHours()).padStart(2,'0')}:${String(openedDate.getMinutes()).padStart(2,'0')}`;
-                  const sysText = isBuyer
+                  // Gift card trades flip buying/selling: the card bringer (seller_id)
+                  // is acquiring BTC with the card, the BTC holder (buyer_id) is giving
+                  // up BTC for the card — see the Trade Summary Banner above.
+                  const sysIsBuyingBtc = isGiftCardTrade ? isSeller : isBuyer;
+                  const sysText = sysIsBuyingBtc
                     ? `You are buying ${fmtBtc(btcReceived)} BTC (${sym}${fmt(btcValueInLocal,2)} ${cur}) for ${sym}${fmt(userPays,2)} ${cur} via ${payMethod}. It is now safe for you to pay. You will have ${timeLimit} minutes to make your payment and click on the "PAID" button before the trade expires.`
                     : `You are selling ${fmtBtc(btcReceived)} BTC (${sym}${fmt(btcValueInLocal,2)} ${cur}) for ${sym}${fmt(userPays,2)} ${cur} via ${payMethod}. Wait for the buyer to send payment via ${payMethod}, then confirm it before releasing the Bitcoin. The buyer has ${timeLimit} minutes to pay before the trade expires.`;
                   return(
