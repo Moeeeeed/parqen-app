@@ -422,7 +422,7 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   const viewerIsBuyingCard = listing.listing_type === 'BUY_GIFT_CARD';
   
   // Crypto side value formatted in local offer currency (e.g., £, C$, ₵, $) matching the offer currency
-  const receiveLocal = btcOut * (rateLocal || (btcPriceUSD * usdRate) || 0);
+  const receiveLocal = btcOut * (btcPriceUSD * usdRate || 0);
   const cryptoSide = { val: `${sym}${receiveLocal < 1 ? receiveLocal.toFixed(2) : fmt(receiveLocal, 2)}`, sub: `≈ ${fBtc(btcOut)} BTC` };
   const youGive    = viewerIsBuyingCard ? cardSide   : cryptoSide;
   const youReceive = viewerIsBuyingCard ? cryptoSide : cardSide;
