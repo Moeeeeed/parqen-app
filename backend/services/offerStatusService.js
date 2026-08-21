@@ -78,9 +78,10 @@ async function _notifyGiftCardSafetyPause(userId, count) {
 async function updateOfferStatus(userId) {
   try {
     const { data: wallet } = await supabaseAdmin
-      .from('wallets').select('balance_btc, balance_usdt').eq('user_id', userId).maybeSingle();
+      .from('wallets').select('balance_btc, balance_usdt, locked_balance_usdt').eq('user_id', userId).maybeSingle();
     const btcBalUsd  = parseFloat(wallet?.balance_btc || 0) * _getLiveBtcPrice();
     const usdtBalUsd = parseFloat(wallet?.balance_usdt || 0); // 1 USDT ≈ $1
+    const lockedUsdt = parseFloat(wallet?.locked_balance_usdt || 0);
 
     const { data: offers } = await supabaseAdmin
       .from('listings')
@@ -110,7 +111,9 @@ async function updateOfferStatus(userId) {
     }
     // Gift-card vendor safety check — see GIFT_CARD_SAFETY_MIN_USD above.
     let gcPaused = 0;
-    const combinedUsd = btcBalUsd + usdtBalUsd;
+    // Include locked_balance_usdt — a seller who just locked a $200 deposit has
+    // their USDT moved from balance_usdt to locked_balance_usdt.
+    const combinedUsd = btcBalUsd + usdtBalUsd + lockedUsdt;
     if (combinedUsd < GIFT_CARD_SAFETY_MIN_USD) {
       const { data: gcOffers } = await supabaseAdmin
         .from('listings').select('id')
@@ -239,11 +242,14 @@ async function sweepGiftCardVendorSafety() {
 
   const sellerIds = [...new Set(gcListings.map(l => l.seller_id))];
   const { data: wallets } = await supabaseAdmin
-    .from('wallets').select('user_id, balance_btc, balance_usdt').in('user_id', sellerIds);
+    .from('wallets').select('user_id, balance_btc, balance_usdt, locked_balance_usdt').in('user_id', sellerIds);
   const livePrice = _getLiveBtcPrice();
   const balUsdMap = {};
   (wallets || []).forEach(w => {
-    balUsdMap[w.user_id] = parseFloat(w.balance_btc || 0) * livePrice + parseFloat(w.balance_usdt || 0);
+    // Include locked_balance_usdt in the check — a seller who just locked a $200 deposit
+    // has their USDT moved from balance_usdt to locked_balance_usdt, which is still their
+    // money. Without this, every new SELL_GIFT_CARD seller would be immediately paused.
+    balUsdMap[w.user_id] = parseFloat(w.balance_btc || 0) * livePrice + parseFloat(w.balance_usdt || 0) + parseFloat(w.locked_balance_usdt || 0);
   });
 
   const toPauseIds = gcListings.filter(l => (balUsdMap[l.seller_id] || 0) < GIFT_CARD_SAFETY_MIN_USD).map(l => l.id);

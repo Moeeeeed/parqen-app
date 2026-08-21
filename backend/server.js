@@ -1131,7 +1131,8 @@ async function getLiveFXRates() {
   return _fxCache.rates || FX_FALLBACK;
 }
 
-// ── AI Chat endpoint ─────────────────────────────────────────────────────────
+// ── AI Chat endpoint (RAG pipeline) ─────────────────────────────────────────
+const { handleAIChatRAG } = require('./services/aiChatRAG');
 const PRAQEN_CONTEXT = `You are PRAQEN AI, a helpful support assistant for PRAQEN — a peer-to-peer (P2P) Bitcoin trading platform where users buy and sell Bitcoin using local currencies (GHS, NGN, KES, ZAR, etc.) via mobile money, bank transfer, and gift cards. All trades are escrow-protected.
 
 === COMPLETE PLATFORM KNOWLEDGE BASE ===
@@ -1210,7 +1211,20 @@ Use these facts to answer user questions directly and accurately. Never default 
 - Users can attach screenshots to their tickets for faster resolution.
 
 === RESPONSE RULES ===
-Keep responses concise (2-4 sentences), friendly, and practical. When a user asks a question covered by the knowledge base above, ANSWER IT DIRECTLY with the facts — do NOT default to "I'll escalate this" or "the team is looking into it." If you genuinely don't know something, say so and offer to connect them with a human agent. Never make up account-specific details.`;
+Keep responses concise (2-4 sentences), friendly, and practical. When a user asks a question covered by the knowledge base above, ANSWER IT DIRECTLY with the facts — do NOT default to "I'll escalate this" or "the team is looking into it." If you genuinely don't know something, say so and offer to connect them with a human agent. Never make up account-specific details.
+
+=== TOPIC RESTRICTION ===
+You ONLY answer questions related to PRAQEN — the Bitcoin trading platform. This includes:
+- Buying, selling, and trading Bitcoin on PRAQEN
+- Account issues (login, password, KYC, profile settings)
+- Payment methods (MoMo, bank transfer, gift cards)
+- Wallet, escrow, and fees on PRAQEN
+- Disputes, refunds, and support tickets
+- PRAQEN referral program and platform features
+
+If the user asks about ANYTHING else (general knowledge, other websites, unrelated topics), politely decline and redirect them back to PRAQEN topics.
+Example: "I can only help with PRAQEN-related questions. Would you like help with buying/selling Bitcoin, your account, or a support ticket?"
+NEVER answer general knowledge questions even if you know the answer.`;
 
 const PRAQEN_SUPPORT_AGENT_CONTEXT = `You are Alex, a knowledgeable and friendly human support agent at PRAQEN — a peer-to-peer (P2P) Bitcoin trading platform. You are chatting with a user who has an open support ticket.
 
@@ -1262,179 +1276,30 @@ Answer factual questions from this knowledge base. Do NOT escalate questions tha
 
 ## SUPPORT
 - Response times: Urgent ~2-4h, Normal ~12-24h, Low ~24-48h. You can attach screenshots to your ticket.
-`;
+
+=== TOPIC RESTRICTION ===
+You ONLY answer questions related to PRAQEN — the Bitcoin trading platform. This includes:
+- Buying, selling, and trading Bitcoin on PRAQEN
+- Account issues (login, password, KYC, profile settings)
+- Payment methods (MoMo, bank transfer, gift cards)
+- Wallet, escrow, and fees on PRAQEN
+- Disputes, refunds, and support tickets
+- PRAQEN referral program and platform features
+
+If the user asks about ANYTHING else (general knowledge, other websites, unrelated topics), politely decline and redirect them back to PRAQEN topics.
+Example: "I can only help with PRAQEN-related questions. Would you like help with buying/selling Bitcoin, your account, or a support ticket?"
+NEVER answer general knowledge questions even if you know the answer.`;
 
 app.post('/api/ai-chat', async (req, res) => {
   try {
-    const { message, section, history = [], user: chatUser, mode } = req.body;
-    if (!message?.trim()) return res.status(400).json({ error: 'Message required' });
-
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    const isSupportChat = mode === 'support';
-    const systemPrompt = isSupportChat
-      ? PRAQEN_SUPPORT_AGENT_CONTEXT + (chatUser ? `\n\nYou are speaking with: ${chatUser.username}` : '')
-      : PRAQEN_CONTEXT + (section ? `\n\nThe user selected topic: "${section}". Focus your answer on this area.` : '') +
-      (chatUser ? `\n\nUser: ${chatUser.username}` : '');
-
-    if (apiKey) {
-      const messages = [
-        ...history.slice(-10).map(m => ({
-          role: m.role === 'user' ? 'user' : 'assistant',
-          content: m.text,
-        })),
-        { role: 'user', content: message },
-      ];
-
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 250,
-          system: systemPrompt,
-          messages,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        return res.json({ reply: data.content?.[0]?.text || 'Got it — I\'m looking into that for you right now.' });
-      }
-    }
-
-    // ── Support-mode fallback (no API key / API down) ──────────────────────
-    // This fallback uses a comprehensive FAQ knowledge base so the user gets
-    // factual answers even when the AI API is unavailable. Generic escalation
-    // replies are used ONLY for true problems/bugs, not for informational questions.
-    if (isSupportChat) {
-      const turn = history.length;
-      const q = message.toLowerCase().trim();
-      const name = chatUser?.username ? `, ${chatUser.username}` : '';
-      let reply = '';
-
-      // ── Greeting detection ──
-      if (/^(hey|hi|hello|good\s*(morning|afternoon|evening)|howdy|yo|hiya|sup)\b/.test(q)) {
-        const greetings = [
-          `Hi${name}! 👋 I'm Alex from PRAQEN support. I have your ticket open right now — how can I help you?`,
-          `Hey${name}! I'm looking at your ticket. What's going on — can I help with something?`,
-          `Hello${name}! Your ticket is open and the team is on it. What would you like to chat about?`,
-        ];
-        reply = greetings[turn % 3];
-
-        // ── Acknowledgment / closure ──
-      } else if (/thank|thanks|okay|ok\b|great|perfect|got it|cool|nice/.test(q)) {
-        const pool = [
-          'Happy to help! Let me know if anything else comes up.',
-          'Great! I\'ve noted that on your ticket. Anything else?',
-          'Awesome — the team will follow up too. Is there anything else you need?',
-        ];
-        reply = pool[turn % 3];
-
-        // ── Wait time / status check ──
-      } else if (/how long|wait|still|not yet|any news|update/.test(q)) {
-        const pool = [
-          'I understand — the team is actively on your case. We aim to resolve tickets within 24 hours. Any updates from your side?',
-          'Still on it! I\'ve flagged your ticket for priority review. Anything new to report?',
-          'We haven\'t forgotten about you. Can you share any new details that might help us move faster?',
-        ];
-        reply = pool[turn % 3];
-
-        // ── Factual Q&A: knowledge base answers ──
-        // These answer the user directly instead of defaulting to escalation.
-        // IMPORTANT: This block MUST come before the payment-reporting branch
-        // so informational "how do I..." questions get factual answers first.
-
-      } else if (/forgot password|reset password|change password|forgot my password/.test(q)) {
-        reply = `No worries! To reset your password, go to the login page and tap **Forgot Password**. A reset link will be sent to your email within a few minutes. If you don't see it, check your spam folder.`;
-      } else if (/how.*(buy|purchase)|how.*start.*trade|find.*seller/.test(q)) {
-        reply = 'To **buy Bitcoin**, go to the **Buy BTC** page and browse seller offers. Filter by your country and payment method, then click **BUY BTC** on any offer to start a trade. The seller will lock Bitcoin in escrow before you send payment.';
-      } else if (/how.*(sell|create.*listing|make.*offer)/.test(q)) {
-        reply = 'To **sell Bitcoin**, go to **Sell BTC** and browse buy offers from buyers, or create your own sell listing. Make sure your wallet has enough BTC — your offer only appears when your balance is above $10.';
-      } else if (/how.*(wallet|deposit|withdraw|fund|address)/.test(q)) {
-        reply = 'Your BTC wallet is in the **Wallet** section. To deposit, copy your PRAQEN BTC address (QR code available) and send from any external wallet. To withdraw, go to **Withdraw**, enter an external BTC address and amount. A network fee applies.';
-      } else if (/how.*(pay|payment|send.*money|make.*payment)/.test(q)) {
-        reply = 'Payments are made directly between you and the other trader using the method shown in the offer (MoMo, bank transfer, etc.). Always confirm you\'ve received payment in your account before releasing escrow. Keep your receipt as proof.';
-      } else if (/kyc|verif|verify.*id|identity|upload.*id|document/.test(q)) {
-        reply = 'To verify your identity, go to **Settings → Verification** and upload a clear photo of your government-issued ID (passport, driver\'s license, or national ID). Most verifications are reviewed within 24 hours. KYC unlocks higher trade limits.';
-      } else if (/gift card|marketplace|amazon.*card|itunes.*card|steam.*card/.test(q)) {
-        reply = 'PRAQEN has a **Gift Card Marketplace** where you can buy and sell gift cards (Amazon, iTunes, Steam, Google Play, and more) for Bitcoin. Just list your card or browse available ones in the marketplace section.';
-      } else if (/fee|cost|charge|commission|price.*fee/.test(q)) {
-        reply = 'PRAQEN charges **0.5%** on completed trades only. There are no fees for listing offers or depositing BTC. Withdrawal fees depend on the current Bitcoin network congestion.';
-      } else if (/referral|invite|earn.*friend|share.*link|commission.*invite/.test(q)) {
-        reply = 'You can find your unique referral code in your profile page. Share your referral link with friends — when they sign up and complete trades, you earn a commission. The more you refer, the more you earn!';
-      } else if (/lock.*balance|balance.*lock|escrow.*balance|why.*(lock|hold)/.test(q)) {
-        reply = 'Locked balance is Bitcoin that\'s currently held in escrow for an active trade. It will be released automatically back to your wallet when the trade completes or is cancelled. You can see your active trades in **My Trades**.';
-      } else if (/cancel.*trade|time.*limit|expire/.test(q)) {
-        reply = 'Each trade has a time limit set by the seller. If the buyer doesn\'t complete payment within that time, the seller can cancel the trade and the escrow is returned. Buyers can also request cancellation from the seller.';
-
-        // ── Payment-related update (user telling us they paid, not asking how) ──
-      } else if (/^(i )?(just )?(paid|sent|transferred|made.*payment)\b|payment.*(sent|made|done|confirmed)/.test(q)) {
-        const pool = [
-          'Thanks for the update — I\'ve noted the payment on your ticket. Has the other party confirmed receipt?',
-          'Got it, payment noted. Keep your receipt handy. Has anything changed since you sent it?',
-          'Noted on the payment. Can you share the exact amount and method so I can add it to the case?',
-        ];
-        reply = pool[turn % 3];
-
-      } else if (/dispute|scam|fraud|problem|stuck|error|wrong|fail/.test(q)) {
-        const pool = [
-          'If you\'re having a problem with a trade, go to **My Trades**, open the trade, and tap **Raise Dispute**. A moderator will review and help resolve it within 24 hours. Never release escrow without confirming payment.',
-          'I\'ve flagged this for the team. In the meantime, go to **My Trades → Raise Dispute** to protect the escrow. Can you share a trade ID or any screenshots so we can move faster?',
-          'On it — I\'ve escalated this. Please raise a dispute on the trade page if you haven\'t already. Any additional info you can share will help us resolve it quickly.',
-        ];
-        reply = pool[turn % 3];
-
-        // ── Genuine problem / not answered by knowledge base → escalate ──
-      } else if (turn === 0) {
-        reply = `Thanks for reaching out${name}! I\'ve received your ticket. Can you tell me a bit more about what you need help with today?`;
-      } else if (turn <= 2) {
-        reply = 'Noted — I\'ve updated your ticket with that. The team is on it. Anything else to add?';
-      } else {
-        const generic = [
-          'Got that — I\'ve passed it to the team. Anything urgent right now?',
-          'I hear you. I\'ve noted this on your ticket. Do you have any new updates?',
-          'Thanks for the info. Our team is working on a resolution. Is there anything else I can help with?',
-        ];
-        reply = generic[turn % 3];
-      }
-      return res.json({ reply });
-    }
-
-    // General info fallback (non-support mode)
-    const q = message.toLowerCase();
-    let reply = '';
-    if (section === 'buy' || q.includes('buy') || q.includes('purchase')) {
-      reply = 'To **buy Bitcoin**, go to the **Buy BTC** page and browse seller offers. Filter by your country and payment method, then click **BUY BTC** on any offer to start a trade. The seller will lock Bitcoin in escrow before you send payment.';
-    } else if (section === 'sell' || q.includes('sell') || q.includes('listing')) {
-      reply = 'To **sell Bitcoin**, go to **Sell BTC** and browse buy offers from buyers, or create your own sell listing. Make sure your wallet has enough BTC — your offer only appears when your balance is above $10.';
-    } else if (section === 'trade' || q.includes('trade') || q.includes('escrow') || q.includes('dispute')) {
-      reply = 'For trade issues, open the trade from **My Trades** and use the **Raise Dispute** button if there\'s a problem. Our moderators review disputes within 24 hours. Never release escrow until you\'ve confirmed you received payment.';
-    } else if (section === 'payment' || q.includes('payment') || q.includes('momo') || q.includes('bank')) {
-      reply = 'Payments are made directly between you and the other trader. Always send payment via the method shown in the trade. Keep your payment receipt as proof. If the seller doesn\'t release BTC after you pay, raise a dispute.';
-    } else if (section === 'account' || q.includes('account') || q.includes('login') || q.includes('password')) {
-      reply = 'For account issues, go to **Settings** to update your profile, change your password, or verify your email. If you\'re locked out, use **Forgot Password** on the login page to reset via your email.';
-    } else if (section === 'wallet' || q.includes('wallet') || q.includes('balance') || q.includes('withdraw')) {
-      reply = 'Your Bitcoin wallet is in the **Wallet** section. You can deposit BTC to your PRAQEN wallet address. Withdrawals send BTC to any external Bitcoin address. Locked balance is BTC held in active trade escrow.';
-    } else if (section === 'kyc' || q.includes('kyc') || q.includes('verif') || q.includes('id')) {
-      reply = 'To verify your identity, go to your **Profile → Verification** tab and upload a government-issued ID. KYC unlocks higher trade limits and builds trust with other traders. Verification is usually reviewed within 24 hours.';
-    } else if (q.includes('fee') || q.includes('cost') || q.includes('charge')) {
-      reply = 'PRAQEN charges a small **0.5% fee** on completed trades, deducted from the Bitcoin amount. There are no listing fees or deposit fees. Withdrawal fees depend on current Bitcoin network fees.';
-    } else if (q.includes('referral') || q.includes('invite') || q.includes('earn')) {
-      reply = 'Share your **referral link** from your profile to earn a commission when people you invite complete trades. You can find your referral code and earnings in your profile page.';
-    } else {
-      reply = 'I\'m here to help with anything on PRAQEN! You can ask me about buying or selling Bitcoin, trade issues, payments, your account, KYC verification, or your wallet. What would you like to know?';
-    }
-
-    res.json({ reply });
+    return await handleAIChatRAG(req, res, supabaseAdmin, PRAQEN_SUPPORT_AGENT_CONTEXT, PRAQEN_CONTEXT);
   } catch (err) {
     console.error('[ai-chat]', err.message);
-    res.status(500).json({ reply: 'I\'m looking into that for you — please give me a moment.' });
+    res.status(500).json({ reply: "I'm having trouble connecting right now. A human agent will be with you shortly.", should_escalate: true, suggested_priority: 'normal' });
   }
 });
+
+
 
 // GET /api/rates — serves live BTC price + FX rates to the frontend (avoids browser CORS issues)
 app.get('/api/rates', async (req, res) => {
@@ -7732,12 +7597,12 @@ app.post('/api/trades', verifyToken, requireEmailVerified, async (req, res) => {
       // Offer creator (e.g. Kenneth) posted "I have Bitcoin, I want a gift card."
       // Trade opener (e.g. Alice) sees the offer and brings the gift card.
       //
-      // listing.seller_id = Kenneth = offer creator = has BTC → BTC LOCKS
-      // req.userId        = Alice   = trade opener  = has gift card → receives BTC
-      buyerId = listing.seller_id;  // offer creator — has BTC, BTC locks in escrow
-      sellerId = req.userId;          // trade opener  — brings gift card
-      btcProviderId = buyerId;             // offer creator's BTC ALWAYS locks
-      resolvedType = 'SELL';
+      // listing.seller_id = Kenneth = offer creator = has BTC → SELLER (selling BTC)
+      // req.userId        = Alice   = trade opener  = has gift card → BUYER (buying BTC)
+      sellerId = listing.seller_id;  // offer creator — sells BTC, BTC locks in escrow
+      buyerId = req.userId;          // trade opener  — buys BTC with gift card
+      btcProviderId = sellerId;             // offer creator's BTC ALWAYS locks
+      resolvedType = 'BUY';
 
     } else if (listingTypeUpper === 'SELL_GIFT_CARD') {
       // ── GIFT CARD MARKET: offer creator has a card, wants BTC ───────────────
@@ -10798,6 +10663,19 @@ app.put('/api/admin/users/:id/make-admin', verifyToken, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// PUT /api/admin/users/:id/toggle-agent — toggle agent role for live chat
+app.put('/api/admin/users/:id/toggle-agent', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const { data: cur } = await supabaseAdmin.from('users').select('is_agent').eq('id', req.params.id).single();
+    const newVal = !cur?.is_agent;
+    const { data, error } = await supabaseAdmin.from('users').update({ is_agent: newVal, updated_at: new Date() }).eq('id', req.params.id).select('id, username, full_name, email, is_admin, is_moderator, is_agent').single();
+    if (error) return res.status(400).json({ error: error.message });
+    logAdminAction(req, 'TOGGLE_AGENT', req.params.id, { is_agent: newVal }).catch(() => { });
+    res.json({ success: true, user: data, is_agent: newVal });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/admin/users/new — users who joined in the last 7 days
 app.get('/api/admin/users/new', verifyToken, async (req, res) => {
   try {
@@ -11087,14 +10965,25 @@ app.delete('/api/admin/suggestions/:id', verifyToken, async (req, res) => {
 // POST /api/support/tickets — create ticket + first message
 app.post('/api/support/tickets', verifyToken, async (req, res) => {
   try {
-    const { subject, category, message } = req.body;
+    const { subject, category, message, department } = req.body;
     if (!subject?.trim()) return res.status(400).json({ error: 'Subject is required' });
     if (!message?.trim()) return res.status(400).json({ error: 'Message is required' });
 
-    const { data: ticket, error: tErr } = await supabaseAdmin
+    // Try insert with department column; fall back without it if column doesn't exist yet
+    let ticketPayload = { user_id: req.userId, subject: subject.trim(), category: category || 'general', status: 'open' };
+    if (department) ticketPayload.department = department;
+    let { data: ticket, error: tErr } = await supabaseAdmin
       .from('support_tickets')
-      .insert({ user_id: req.userId, subject: subject.trim(), category: category || 'general', status: 'open' })
+      .insert(ticketPayload)
       .select().single();
+    // If insert failed and we included department, retry without it (column may not exist)
+    if (tErr && department && tErr.message?.includes('department')) {
+      delete ticketPayload.department;
+      ({ data: ticket, error: tErr } = await supabaseAdmin
+        .from('support_tickets')
+        .insert(ticketPayload)
+        .select().single());
+    }
     if (tErr) return res.status(400).json({ error: tErr.message });
 
     const { error: mErr } = await supabaseAdmin
@@ -11236,6 +11125,617 @@ app.patch('/api/admin/support/tickets/:id/status', verifyToken, async (req, res)
     const { error } = await supabaseAdmin.from('support_tickets').update({ status, updated_at: new Date() }).eq('id', req.params.id);
     if (error) return res.status(400).json({ error: error.message });
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/support/agents/availability — check if a human agent is online
+app.get('/api/support/agents/availability', verifyToken, async (req, res) => {
+  try {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    let agents = [];
+
+    // 1. Check in-memory store for agents who explicitly set themselves online
+    const memOnlineIds = [];
+    for (const [userId, status] of agentStatusStore.entries()) {
+      if (status.is_online) memOnlineIds.push(userId);
+    }
+
+    if (memOnlineIds.length > 0) {
+      const { data: freshAgents } = await supabaseAdmin
+        .from('users')
+        .select('id, username, full_name, avatar_url, last_seen_at')
+        .in('id', memOnlineIds)
+        .gte('last_seen_at', fiveMinAgo);
+      agents = freshAgents || [];
+    }
+
+    // 2. Also check DB agent_chat_status table if it exists
+    if (agents.length === 0) {
+      try {
+        const { data: dbOnline } = await supabaseAdmin
+          .from('agent_chat_status')
+          .select('user_id')
+          .eq('is_online', true);
+        if (dbOnline && dbOnline.length > 0) {
+          const dbIds = dbOnline.map(a => a.user_id);
+          const { data: freshAgents } = await supabaseAdmin
+            .from('users')
+            .select('id, username, full_name, avatar_url, last_seen_at')
+            .in('id', dbIds)
+            .gte('last_seen_at', fiveMinAgo);
+          agents = freshAgents || [];
+        }
+      } catch {}
+    }
+
+    // 3. Fallback: check if any admin/mod is fresh (legacy path)
+    if (agents.length === 0) {
+      const { data: fallbackAgents } = await supabaseAdmin
+        .from('users')
+        .select('id, username, full_name, avatar_url, last_seen_at')
+        .or('is_admin.eq.true,is_moderator.eq.true')
+        .gte('last_seen_at', fiveMinAgo);
+      agents = fallbackAgents || [];
+    }
+
+    const available = agents.length > 0;
+    // Business hours: Mon–Fri 8am–8pm GMT+0
+    const now = new Date();
+    const hour = now.getUTCHours();
+    const day = now.getUTCDay(); // 0=Sun, 6=Sat
+    const inBusinessHours = day >= 1 && day <= 5 && hour >= 8 && hour < 20;
+    let estimatedResponse;
+    if (available) {
+      estimatedResponse = 'Within minutes';
+    } else if (inBusinessHours) {
+      estimatedResponse = '~1–2 hours (during business hours)';
+    } else {
+      estimatedResponse = '~8–12 hours (next business day)';
+    }
+
+    res.json({
+      available,
+      estimatedResponse,
+      onlineAgents: agents.map(a => ({
+        id: a.id,
+        name: a.full_name || a.username,
+        avatar: a.avatar_url || null,
+      })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/support/tickets/:id/assign-agent — auto-assign an available agent to a ticket
+app.post('/api/support/tickets/:id/assign-agent', verifyToken, async (req, res) => {
+  try {
+    // Fetch ticket — select all columns so missing columns don't break the query
+    const { data: ticket, error: tErr } = await supabaseAdmin.from('support_tickets')
+      .select('*')
+      .eq('id', req.params.id).single();
+    if (tErr || !ticket) return res.status(404).json({ error: 'Ticket not found' });
+    if (ticket.user_id !== req.userId) return res.status(403).json({ error: 'Not authorized' });
+
+    // Already assigned?
+    if (ticket.assigned_agent_id) {
+      // Fetch agent info
+      const { data: agent } = await supabaseAdmin.from('users')
+        .select('id, username, full_name, avatar_url')
+        .eq('id', ticket.assigned_agent_id).single();
+      return res.json({ agent: agent || null, alreadyAssigned: true });
+    }
+
+    // Find an available agent — check in-memory store first, then fallback to admin/mod
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    let agents = [];
+
+    // 1. Check in-memory agent status store for online agents
+    const memOnlineIds = [];
+    for (const [userId, status] of agentStatusStore.entries()) {
+      if (status.is_online) memOnlineIds.push(userId);
+    }
+    if (memOnlineIds.length > 0) {
+      const { data: memAgents } = await supabaseAdmin
+        .from('users')
+        .select('id, username, full_name, avatar_url, last_seen_at')
+        .in('id', memOnlineIds)
+        .gte('last_seen_at', fiveMinAgo);
+      agents = memAgents || [];
+    }
+
+    // 2. Fallback: check admin/mod users
+    if (agents.length === 0) {
+      const { data: fallbackAgents } = await supabaseAdmin
+        .from('users')
+        .select('id, username, full_name, avatar_url, last_seen_at')
+        .or('is_admin.eq.true,is_moderator.eq.true')
+        .gte('last_seen_at', fiveMinAgo);
+      agents = fallbackAgents || [];
+    }
+
+    if (!agents || agents.length === 0) {
+      return res.json({ agent: null, available: false });
+    }
+
+    // Pick agent with fewest open assigned tickets (load balancing)
+    let bestAgent = agents[0];
+    let minTickets = Infinity;
+    for (const agent of agents) {
+      try {
+        const { count } = await supabaseAdmin
+          .from('support_tickets')
+          .select('*', { count: 'exact', head: true })
+          .eq('assigned_agent_id', agent.id)
+          .in('status', ['open', 'active', 'pending']);
+        const c = count || 0;
+        if (c < minTickets) { minTickets = c; bestAgent = agent; }
+      } catch {
+        // assigned_agent_id column may not exist — just use first agent
+        bestAgent = agent;
+      }
+    }
+
+    // Assign and update status — try with assigned_agent_id, fall back without it
+    try {
+      await supabaseAdmin
+        .from('support_tickets')
+        .update({ assigned_agent_id: bestAgent.id, status: 'active', updated_at: new Date() })
+        .eq('id', req.params.id);
+    } catch {
+      // assigned_agent_id column may not exist — at least update status
+      await supabaseAdmin
+        .from('support_tickets')
+        .update({ status: 'active', updated_at: new Date() })
+        .eq('id', req.params.id);
+    }
+
+    // Send an automatic agent introduction message
+    const memStatus = getAgentStatus(bestAgent.id);
+    const agentDisplayName = memStatus.display_name || bestAgent.full_name || bestAgent.username || 'Support Agent';
+    const greeting = `Hi! I'm ${agentDisplayName}, a support agent at PRAQEN. I'll be helping you today. Could you please share any transaction ID, trade reference, or specific details about your issue so I can assist you right away?`;
+    const { data: introMsg, error: introErr } = await supabaseAdmin
+      .from('support_messages')
+      .insert({
+        ticket_id: req.params.id,
+        sender_id: bestAgent.id,
+        is_admin: true,
+        message: greeting,
+      })
+      .select().single();
+    if (introErr) console.error('Failed to send agent intro:', introErr);
+
+    res.json({
+      agent: bestAgent,
+      available: true,
+      introMessage: introMsg || null,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================================
+// AGENT DASHBOARD — LIVE CHAT
+// ============================================================
+
+// In-memory typing state for support tickets: 'ticketId:userId' -> expiresAt
+const supportTypingState = {};
+setInterval(() => {
+  const now = Date.now();
+  for (const key of Object.keys(supportTypingState)) {
+    if (supportTypingState[key] < now) delete supportTypingState[key];
+  }
+}, 10000);
+
+// Helper: check if user is admin/moderator/agent (reusable)
+async function isAgent(userId) {
+  // Try with is_agent first (may not exist if migration not run yet)
+  let u = null;
+  try {
+    const res = await supabaseAdmin.from('users')
+      .select('is_admin, is_moderator, is_agent')
+      .eq('id', userId).single();
+    u = res.data;
+  } catch {
+    // is_agent column may not exist — fall back to admin/moderator only
+    try {
+      const res = await supabaseAdmin.from('users')
+        .select('is_admin, is_moderator')
+        .eq('id', userId).single();
+      u = res.data;
+    } catch {}
+  }
+  return !!(u?.is_admin || u?.is_moderator || u?.is_agent);
+}
+
+// ── In-memory agent status store ─────────────────────────────────────────
+// Primary source of truth for agent online/offline status. Works immediately
+// without requiring the agent_chat_status DB table to exist. If the table
+// exists, we also persist to it for cross-restart survival.
+const agentStatusStore = new Map(); // userId -> { is_online, display_name, avatar_url, status_message, last_toggled_at }
+
+function getAgentStatus(userId) {
+  return agentStatusStore.get(userId) || {
+    is_online: false,
+    display_name: null,
+    avatar_url: null,
+    status_message: 'Available for live chat',
+    last_toggled_at: null,
+  };
+}
+
+function setAgentStatus(userId, updates) {
+  const existing = getAgentStatus(userId);
+  const merged = { ...existing, ...updates, user_id: userId, last_toggled_at: new Date().toISOString() };
+  agentStatusStore.set(userId, merged);
+  return merged;
+}
+
+// ── AGENT STATUS TOGGLE ──────────────────────────────────────────────────
+
+// POST /api/agent/status — toggle agent online/offline
+app.post('/api/agent/status', verifyToken, async (req, res) => {
+  try {
+    if (!(await isAgent(req.userId))) {
+      const { data: u } = await supabaseAdmin.from('users').select('is_admin, is_moderator, is_agent').eq('id', req.userId).single();
+      console.log(`[AgentStatus] Access denied for user ${req.userId}:`, u);
+      return res.status(403).json({
+        error: 'Agent access required. Your account needs is_admin, is_moderator, or is_agent enabled. Ask an admin to grant access via Admin Dashboard → Users → toggle agent status.',
+        roles: u || {},
+      });
+    }
+    const { is_online, display_name, avatar_url, status_message } = req.body;
+
+    // 1. Update in-memory store (primary — always works)
+    const updates = {};
+    if (typeof is_online === 'boolean') updates.is_online = is_online;
+    if (display_name !== undefined) updates.display_name = display_name;
+    if (avatar_url !== undefined) updates.avatar_url = avatar_url;
+    if (status_message !== undefined) updates.status_message = status_message;
+    const statusData = setAgentStatus(req.userId, updates);
+
+    // 2. Also persist to DB if the table exists (best-effort)
+    try {
+      const dbUpdate = { user_id: req.userId, last_toggled_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      if (typeof is_online === 'boolean') dbUpdate.is_online = is_online;
+      if (display_name !== undefined) dbUpdate.display_name = display_name;
+      if (avatar_url !== undefined) dbUpdate.avatar_url = avatar_url;
+      if (status_message !== undefined) dbUpdate.status_message = status_message;
+      await supabaseAdmin.from('agent_chat_status').upsert(dbUpdate, { onConflict: 'user_id' });
+    } catch (dbErr) {
+      // Table may not exist yet — that's fine, in-memory store works
+      console.log('[AgentStatus] DB persist skipped:', dbErr.message?.slice(0, 80));
+    }
+
+    // 3. Update heartbeat so availability check picks it up
+    await supabaseAdmin.from('users')
+      .update({ last_seen_at: new Date().toISOString() })
+      .eq('id', req.userId);
+
+    res.json({ success: true, status: statusData });
+  } catch (e) {
+    console.error('[AgentStatus] POST /api/agent/status error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/agent/status — get current agent's status
+app.get('/api/agent/status', verifyToken, async (req, res) => {
+  try {
+    // 1. Try in-memory store first
+    const memStatus = getAgentStatus(req.userId);
+    if (memStatus.last_toggled_at) {
+      return res.json(memStatus);
+    }
+    // 2. Fall back to DB if table exists
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('agent_chat_status')
+        .select('*')
+        .eq('user_id', req.userId).single();
+      if (!error && data) {
+        // Hydrate in-memory store from DB
+        setAgentStatus(req.userId, data);
+        return res.json(data);
+      }
+    } catch {}
+    // 3. Default: offline
+    res.json({ is_online: false, display_name: null, avatar_url: null, status_message: 'Available for live chat' });
+  } catch (e) {
+    console.error('[AgentStatus] GET /api/agent/status error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── AGENT DASHBOARD DATA ──────────────────────────────────────────────────
+
+// GET /api/agent/dashboard — get queue of tickets assigned to or unassigned for this agent
+app.get('/api/agent/dashboard', verifyToken, async (req, res) => {
+  try {
+    if (!(await isAgent(req.userId))) return res.status(403).json({ error: 'Agent access required' });
+
+    // Get tickets that are: (a) assigned to this agent, OR (b) unassigned and open/active
+    let assigned = [];
+    let unassigned = [];
+    try {
+      const res1 = await supabaseAdmin
+        .from('support_tickets')
+        .select('*, users!support_tickets_user_id_fkey(id, username, full_name, avatar_url)')
+        .eq('assigned_agent_id', req.userId)
+        .in('status', ['open', 'active', 'pending'])
+        .order('updated_at', { ascending: false });
+      assigned = res1.data || [];
+    } catch {
+      // assigned_agent_id column may not exist — get all open/active tickets instead
+      const res1 = await supabaseAdmin
+        .from('support_tickets')
+        .select('*, users!support_tickets_user_id_fkey(id, username, full_name, avatar_url)')
+        .in('status', ['open', 'active', 'pending'])
+        .order('updated_at', { ascending: false });
+      assigned = res1.data || [];
+    }
+    try {
+      const res2 = await supabaseAdmin
+        .from('support_tickets')
+        .select('*, users!support_tickets_user_id_fkey(id, username, full_name, avatar_url)')
+        .is('assigned_agent_id', null)
+        .in('status', ['open', 'active'])
+        .order('created_at', { ascending: false });
+      unassigned = res2.data || [];
+    } catch {
+      // assigned_agent_id column may not exist — skip unassigned filter
+    }
+
+    // Merge: assigned first, then unassigned (deduplicate)
+    const seen = new Set();
+    const tickets = [];
+    for (const t of [...(assigned || []), ...(unassigned || [])]) {
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        tickets.push({
+          ...t,
+          username: t.users?.username,
+          full_name: t.users?.full_name,
+          avatar_url: t.users?.avatar_url,
+        });
+      }
+    }
+
+    res.json({ tickets });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/agent/tickets/:id/accept — agent accepts/claims a ticket
+app.post('/api/agent/tickets/:id/accept', verifyToken, async (req, res) => {
+  try {
+    if (!(await isAgent(req.userId))) return res.status(403).json({ error: 'Agent access required' });
+
+    // Fetch ticket — select all so missing columns don't break the query
+    const { data: ticket, error: tErr } = await supabaseAdmin.from('support_tickets')
+      .select('*')
+      .eq('id', req.params.id).single();
+    if (tErr || !ticket) return res.status(404).json({ error: 'Ticket not found' });
+
+    // Assign to this agent if not already assigned
+    if (!ticket.assigned_agent_id) {
+      try {
+        await supabaseAdmin
+          .from('support_tickets')
+          .update({ assigned_agent_id: req.userId, status: 'active', updated_at: new Date() })
+          .eq('id', req.params.id);
+      } catch {
+        // assigned_agent_id column may not exist — at least update status
+        await supabaseAdmin
+          .from('support_tickets')
+          .update({ status: 'active', updated_at: new Date() })
+          .eq('id', req.params.id);
+      }
+    }
+
+    // Get agent info for introduction (in-memory first, then DB, then users table)
+    const memStatus = getAgentStatus(req.userId);
+    let agentName = memStatus.display_name || null;
+    let agentAvatar = memStatus.avatar_url || null;
+    // Try DB agent_chat_status if not in memory
+    if (!agentName) {
+      try {
+        const { data: dbStatus } = await supabaseAdmin
+          .from('agent_chat_status')
+          .select('display_name, avatar_url')
+          .eq('user_id', req.userId).single();
+        agentName = dbStatus?.display_name || null;
+        agentAvatar = dbStatus?.avatar_url || null;
+      } catch {}
+    }
+    // Fall back to users table
+    const { data: agentUser } = await supabaseAdmin
+      .from('users')
+      .select('username, full_name, avatar_url')
+      .eq('id', req.userId).single();
+    agentName = agentName || agentUser?.full_name || agentUser?.username || 'Support Agent';
+    agentAvatar = agentAvatar || agentUser?.avatar_url || null;
+
+    // Check if we already sent an intro message from this agent
+    const { data: existingMsgs } = await supabaseAdmin
+      .from('support_messages')
+      .select('id')
+      .eq('ticket_id', req.params.id)
+      .eq('sender_id', req.userId)
+      .limit(1);
+
+    let introMessage = null;
+    if (!existingMsgs || existingMsgs.length === 0) {
+      // Send agent introduction
+      const greeting = `Hi! I'm ${agentName}, a support agent at PRAQEN. I'll be helping you today. Could you please share any transaction ID, trade reference, or specific details about your issue so I can assist you right away?`;
+      const { data: msg, error: msgErr } = await supabaseAdmin
+        .from('support_messages')
+        .insert({ ticket_id: req.params.id, sender_id: req.userId, is_admin: true, message: greeting })
+        .select().single();
+      if (!msgErr) introMessage = msg;
+    }
+
+    res.json({ success: true, agentName, agentAvatar, introMessage });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/agent/tickets/:id/reply — agent sends reply (reuses existing pattern but without requireAdmin)
+app.post('/api/agent/tickets/:id/reply', verifyToken, async (req, res) => {
+  try {
+    if (!(await isAgent(req.userId))) return res.status(403).json({ error: 'Agent access required' });
+    const { message } = req.body;
+    if (!message?.trim()) return res.status(400).json({ error: 'Reply is required' });
+
+    // Select all so missing columns don't break the query
+    const { data: ticket, error: tErr } = await supabaseAdmin.from('support_tickets')
+      .select('*')
+      .eq('id', req.params.id).single();
+    if (tErr || !ticket) return res.status(404).json({ error: 'Ticket not found' });
+
+    // Only assigned agent can reply (or if unassigned, auto-assign)
+    if (ticket.assigned_agent_id && ticket.assigned_agent_id !== req.userId) {
+      return res.status(403).json({ error: 'This ticket is assigned to another agent' });
+    }
+    if (!ticket.assigned_agent_id) {
+      try {
+        await supabaseAdmin
+          .from('support_tickets')
+          .update({ assigned_agent_id: req.userId, status: 'active', updated_at: new Date() })
+          .eq('id', req.params.id);
+      } catch {
+        // assigned_agent_id column may not exist — at least update status
+        await supabaseAdmin
+          .from('support_tickets')
+          .update({ status: 'active', updated_at: new Date() })
+          .eq('id', req.params.id);
+      }
+    }
+
+    const { data: msg, error } = await supabaseAdmin
+      .from('support_messages')
+      .insert({ ticket_id: req.params.id, sender_id: req.userId, is_admin: true, message: message.trim() })
+      .select().single();
+    if (error) return res.status(400).json({ error: error.message });
+
+    await supabaseAdmin.from('support_tickets').update({ updated_at: new Date(), status: 'active' }).eq('id', req.params.id);
+
+    // Notify user
+    await createNotification(
+      ticket.user_id, 'system',
+      '💬 Support agent replied to your chat',
+      `Your support chat "${(ticket.subject || '').slice(0, 60)}" has a new reply.`,
+      '/'
+    );
+
+    // Clear typing indicator for this agent on this ticket
+    delete supportTypingState[`${req.params.id}:${req.userId}`];
+
+    res.json({ success: true, message: msg });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/agent/tickets/:id/messages — agent reads chat thread for a ticket
+app.get('/api/agent/tickets/:id/messages', verifyToken, async (req, res) => {
+  try {
+    if (!(await isAgent(req.userId))) return res.status(403).json({ error: 'Agent access required' });
+    const { data: ticket } = await supabaseAdmin.from('support_tickets')
+      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, avatar_url)')
+      .eq('id', req.params.id).single();
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    const { data: messages, error } = await supabaseAdmin.from('support_messages')
+      .select('*')
+      .eq('ticket_id', req.params.id)
+      .order('created_at', { ascending: true });
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({
+      ticket: {
+        ...ticket,
+        username: ticket.users?.username,
+        full_name: ticket.users?.full_name,
+        avatar_url: ticket.users?.avatar_url,
+      },
+      messages: messages || [],
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/support/tickets/:id/typing — user or agent sends typing indicator
+app.post('/api/support/tickets/:id/typing', verifyToken, async (req, res) => {
+  try {
+    const key = `${req.params.id}:${req.userId}`;
+    supportTypingState[key] = Date.now() + 5000; // expires in 5s
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/support/tickets/:id/typing — check who is typing
+app.get('/api/support/tickets/:id/typing', verifyToken, async (req, res) => {
+  try {
+    const now = Date.now();
+    const typingUsers = [];
+    for (const [key, expires] of Object.entries(supportTypingState)) {
+      if (key.startsWith(`${req.params.id}:`) && expires > now) {
+        typingUsers.push(key.split(':')[1]);
+      }
+    }
+    res.json({ typing: typingUsers });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /api/agent/tickets/:id/status — agent updates ticket status
+app.patch('/api/agent/tickets/:id/status', verifyToken, async (req, res) => {
+  try {
+    if (!(await isAgent(req.userId))) return res.status(403).json({ error: 'Agent access required' });
+    const { status } = req.body;
+    if (!['open', 'active', 'resolved', 'closed'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    const { error } = await supabaseAdmin
+      .from('support_tickets')
+      .update({ status, updated_at: new Date() })
+      .eq('id', req.params.id);
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});// GET /api/support/agents/online — list all currently online agents (for the user widget)
+app.get('/api/support/agents/online', verifyToken, async (req, res) => {
+  try {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const onlineIds = [];
+
+    // 1. Check in-memory store
+    for (const [userId, status] of agentStatusStore.entries()) {
+      if (status.is_online) onlineIds.push(userId);
+    }
+
+    // 2. Also check DB if table exists and no in-memory agents
+    if (onlineIds.length === 0) {
+      try {
+        const { data: dbAgents } = await supabaseAdmin
+          .from('agent_chat_status')
+          .select('user_id')
+          .eq('is_online', true);
+        if (dbAgents) onlineIds.push(...dbAgents.map(a => a.user_id));
+      } catch {}
+    }
+
+    if (onlineIds.length === 0) return res.json({ agents: [] });
+
+    const { data: freshUsers } = await supabaseAdmin
+      .from('users')
+      .select('id, last_seen_at, full_name, username, avatar_url')
+      .in('id', [...new Set(onlineIds)])
+      .gte('last_seen_at', fiveMinAgo);
+
+    const freshIds = new Set((freshUsers || []).map(u => u.id));
+    const result = [...new Set(onlineIds)]
+      .filter(id => freshIds.has(id))
+      .map(id => {
+        const mem = agentStatusStore.get(id) || {};
+        const u = (freshUsers || []).find(u => u.id === id);
+        return {
+          id,
+          name: mem.display_name || u?.full_name || u?.username || 'Agent',
+          avatar: mem.avatar_url || u?.avatar_url || null,
+          statusMessage: mem.status_message || 'Available',
+        };
+      });
+
+    res.json({ agents: result });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

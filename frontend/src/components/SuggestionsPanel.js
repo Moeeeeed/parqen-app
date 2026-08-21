@@ -291,6 +291,7 @@ export default function SuggestionsPanel({ user }) {
     setDuplicateWarn(null);
     setSatisfactionRating(0);
     setSatisfactionSubmitted(false);
+    setTalkToHumanLoading(false);
   };
 
   const openPanel = () => {
@@ -364,7 +365,7 @@ export default function SuggestionsPanel({ user }) {
   // ── Build conversation history for the AI ────────────────────────────────
   const buildHistory = (currentAiMsgs, currentChatMsgs) => {
     const history = [];
-    const userMsgs = currentChatMsgs.filter(m => m.sender_type === 'user');
+    const userMsgs = currentChatMsgs.filter(m => m.is_admin !== true && m.sender_id === user?.id);
     const maxPairs = Math.min(userMsgs.length, currentAiMsgs.length);
     for (let i = 0; i < maxPairs; i++) {
       history.push({ role: 'user', text: userMsgs[i].message });
@@ -376,110 +377,11 @@ export default function SuggestionsPanel({ user }) {
     return history;
   };
 
-  // ── Support-mode smart fallback (no API needed) ───────────────────────────
-  // Answers factual questions from a knowledge base first. Generic escalation
-  // replies reserved strictly for API failure OR genuine duplicate-response detection.
-  const supportFallback = (message, currentAiMsgs) => {
-    const q = (message || '').toLowerCase().trim();
-    const turn = currentAiMsgs.length;
-    const name = user?.username ? `, ${user.username}` : '';
-
-    // ── Greeting detection ──
-    if (/^(hey|hi|hello|good\s*(morning|afternoon|evening)|howdy|yo|hiya|sup)\b/.test(q)) {
-      const greetings = [
-        `Hi${name}! I'm Alex from PRAQEN support. I'm looking at your ticket right now — how can I help you?`,
-        `Hey${name}! Great to have you here. Your ticket is open and the team is on it. What would you like to update?`,
-        `Hello${name}! I'm reviewing your case right now. What can I help you with?`,
-      ];
-      return greetings[turn % greetings.length];
-    }
-
-    // ── Acknowledgment / closure ──
-    if (/thank|thanks|okay|ok\b|great|perfect|got it|cool|nice/.test(q)) {
-      const pool = [
-        'Happy to help! Let me know if anything else comes up.',
-        'Great! I\'ve noted that. Anything else you\'d like to add to your ticket?',
-        'Awesome — the team will follow up too. Is there anything else I can do for you?',
-      ];
-      return pool[turn % pool.length];
-    }
-
-    // ── Wait time / status check ──
-    if (/wait|how long|still|not yet|update|any news/.test(q)) {
-      const pool = [
-        'I completely understand the wait can be frustrating. The team is actively on your case — do you have any updates from your side?',
-        'We haven\'t forgotten about you! Our team aims to resolve tickets within 24 hours. Any new details I should add?',
-        'Still on it — I\'ve flagged this for priority review. Anything new to report?',
-      ];
-      return pool[turn % pool.length];
-    }
-
-    // ── Factual Q&A: knowledge base — answer directly, never escalate ──
-    // IMPORTANT: This block MUST come before the payment-reporting branch
-    // so informational "how do I..." questions get factual answers first.
-    if (/forgot password|reset password|change password|forgot my password/.test(q)) {
-      return 'No worries! To reset your password, go to the login page and tap **Forgot Password**. A reset link will be sent to your email within a few minutes. Check your spam folder if you don\'t see it.';
-    }
-    if (/how.*(buy|purchase)|how.*start.*trade|find.*seller/.test(q)) {
-      return 'To **buy Bitcoin**, go to the **Buy BTC** page and browse seller offers filtered by country and payment method. Click **BUY BTC** on any offer to start a trade. The seller locks Bitcoin in escrow before you send payment. Once the seller confirms receipt, they release the BTC to your wallet.';
-    }
-    if (/how.*(sell|create.*listing|make.*offer)/.test(q)) {
-      return 'To **sell Bitcoin**, go to **Sell BTC** and create a listing with your price, payment methods and limits. Your wallet needs at least $10 in BTC for the listing to appear. When a buyer opens a trade, you lock the exact BTC amount in escrow until they pay.';
-    }
-    if (/how.*(wallet|deposit|withdraw|fund|address)/.test(q)) {
-      return 'Your BTC wallet is in the **Wallet** section. To deposit, copy your PRAQEN BTC address (or scan the QR code) and send from any external wallet. To withdraw, go to **Withdraw**, enter an external BTC address and the amount. A small network fee applies.';
-    }
-    if (/how.*(pay|payment|send.*money|make.*payment)/.test(q)) {
-      return 'Payments are made directly between you and the other trader using the method shown in the offer (MoMo, bank transfer, etc.). Always confirm you\'ve received payment before releasing escrow. Keep your receipt as proof.';
-    }
-    if (/kyc|verif|verify.*id|identity|upload.*id|document/.test(q)) {
-      return 'To verify your identity, go to **Settings → Verification** and upload a clear photo of your government-issued ID (passport, driver\'s license, or national ID). Most verifications are reviewed within 24 hours. KYC unlocks higher trade limits and builds trust.';
-    }
-    if (/gift card|marketplace|amazon.*card|itunes.*card|steam.*card/.test(q)) {
-      return 'PRAQEN has a **Gift Card Marketplace** where you can buy and sell gift cards (Amazon, iTunes, Steam, Google Play and many more) for Bitcoin. Just list your card or browse available ones in the marketplace section.';
-    }
-    if (/fee|cost|charge|commission|price.*fee/.test(q)) {
-      return 'PRAQEN charges **0.5%** on completed trades only — deducted from the Bitcoin amount. There are no fees for listing offers or depositing BTC. Withdrawal fees depend on current Bitcoin network congestion.';
-    }
-    if (/referral|invite|earn.*friend|share.*link|commission.*invite/.test(q)) {
-      return 'Your unique referral code is in your profile page. Share your referral link with friends — when they sign up and complete trades, you earn a commission. The more you refer, the more you earn!';
-    }
-    if (/lock.*balance|balance.*lock|escrow.*balance|why.*(lock|hold)/.test(q)) {
-      return 'Locked balance is Bitcoin held in escrow for an active trade. It releases automatically back to your wallet when the trade completes or is cancelled. Check **My Trades** to see your active trades.';
-    }
-    if (/cancel.*trade|time.*limit|expire/.test(q)) {
-      return 'Each trade has a time limit set by the seller. If the buyer doesn\'t complete payment within that time, the seller can cancel and the escrow is returned. Buyers can also request a cancellation from the seller.';
-    }
-
-    // ── User reporting a payment update (not asking how to pay) ──
-    if (/^(i )?(just )?(paid|sent|transferred|made.*payment)\b|payment.*(sent|made|done|confirmed)/.test(q)) {
-      const pool = [
-        'Thanks for the update — I\'ve noted the payment details on your ticket. Has the other party confirmed receipt yet?',
-        'Got it, payment noted. Please keep your receipt handy. Has anything changed since you sent it?',
-        'Noted on the payment. The team will look into this. Can you share the exact amount and method used?',
-      ];
-      return pool[turn % pool.length];
-    }
-
-    // ── Dispute / problem → escalate (not a knowledge question) ──
-    if (/dispute|scam|fraud|problem|stuck|issue|wrong|error|fail/.test(q)) {
-      const pool = [
-        'If you\'re having a problem with a trade, go to **My Trades**, open the trade, and tap **Raise Dispute**. A moderator will review and help resolve it within 24 hours. Never release escrow without confirming payment.',
-        'I\'ve flagged this for the team. In the meantime, please go to **My Trades → Raise Dispute** to protect the escrow. Can you share a trade ID or any screenshots?',
-        'On it — I\'ve escalated this. Please raise a dispute on the trade page if you haven\'t already. Any additional info will help us resolve it quickly.',
-      ];
-      return pool[turn % pool.length];
-    }
-
-    // ── Generic fallback — only for unrecognised queries, not answerable questions ──
-    const generic = [
-      `Thanks for reaching out${name}! I'm reviewing your ticket now. Can you tell me more about what's happening?`,
-      'Noted — I\'ve updated your ticket with that. Our team is working on it. Anything else to add?',
-      'Thanks for that. I\'ve passed it to the team. Is there anything urgent you need right now?',
-      'Understood — the team is on your case. Do you have any new updates I should note?',
-      'I hear you. I\'ve noted this on your ticket. Anything else I can help with?',
-    ];
-    return generic[turn % generic.length];
+  // ── Support-mode fallback — honest network-failure message only ─────────────
+  // Real answers now come from the backend RAG pipeline via /api/ai-chat.
+  // This function is ONLY used in catch blocks when the API call fails.
+  const supportFallback = (message) => {
+    return "I'm having trouble connecting right now. A human agent will be with you shortly. You can also create a support ticket for faster assistance.";
   };
 
   // ── AI response ───────────────────────────────────────────────────────────
@@ -501,18 +403,26 @@ export default function SuggestionsPanel({ user }) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const replyText = data.reply?.trim() || '';
+      const shouldEscalate = !!data.should_escalate;
+      const suggestedPriority = data.suggested_priority || 'normal';
 
       const seq = msgSeqRef.current++;
       setAiMsgs(prev => {
         const isDuplicate = replyText && prev.some(m => m.text.trim() === replyText);
         const finalText = isDuplicate || !replyText
-          ? supportFallback(message, prev)
+          ? supportFallback(message)
           : replyText;
-        return [...prev, { role: 'ai', text: finalText, _seq: seq }];
+        return [...prev, {
+          role: 'ai', text: finalText, _seq: seq,
+          shouldEscalate, suggestedPriority,
+        }];
       });
     } catch {
       const seq = msgSeqRef.current++;
-      setAiMsgs(prev => [...prev, { role: 'ai', text: supportFallback(message, prev), _seq: seq }]);
+      setAiMsgs(prev => [...prev, {
+        role: 'ai', text: supportFallback(message), _seq: seq,
+        shouldEscalate: true, suggestedPriority: 'normal',
+      }]);
     } finally {
       setAiLoad(false);
       setTimeout(() => inputRef.current?.focus(), 200);
@@ -769,6 +679,16 @@ export default function SuggestionsPanel({ user }) {
   const standaloneInputRef = useRef(null);
   const [activeTab, setActiveTab] = useState('support');
 
+  // ── Talk to a Human state ────────────────────────────────────────────────
+  const [talkToHumanLoading, setTalkToHumanLoading] = useState(false);
+  const [selectedDepartment, setSelectedDepartment] = useState('tech');
+  const DEPARTMENTS = [
+    { id: 'tech', label: 'Tech', icon: '🔧' },
+    { id: 'billing', label: 'Billing', icon: '💳' },
+    { id: 'compliance', label: 'Compliance', icon: '📋' },
+    { id: 'general', label: 'General', icon: '💬' },
+  ];
+
   const MIN_TYPING_MS = 700;
 
   const fetchStandaloneAIResponse = async (message, history) => {
@@ -785,24 +705,34 @@ export default function SuggestionsPanel({ user }) {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    return data.reply?.trim() || '';
+    return {
+      reply: data.reply?.trim() || '',
+      shouldEscalate: !!data.should_escalate,
+      suggestedPriority: data.suggested_priority || 'normal',
+    };
   };
+
+  // ── Detect explicit human-agent requests ────────────────────────────────
+  const HUMAN_AGENT_KEYWORDS = /\b(talk|speak|connect|chat)\s*(to|with|to a|with a)?\s*(human|agent|person|real person|someone|staff|support agent)\b|\bhuman agent\b|\breal person\b|\bcustomer service\b|\blive agent\b|\blive support\b/i;
 
   const handleStandaloneSend = async (prefilledMessage) => {
     const text = prefilledMessage || standaloneInput.trim();
     if (!text || standaloneAiLoading) return;
 
+    // Detect explicit human-agent request
+    const wantsHuman = HUMAN_AGENT_KEYWORDS.test(text);
+
     setStandaloneInput('');
     setStandaloneAiLoading(true);
     const startedAt = Date.now();
     const seq = msgSeqRef.current++;
-    setStandaloneAiMsgs(prev => [...prev, { role: 'user', text, _seq: seq }]);
+    setStandaloneAiMsgs(prev => [...prev, { role: 'user', text, _seq: seq, wantsHuman }]);
 
     try {
       const history = standaloneAiMsgs
         .filter(m => m.role === 'user' || m.role === 'ai')
         .map(m => ({ role: m.role === 'ai' ? 'ai' : 'user', text: m.text }));
-      const replyText = await fetchStandaloneAIResponse(text, history);
+      const result = await fetchStandaloneAIResponse(text, history);
 
       // Enforce minimum typing duration so the indicator is always visible
       const elapsed = Date.now() - startedAt;
@@ -810,19 +740,120 @@ export default function SuggestionsPanel({ user }) {
         await new Promise(resolve => setTimeout(resolve, MIN_TYPING_MS - elapsed));
       }
 
-      const fixedReply = replyText || "I'm here to help! Could you tell me more?";
+      const fixedReply = result.reply || "I'm here to help! Could you tell me more?";
+      const shouldEscalate = wantsHuman || result.shouldEscalate;
       const seq2 = msgSeqRef.current++;
-      setStandaloneAiMsgs(prev => [...prev, { role: 'ai', text: fixedReply, _seq: seq2 }]);
+      setStandaloneAiMsgs(prev => [...prev, {
+        role: 'ai', text: fixedReply, _seq: seq2,
+        shouldEscalate, suggestedPriority: result.suggestedPriority,
+      }]);
     } catch {
       const elapsed = Date.now() - startedAt;
       if (elapsed < MIN_TYPING_MS) {
         await new Promise(resolve => setTimeout(resolve, MIN_TYPING_MS - elapsed));
       }
       const seq2 = msgSeqRef.current++;
-      setStandaloneAiMsgs(prev => [...prev, { role: 'ai', text: "I'm having trouble connecting right now. Please try again in a moment.", _seq: seq2 }]);
+      setStandaloneAiMsgs(prev => [...prev, {
+        role: 'ai', text: "I'm having trouble connecting right now. Please try again in a moment.",
+        _seq: seq2, shouldEscalate: true, suggestedPriority: 'normal',
+      }]);
     } finally {
       setStandaloneAiLoading(false);
       setTimeout(() => standaloneInputRef.current?.focus(), 200);
+    }
+  };
+
+  // ── Talk to a Human handler ──────────────────────────────────────────────
+  const handleTalkToHuman = async () => {
+    if (!user) return toast.info('Please log in to connect with a human agent');
+    if (talkToHumanLoading) return;
+    setTalkToHumanLoading(true);
+
+    try {
+      // Check agent availability
+      const availRes = await fetch(`${API_URL}/support/agents/availability`, {
+        headers: authH(),
+      });
+      const avail = await availRes.json();
+
+      if (!avail.available) {
+        // No agent online — show offline message and offer to leave a ticket
+        const seq = msgSeqRef.current++;
+        setStandaloneAiMsgs(prev => [...prev, {
+          role: 'ai',
+          text: `No human agents are currently online. Expected response time: ${avail.estimatedResponse || '~8–12 hours'}. Would you like to leave a support ticket? An agent will respond when they're back online.`,
+          _seq: seq,
+          shouldEscalate: false,
+          suggestedPriority: 'normal',
+          isOfflineNotice: true,
+          estimatedResponse: avail.estimatedResponse,
+        }]);
+        return;
+      }
+
+      // Agent is available — create a live-chat ticket automatically
+      const transcript = standaloneAiMsgs
+        .map(am => `${am.role === 'user' ? 'User' : 'AI'}: ${am.text}`)
+        .join('\n');
+      const preamble = 'User requested to speak with a human agent. Conversation transcript:';
+      const fullMessage = [preamble, '', transcript].join('\n').slice(0, 2000);
+
+      const ticketRes = await axios.post(`${API_URL}/support/tickets`, {
+        subject: 'Live Chat Request from AI Assistant',
+        category: 'other',
+        department: selectedDepartment || 'tech',
+        message: fullMessage,
+        priority: 'normal',
+      }, { headers: authH() });
+
+      const newTicket = ticketRes.data.ticket;
+
+      // Auto-assign an agent
+      const assignRes = await axios.post(`${API_URL}/support/tickets/${newTicket.id}/assign-agent`, {}, { headers: authH() });
+      const assignData = assignRes.data;
+
+      // Set up the chat state
+      setTicket(newTicket);
+      setTopic(TOPICS.find(t => t.id === 'other') || TOPICS[0]);
+      setSubject('Live Chat Request from AI Assistant');
+      setPriority('normal');
+      setReplyText('');
+
+      // Fetch messages (includes the agent intro if assigned)
+      const msgsRes = await axios.get(`${API_URL}/support/tickets/${newTicket.id}/messages`, { headers: authH() });
+      const initialMsgs = msgsRes.data.messages || [];
+      const seqdMsgs = initialMsgs.map((m, i) => ({ ...m, _seq: i }));
+      msgSeqRef.current = initialMsgs.length;
+      setChatMsgs(seqdMsgs);
+      setAiMsgs([]);
+
+      // Switch to live chat mode
+      setMode('chat');
+      startPolling(newTicket.id);
+
+      if (assignData.agent) {
+        toast.success(`Connected with ${assignData.agent.name || 'a support agent'}!`);
+      } else if (assignData.available === false) {
+        // Agent was available when we checked but became unavailable — ticket still created
+        toast.info('Your live chat ticket is open. An agent will pick it up shortly. You can leave a message below.');
+      } else {
+        toast.success('Live chat ticket created! An agent will join shortly.');
+      }
+    } catch (e) {
+      console.error('Talk to Human error:', e);
+      const errMsg = e.response?.data?.error || e.message || 'Unknown error';
+      console.error('Talk to Human detailed error:', errMsg);
+      toast.error(`Failed to connect: ${errMsg}. Please try creating a support ticket instead.`);
+      // Fallback — pre-fill a ticket form
+      const transcript = standaloneAiMsgs
+        .map(am => `${am.role === 'user' ? 'User' : 'AI'}: ${am.text}`)
+        .join('\n');
+      setMsgBody(transcript.slice(0, 2000));
+      setSubject('Escalated from AI Chat');
+      setActiveTab('support');
+      setMode('home');
+    } finally {
+      setTalkToHumanLoading(false);
     }
   };
 
@@ -1091,6 +1122,43 @@ export default function SuggestionsPanel({ user }) {
           {/* ════════════ AI CHAT (Tab 2) ════════════ */}
           {mode === 'home' && activeTab === 'ai-chat' && (
             <div className="flex-1 flex flex-col overflow-hidden" style={{ backgroundColor: '#F8FAFC' }}>
+              {/* Talk to a Human button — always visible at top */}
+              <div className="flex-shrink-0 px-4 pt-3 pb-1">
+                <button
+                  onClick={handleTalkToHuman}
+                  disabled={talkToHumanLoading}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-black transition-all hover:shadow-md disabled:opacity-50"
+                  style={{
+                    background: 'linear-gradient(135deg,#FEF2F2,#FEE2E2)',
+                    border: '1.5px solid #FECACA',
+                    color: '#DC2626',
+                  }}>
+                  {talkToHumanLoading ? (
+                    <><RefreshCw size={14} className="animate-spin" /> Connecting…</>
+                  ) : (
+                    <><Headphones size={14} /> Talk to a Human Agent</>
+                  )}
+                </button>
+
+                {/* Department selector */}
+                <div className="flex items-center gap-2 mt-2 px-1">
+                  <span className="text-[10px] font-bold" style={{ color: '#94A3B8' }}>Department:</span>
+                  <div className="flex gap-1.5 overflow-x-auto">
+                    {DEPARTMENTS.map(d => (
+                      <button key={d.id} onClick={() => setSelectedDepartment(d.id)}
+                        className="px-2 py-1 rounded-lg text-[10px] font-bold transition flex-shrink-0"
+                        style={{
+                          backgroundColor: selectedDepartment === d.id ? '#1B4332' : '#fff',
+                          color: selectedDepartment === d.id ? '#fff' : '#64748B',
+                          border: `1px solid ${selectedDepartment === d.id ? '#1B4332' : '#E2E8F0'}`,
+                        }}>
+                        {d.icon} {d.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
               {/* Messages */}
               <div ref={standaloneChatRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
                 {standaloneAiMsgs.length === 0 ? (
@@ -1122,15 +1190,52 @@ export default function SuggestionsPanel({ user }) {
                           <Bot size={12} color="white" />
                         </div>
                       )}
-                      <div className="px-3 py-2.5 text-sm leading-relaxed"
-                        style={{
-                          maxWidth: '80%',
-                          backgroundColor: m.role === 'user' ? '#1B4332' : '#fff',
-                          color: m.role === 'user' ? 'white' : '#1E293B',
-                          borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '4px 18px 18px 18px',
-                          boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
-                        }}>
-                        <Msg text={m.text} />
+                      <div className={m.role === 'user' ? '' : 'max-w-[80%]'}>
+                        <div className="px-3 py-2.5 text-sm leading-relaxed"
+                          style={{
+                            backgroundColor: m.role === 'user' ? '#1B4332' : '#fff',
+                            color: m.role === 'user' ? 'white' : '#1E293B',
+                            borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '4px 18px 18px 18px',
+                            boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+                          }}>
+                          <Msg text={m.text} />
+                        </div>
+                        {/* Escalation CTA — shown when AI suggests human handoff */}
+                        {m.role === 'ai' && m.shouldEscalate && !m.isOfflineNotice && !standaloneAiLoading && (
+                          <div className="mt-1.5 px-1">
+                            <button
+                              onClick={handleTalkToHuman}
+                              disabled={talkToHumanLoading}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition hover:opacity-80 disabled:opacity-50"
+                              style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626' }}>
+                              {talkToHumanLoading ? <RefreshCw size={11} className="animate-spin" /> : <Headphones size={11} />}
+                              {talkToHumanLoading ? 'Connecting…' : 'Talk to a human agent'}
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Offline notice — create ticket instead */}
+                        {m.role === 'ai' && m.isOfflineNotice && !standaloneAiLoading && (
+                          <div className="mt-1.5 px-1 flex gap-1.5">
+                            <button
+                              onClick={() => {
+                                const transcript = standaloneAiMsgs
+                                  .map(am => `${am.role === 'user' ? 'User' : 'AI'}: ${am.text}`)
+                                  .join('\n');
+                                setMsgBody(transcript.slice(0, 2000));
+                                setSubject('Offline Support Request');
+                                setPriority('normal');
+                                setActiveTab('support');
+                                setMode('home');
+                                toast.info('Ticket pre-filled. Please review and submit — an agent will respond when online.');
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition hover:opacity-80"
+                              style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626' }}>
+                              <Ticket size={11} />
+                              Leave a ticket
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))
@@ -1961,7 +2066,7 @@ export default function SuggestionsPanel({ user }) {
                   const timeline = allEntries.map(entry => {
                     if (entry.type === 'chat') {
                       const m = entry.data;
-                      const isUser = m.sender_type === 'user';
+                      const isUser = m.is_admin !== true && m.sender_id === user?.id;
                       return (
                         <div key={`t-${entry.seq}`} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                           {!isUser && (
@@ -1978,7 +2083,7 @@ export default function SuggestionsPanel({ user }) {
                               borderRadius: isUser ? '18px 18px 4px 18px' : '4px 18px 18px 18px',
                               boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
                             }}>
-                            <p className="text-[10px] font-bold mb-1 opacity-60">
+                            <p className="text-[10px] font-bold mb-1 opacity-60" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                               {isUser ? (user?.username || 'You') : (m.sender_name || 'Support Agent')}
                             </p>
                             <p>{m.message}</p>
@@ -1993,14 +2098,26 @@ export default function SuggestionsPanel({ user }) {
                             style={{ background: 'linear-gradient(135deg,#1B4332,#2D6A4F)' }}>
                             <Bot size={12} color="white" />
                           </div>
-                          <div className="px-3 py-2.5 text-sm leading-relaxed"
-                            style={{
-                              maxWidth: '80%', backgroundColor: '#fff', color: '#1E293B',
-                              borderRadius: '4px 18px 18px 18px',
-                              boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
-                            }}>
-                            <p className="text-[10px] font-bold mb-1 opacity-60">PRAQEN AI</p>
-                            <Msg text={m.text} />
+                          <div>
+                            <div className="px-3 py-2.5 text-sm leading-relaxed"
+                              style={{
+                                maxWidth: '80%', backgroundColor: '#fff', color: '#1E293B',
+                                borderRadius: '4px 18px 18px 18px',
+                                boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+                              }}>
+                              <p className="text-[10px] font-bold mb-1 opacity-60">PRAQEN AI</p>
+                              <Msg text={m.text} />
+                            </div>
+                            {/* Escalation CTA in ticket chat */}
+                            {m.shouldEscalate && !aiLoading && (
+                              <div className="mt-1.5 px-1">
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold"
+                                  style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626' }}>
+                                  <Headphones size={11} />
+                                  A human agent will assist you shortly
+                                </span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );

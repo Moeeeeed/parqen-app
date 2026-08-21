@@ -446,40 +446,40 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
     const btcParen    = fiatStr ? `(${btcStr} BTC)` : null;
     if (isBuyer) {
       // Gift card buyer (paying with gift card to buy BTC):
-      // LEFT: You pay/paid (card value)  |  RIGHT: You receive/received (value + BTC equiv)
+      // LEFT: You pay/paid (card value)  |  RIGHT: You receive/received (BTC primary, fiat equiv secondary)
       leftLabel   = basePay;
       leftStr     = fiatPrimary;
       leftSubStr  = null;
       rightLabel  = baseReceive;
-      rightStr    = fiatPrimary;
-      rightSubStr = btcParen;
+      rightStr    = `${btcStr} BTC`;
+      rightSubStr = fiatStr ? `≈ ${fiatStr}` : null;
     } else {
       // Gift card seller (selling BTC to receive gift card):
-      // LEFT: You pay/paid (value + BTC equiv)  |  RIGHT: You receive/received (true BTC market value)
+      // LEFT: You pay/paid (BTC primary, fiat equiv secondary)  |  RIGHT: You receive/received (card value)
       leftLabel   = basePay;
-      leftStr     = fiatPrimary;
-      leftSubStr  = btcParen;
+      leftStr     = `${btcStr} BTC`;
+      leftSubStr  = fiatStr ? `≈ ${fiatStr}` : null;
       rightLabel  = baseReceive;
-      rightStr    = receiveStr || fiatPrimary;
+      rightStr    = fiatPrimary;
       rightSubStr = null;
     }
   } else {
     if (!isBuyer) {
-      // BTC seller  →  LEFT: what they RECEIVE (true market value)  |  RIGHT: what they PAY (fiat + BTC equiv)
+      // BTC seller  →  LEFT: what they RECEIVE (fiat)  |  RIGHT: what they PAY (BTC primary, fiat equiv secondary)
       leftLabel   = baseReceive;
-      leftStr     = receiveStr || fiatStr || '—';
+      leftStr     = fiatStr || receiveStr || '—';
       leftSubStr  = null;
       rightLabel  = basePay;
-      rightStr    = fiatStr || `${btcStr} BTC`;
-      rightSubStr = fiatStr ? `(${btcStr} BTC)` : null;
+      rightStr    = `${btcStr} BTC`;
+      rightSubStr = fiatStr ? `≈ ${fiatStr}` : null;
     } else {
-      // BTC buyer  →  LEFT: what they PAY (fiat)  |  RIGHT: what they RECEIVE (fiat + BTC equiv on one line)
+      // BTC buyer  →  LEFT: what they PAY (fiat)  |  RIGHT: what they RECEIVE (BTC primary, fiat equiv secondary)
       leftLabel   = basePay;
       leftStr     = fiatStr || '—';
       leftSubStr  = null;
       rightLabel  = baseReceive;
-      rightStr    = fiatStr || `${btcStr} BTC`;
-      rightSubStr = fiatStr ? `(${btcStr} BTC)` : null;
+      rightStr    = `${btcStr} BTC`;
+      rightSubStr = fiatStr ? `≈ ${fiatStr}` : null;
     }
   }
 
@@ -719,39 +719,39 @@ function BasicCard({ n, userId, onNavigate }) {
       const bBtcParen    = parsedLocalStr && btcAmtStr ? `(${btcAmtStr})` : null;
       if (isBuyerB || (!isSeller)) {
         // Gift card buyer (paying with gift card to buy BTC):
-        // LEFT: You pay/paid (card value)  |  RIGHT: You receive/received (value + BTC equiv)
+        // LEFT: You pay/paid (card value)  |  RIGHT: You receive/received (BTC primary, fiat equiv secondary)
         bLeftLabel   = basePay2;
         bLeftStr     = bFiatPrimary;
         bLeftSubStr  = null;
         bRightLabel  = baseReceive2;
-        bRightStr    = bFiatPrimary;
-        bRightSubStr = bBtcParen;
+        bRightStr    = btcAmtStr || bFiatPrimary;
+        bRightSubStr = parsedLocalStr && btcAmtStr ? `≈ ${parsedLocalStr}` : null;
       } else {
         // Gift card seller (selling BTC to receive gift card):
-        // LEFT: You pay/paid (value + BTC equiv)  |  RIGHT: You receive/received (card value)
+        // LEFT: You pay/paid (BTC primary, fiat equiv secondary)  |  RIGHT: You receive/received (card value)
         bLeftLabel   = basePay2;
-        bLeftStr     = bFiatPrimary;
-        bLeftSubStr  = bBtcParen;
+        bLeftStr     = btcAmtStr || bFiatPrimary;
+        bLeftSubStr  = parsedLocalStr && btcAmtStr ? `≈ ${parsedLocalStr}` : null;
         bRightLabel  = baseReceive2;
         bRightStr    = bFiatPrimary;
         bRightSubStr = null;
       }
     } else if (isSeller) {
-      // BTC seller: LEFT = what they RECEIVE (fiat)  |  RIGHT = what they PAY (fiat + BTC equiv on one line)
+      // BTC seller: LEFT = what they RECEIVE (fiat primary)  |  RIGHT = what they PAY (BTC primary, fiat equiv secondary)
       bLeftLabel   = baseReceive2;
       bLeftStr     = parsedLocalStr || '—';
       bLeftSubStr  = null;
       bRightLabel  = basePay2;
-      bRightStr    = parsedLocalStr || btcAmtStr || 'BTC';
-      bRightSubStr = parsedLocalStr && btcAmtStr ? `(${btcAmtStr})` : null;
+      bRightStr    = btcAmtStr || parsedLocalStr || 'BTC';
+      bRightSubStr = parsedLocalStr && btcAmtStr ? `≈ ${parsedLocalStr}` : null;
     } else {
-      // BTC buyer: LEFT = what they PAY (fiat)  |  RIGHT = what they RECEIVE (fiat + BTC equiv on one line)
+      // BTC buyer: LEFT = what they PAY (fiat)  |  RIGHT = what they RECEIVE (BTC primary, fiat equiv secondary)
       bLeftLabel   = basePay2;
       bLeftStr     = parsedLocalStr || btcAmtStr || 'BTC';
       bLeftSubStr  = null;
       bRightLabel  = baseReceive2;
-      bRightStr    = parsedLocalStr || btcAmtStr || 'BTC';
-      bRightSubStr = parsedLocalStr && btcAmtStr ? `(${btcAmtStr})` : null;
+      bRightStr    = btcAmtStr || parsedLocalStr || 'BTC';
+      bRightSubStr = parsedLocalStr && btcAmtStr ? `≈ ${parsedLocalStr}` : null;
     }
 
     // Actor: use enriched n.actor first, then parse username from message as fallback for letter avatar

@@ -409,7 +409,7 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   // BUY_GIFT_CARD listings are posted by vendors selling crypto for gift cards, so trading against
   // one under the "Buy" tab means the viewer is BUYING crypto with their gift card.
   const viewerIsBuyingCard = listing.listing_type === 'BUY_GIFT_CARD';
-  const cryptoSide = { val: `$${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}`, sub: `≈ ${fBtc(btcOut)} BTC` };
+  const cryptoSide = { val: `${fBtc(btcOut)} BTC`, sub: `≈ $${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}` };
   const youGive    = viewerIsBuyingCard ? cardSide   : cryptoSide;
   const youReceive = viewerIsBuyingCard ? cryptoSide : cardSide;
 
@@ -1285,7 +1285,9 @@ export default function GiftCards({ user }) {
     setVisibleCount(24);
   }, [gcMode, cryptoFilter, selBrand, amountInput, selCountry.code, traderSearch, sortBy]);
   const loadListings = async (attempt = 1, force = false) => {
-    // Skip fetch if cache is fresh (< 5 minutes) and not forced
+    // Show cached data immediately for fast render (stale-while-revalidate),
+    // but ALWAYS fetch fresh data from the API in the background so newly
+    // created offers appear without waiting for cache expiry or manual refresh.
     if (attempt === 1 && !force) {
       try {
         const c = JSON.parse(localStorage.getItem('praqen_market_all') || 'null');
@@ -1294,7 +1296,7 @@ export default function GiftCards({ user }) {
           if (gcOffers.length > 0) {
             setListings(gcOffers);
             setLoading(false);
-            return;
+            // Don't return — continue to fetch fresh data below
           }
         }
       } catch { }
@@ -1326,12 +1328,11 @@ export default function GiftCards({ user }) {
     } catch {
       if (attempt < 3) {
         setRetrying(true);
-        // Capped exponential backoff instead of a flat 1s retry — attempt 2 waits ~500ms,
-        // attempt 3 waits ~1.5s, so a struggling server isn't immediately hammered 3x.
         const backoffMs = attempt === 1 ? 500 : 1500;
         setTimeout(() => loadListings(attempt + 1, force), backoffMs);
       } else {
         setRetrying(false);
+        // Only show error if no cached data is being displayed
         if (!listings.length) setLoadError(true);
       }
     }

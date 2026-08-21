@@ -168,7 +168,7 @@ export default function LandingPage({ user }) {
               <h1 className={`text-[1.6rem] sm:text-5xl lg:text-6xl font-black leading-[1.1] mb-4 text-white ${heroOn ? 'anim-up' : ''}`}
                 style={{ opacity: heroOn ? 1 : 0, fontFamily: "'Syne',sans-serif", animationDelay: '.1s' }}>
                 Buy Bitcoin in Ghana <br />
-                <span className="grad-text">Instantly with Mobile Money</span><br /
+                <span className="grad-text">Instantly with Mobile Money</span><br />
               </h1>
 
               {/* sub */}

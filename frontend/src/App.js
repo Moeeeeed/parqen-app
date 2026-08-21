@@ -101,6 +101,7 @@ const SellBitcoin = lazy(() => import('./pages/SellBitcoin'));
 const BuyUSDT = lazy(() => import('./pages/BuyUSDT'));
 const SellUSDT = lazy(() => import('./pages/SellUSDT'));
 const SellGiftCardMarketplace = lazy(() => import('./pages/SellGiftCardMarketplace'));
+const AgentDashboard = lazy(() => import('./pages/AgentDashboard'));
 const VerifyOTP = lazy(() => import('./pages/VerifyOTP'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const EmailConfirmation = lazy(() => import('./pages/EmailConfirmation'));
@@ -453,6 +454,7 @@ function App() {
               <Route path="/team" element={<TeamDashboard user={user} />} />
               <Route path="/moderator" element={<ModeratorDashboard user={user} />} />
               <Route path="/ceo" element={<CeoDashboard user={user} />} />
+              <Route path="/agent-dashboard" element={user ? <AgentDashboard user={user} /> : <Navigate to="/login" />} />
 
               {/* ── ALL OTHER ROUTES — wrapped in main app chrome ── */}
               <Route path="*" element={

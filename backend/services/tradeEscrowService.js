@@ -364,14 +364,22 @@ class TradeEscrowService {
     const isGiftCardTrade = listingType.includes('GIFT_CARD');
     
     // Verify authorization
-    // For gift card: seller marks as paid (after sending code)
-    // For BTC: buyer marks as paid (after sending payment)
-    const authorizedId = isGiftCardTrade ? trade.seller_id : trade.buyer_id;
+    // For BTC trades: buyer marks as paid (after sending payment)
+    // For SELL_GIFT_CARD: seller (gift card holder) marks as sent (after sending code)
+    // For BUY_GIFT_CARD: buyer (gift card holder) marks as sent (after sending code)
+    let authorizedId;
+    if (!isGiftCardTrade) {
+      authorizedId = trade.buyer_id;
+    } else if (listingType.toUpperCase() === 'BUY_GIFT_CARD') {
+      authorizedId = trade.buyer_id;  // buyer has the gift card
+    } else {
+      authorizedId = trade.seller_id; // seller has the gift card
+    }
     
     if (String(userId) !== String(authorizedId)) {
       throw new Error(
         isGiftCardTrade 
-          ? 'Only the seller can mark as sent (gift card trades)'
+          ? 'Only the gift card holder can mark as sent'
           : 'Only the buyer can mark as paid'
       );
     }
@@ -440,23 +448,36 @@ class TradeEscrowService {
         const { data: listing } = await supabaseAdmin.from('listings').select('listing_type').eq('id', tradeData.listing_id).single();
         listingType = listing?.listing_type || '';
     }
-    // Simple rule: if listing includes GIFT_CARD, buyer (gift card purchaser) provides BTC
     const isGiftCardTrade = listingType.includes('GIFT_CARD');
-    // Whoever locked BTC into escrow — seller for BTC trades, buyer for gift card trades
-    const btcProviderId = isGiftCardTrade ? tradeData.buyer_id : tradeData.seller_id;
-
-
-
-    // Gift card trade: BUYER (Alice, BTC holder) releases after confirming code works
-    // BTC trade:       SELLER releases after confirming fiat payment received
-    const authorizedId = isGiftCardTrade ? tradeData.buyer_id : tradeData.seller_id;
+    const isBuyGiftCard = listingType.toUpperCase() === 'BUY_GIFT_CARD';
+    
+    // Determine BTC provider and authorization based on trade type:
+    // BTC trades (SELL/SELL_BITCOIN): seller holds BTC, buyer pays fiat → seller releases
+    // BUY_GIFT_CARD: offer creator (seller) holds BTC, buyer sends gift card → seller releases
+    // SELL_GIFT_CARD: buyer holds BTC, offer creator (seller) sends gift card → buyer releases
+    let btcProviderId, authorizedId, btcReceiverId;
+    if (!isGiftCardTrade) {
+      btcProviderId = tradeData.seller_id;
+      authorizedId = tradeData.seller_id;   // seller releases after fiat confirmed
+      btcReceiverId = tradeData.buyer_id;    // BTC goes to buyer
+    } else if (isBuyGiftCard) {
+      btcProviderId = tradeData.seller_id;   // seller holds BTC
+      authorizedId = tradeData.seller_id;    // seller releases after gift card confirmed
+      btcReceiverId = tradeData.buyer_id;    // BTC goes to buyer (gift card sender)
+    } else {
+      // SELL_GIFT_CARD
+      btcProviderId = tradeData.buyer_id;    // buyer holds BTC
+      authorizedId = tradeData.buyer_id;     // buyer releases after gift card confirmed
+      btcReceiverId = tradeData.seller_id;   // BTC goes to seller (gift card sender)
+    }
+    // Note: btcReceiverId is set above based on trade type
 
     console.log(`[release] trade=${tradeId.slice(0,8)} isGiftCard=${isGiftCardTrade} authorizedId=${String(authorizedId).slice(0,8)} releaserId=${String(releaserId).slice(0,8)} status=${tradeData.status}`);
 
     if (String(authorizedId) !== String(releaserId)) {
         throw new Error(
             isGiftCardTrade
-                ? 'Unauthorized — only the card buyer can release Bitcoin'
+                ? 'Unauthorized — only the BTC holder can release Bitcoin'
                 : 'Unauthorized — only the seller can release Bitcoin'
         );
     }
@@ -467,10 +488,6 @@ class TradeEscrowService {
             isGiftCardTrade ? 'Card seller must send the code first.' : 'Buyer must confirm payment first.'
         }`);
     }
-
-    // Gift card trade: BTC goes to card SELLER (Kenneth)
-    // BTC trade:       BTC goes to BTC BUYER
-    const btcReceiverId = isGiftCardTrade ? tradeData.seller_id : tradeData.buyer_id;
 
     if (!btcReceiverId) throw new Error('Cannot determine BTC receiver — trade has no buyer_id/seller_id');
     if (!tradeData.amount_btc || parseFloat(tradeData.amount_btc) <= 0) {
@@ -876,8 +893,8 @@ class TradeEscrowService {
     //
     // Fallback rule (must match lockFundsInEscrow logic in server.js):
     //   • Standard BTC trades (SELL / BUY listing):  btcProvider = trade.seller_id
-    //   • Gift card trades (BUY_GIFT_CARD / SELL_GIFT_CARD): btcProvider = trade.buyer_id
-    //     because for gift card trades the *buyer* role holds the BTC, not the seller.
+    //   • BUY_GIFT_CARD trades: btcProvider = trade.seller_id (offer creator holds BTC)
+    //   • SELL_GIFT_CARD trades: btcProvider = trade.buyer_id (trade opener holds BTC)
     const esc            = (await supabaseAdmin.from('escrow_locks').select('*').eq('trade_id', tradeId).maybeSingle()).data;
     const escCurrency    = (esc?.currency || trade.currency || 'BTC').toUpperCase();
     const isUsdtRefund   = escCurrency === 'USDT';
@@ -890,8 +907,10 @@ class TradeEscrowService {
       const { data: listing } = await supabaseAdmin
         .from('listings').select('listing_type').eq('id', trade.listing_id).maybeSingle();
       const lType = (listing?.listing_type || '').toUpperCase();
-      if (lType === 'BUY_GIFT_CARD' || lType === 'SELL_GIFT_CARD') {
-        fallbackBtcProvider = trade.buyer_id;
+      if (lType === 'BUY_GIFT_CARD') {
+        fallbackBtcProvider = trade.seller_id;  // seller holds BTC for BUY_GIFT_CARD
+      } else if (lType === 'SELL_GIFT_CARD') {
+        fallbackBtcProvider = trade.buyer_id;   // buyer holds BTC for SELL_GIFT_CARD
       }
     }
     const btcProviderId = esc?.seller_id || fallbackBtcProvider;

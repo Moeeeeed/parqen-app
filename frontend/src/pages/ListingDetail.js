@@ -875,14 +875,29 @@ const loadAll = useCallback(async (isBackground = false) => {
                     <span style={{ color: '#fff', fontWeight: 900, fontSize: 13 }}>{isUsdtAsset ? '₮' : '₿'}</span>
                   </div>
                   <div>
-                    <div style={{ fontSize: 22, fontWeight: 900, color: T.primary, lineHeight: 1 }}>
-                      {fiatEquivalent > 0 ? `${sym}${fmt(fiatEquivalent, 2)} ${cur}` : <span style={{ color: C.g300 }}>0.00 {cur}</span>}
-                    </div>
-                    <div style={{ fontSize: 11, color: C.g400, fontWeight: 600, marginTop: 2 }}>
-                      {isUsdtAsset
-                        ? `₮ ${btcAfterFee > 0 ? btcAfterFee.toFixed(2) : '0.00'} USDT`
-                        : `₿ ${btcAfterFee > 0 ? fmtBtc(btcAfterFee) : '0.00000000'}`}
-                    </div>
+                    {isVisitorSelling ? (
+                      /* Seller paying BTC: show BTC primary, fiat equivalent secondary */
+                      <>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: T.primary, lineHeight: 1 }}>
+                          {btcAfterFee > 0 ? (isUsdtAsset ? `${btcAfterFee.toFixed(2)} USDT` : `${fmtBtc(btcAfterFee)} BTC`) : <span style={{ color: C.g300 }}>{isUsdtAsset ? '0.00 USDT' : '0.00000000 BTC'}</span>}
+                        </div>
+                        <div style={{ fontSize: 11, color: C.g400, fontWeight: 600, marginTop: 2 }}>
+                          {fiatEquivalent > 0 ? `≈ ${sym}${fmt(fiatEquivalent, 2)} ${cur}` : ''}
+                        </div>
+                      </>
+                    ) : (
+                      /* Buyer receiving BTC: show BTC primary, fiat secondary */
+                      <>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: T.primary, lineHeight: 1 }}>
+                          {isUsdtAsset
+                            ? `₮ ${btcAfterFee > 0 ? btcAfterFee.toFixed(2) : '0.00'} USDT`
+                            : `₿ ${btcAfterFee > 0 ? fmtBtc(btcAfterFee) : '0.00000000'}`}
+                        </div>
+                        <div style={{ fontSize: 11, color: C.g400, fontWeight: 600, marginTop: 2 }}>
+                          {fiatEquivalent > 0 ? `≈ ${sym}${fmt(fiatEquivalent, 2)} ${cur}` : ''}
+                        </div>
+                      </>
+                    )}
                   </div>
                   {quoteFetching && <RefreshCw size={13} color={C.g300} style={{ marginLeft: 'auto' }} className="animate-spin" />}
                 </div>
