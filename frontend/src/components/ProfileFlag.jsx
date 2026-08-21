@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BadgeChip } from '../lib/badge';
+import { BadgeChip, SafetyBadge } from '../lib/badge';
 
 function ProfileFlag({ user }) {
   const [countryData, setCountryData] = useState({ code: null, name: null });
@@ -35,6 +35,7 @@ function ProfileFlag({ user }) {
         </div>
       ) : null}
       {user && <BadgeChip user={user} size="sm" />}
+      {user && <SafetyBadge user={user} size="sm" />}
     </div>
   );
 }

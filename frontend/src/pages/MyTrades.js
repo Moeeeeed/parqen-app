@@ -95,6 +95,7 @@ function StatCard({icon:Icon, label, value, color, sub}) {
 // ─── Active trade alert banner ──────────────────────────────────────────────
 function ActiveAlert({trade, userId, onDismiss, onExpire}) {
   const isBuyer    = String(userId)===String(trade.buyer_id);
+  const isSeller   = String(userId)===String(trade.seller_id);
   const st         = getStatus(trade.status, trade.cancel_reason);
   const cp         = isBuyer ? trade.seller : trade.buyer;
   const payMethod  = trade.payment_method||'Mobile Money';
@@ -144,13 +145,17 @@ function ActiveAlert({trade, userId, onDismiss, onExpire}) {
   };
   const urgent = timeLeft!==null&&timeLeft<300&&timeLeft>0;
 
-  const RoleIcon = isPaid ? (isBuyer ? CheckCircle : Unlock) : (isBuyer ? Banknote : Hourglass);
+  // Gift card trades flip who sends "payment" vs who releases BTC: the card bringer
+  // (seller) sends the code, the BTC holder (buyer) verifies and releases.
+  const mustPay  = isGift ? isSeller : isBuyer;
+  const RoleIcon = isPaid ? (mustPay ? CheckCircle : Unlock) : (mustPay ? Banknote : Hourglass);
 
-  const roleMsg = isBuyer
-    ? isPaid ? <><RoleIcon size={12} className="inline mr-1" style={{color:C.success}}/>Payment sent — awaiting Bitcoin release from {cp?.username||'seller'}</>
-             : <><RoleIcon size={12} className="inline mr-1" style={{color:C.amber}}/>Send {sym}{fmt(localAmt)} {cur} via {payMethod} to {cp?.username||'seller'}</>
-    : isPaid ? <><RoleIcon size={12} className="inline mr-1" style={{color:C.success}}/>{cp?.username||'Buyer'} paid! Check your {payMethod} and RELEASE BITCOIN</>
-             : <><RoleIcon size={12} className="inline mr-1" style={{color:C.g500}}/>{cp?.username||'Buyer'} is sending {sym}{fmt(localAmt)} via {payMethod}…</>;
+  const roleMsg = mustPay
+    ? isPaid ? <><RoleIcon size={12} className="inline mr-1" style={{color:C.success}}/>{isGift?'Code sent':'Payment sent'} — awaiting Bitcoin release from {cp?.username||(isGift?'buyer':'seller')}</>
+             : isGift ? <><RoleIcon size={12} className="inline mr-1" style={{color:C.amber}}/>Send your gift card code to {cp?.username||'buyer'}</>
+                      : <><RoleIcon size={12} className="inline mr-1" style={{color:C.amber}}/>Send {sym}{fmt(localAmt)} {cur} via {payMethod} to {cp?.username||'seller'}</>
+    : isPaid ? <><RoleIcon size={12} className="inline mr-1" style={{color:C.success}}/>{cp?.username||(isGift?'Seller':'Buyer')} {isGift?'sent the code':'paid'}! {isGift?'Verify it':`Check your ${payMethod}`} and RELEASE BITCOIN</>
+             : <><RoleIcon size={12} className="inline mr-1" style={{color:C.g500}}/>{cp?.username||(isGift?'Seller':'Buyer')} is sending {isGift?'the gift card code':`${sym}${fmt(localAmt)} via ${payMethod}`}…</>;
 
   return(
     <div className="rounded-2xl overflow-hidden shadow-xl border-2"

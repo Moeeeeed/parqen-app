@@ -603,10 +603,21 @@ function DepositSecurityModal({ walletUsdt, onClose, onLock, loading, error, pen
   );
 }
 
-export default function CreateOffer() {
+export default function CreateOffer({ user }) {
   const navigate = useNavigate();
   const { rates: USD_RATES, btcUsd: contextBtcUsd } = useRates();
   const payRef = useRef(null);
+
+  // Banned accounts can't trade — bounce them out immediately with a clear
+  // system message instead of letting them fill out the whole form first.
+  // Mirrors the send/swap guard in Wallet.js; server-side enforcement is
+  // requireNotBanned on POST /api/offers.
+  useEffect(() => {
+    if (user?.account_status === 'banned') {
+      toast.error('Your account is banned — you cannot create trade offers. Contact support@praqen.com.');
+      navigate('/dashboard');
+    }
+  }, [user, navigate]);
 
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
@@ -666,6 +677,31 @@ export default function CreateOffer() {
 
   const isGC = offerType === 'gc_buy' || offerType === 'gc_sell';
   const steps = isGC ? GC_STEPS : BTC_STEPS;
+
+  // Auto-detect the seller's own country on load — this defaulted to 'GH' for every
+  // seller regardless of where they actually are. Anyone who didn't notice the country
+  // dropdown got their offer tagged Ghana no matter where they live, so it never showed
+  // up for buyers filtering by their own (different) real country — reads as "my offer
+  // isn't visible" but is really a mislabeled country on the listing itself. Matches the
+  // auto-detect already used on the Buy/Sell Bitcoin and Gift Card marketplace pages.
+  useEffect(() => {
+    const applyCountry = (code) => {
+      const c = COUNTRIES.find(x => x.code === (code || '').toUpperCase());
+      if (!c) return false;
+      setCountry(c.code);
+      if (!isGC || FOREIGN_CURRENCY_CODES.includes(c.currency)) {
+        setCurrencyCode(c.currency);
+        setCurrencySymbol(c.symbol);
+      }
+      return true;
+    };
+    const profileCode = user?.country_code || (user?.country?.length === 2 ? user.country : null);
+    if (applyCountry(profileCode)) return;
+    fetch('https://ipapi.co/json/')
+      .then(r => r.json())
+      .then(data => { if (data?.country_code) applyCountry(data.country_code); })
+      .catch(() => {});
+  }, []);
 
   // Restrict currency to foreign currencies when offerType is gift card
   useEffect(() => {
@@ -834,6 +870,10 @@ export default function CreateOffer() {
   };
 
   const handleSubmit = async () => {
+    if (user?.account_status === 'banned') {
+      toast.error('Your account is banned — you cannot create trade offers. Contact support@praqen.com.');
+      return;
+    }
     if (!canNext() || submitting) return;
     // canNext() only gates step 2 while stepping through — re-check here since Submit
     // is reachable from the final review step, which doesn't re-run that guard.
@@ -871,7 +911,17 @@ export default function CreateOffer() {
       };
 
       await axios.post(`${API_URL}/offers`, payload, { withCredentials: true });
-      toast.success('Offer published!');
+
+      // Tell the user exactly where their offer will be visible
+      const directionLabel = isGC
+        ? (offerType === 'gc_sell' ? 'Sell Gift Card' : 'Buy with Gift Card')
+        : `${offerType === 'sell' ? 'Sell' : 'Buy'} ${asset}`;
+      const pageLabel = isGC
+        ? 'Gift Card Marketplace'
+        : asset === 'USDT'
+          ? (offerType === 'sell' ? 'Buy USDT' : 'Sell USDT')
+          : (offerType === 'sell' ? 'Buy Bitcoin' : 'Sell Bitcoin');
+      toast.success(`✅ "${directionLabel}" offer published! Redirecting to the ${pageLabel} page where it will appear…`, { autoClose: 3000 });
       // Drop the shared market cache so the destination page fetches fresh data —
       // otherwise it can serve a stale (<5min) snapshot that predates this offer,
       // making the offer the user just created invisible for up to a minute.
@@ -925,52 +975,6 @@ export default function CreateOffer() {
         </div>
       </div>
       <div className="overflow-y-auto flex-1 thin-scroll">
-        {/* Pinned at the top, always — trading against a gift card is common enough that it
-            shouldn't be buried, and it isn't a plain payment_method string like the rest of
-            this list: picking it hands off to the dedicated gift card flow (brand catalog,
-            denominations, regions, deposit/balance checks) so the resulting offer actually
-            shows up on the Gift Cards market page instead of getting lost as a SELL/BUY. */}
-        {(!paySearch || 'gift card'.includes(paySearch.toLowerCase())) && (
-          <button
-            type="button"
-            onClick={async () => {
-              setShowPayMenu(false); setPaySearch('');
-              const newType = isSellSide ? 'gc_buy' : 'gc_sell';
-              setOfferType(newType);
-              if (newType === 'gc_sell') {
-                // Paying with a gift card here makes this user the gift-card vendor —
-                // same $200 security deposit gate as picking "Sell Gift Card" at Step 1.
-                // Checked inline (not via the offerType-watching effect) because that
-                // effect wouldn't have run yet on this same click.
-                let status = depositStatus;
-                if (status === null) {
-                  const token = localStorage.getItem('token');
-                  try {
-                    const res = await axios.get(`${API_URL}/seller-deposit/status`, { headers: { Authorization: `Bearer ${token}` } });
-                    status = res.data;
-                  } catch {
-                    status = { has_deposit: false, can_create_sell_listing: false };
-                  }
-                  setDepositStatus(status);
-                }
-                if (status?.can_create_sell_listing !== true) { setShowDepositModal(true); return; }
-              }
-              setStep(2); // GC_STEPS[1] = 'Card' — the Gift Card Details step
-            }}
-            className="w-full flex items-center gap-3 px-3 py-3 text-left transition hover:brightness-105 border-b-2"
-            style={{ borderColor: `${C.purple}30`, background: `linear-gradient(135deg, ${C.purple}1c, #EC489918)` }}
-          >
-            <span className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-sm"
-              style={{ background: `linear-gradient(135deg, ${C.purple}, #EC4899)` }}>
-              <Gift size={20} />
-            </span>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-black" style={{ color: C.purple }}>Gift Card</p>
-              <p className="text-xs font-semibold" style={{ color: C.g600 }}>Pick a brand, denominations & regions</p>
-            </div>
-            <ArrowRight size={16} strokeWidth={2.5} style={{ color: C.purple, flexShrink: 0 }} />
-          </button>
-        )}
         {localMethods.length === 0 && otherMethods.length === 0 ? (
           <div className="py-8 text-center">
             <p className="text-xs" style={{ color: C.g400 }}>No results found</p>
@@ -1116,33 +1120,95 @@ export default function CreateOffer() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                {/* gc_buy / gc_sell stay out of this step-1 picker — they're reached from the
-                    "Gift Card" entry in the Payment Method dropdown (step 2) now, which routes
-                    straight into the Gift Card Details step. The two entries still exist in
-                    OFFER_TYPES for title/desc lookups later in the flow (preview, review). */}
-                {OFFER_TYPES.filter(({ id }) => id === 'sell' || id === 'buy').map(({ id, title, desc, icon: Icon }) => (
+              {/* ── Category selector (P2P Marketplace vs Gift Cards) ── */}
+              <div>
+                <label className="block text-sm font-bold mb-2" style={{ color: C.g700 }}>
+                  Marketplace Category <span style={{ color: C.danger }}>*</span>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
                   <button
-                    key={id}
-                    onClick={() => setOfferType(id)}
-                    className="w-full p-4 rounded-2xl text-left border-2 transition-all flex items-center gap-3"
+                    type="button"
+                    onClick={() => {
+                      if (isGC) setOfferType('sell');
+                    }}
+                    className="w-full p-3.5 rounded-2xl border-2 transition-all flex items-center gap-2.5 text-left"
                     style={{
-                      borderColor: offerType === id ? C.green : C.g200,
-                      backgroundColor: offerType === id ? `${C.green}08` : C.white,
-                      width: '100%', boxSizing: 'border-box',
+                      borderColor: !isGC ? C.green : C.g200,
+                      backgroundColor: !isGC ? `${C.green}08` : C.white,
+                      boxSizing: 'border-box',
                     }}
                   >
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: offerType === id ? C.green : C.g100 }}>
-                      <Icon size={18} style={{ color: offerType === id ? C.white : C.g500 }} />
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: !isGC ? C.green : C.g100 }}>
+                      <Globe size={18} style={{ color: !isGC ? C.white : C.g500 }} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-bold text-sm" style={{ color: C.forest }}>{title(assetLabel)}</p>
-                      <p className="text-xs" style={{ color: C.g500 }}>{desc(assetLabel)}</p>
+                      <p className="font-bold text-xs" style={{ color: C.forest }}>P2P Marketplace</p>
+                      <p className="text-[10px]" style={{ color: C.g500 }}>Bank, MoMo, Fiat</p>
                     </div>
-                    {offerType === id && <Check size={16} style={{ color: C.green, flexShrink: 0 }} />}
+                    {!isGC && <Check size={16} style={{ color: C.green, flexShrink: 0 }} />}
                   </button>
-                ))}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isGC) setOfferType('gc_sell');
+                    }}
+                    className="w-full p-3.5 rounded-2xl border-2 transition-all flex items-center gap-2.5 text-left"
+                    style={{
+                      borderColor: isGC ? C.purple : C.g200,
+                      backgroundColor: isGC ? `${C.purple}08` : C.white,
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: isGC ? C.purple : C.g100 }}>
+                      <Gift size={18} style={{ color: isGC ? C.white : C.g500 }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-xs" style={{ color: C.purple }}>Gift Cards</p>
+                      <p className="text-[10px]" style={{ color: C.g500 }}>Amazon, iTunes, etc.</p>
+                    </div>
+                    {isGC && <Check size={16} style={{ color: C.purple, flexShrink: 0 }} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* ── Direction / Action options ── */}
+              <div>
+                <label className="block text-sm font-bold mb-2" style={{ color: C.g700 }}>
+                  Offer Direction <span style={{ color: C.danger }}>*</span>
+                </label>
+                <div className="space-y-2">
+                  {(isGC ? [
+                    { id: 'gc_sell', title: (a) => `Sell Gift Card for ${a}`, desc: (a) => `You send a gift card, buyer sends you ${a}. Requires a $200 security deposit.`, icon: Gift },
+                    { id: 'gc_buy', title: (a) => `Buy ${a} with Gift Card`, desc: (a) => `Sellers send you a gift card, you send them ${a}.`, icon: Gift },
+                  ] : [
+                    { id: 'sell', title: (a) => `Sell ${a}`, desc: (a) => `Buyers pay you, you release ${a} from your wallet.`, icon: ArrowUpRight },
+                    { id: 'buy', title: (a) => `Buy ${a}`, desc: (a) => `You pay sellers to receive ${a} into your wallet.`, icon: ArrowDownRight },
+                  ]).map(({ id, title, desc, icon: Icon }) => (
+                    <button
+                      key={id}
+                      onClick={() => setOfferType(id)}
+                      className="w-full p-4 rounded-2xl text-left border-2 transition-all flex items-center gap-3"
+                      style={{
+                        borderColor: offerType === id ? (isGC ? C.purple : C.green) : C.g200,
+                        backgroundColor: offerType === id ? (isGC ? `${C.purple}08` : `${C.green}08`) : C.white,
+                        width: '100%', boxSizing: 'border-box',
+                      }}
+                    >
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                        style={{ backgroundColor: offerType === id ? (isGC ? C.purple : C.green) : C.g100 }}>
+                        <Icon size={18} style={{ color: offerType === id ? C.white : C.g500 }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-sm" style={{ color: C.forest }}>{title(assetLabel)}</p>
+                        <p className="text-xs" style={{ color: C.g500 }}>{desc(assetLabel)}</p>
+                      </div>
+                      {offerType === id && <Check size={16} style={{ color: isGC ? C.purple : C.green, flexShrink: 0 }} />}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -1231,55 +1297,57 @@ export default function CreateOffer() {
                 <p className="text-sm mb-3" style={{ color: C.g500 }}>
                   Select the region / currency your gift card supports.
                 </p>
-                <SearchableSelect
-                  items={GC_CURRENCIES}
-                  value={gcCurrencies[0]?.region || ''}
-                  onChange={(region) => {
-                    const c = GC_CURRENCIES.find(x => x.region === region);
-                    if (!c) return;
-                    if (gcCurrencies[0]?.region === region) {
-                      setGcCurrencies([]);
-                    } else {
-                      setGcCurrencies([{ ...c }]);
-                    }
-                  }}
-                  searchValue={gcCurrSearch}
-                  onSearchChange={setGcCurrSearch}
-                  placeholder="Search region or currency…"
-                  searchPlaceholder="Search regions…"
-                  getKey={(item) => item.region}
-                  getLabel={(item) => item.region}
-                  renderSelected={() => null}
-                  renderItem={(item, active) => {
-                    const sel = gcCurrencies.some(x => x.region === item.region);
-                    return (
-                      <>
-                        <span className="text-base w-7 text-center flex-shrink-0">{item.flag}</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold truncate" style={{ color: C.g800 }}>{item.region}</p>
-                          <p className="text-xs" style={{ color: C.g500 }}>{item.symbol} {item.currency}</p>
+                {(() => {
+                  const filteredCurrencies = GC_CURRENCIES.filter(c => {
+                    if (!gcBrand) return true;
+                    const brandBase = gcBrand.toLowerCase().replace(/card|\/.*$/g, '').trim();
+                    const regionLower = c.region.toLowerCase();
+                    return regionLower.includes(brandBase) || brandBase.includes(regionLower.split(' ')[0]);
+                  });
+                  const listToUse = filteredCurrencies.length ? filteredCurrencies : GC_CURRENCIES;
+
+                  return (
+                    <SearchableSelect
+                      items={listToUse}
+                      value={gcCurrencies[0]?.region || ''}
+                      onChange={(region) => {
+                        const c = listToUse.find(x => x.region === region) || GC_CURRENCIES.find(x => x.region === region);
+                        if (!c) return;
+                        setGcCurrencies([{ ...c }]);
+                      }}
+                      searchValue={gcCurrSearch}
+                      onSearchChange={setGcCurrSearch}
+                      placeholder="Select region / currency (USD, GBP, EUR…)"
+                      searchPlaceholder="Search region or currency…"
+                      getKey={(item) => item.region}
+                      getLabel={(item) => `${item.region} (${item.currency})`}
+                      renderSelected={(item) => (
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <span className="text-base flex-shrink-0">{item.flag}</span>
+                          <span className="text-sm font-black truncate" style={{ color: C.g800 }}>
+                            {item.region}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md text-xs font-bold flex-shrink-0" style={{ backgroundColor: C.g100, color: C.forest }}>
+                            {item.currency} ({item.symbol})
+                          </span>
                         </div>
-                        {sel && <Check size={14} style={{ color: C.mint, flexShrink: 0 }} />}
-                      </>
-                    );
-                  }}
-                />
-                {gcCurrencies.length > 0 && (
-                  <div className="mt-3 p-4 rounded-2xl" style={{ backgroundColor: `${C.mint}06`, border: `1px solid ${C.mint}20` }}>
-                    <p className="text-xs font-semibold mb-2" style={{ color: C.g600 }}>Selected Region</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {gcCurrencies.map(c => (
-                        <button key={c.region}
-                          onClick={() => setGcCurrencies([])}
-                          className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full transition-transform hover:scale-105 active:scale-95"
-                          style={{ backgroundColor: C.mint, color: C.white }}>
-                          {c.flag} {c.region}
-                          <X size={10} className="ml-0.5" />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                      )}
+                      renderItem={(item, active) => {
+                        const sel = gcCurrencies.some(x => x.region === item.region);
+                        return (
+                          <>
+                            <span className="text-base w-7 text-center flex-shrink-0">{item.flag}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold truncate" style={{ color: C.g800 }}>{item.region}</p>
+                              <p className="text-xs font-bold" style={{ color: C.g500 }}>{item.symbol} {item.currency}</p>
+                            </div>
+                            {sel && <Check size={14} style={{ color: C.mint, flexShrink: 0 }} />}
+                          </>
+                        );
+                      }}
+                    />
+                  );
+                })()}
               </div>
 
               {/* Card Range (Min - Max inputs) */}
@@ -1638,14 +1706,17 @@ export default function CreateOffer() {
                 </div>
               </div>
 
-              {/* Market margin — -10 to 100% */}
+              {/* Market margin — -10 to +10%, Sell Bitcoin only. Was -10 to 100 with no
+                  server-side check at all, which is how an above-market offer (seen live
+                  at +69%) could get posted — see the margin validation in POST /api/offers
+                  and PUT /api/listings/:id. */}
               {pricingType === 'market' && (
                 <div>
                   <div className="mb-2">
                     <label className="text-sm font-bold block mb-1.5" style={{ color: C.g700 }}>Your Margin</label>
                     <div className="flex flex-wrap items-center gap-1">
                       <span className="text-xs flex-shrink-0" style={{ color: C.g500 }}>Quick:</span>
-                      {[-5, -1, 0, 1, 3, 5, 10, 20].map(v => (
+                      {[-5, -1, 0, 1, 3, 5, 10].map(v => (
                         <button key={v} onClick={() => setMargin(v)}
                           className="px-1.5 py-0.5 rounded-full text-xs font-bold transition"
                           style={{
@@ -1680,7 +1751,7 @@ export default function CreateOffer() {
                           {margin < 0 ? 'Discount below market — buyers get more BTC' : margin === 0 ? 'Exactly at market rate' : 'Your markup rate above market'}
                         </p>
                       </div>
-                      <button onClick={() => setMargin(m => Math.min(100, parseFloat((m + 0.5).toFixed(1))))}
+                      <button onClick={() => setMargin(m => Math.min(10, parseFloat((m + 0.5).toFixed(1))))}
                         className="w-11 h-11 rounded-xl flex items-center justify-center active:scale-95 flex-shrink-0 transition-colors"
                         style={{ border: 'none', backgroundColor: 'transparent' }}
                         onMouseEnter={e => e.currentTarget.style.backgroundColor = `${C.success}10`}
@@ -1690,25 +1761,25 @@ export default function CreateOffer() {
                     </div>
 
 
-                    <input type="range" min="-10" max="100" step="0.5"
+                    <input type="range" min="-10" max="10" step="0.5"
                       value={margin} onChange={e => setMargin(parseFloat(e.target.value))}
                       className="w-full custom-slider"
                       style={{
                         color: margin < 0 ? C.danger : C.success,
-                        background: `linear-gradient(to right, ${margin < 0 ? C.danger : C.success} 0%, ${margin < 0 ? C.danger : C.success} ${((margin + 10) / 110) * 100}%, #E2E8F0 ${((margin + 10) / 110) * 100}%, #E2E8F0 100%)`
+                        background: `linear-gradient(to right, ${margin < 0 ? C.danger : C.success} 0%, ${margin < 0 ? C.danger : C.success} ${((margin + 10) / 20) * 100}%, #E2E8F0 ${((margin + 10) / 20) * 100}%, #E2E8F0 100%)`
                       }} />
                     <div className="flex justify-between text-xs mt-0.5" style={{ color: C.g400 }}>
                       <span>-10%</span>
                       <span>0% (market)</span>
-                      <span>+100%</span>
+                      <span>+10%</span>
                     </div>
 
                     {/* Type exact margin */}
                     <div className="mt-3 flex items-center gap-2">
                       <label className="text-xs font-bold flex-shrink-0" style={{ color: C.g500 }}>Custom:</label>
                       <div className="relative flex-1">
-                        <input type="number" min="-10" max="100" step="0.5"
-                          value={margin} onChange={e => setMargin(Math.min(100, Math.max(-10, parseFloat(e.target.value) || 0)))}
+                        <input type="number" min="-10" max="10" step="0.5"
+                          value={margin} onChange={e => setMargin(Math.min(10, Math.max(-10, parseFloat(e.target.value) || 0)))}
                           className="w-full pl-3 pr-7 py-2 text-xs border-2 rounded-xl focus:outline-none font-bold"
                           style={{ borderColor: C.g200, color: C.forest }} />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold" style={{ color: C.g400 }}>%</span>

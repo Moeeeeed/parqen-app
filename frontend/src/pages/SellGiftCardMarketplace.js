@@ -15,7 +15,7 @@ import {
 import { toast } from 'react-toastify';
 import CountryFlag from '../components/CountryFlag';
 import ActiveTradeCard from '../components/ActiveTradeCard';
-import { BadgeChip } from '../lib/badge';
+import { BadgeChip, SafetyBadge } from '../lib/badge';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -107,6 +107,7 @@ function BuyerOfferCard({ offer, onSelect, user }) {
                   {buyer.username || 'Anonymous Buyer'}
                 </button>
                 <BadgeChip user={buyer} />
+                <SafetyBadge user={buyer} size="xs" />
               </div>
               <div className="flex items-center gap-2 text-xs mt-1 flex-wrap">
                 <span className="flex items-center gap-0.5 font-bold" style={{color:'#10B981'}}>

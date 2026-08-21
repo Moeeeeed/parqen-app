@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
-import { TRUST_MAP, deriveBadge, BadgeChip, BADGE_COLORS } from '../lib/badge';
+import { TRUST_MAP, deriveBadge, BadgeChip, BADGE_COLORS, SafetyBadge } from '../lib/badge';
 import ActiveTradeCard from '../components/ActiveTradeCard';
 import PRQFooter from '../components/PRQFooter';
 
@@ -311,11 +311,16 @@ const getCardRange = (l) => {
     if (arr.startsWith('{')) arr = arr.replace(/[{}]/g, '').split(',').map(Number).filter(Boolean);
     else { try { arr = JSON.parse(arr); } catch { arr = arr.split(',').map(Number).filter(Boolean); } }
   }
-  if (Array.isArray(arr) && arr.length) return arr.map(v => parseFloat(v)).filter(Boolean).sort((a, b) => a - b);
+  if (Array.isArray(arr) && arr.length) {
+    const parsed = arr.map(v => parseFloat(v)).filter(v => !isNaN(v) && v > 0).sort((a, b) => a - b);
+    if (parsed.length) return parsed;
+  }
   const fv = getFaceVal(l);
-  if (fv) return [fv];
-  const min = l.min_face_value || l.min_card_value; const max = l.max_face_value || l.max_card_value;
-  if (min && max) return [{ min: parseFloat(min), max: parseFloat(max), isRange: true }];
+  if (fv && fv > 0) return [fv];
+  const min = parseFloat(l.min_face_value || l.min_card_value || l.min_limit_local || l.min_amount || l.min_limit || 0);
+  const max = parseFloat(l.max_face_value || l.max_card_value || l.max_limit_local || l.max_amount || l.max_limit || 0);
+  if (min > 0 && max > 0) return [{ min, max, isRange: true }];
+  if (min > 0) return [min];
   return null;
 };
 
@@ -395,25 +400,31 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
 
   const cardType = listing.card_type || 'both';
   const cardRange = getCardRange(listing);
-  // Card-value side of the trade — always the gift card's face value, regardless of
-  // which direction this listing runs.
+
+  // Fallback local starting value if range not found
+  const localVal = cardRange
+    ? (cardRange[0]?.isRange ? cardRange[0].min : cardRange[0])
+    : (listing.min_limit_local || listing.min_amount || fv || 0);
+
+  // Card-value side of the trade — always the gift card's face value, regardless of which direction this listing runs.
   const cardSide = (() => {
-    if (!cardRange) { const ml = listing.min_limit_local || (fv ? fv * usdRate : 0); return { val: `${sym}${fmt(ml)}`, sub: cur }; }
+    if (!cardRange) {
+      return { val: localVal > 0 ? `${sym}${fmt(localVal)}` : 'Flexible', sub: localVal > 0 ? `${cur} starting` : cur };
+    }
     if (cardRange[0]?.isRange) return { val: `${sym}${fmt(cardRange[0].min)}`, sub: `${cur} starting` };
     if (cardRange.length === 1) return { val: `${sym}${fmt(cardRange[0])}`, sub: `${cur} card` };
     return { val: `${sym}${fmt(cardRange[0])}`, sub: `${cur} starting` };
   })();
-  const refUSD = cardRange ? (cardRange[0]?.isRange ? cardRange[0].min : cardRange[0]) : (fv || 1);
-  const btcOut = refUSD / rateUSD;
-  const receiveUSD = btcOut * btcPriceUSD;
-  // BUY_GIFT_CARD listings are posted by vendors selling crypto for gift cards, so trading against
-  // one under the "Buy" tab means the viewer is BUYING crypto with their gift card.
+
+  // Convert local currency value into USD equivalent for crypto calculation
+  const refUSD = localVal > 0 ? (usdRate > 0 ? localVal / usdRate : localVal) : 1;
+  const btcOut = refUSD / (rateUSD || 1);
   const viewerIsBuyingCard = listing.listing_type === 'BUY_GIFT_CARD';
   const cryptoSide = { val: `${fBtc(btcOut)} BTC`, sub: `≈ $${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}` };
   const youGive    = viewerIsBuyingCard ? cardSide   : cryptoSide;
   const youReceive = viewerIsBuyingCard ? cryptoSide : cardSide;
 
-  const rangeLabel = !cardRange ? 'Any value'
+  const rangeLabel = !cardRange ? (localVal > 0 ? `${sym}${fmt(localVal)}+` : 'Any value')
     : cardRange[0]?.isRange ? `${sym}${fmt(cardRange[0].min)} – ${sym}${fmt(cardRange[0].max)}`
     : cardRange.map(v => `${sym}${fmt(v)}`).join(' | ');
 
@@ -509,8 +520,9 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
 
           {/* Right section: Stacked BadgeChip & Active status pill */}
           <div className="flex flex-col gap-1 items-end flex-shrink-0 pt-0.5">
-            <div>
+            <div className="flex items-center gap-1">
               <BadgeChip user={u} size="xs" />
+              <SafetyBadge user={u} size="xs" />
             </div>
             <div>
               {seen.online ? (
@@ -893,15 +905,6 @@ function SellerModal({ seller, listing, onClose, onTrade, btcPriceUSD }) {
               <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${C.g200}` }}>
                 <p className="text-xs font-bold px-3 py-2 uppercase tracking-wider"
                   style={{ color: C.g500, backgroundColor: C.g50 }}>Verification</p>
-                {u.full_name && u.name_display !== 'hide' && !u.hide_full_name && (
-                  <div className="flex items-center justify-between px-3 py-2.5 border-t" style={{ borderColor: C.g100 }}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm flex items-center"><User size={14} className="text-gray-500" /></span>
-                      <span className="text-xs font-semibold" style={{ color: C.g700 }}>Full Name</span>
-                    </div>
-                    <span className="text-xs font-black" style={{ color: C.g800 }}>{u.full_name}</span>
-                  </div>
-                )}
                 {[
                   { label: 'Phone Number', ok: phoneOk, icon: <Phone size={14} className="text-gray-500" /> },
                   { label: 'Email Address', ok: emailOk, icon: <Mail size={14} className="text-gray-500" /> },
@@ -1340,9 +1343,14 @@ export default function GiftCards({ user }) {
   };
 
 useEffect(() => {
-      axios.get(`${API_URL}/referral/leaderboard`).then(r => {
-        if (r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0, 3));
-      }).catch(() => { });
+      const fetchBoard = () => {
+        axios.get(`${API_URL}/referral/leaderboard`).then(r => {
+          if (r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0, 3));
+        }).catch(() => { });
+      };
+      fetchBoard();
+      const iv = setInterval(fetchBoard, 60000);
+      return () => clearInterval(iv);
     }, []);
 
     const getFiltered = () => {
@@ -1367,10 +1375,17 @@ useEffect(() => {
       if (range[0]?.isRange) return amt >= range[0].min && amt <= range[0].max;
       return range.some(v => Math.abs(v - amt) < 0.01);
     });
-    if (selCountry.code !== 'ALL') list = list.filter(l =>
-      (l.country_code || '').toUpperCase() === selCountry.code ||
-      (l.users?.country_code || '').toUpperCase() === selCountry.code
-    );
+    // l.country_code / l.users?.country_code never come back from /api/listings — the
+    // listings select only returns `country`, and the users select doesn't include a
+    // country field at all — so this filter was matching against two always-undefined
+    // fields and silently emptying the whole page for anyone with a country selected
+    // (which happens automatically on load via IP/profile auto-detect above). Matches
+    // BuyBitcoin.js's pattern: real `country` field, with no-country listings treated
+    // as globally visible instead of hidden.
+    if (selCountry.code !== 'ALL') list = list.filter(l => {
+      const offerCountry = (l.country || '').toUpperCase();
+      return offerCountry === '' || offerCountry === selCountry.code;
+    });
     if (traderSearch.trim()) list = list.filter(l =>
       (l.users?.username || '').toLowerCase().includes(traderSearch.trim().toLowerCase())
     );
@@ -1412,7 +1427,18 @@ useEffect(() => {
 
   // Active Trader of the Week — auto-picked weekly by the backend (services/
   // traderOfWeekService.js) from real trade counts, not a hardcoded username.
+  // Exactly one featured badge per page: use the weekly pick if their listing is
+  // still live here, otherwise fall back to today's top offer by trade count — this
+  // page previously had no fallback, so the badge silently never showed whenever the
+  // weekly winner's listing had gone stale.
   const activeTraderListingId = traderOfWeek?.listing_id || null;
+  const activeTraderIsLive = !!activeTraderListingId && listings.some(l => l.id === activeTraderListingId);
+  const rankedByTrades = [...listings]
+    .filter(l => l.id !== activeTraderListingId && getTrades(l.users) > 0)
+    .sort((a, b) => getTrades(b.users) - getTrades(a.users));
+  const fastResponderListingId = activeTraderIsLive ? null : (rankedByTrades[0]?.id || null);
+  const featuredListingId = activeTraderIsLive ? activeTraderListingId : fastResponderListingId;
+  const featuredBadgeType = activeTraderIsLive ? 'active_trader' : 'fast_responder';
   const hasFilters = amountInput.trim() !== '' || selBrand !== 'All Brands' || selCountry.code !== 'ALL' || traderSearch.trim() !== '' || sortBy !== 'rate_low';
 
   return (
@@ -1955,7 +1981,7 @@ useEffect(() => {
                   key={l.id}
                   listing={l}
                   btcPriceUSD={btcPrice}
-                  featuredType={l.id === activeTraderListingId ? 'fast_responder' : undefined}
+                  featuredType={l.id === featuredListingId ? featuredBadgeType : undefined}
                   onViewSeller={() => setModal({ seller: l.users || {}, listing: l })}
                   onTrade={() => handleTrade(l.id)}
                 />

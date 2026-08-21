@@ -70,6 +70,87 @@ export function getNextBadge(currentKey) {
   };
 }
 
+// ── Trust/Safety status (warning / banned) ──────────────────────────────
+// Separate from the positive-trust tiers above. Source of truth is the
+// backend user record — account_status ('active' | 'banned') and
+// has_warning (boolean) — never a frontend-only flag. See
+// backend/middleware/requireNotBanned.js for the matching server-side
+// enforcement of the banned state (this module only controls display).
+export const SAFETY_STATUS_MAP = {
+  BANNED: {
+    key: 'BANNED', label: 'BANNED', icon: '🚫',
+    color: '#991B1B', bg: '#FEF2F2', border: '#FCA5A5',
+    profileTitle: 'BANNED USER',
+    profileMessage: 'This account has been restricted by PRAQEN. Do not trade with this user.',
+    chatMessage: 'WARNING: This trade involves a banned account. Do not send funds.',
+  },
+  WARNING: {
+    key: 'WARNING', label: 'WARNING', icon: '⚠️',
+    color: '#92400E', bg: '#FFFBEB', border: '#FDE68A',
+    profileTitle: 'USER WARNING',
+    profileMessage: 'This user has received a warning from PRAQEN. Please trade with caution.',
+    chatMessage: 'PRAQEN WARNING: Trade with caution. This user has an active warning.',
+  },
+};
+
+// Banned always takes priority over warning if a record somehow has both.
+export function deriveSafetyStatus(user) {
+  if (!user) return null;
+  if (user.account_status === 'banned') return SAFETY_STATUS_MAP.BANNED;
+  if (user.has_warning) return SAFETY_STATUS_MAP.WARNING;
+  return null;
+}
+
+// Small inline chip — use next to a username anywhere it appears (profile,
+// trade chat header, marketplace/offer cards, seller/buyer cards).
+export function SafetyBadge({ user, className = '', size = 'sm' }) {
+  const status = deriveSafetyStatus(user);
+  if (!status) return null;
+  const fontSize = size === 'xs' ? '9.5px' : size === 'lg' ? '13px' : '10.5px';
+  return (
+    <span
+      className={`inline-flex items-center gap-1 font-black rounded-md flex-shrink-0 ${className}`}
+      style={{
+        color: status.color, background: status.bg, border: `1px solid ${status.border}`,
+        fontSize, letterSpacing: '0.02em', lineHeight: 1.3, padding: '2px 6px',
+      }}
+      title={status.profileMessage}
+    >
+      <span aria-hidden="true">{status.icon}</span>
+      <span>{status.label}</span>
+    </span>
+  );
+}
+
+// Full-width banner — 'profile' variant for the profile page header,
+// 'chat' variant for the persistent bar pinned above trade chat messages.
+export function SafetyBanner({ user, variant = 'profile', className = '' }) {
+  const status = deriveSafetyStatus(user);
+  if (!status) return null;
+  const isBanned = status.key === 'BANNED';
+  return (
+    <div
+      role="alert"
+      className={`w-full flex items-center justify-center gap-2 text-center font-black px-4 ${className}`}
+      style={{
+        background: status.color,
+        color: '#fff',
+        padding: isBanned ? '14px 16px' : '10px 16px',
+        fontSize: isBanned ? 14 : 12.5,
+        letterSpacing: '0.01em',
+        lineHeight: 1.4,
+      }}
+    >
+      <span aria-hidden="true">{status.icon}</span>
+      <span>
+        {variant === 'profile'
+          ? <>{status.profileTitle} — {status.profileMessage}</>
+          : status.chatMessage}
+      </span>
+    </div>
+  );
+}
+
 export function BadgeChip({ user, badgeName, className = '', size = 'sm' }) {
   const badge = badgeName
     ? (TRUST_MAP[String(badgeName).toUpperCase()] || TRUST_MAP.BEGINNER)

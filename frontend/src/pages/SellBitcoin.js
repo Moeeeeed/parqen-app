@@ -1084,6 +1084,7 @@ export default function SellBitcoin({user}) {
   const countryRef  = useRef(null);
   const paymentRef  = useRef(null);
   const sortRef     = useRef(null);
+  const cryptoRef   = useRef(null);
   const [activeGuide, setActiveGuide] = useState(null);
   const guideTimer   = useRef(null);
 
@@ -1239,14 +1240,20 @@ export default function SellBitcoin({user}) {
       if(countryRef.current&&!countryRef.current.contains(e.target)){setShowCountry(false);setCountrySearch('');}
       if(paymentRef.current&&!paymentRef.current.contains(e.target)){setShowPayment(false);setPaymentSearch('');}
       if(sortRef.current&&!sortRef.current.contains(e.target)){setShowSortMenu(false);}
+      if(cryptoRef.current&&!cryptoRef.current.contains(e.target)){setShowCryptoMenu(false);}
     };
     document.addEventListener('mousedown',h);
     return () => document.removeEventListener('mousedown',h);
   },[]);
   useEffect(()=>{
-    axios.get(`${API_URL}/referral/leaderboard`).then(r=>{
-      if(r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0,3));
-    }).catch(()=>{});
+    const fetchBoard = () => {
+      axios.get(`${API_URL}/referral/leaderboard`).then(r=>{
+        if(r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0,3));
+      }).catch(()=>{});
+    };
+    fetchBoard();
+    const iv = setInterval(fetchBoard, 60000);
+    return () => clearInterval(iv);
   },[]);
 
   const loadOffers = async (attempt = 1, force = false) => {
@@ -1295,7 +1302,13 @@ export default function SellBitcoin({user}) {
     let list = [...offers];
     if (cryptoFilter === 'BTC') list = list.filter(l => (l.asset || 'BTC').toUpperCase() === 'BTC');
     if (cryptoFilter === 'USDT') list = list.filter(l => (l.asset || 'BTC').toUpperCase() === 'USDT');
-    if (selCountry.code!=='ALL') list=list.filter(l=>l.country===selCountry.code);
+    // No-country listings treated as globally visible, matching BuyBitcoin.js — a real
+    // offer with country left blank should still be reachable, not just hidden the
+    // instant a specific country gets auto-selected.
+    if (selCountry.code!=='ALL') list=list.filter(l=>{
+      const offerCountry=(l.country||'').toUpperCase();
+      return offerCountry==='' || offerCountry===selCountry.code;
+    });
     if (selPayment!=='all')      list=list.filter(l=>String(l.payment_method||'').toLowerCase().includes(selPayment));
     if (sellAmt && parseFloat(sellAmt)>0) {
       const a = parseFloat(sellAmt);
@@ -1351,21 +1364,16 @@ export default function SellBitcoin({user}) {
 
   // Active Trader of the Week — auto-picked weekly by the backend (services/
   // traderOfWeekService.js) from real trade counts, not a hardcoded username.
+  // Exactly one featured badge per page: use the weekly pick if their listing is
+  // still live here, otherwise fall back to today's top offer by trade count.
   const activeTraderListingId = traderOfWeek?.listing_id || null;
-
-  // Fast Buyer of the Week — Lhord_Exchange's MTN Mobile Money offer only
-  const FAST_BUYER_USERNAME = 'lhord_exchange';
-  const fastBuyerListingId = offers.find(l =>
-    (l.users?.username || '').toLowerCase() === FAST_BUYER_USERNAME &&
-    String(l.payment_method||'').toLowerCase().includes('mtn')
-  )?.id || null;
-
-  // Hot Offer of the Week — king_cash1's MTN listing only
-  const HOT_OFFER_USERNAME = 'king_cash1';
-  const hotOfferListingId = offers.find(l =>
-    l.users?.username === HOT_OFFER_USERNAME &&
-    String(l.payment_method||'').toLowerCase().includes('mtn')
-  )?.id || null;
+  const activeTraderIsLive = !!activeTraderListingId && offers.some(l => l.id === activeTraderListingId);
+  const rankedByTrades = [...offers]
+    .filter(l => l.id !== activeTraderListingId && getTrades(l.users) > 0)
+    .sort((a, b) => getTrades(b.users) - getTrades(a.users));
+  const fastBuyerListingId = activeTraderIsLive ? null : (rankedByTrades[0]?.id || null);
+  const featuredListingId = activeTraderIsLive ? activeTraderListingId : fastBuyerListingId;
+  const featuredBadgeType = activeTraderIsLive ? 'active_trader' : 'fast_buyer';
   const hasFilters  = selPayment!=='all' || sellAmt || selCountry.code!=='ALL' || selCurrency.code!=='USD' || !!traderSearch.trim();
 
   return (
@@ -1434,7 +1442,7 @@ export default function SellBitcoin({user}) {
           </div>
 
           {/* ── 3rd Dropdown: Crypto Filter (All Crypto / BTC / USDT) ── */}
-          <div className="flex-1 relative">
+          <div className="flex-1 relative" ref={cryptoRef}>
             <button onClick={() => setShowCryptoMenu(v => !v)}
               className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1.5"
               style={{ color: cryptoFilter === 'ALL' ? C.sell : C.g700 }}>
@@ -1852,7 +1860,7 @@ export default function SellBitcoin({user}) {
                 <OfferCard
                   listing={l}
                   btcPriceUSD={btcPrice}
-                  featuredType={l.id === activeTraderListingId ? 'active_trader' : l.id === fastBuyerListingId ? 'fast_buyer' : l.id === hotOfferListingId ? 'hot_offer' : undefined}
+                  featuredType={l.id === featuredListingId ? featuredBadgeType : undefined}
                   liveSeenAt={liveStatus[l.users?.id] || null}
                   onViewBuyer={()=>{
                     setModal({buyer:l.users||{}, listing:l});

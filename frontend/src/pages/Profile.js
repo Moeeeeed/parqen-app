@@ -19,7 +19,7 @@ import {
   AlertTriangle, User, Info, XCircle, Lightbulb, PartyPopper
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { BadgeChip, TRUST_MAP, BADGE_ORDER, BADGE_THRESHOLDS, renderBadgeIcon } from '../lib/badge';
+import { BadgeChip, TRUST_MAP, BADGE_ORDER, BADGE_THRESHOLDS, renderBadgeIcon, SafetyBadge, SafetyBanner } from '../lib/badge';
 import { copyToClipboard } from '../utils/clipboard';
 
 // ── Colors ──────────────────────────────────────────────────────────────────
@@ -609,6 +609,7 @@ export default function Profile({ userId: propUserId }) {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: C.mist, fontFamily: "'DM Sans',sans-serif", width: '100%', maxWidth: '100vw', overflowX: 'hidden' }}>
+      <SafetyBanner user={user} variant="profile" />
       <style>{`
         @media (min-width: 1024px) {
           .profile-desktop-grid {
@@ -761,7 +762,7 @@ export default function Profile({ userId: propUserId }) {
                     {user.username}
                   </h1>
 
-                  <div className="mt-1.5"><BadgeChip user={user} /></div>
+                  <div className="mt-1.5 flex items-center gap-2 flex-wrap justify-center"><BadgeChip user={user} /><SafetyBadge user={user} /></div>
 
                   {/* ID + Location */}
                   <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 mt-2.5" style={{ fontSize: 12 }}>

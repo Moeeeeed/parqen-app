@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import { Send, Copy, Paperclip, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { SafetyBadge, SafetyBanner } from '../lib/badge';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -236,6 +237,7 @@ export default function TradeChat({ user }) {
   const fiatAmt = parseFloat(trade?.amount_local || trade?.amount_usd || 0);
   const btcAmt = parseFloat(trade?.amount_btc || 0);
   const otherName = isBuyer ? trade?.seller_name : trade?.buyer_name;
+  const otherUser = isBuyer ? trade?.seller : trade?.buyer;
 
   return (
     <div className="max-w-2xl mx-auto flex flex-col" style={{ height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
@@ -249,6 +251,7 @@ export default function TradeChat({ user }) {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h3 className="text-lg font-bold text-slate-900 truncate">{otherName || 'Counterparty'}</h3>
+              <SafetyBadge user={otherUser} size="xs" />
               <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block flex-shrink-0" title="Online" />
             </div>
             {trade && (
@@ -264,6 +267,9 @@ export default function TradeChat({ user }) {
           </div>
         </div>
       </div>
+
+      {/* ── SAFETY STATUS BANNER — pinned, never scrolls away ─────────── */}
+      <SafetyBanner user={otherUser} variant="chat" className="flex-shrink-0" />
 
       {/* ── DISPUTE BANNER ──────────────────────────────────────────── */}
       {trade?.status === 'DISPUTED' && (

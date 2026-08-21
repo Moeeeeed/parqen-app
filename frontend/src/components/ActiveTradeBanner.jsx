@@ -61,6 +61,16 @@ const markSeen = ids => {
 // ─── Individual trade card ───────────────────────────────────────────────────
 function TradeCard({ trade, user, onClose }) {
   const isBuyer  = String(user?.id) === String(trade.buyer_id);
+  const isSeller = String(user?.id) === String(trade.seller_id);
+  // Gift card trades flip roles: seller_id is whoever brings the card (spends it to
+  // ACQUIRE BTC — they're "buying"); buyer_id holds the BTC and gives it up for the
+  // card ("selling"). Mirrors TradeDetail.js's isGiftCardTrade detection.
+  const gcBrand = (trade?.gift_card_brand || '').toLowerCase().trim();
+  const BTCBrands = ['bitcoin', 'btc', 'sell bitcoin', 'buy bitcoin', ''];
+  const isGiftCardTrade = !!(
+    (gcBrand && !BTCBrands.includes(gcBrand)) ||
+    trade?.listing?.listing_type?.toUpperCase().includes('GIFT_CARD')
+  );
   const st       = getStatus(trade.status);
   const cpName   = isBuyer
     ? (trade.seller?.username || trade.seller_name || '—')
@@ -109,13 +119,19 @@ function TradeCard({ trade, user, onClose }) {
   const borderColor = isUrgent ? C.danger : st.color;
   const roleColor   = isBuyer  ? C.gold   : C.forest;
 
-  const actionMsg = isBuyer
+  // Who sends the "payment" (fiat/gift-card code) vs who releases BTC flips for gift
+  // card trades: the card bringer (seller) sends the code; the BTC holder (buyer)
+  // verifies and releases. See TradeDetail.js showMarkPaid/showRelease.
+  const mustPay = isGiftCardTrade ? isSeller : isBuyer;
+  const actionMsg = mustPay
     ? isPaid
-        ? <><CheckCircle size={13} className="inline-block mr-1" style={{ color: C.success }} />Payment sent — awaiting release from {cpName}</>
-        : <><Banknote size={13} className="inline-block mr-1" />Send {payDisp} via {trade.payment_method || '—'} to {cpName}</>
+        ? <><CheckCircle size={13} className="inline-block mr-1" style={{ color: C.success }} />{isGiftCardTrade ? 'Code sent' : 'Payment sent'} — awaiting release from {cpName}</>
+        : isGiftCardTrade
+          ? <><Banknote size={13} className="inline-block mr-1" />Send your gift card code to {cpName}</>
+          : <><Banknote size={13} className="inline-block mr-1" />Send {payDisp} via {trade.payment_method || '—'} to {cpName}</>
     : isPaid
-        ? <><Unlock size={13} className="inline-block mr-1" />{cpName} paid! Check {trade.payment_method || '—'} and RELEASE BITCOIN</>
-        : <><Clock size={13} className="inline-block mr-1" />Waiting for {cpName} to send payment…</>;
+        ? <><Unlock size={13} className="inline-block mr-1" />{cpName} {isGiftCardTrade ? 'sent the code' : 'paid'}! {isGiftCardTrade ? 'Verify it' : `Check ${trade.payment_method || '—'}`} and RELEASE BITCOIN</>
+        : <><Clock size={13} className="inline-block mr-1" />Waiting for {cpName} to send {isGiftCardTrade ? 'the gift card code' : 'payment'}…</>;
 
   return (
     <div className="rounded-2xl border-2 overflow-hidden" style={{ borderColor }}>
@@ -125,7 +141,9 @@ function TradeCard({ trade, user, onClose }) {
         style={{ backgroundColor: isUrgent ? `${C.danger}12` : `${st.color}12` }}>
         <span className="font-black text-xs px-3 py-1 rounded-full"
           style={{ backgroundColor: roleColor, color: '#fff' }}>
-          {isBuyer ? <><ShoppingCart size={11} className="inline-block mr-1" />YOU ARE BUYING</> : <><Wallet size={11} className="inline-block mr-1" />YOU ARE SELLING</>}
+          {(isGiftCardTrade ? isSeller : isBuyer)
+            ? <><ShoppingCart size={11} className="inline-block mr-1" />YOU ARE BUYING</>
+            : <><Wallet size={11} className="inline-block mr-1" />YOU ARE SELLING</>}
         </span>
         <div className="flex items-center gap-2">
           {timeLeft && timeLeft !== 'Expired' && (

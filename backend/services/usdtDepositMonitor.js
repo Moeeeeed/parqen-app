@@ -291,7 +291,17 @@ class USDTDepositMonitor {
             });
 
       if (creditResult.error) {
-        console.error(`[USDTMonitor] wallets credit failed for ${username}:`, creditResult.error.message);
+        // Step 3's atomic claim already advanced last_onchain_usdt, marking this deposit
+        // "seen." If we stop here, every future check computes onchainUsdt <= lastOnchainUsdt
+        // and skips it forever — the USDT is real, on-chain, and permanently invisible to the
+        // user's PRAQEN balance. Revert the claim so the next poll retries crediting it, and
+        // alert ops immediately so a human catches it even during the window before that retry.
+        console.error(`🚨 [USDTMonitor] wallets credit FAILED for ${username} — reverting claim so it retries: ${creditResult.error.message}`);
+        await supabaseAdmin.from('user_wallets')
+          .update({ last_onchain_usdt: lastOnchainUsdt, updated_at: new Date().toISOString() })
+          .eq('user_id', userId)
+          .catch(e => console.error('🚨 [USDTMonitor] CRITICAL — claim revert also failed, deposit may be stuck:', e.message));
+        this.alertOpsOfCreditFailure(username, userId, depositUsdt, 'USDT', creditResult.error.message).catch(() => {});
         return;
       }
 
@@ -346,6 +356,29 @@ class USDTDepositMonitor {
 
     } catch (err) {
       console.error(`[USDTMonitor] Error for ${address?.slice(0, 12)}…:`, err.message);
+    }
+  }
+
+  // ── Critical alert: a real on-chain deposit failed to credit the user's balance ──
+  // This is a fund-safety incident, not a routine error — the deposit-detection claim
+  // already advanced, so without a human catching this, the deposit is silently lost
+  // from the user's perspective until support intervenes.
+  async alertOpsOfCreditFailure(username, userId, amount, currency, errMsg) {
+    try {
+      await emailTransporter.sendMail({
+        from:    '"PRAQEN Alerts" <support@praqen.com>',
+        to:      'support@praqen.com',
+        subject: `🚨 Deposit credit FAILED — ${currency} — manual review needed`,
+        html: `<p><strong>A confirmed on-chain deposit could not be credited to a user's wallet.</strong></p>
+               <p>User: ${username} (${userId})<br/>
+               Amount: ${amount} ${currency}<br/>
+               Error: ${errMsg}</p>
+               <p>The deposit-detection claim was reverted so it will be retried automatically —
+               but if this keeps failing, the user's real on-chain funds will not reach their
+               PRAQEN balance. Please check this account's wallet row directly.</p>`,
+      });
+    } catch (e) {
+      console.error('🚨 [USDTMonitor] Even the ops alert email failed:', e.message);
     }
   }
 

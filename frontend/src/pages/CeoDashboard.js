@@ -394,6 +394,9 @@ function WithdrawalApprovals() {
                           <p className="font-bold" style={{ color: C.g800 }}>{w.user?.username || w.user_id?.slice(0, 8)}</p>
                           <p style={{ color: C.g400 }}>{w.user?.email}</p>
                           <VerifBadges user={w.user} />
+                          {w.user?.account_status === 'banned' && (
+                            <p className="mt-1"><Pill label="⛔ BANNED — cannot approve" color="#991B1B" bg="#FEF2F2" /></p>
+                          )}
                         </>
                       )}
                     </td>
@@ -413,8 +416,11 @@ function WithdrawalApprovals() {
                     <td className="px-3 py-2.5">
                       {w.status === 'PENDING_APPROVAL' && (
                         <div className="flex items-center gap-1.5">
-                          <button disabled={busyId === w.id} onClick={() => approve(w.id)}
-                            className="px-2.5 py-1 rounded-lg font-bold" style={{ backgroundColor: '#F0FDF4', color: '#166534', opacity: busyId === w.id ? 0.5 : 1 }}>
+                          <button disabled={busyId === w.id || w.user?.account_status === 'banned'}
+                            onClick={() => approve(w.id)}
+                            title={w.user?.account_status === 'banned' ? 'This account is banned — reject instead' : undefined}
+                            className="px-2.5 py-1 rounded-lg font-bold"
+                            style={{ backgroundColor: '#F0FDF4', color: '#166534', opacity: (busyId === w.id || w.user?.account_status === 'banned') ? 0.4 : 1 }}>
                             Approve
                           </button>
                           <button disabled={busyId === w.id} onClick={() => reject(w.id)}

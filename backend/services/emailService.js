@@ -781,6 +781,34 @@ async function sendWithdrawalRejectedEmail(user, amountBtc, reason) {
   });
 }
 
+function accountBannedHtml(name, reason) {
+  return base('Account Banned 🚫', `
+    <div style="text-align:center;margin-bottom:20px;">
+      <div style="font-size:48px;">🚫</div>
+      <h2 style="color:#991B1B;font-size:22px;margin:8px 0;">Your Account Has Been Banned</h2>
+    </div>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>, your PRAQEN account has been restricted by our team.</p>
+    ${infoBox(`
+      <tr><td style="padding:8px 0;color:#64748B;font-size:13px;font-weight:600;">Reason</td><td style="padding:8px 0;color:#1E293B;font-size:13px;text-align:right;">${reason || 'Violation of PRAQEN terms of service'}</td></tr>
+    `)}
+    <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 16px;margin-bottom:16px;">
+      <p style="margin:0;font-size:13px;color:#991b1b;line-height:1.6;">While your account is banned you cannot send, transfer, swap, or trade. Any balance already in your wallet stays there and is not affected.</p>
+    </div>
+    <p style="color:#64748B;font-size:13px;margin:0;">If you believe this is a mistake, contact <a href="mailto:support@praqen.com" style="color:#b45309;font-weight:700;">support@praqen.com</a> to appeal.</p>
+  `);
+}
+
+async function sendAccountBannedEmail(user, reason) {
+  return sendEmail({
+    userId:   user.id,
+    to:       user.email,
+    subject:  `🚫 Your PRAQEN account has been banned`,
+    html:     accountBannedHtml(user.username || 'Trader', reason),
+    type:     'account_banned',
+    metadata: { reason },
+  });
+}
+
 async function sendTradeOpenedEmail(user, trade, role) {
   const subjectBuyer  = `⚡ Trade Opened — Send Payment to Get ₿${parseFloat(trade.amount_btc||0).toFixed(8)}`;
   const subjectSeller = `⚡ New Trade — ₿${parseFloat(trade.amount_btc||0).toFixed(8)} Locked in Escrow`;
@@ -1278,6 +1306,7 @@ module.exports = {
   sendWithdrawalAlertEmail,
   sendCeoApprovalRequestEmail,
   sendWithdrawalRejectedEmail,
+  sendAccountBannedEmail,
   sendTxReceiptEmail,
   sendBroadcastToAllUsers,
   sendEidBonusEmail,

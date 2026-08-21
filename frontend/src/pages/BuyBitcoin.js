@@ -1101,6 +1101,7 @@ export default function BuyBitcoin({user}) {
   const countryRef  = useRef(null);
   const paymentRef  = useRef(null);
   const sortRef     = useRef(null);
+  const cryptoRef   = useRef(null);
   const [activeGuide, setActiveGuide] = useState(null);
   const guideTimer   = useRef(null);
 
@@ -1324,6 +1325,9 @@ export default function BuyBitcoin({user}) {
       if (sortRef.current && !sortRef.current.contains(e.target)) {
         setShowSortMenu(false);
       }
+      if (cryptoRef.current && !cryptoRef.current.contains(e.target)) {
+        setShowCryptoMenu(false);
+      }
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
@@ -1409,7 +1413,16 @@ export default function BuyBitcoin({user}) {
 
   // Active Trader of the Week — auto-picked weekly by the backend (services/
   // traderOfWeekService.js) from real trade counts, not a hardcoded username.
+  // Exactly one featured badge per page: use the weekly pick if their listing is
+  // still live here, otherwise fall back to today's top offer by trade count.
   const activeTraderListingId = traderOfWeek?.listing_id || null;
+  const activeTraderIsLive = !!activeTraderListingId && listings.some(l => l.id === activeTraderListingId);
+  const rankedByTrades = [...listings]
+    .filter(l => l.id !== activeTraderListingId && getTrades(l.users) > 0)
+    .sort((a, b) => getTrades(b.users) - getTrades(a.users));
+  const fastResponderListingId = activeTraderIsLive ? null : (rankedByTrades[0]?.id || null);
+  const featuredListingId = activeTraderIsLive ? activeTraderListingId : fastResponderListingId;
+  const featuredBadgeType = activeTraderIsLive ? 'active_trader' : 'fast_responder';
 
   const hasFilters = selPayment !== 'all' || buyAmt || selCountry.code !== 'ALL' || selCurrency.code !== 'USD' || !!traderSearch.trim();
 
@@ -1480,16 +1493,8 @@ export default function BuyBitcoin({user}) {
             </button>
           </div>
 
-          <div className="flex-1">
-            <button onClick={()=>navigate('/gift-cards')}
-              className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1"
-              style={{color:C.g400}}>
-              <Gift size={13}/> Gift Cards
-            </button>
-          </div>
-
           {/* ── 3rd Dropdown: Crypto Filter (All Crypto / BTC / USDT) ── */}
-          <div className="flex-1 relative">
+          <div className="flex-1 relative" ref={cryptoRef}>
             <button onClick={() => setShowCryptoMenu(v => !v)}
               className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1.5"
               style={{ color: cryptoFilter === 'ALL' ? C.forest : C.g700 }}>
@@ -1906,7 +1911,7 @@ export default function BuyBitcoin({user}) {
                   listing={l}
                   btcPriceUSD={btcPrice}
                   userBuyAmt={buyAmt}
-                  featuredType={l.id === activeTraderListingId ? 'active_trader' : undefined}
+                  featuredType={l.id === featuredListingId ? featuredBadgeType : undefined}
                   liveSeenAt={liveStatus[l.users?.id] || null}
                   onViewSeller={()=>{
                     setModal({seller:l.users||{}, listing:l});
