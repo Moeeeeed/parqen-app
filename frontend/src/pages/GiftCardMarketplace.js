@@ -1345,9 +1345,14 @@ export default function GiftCards({ user }) {
   };
 
 useEffect(() => {
-      axios.get(`${API_URL}/referral/leaderboard`).then(r => {
-        if (r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0, 3));
-      }).catch(() => { });
+      const fetchBoard = () => {
+        axios.get(`${API_URL}/referral/leaderboard`).then(r => {
+          if (r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0, 3));
+        }).catch(() => { });
+      };
+      fetchBoard();
+      const iv = setInterval(fetchBoard, 60000);
+      return () => clearInterval(iv);
     }, []);
 
     const getFiltered = () => {

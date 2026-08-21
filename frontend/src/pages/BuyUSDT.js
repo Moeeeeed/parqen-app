@@ -1254,6 +1254,18 @@ export default function BuyUSDT({user}) {
     return () => clearInterval(iv);
   }, [listings]);
 
+  // ── Affiliate leaderboard — "Top Earners" widget, kept live so rank changes show up ──
+  useEffect(() => {
+    const fetchBoard = () => {
+      axios.get(`${API_URL}/referral/leaderboard`).then(r => {
+        if (r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0, 3));
+      }).catch(() => {});
+    };
+    fetchBoard();
+    const iv = setInterval(fetchBoard, 60000);
+    return () => clearInterval(iv);
+  }, []);
+
   // ── Fetch active trades ────────────────────────────────────────────────
   useEffect(() => {
     const tk = localStorage.getItem('token');

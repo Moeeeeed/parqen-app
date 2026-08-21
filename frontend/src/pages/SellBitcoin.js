@@ -1246,9 +1246,14 @@ export default function SellBitcoin({user}) {
     return () => document.removeEventListener('mousedown',h);
   },[]);
   useEffect(()=>{
-    axios.get(`${API_URL}/referral/leaderboard`).then(r=>{
-      if(r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0,3));
-    }).catch(()=>{});
+    const fetchBoard = () => {
+      axios.get(`${API_URL}/referral/leaderboard`).then(r=>{
+        if(r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0,3));
+      }).catch(()=>{});
+    };
+    fetchBoard();
+    const iv = setInterval(fetchBoard, 60000);
+    return () => clearInterval(iv);
   },[]);
 
   const loadOffers = async (attempt = 1, force = false) => {
