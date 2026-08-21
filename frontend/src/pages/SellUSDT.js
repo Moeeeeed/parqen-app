@@ -854,7 +854,7 @@ export default function SellUSDT({user}) {
     } catch {}
     return null;
   };
-  const _buyNow   = () => { const a=_cacheAll(); return a?a.filter(l=>(l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN')):[]; };
+  const _buyNow   = () => { const a=_cacheAll(); return a?a.filter(l=>((l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN')&&l.asset==='USDT')):[]; };
   const [offers,       setOffers]       = useState(()=>_buyNow());
   const [loading,      setLoading]      = useState(()=>_buyNow().length===0);
   const [loadError,    setLoadError]    = useState(false);
@@ -959,7 +959,7 @@ export default function SellUSDT({user}) {
           const age = Date.now() - (c.ts || 0);
           const hasProfiles = c.data.some(l => l.users && (l.users.id || l.users.username));
           if (age < 300000 && hasProfiles) {
-            const buyOffers = c.data.filter(l => (l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN'));
+            const buyOffers = c.data.filter(l => ((l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN')&&l.asset==='USDT'));
             if (buyOffers.length > 0) {
               setOffers(buyOffers);
               setLoading(false);
@@ -977,7 +977,7 @@ export default function SellUSDT({user}) {
       const all = (r.data.listings || []).map(l => ({
         ...l, users: Array.isArray(l.users) ? l.users[0] : l.users,
       }));
-      const data = all.filter(l => (l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN'));
+      const data = all.filter(l => ((l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN')&&l.asset==='USDT'));
       if (all.length > 0) {
         try { localStorage.setItem('praqen_market_all', JSON.stringify({ data: all, ts: Date.now() })); } catch {}
       }
@@ -994,7 +994,7 @@ export default function SellUSDT({user}) {
         try {
           const c = JSON.parse(localStorage.getItem('praqen_market_all') || 'null');
           if (c && Array.isArray(c.data)) {
-            const buyOffers = c.data.filter(l => (l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN'));
+            const buyOffers = c.data.filter(l => ((l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN')&&l.asset==='USDT'));
             if (buyOffers.length > 0) {
               setOffers(buyOffers);
               toast.warn('Showing cached offers — server is busy. Prices may be outdated.', { autoClose: 6000 });
