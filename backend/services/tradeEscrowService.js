@@ -21,6 +21,25 @@ const FEE_RATE            = 0.01;
 const COMPANY_WALLET_ID   = '14762cd0-d3b2-474f-acab-fe0071961e9a';
 const COMPANY_BTC_ADDRESS = 'bc1qd8z3zdn2e3eul6y8nmcyjvgle3yzv8ttvsjp49';
 
+// `wallets` is the single source of truth for BTC balance, but two secondary
+// tables (user_balances, user_wallets — both BTC-only, neither has a USDT
+// column) are still read elsewhere in the app (profile endpoint, sell-offer
+// auto-pause). Trade release and cancel/refund only ever wrote to `wallets`,
+// so those two tables silently drifted stale after every single completed or
+// cancelled trade. Best-effort, non-fatal — a hiccup here must never block
+// the real fund movement in `wallets`, which has already succeeded by the
+// time this is called.
+async function syncSecondaryBtcBalance(userId, newBtcBalance) {
+  try {
+    await Promise.all([
+      supabaseAdmin.from('user_balances').update({ balance_btc: newBtcBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
+      supabaseAdmin.from('user_wallets').update({ balance_btc: newBtcBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
+    ]);
+  } catch (e) {
+    console.error('[Escrow] syncSecondaryBtcBalance failed (non-fatal):', e.message);
+  }
+}
+
 // After every trade / withdrawal: sync SELL listings to the seller's current balance.
 //   • If balance hits zero  → PAUSE all SELL offers + notify.
 //   • If balance is positive but max_limit_usd > balance value → cap max_limit_usd.
@@ -606,6 +625,7 @@ class TradeEscrowService {
         .update({ balance_btc: newReceiverBalance, updated_at: new Date().toISOString() })
         .eq('user_id', btcReceiverId);
       if (creditErr) throw new Error(`BTC receiver credit failed: ${creditErr.message}`);
+      syncSecondaryBtcBalance(btcReceiverId, newReceiverBalance);
 
       const { error: lockErr } = await supabaseAdmin
         .from('escrow_locks')
@@ -944,6 +964,7 @@ class TradeEscrowService {
             .eq('user_id', btcProviderId);
           if (manualErr) throw new Error(`Manual refund failed: ${manualErr.message}`);
           console.log(`[cancelTrade] ✅ Manual BTC refund: ₿${manualAvail.toFixed(8)} → provider ${btcProviderId.slice(0,8)}`);
+          syncSecondaryBtcBalance(btcProviderId, manualAvail);
 
         } else {
           const { data: providerAfter } = await supabaseAdmin
@@ -960,12 +981,14 @@ class TradeEscrowService {
               .eq('user_id', btcProviderId);
             if (fixErr) throw new Error(`Balance correction failed: ${fixErr.message}`);
             console.log(`[cancelTrade] ✅ BTC balance corrected: ₿${correctedBalance.toFixed(8)} → provider ${btcProviderId.slice(0,8)}`);
+            syncSecondaryBtcBalance(btcProviderId, correctedBalance);
           } else {
             const syncedLocked = parseFloat(Math.max(0, parseFloat(providerAfter?.locked_balance_btc || 0) - refundAmount).toFixed(8));
             await supabaseAdmin.from('wallets')
               .update({ locked_balance_btc: syncedLocked, updated_at: new Date().toISOString() })
               .eq('user_id', btcProviderId);
             console.log(`[cancelTrade] ✅ BTC RPC credited: ₿${rpcCredited.toFixed(8)} → provider ${btcProviderId.slice(0,8)}`);
+            syncSecondaryBtcBalance(btcProviderId, balanceAfter);
           }
         }
       }
@@ -1240,6 +1263,122 @@ class TradeEscrowService {
     } catch (e) {
       console.error('[Escrow] Affiliate error:', e.message);
     }
+  }
+
+  // ── Hold a suspicious/erroneous BTC credit ────────────────────────────────
+  // For a credit that shouldn't be spendable yet (a duplicate deposit, a system
+  // miscredit) — moves the flagged amount from balance_btc into
+  // locked_balance_btc using the same optimistic-concurrency pattern as
+  // lockFundsInEscrow, so the user immediately loses the ability to send,
+  // withdraw, or trade it (every spend path only ever checks balance_btc,
+  // which already excludes locked funds) without it silently vanishing —
+  // it still shows in their wallet as held, and they're notified why.
+  async holdSuspiciousBtc(userId, amountBtc, reason, adminId) {
+    const amount = parseFloat(amountBtc);
+    if (!amount || amount <= 0) throw new Error('Invalid hold amount');
+
+    const { data: walletRow, error: wErr } = await supabaseAdmin
+      .from('wallets').select('balance_btc, locked_balance_btc').eq('user_id', userId).single();
+    if (wErr || !walletRow) throw new Error('Wallet not found');
+
+    const currentBalance = parseFloat(walletRow.balance_btc || 0);
+    if (currentBalance < amount) {
+      throw new Error(`User only has ₿${currentBalance.toFixed(8)} available — cannot hold ₿${amount.toFixed(8)}`);
+    }
+    const currentLocked = parseFloat(walletRow.locked_balance_btc || 0);
+    const newAvailable  = parseFloat((currentBalance - amount).toFixed(8));
+    const newLocked     = parseFloat((currentLocked + amount).toFixed(8));
+
+    const { data: claimed, error: updErr } = await supabaseAdmin
+      .from('wallets')
+      .update({ balance_btc: newAvailable, locked_balance_btc: newLocked, updated_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('balance_btc', currentBalance)
+      .eq('locked_balance_btc', currentLocked)
+      .select('user_id');
+    if (updErr) throw new Error(`Failed to place hold: ${updErr.message}`);
+    if (!claimed || claimed.length === 0) {
+      throw new Error('Balance changed while placing the hold — please retry.');
+    }
+
+    syncSecondaryBtcBalance(userId, newAvailable);
+
+    await supabaseAdmin.from('balance_audit').insert({
+      user_id:     userId,
+      change_btc:  -amount,
+      new_balance: newAvailable,
+      reason:      `ADMIN_HOLD: ${reason || 'Suspicious credit under review'}`,
+      created_at:  new Date().toISOString(),
+    }).catch(() => {});
+
+    await supabaseAdmin.from('notifications').insert({
+      user_id: userId, type: 'security', title: '🔒 Balance Under Review',
+      message: `₿${amount.toFixed(8)} of your balance has been placed on hold pending review${reason ? `: ${reason}` : '.'} It stays in your wallet and is not lost — you just can't send or withdraw it until the review is complete. Contact support@praqen.com with questions.`,
+      action: '/wallet', is_read: false, created_at: new Date().toISOString(),
+    }).catch(() => {});
+
+    console.log(`🔒 [Escrow] Hold placed: ₿${amount.toFixed(8)} on user ${userId.slice(0,8)} by admin ${adminId ? adminId.slice(0,8) : 'system'} — ${reason}`);
+    return { success: true, heldAmount: amount, newAvailable, newLocked };
+  }
+
+  // ── Resolve a hold placed by holdSuspiciousBtc ─────────────────────────────
+  // action: 'RELEASE' returns the held amount to balance_btc (hold was a false
+  // alarm — the user keeps it). 'CLAWBACK' removes it permanently — it was a
+  // real system error and is gone for good, no longer counted anywhere in the
+  // user's balance.
+  async resolveSuspiciousHold(userId, amountBtc, action, adminId, note) {
+    const amount = parseFloat(amountBtc);
+    if (!amount || amount <= 0) throw new Error('Invalid amount');
+    if (!['RELEASE', 'CLAWBACK'].includes(action)) throw new Error('action must be RELEASE or CLAWBACK');
+
+    const { data: walletRow, error: wErr } = await supabaseAdmin
+      .from('wallets').select('balance_btc, locked_balance_btc').eq('user_id', userId).single();
+    if (wErr || !walletRow) throw new Error('Wallet not found');
+
+    const currentBalance = parseFloat(walletRow.balance_btc || 0);
+    const currentLocked  = parseFloat(walletRow.locked_balance_btc || 0);
+    if (currentLocked < amount) {
+      throw new Error(`Only ₿${currentLocked.toFixed(8)} is currently held — cannot resolve ₿${amount.toFixed(8)}`);
+    }
+
+    const newLocked    = parseFloat((currentLocked - amount).toFixed(8));
+    const newAvailable = action === 'RELEASE'
+      ? parseFloat((currentBalance + amount).toFixed(8))
+      : currentBalance; // CLAWBACK: the held amount just disappears; available is untouched
+
+    const { data: claimed, error: updErr } = await supabaseAdmin
+      .from('wallets')
+      .update({ balance_btc: newAvailable, locked_balance_btc: newLocked, updated_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('balance_btc', currentBalance)
+      .eq('locked_balance_btc', currentLocked)
+      .select('user_id');
+    if (updErr) throw new Error(`Failed to resolve hold: ${updErr.message}`);
+    if (!claimed || claimed.length === 0) {
+      throw new Error('Balance changed while resolving the hold — please retry.');
+    }
+
+    syncSecondaryBtcBalance(userId, newAvailable);
+
+    await supabaseAdmin.from('balance_audit').insert({
+      user_id:     userId,
+      change_btc:  action === 'RELEASE' ? amount : -amount,
+      new_balance: newAvailable,
+      reason:      `ADMIN_HOLD_${action}: ${note || ''}`.trim(),
+      created_at:  new Date().toISOString(),
+    }).catch(() => {});
+
+    await supabaseAdmin.from('notifications').insert({
+      user_id: userId, type: 'security',
+      title: action === 'RELEASE' ? '✅ Hold Released' : '⚠️ Balance Correction Applied',
+      message: action === 'RELEASE'
+        ? `The ₿${amount.toFixed(8)} hold on your balance has been cleared and is available again.${note ? ` ${note}` : ''}`
+        : `₿${amount.toFixed(8)} has been permanently removed from your balance — it was credited in error and did not belong to you.${note ? ` Reason: ${note}` : ''} Contact support@praqen.com with questions.`,
+      action: '/wallet', is_read: false, created_at: new Date().toISOString(),
+    }).catch(() => {});
+
+    console.log(`${action === 'RELEASE' ? '✅' : '⚠️'} [Escrow] Hold resolved (${action}): ₿${amount.toFixed(8)} for user ${userId.slice(0,8)} by admin ${adminId ? adminId.slice(0,8) : 'system'}`);
+    return { success: true, action, amount, newAvailable, newLocked };
   }
 }
 

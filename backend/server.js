@@ -8169,6 +8169,14 @@ app.post('/api/trades/:id/release', tradeLimiter, verifyToken, async (req, res) 
               const newBal = parseFloat((parseFloat(wal?.balance_btc || 0) + bonusBtc).toFixed(8));
               await supabaseAdmin.from('wallets').update({ balance_btc: newBal, updated_at: new Date().toISOString() })
                 .eq('user_id', releasedTrade.buyer_id);
+              // Keep the secondary balance tables (still read by the profile endpoint
+              // and the sell-offer auto-pause check) from drifting stale — see
+              // syncSecondaryBtcBalance in tradeEscrowService.js for the same fix
+              // applied to trade release/refund.
+              await Promise.all([
+                supabaseAdmin.from('user_balances').update({ balance_btc: newBal, updated_at: new Date().toISOString() }).eq('user_id', releasedTrade.buyer_id),
+                supabaseAdmin.from('user_wallets').update({ balance_btc: newBal, updated_at: new Date().toISOString() }).eq('user_id', releasedTrade.buyer_id),
+              ]).catch(e => console.error('[bonus] Secondary balance sync failed (non-fatal):', e.message));
               await supabaseAdmin.from('users').update({
                 bonus_step: 3, bonus_unlocked_at: new Date().toISOString(),
               }).eq('id', releasedTrade.buyer_id);
@@ -10865,6 +10873,39 @@ app.put('/api/admin/users/:id/unban', verifyToken, async (req, res) => {
     await createNotification(req.params.id, 'system', '✅ Account Reinstated', 'Your account ban has been lifted. Welcome back to PRAQEN!', '/dashboard');
     res.json({ success: true, user: data });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/users/:id/hold-balance — freeze a suspicious/erroneous BTC
+// credit so the user can't send/withdraw/trade it while it's under review.
+// Moves the amount into locked_balance_btc (same mechanism active-trade escrow
+// already uses) — it stays visible in the user's wallet as "held," it just
+// can't move. Body: { amountBtc, reason }.
+app.post('/api/admin/users/:id/hold-balance', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const { amountBtc, reason } = req.body;
+    if (!amountBtc || parseFloat(amountBtc) <= 0) return res.status(400).json({ error: 'amountBtc must be a positive number' });
+    if (!reason || !reason.trim()) return res.status(400).json({ error: 'A reason is required — the user will see it.' });
+    const result = await tradeEscrowService.holdSuspiciousBtc(req.params.id, amountBtc, reason.trim(), req.userId);
+    logAdminAction(req, 'HOLD_BALANCE', req.params.id, { amountBtc, reason }).catch(() => { });
+    res.json(result);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// POST /api/admin/users/:id/resolve-hold — clear a hold placed by hold-balance.
+// Body: { amountBtc, action: 'RELEASE' | 'CLAWBACK', note }.
+// RELEASE gives the amount back to the user (hold was a false alarm).
+// CLAWBACK removes it permanently — it was a real system error.
+app.post('/api/admin/users/:id/resolve-hold', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const { amountBtc, action, note } = req.body;
+    if (!amountBtc || parseFloat(amountBtc) <= 0) return res.status(400).json({ error: 'amountBtc must be a positive number' });
+    if (!['RELEASE', 'CLAWBACK'].includes(action)) return res.status(400).json({ error: "action must be 'RELEASE' or 'CLAWBACK'" });
+    const result = await tradeEscrowService.resolveSuspiciousHold(req.params.id, amountBtc, action, req.userId, note);
+    logAdminAction(req, `RESOLVE_HOLD_${action}`, req.params.id, { amountBtc, note }).catch(() => { });
+    res.json(result);
+  } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 // PUT /api/admin/users/:id/warn — issue a public safety warning (does not restrict trading)
