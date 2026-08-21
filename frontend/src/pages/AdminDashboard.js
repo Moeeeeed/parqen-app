@@ -4789,8 +4789,33 @@ export default function AdminDashboard({ user: appUser, onLogin }) {
           })}
         </nav>
 
+        {/* Moderator Panel shortcut — admins already have full override power inside
+            /moderator's dispute view (POST /api/admin/disputes/:id/override, no quorum
+            or oath needed), this was just never linked from here. */}
+        <div style={{ padding: '8px 10px 0', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <button
+            onClick={() => window.location.href = '/moderator'}
+            title="Open Moderator Panel — resolve disputes with final admin verdict"
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center',
+              gap: sideOpen ? 10 : 0, justifyContent: sideOpen ? 'flex-start' : 'center',
+              padding: sideOpen ? '9px 14px' : '9px 0',
+              border: '1px solid rgba(244,164,34,0.35)',
+              borderRadius: 10, cursor: 'pointer',
+              background: 'rgba(244,164,34,0.08)',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(244,164,34,0.18)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(244,164,34,0.08)'}>
+            <Scale size={14} style={{ color: '#F4A422', flexShrink: 0 }} />
+            {sideOpen && (
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#F4A422', flex: 1, textAlign: 'left' }}>Moderator Panel</span>
+            )}
+          </button>
+        </div>
+
         {/* Team Portal shortcut */}
-        <div style={{ padding: '8px 10px 10px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+        <div style={{ padding: '8px 10px 10px' }}>
           <button
             onClick={() => window.location.href = '/team'}
             title="Open Team Portal"
