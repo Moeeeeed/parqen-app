@@ -9776,9 +9776,18 @@ app.post('/api/admin/send-welcome-emails', verifyToken, async (req, res) => {
 // Helper: verify admin OR moderator access — for the small set of read-only /
 // team-support endpoints the Team Portal (TeamDashboard.js) actually calls
 // (stats, trades/all, users search, reviews, top-traders, support tickets).
+// SECURITY: the ADMIN_EMAIL fallback below must never fire for an unverified email.
+// Registration (/api/auth/register) issues a working JWT immediately, before the
+// verification code is ever confirmed — is_email_verified starts false and only
+// flips true once the user actually proves control of the mailbox. Without the
+// is_email_verified check here, anyone could register a brand-new account with
+// email support@praqen.com and get instant full admin access with zero password
+// theft, zero social engineering, before ever receiving or clicking a verification
+// link — since is_admin also defaults to false on that new row, only the email-match
+// fallback would even be granting them anything.
 async function requireAdmin(req, res) {
-  const { data: u } = await supabaseAdmin.from('users').select('is_admin, is_moderator, email').eq('id', req.userId).single();
-  const ok = u?.is_admin || u?.is_moderator || u?.email === ADMIN_EMAIL;
+  const { data: u } = await supabaseAdmin.from('users').select('is_admin, is_moderator, email, is_email_verified').eq('id', req.userId).single();
+  const ok = u?.is_admin || u?.is_moderator || (u?.email === ADMIN_EMAIL && u?.is_email_verified);
   if (!ok) { res.status(403).json({ error: 'Admin access required' }); return null; }
   return u;
 }
@@ -9787,8 +9796,8 @@ async function requireAdmin(req, res) {
 // Support Chat reads. Deliberately separate from requireAdmin itself so this doesn't widen
 // CEO access to the rest of the (much larger) admin-read surface that helper gates.
 async function requireAdminOrCeo(req, res) {
-  const { data: u } = await supabaseAdmin.from('users').select('is_admin, is_moderator, is_ceo, email').eq('id', req.userId).single();
-  const ok = u?.is_admin || u?.is_moderator || u?.is_ceo || u?.email === ADMIN_EMAIL;
+  const { data: u } = await supabaseAdmin.from('users').select('is_admin, is_moderator, is_ceo, email, is_email_verified').eq('id', req.userId).single();
+  const ok = u?.is_admin || u?.is_moderator || u?.is_ceo || (u?.email === ADMIN_EMAIL && u?.is_email_verified);
   if (!ok) { res.status(403).json({ error: 'Admin access required' }); return null; }
   return u;
 }
@@ -9797,8 +9806,8 @@ async function requireAdminOrCeo(req, res) {
 // Reserved for endpoints that can move funds, ban/delete accounts, grant admin,
 // or broadcast to the whole user base — none of which the Team Portal exposes.
 async function requireFullAdmin(req, res) {
-  const { data: u } = await supabaseAdmin.from('users').select('is_admin, email').eq('id', req.userId).single();
-  const ok = !!(u?.is_admin || u?.email === ADMIN_EMAIL);
+  const { data: u } = await supabaseAdmin.from('users').select('is_admin, email, is_email_verified').eq('id', req.userId).single();
+  const ok = !!(u?.is_admin || (u?.email === ADMIN_EMAIL && u?.is_email_verified));
   if (!ok) { res.status(403).json({ error: 'Admin access required' }); return null; }
   return u;
 }
@@ -9809,8 +9818,8 @@ async function requireFullAdmin(req, res) {
 // itself) so this doesn't widen CEO access to the rest of the admin surface (bans, revenue,
 // user management, etc.) — just the specific single-approver actions listed above.
 async function requireFullAdminOrCeo(req, res) {
-  const { data: u } = await supabaseAdmin.from('users').select('is_admin, is_ceo, email').eq('id', req.userId).single();
-  const ok = !!(u?.is_admin || u?.is_ceo || u?.email === ADMIN_EMAIL);
+  const { data: u } = await supabaseAdmin.from('users').select('is_admin, is_ceo, email, is_email_verified').eq('id', req.userId).single();
+  const ok = !!(u?.is_admin || u?.is_ceo || (u?.email === ADMIN_EMAIL && u?.is_email_verified));
   if (!ok) { res.status(403).json({ error: 'Admin access required' }); return null; }
   return u;
 }
