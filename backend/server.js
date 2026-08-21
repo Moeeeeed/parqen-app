@@ -1565,16 +1565,36 @@ async function createAffiliateEarning(tradeId, buyerId, tradeAmountBtc, tradeAmo
   }
 }
 
-// Pays 0.01% referral commission to whoever referred the buyer and/or seller.
-// If both share the same referrer, only one payout is made (no double-dipping).
-// The DB trigger on affiliate_earnings auto-increments referral_earnings_btc.
+// Referral commission tiers — base rate is 0.1% of the trade's own value, taken
+// from PRAQEN's cut (not an extra charge to the trader), rising with how many
+// people the referrer has brought in. Mirrors the tiers already used for the
+// referral leaderboard's rate display (referralService.getCommissionTiers).
+const REFERRAL_COMMISSION_TIERS = [
+  { min: 0,   rate: 0.001  }, // 0.1%
+  { min: 10,  rate: 0.0015 }, // 0.15%
+  { min: 25,  rate: 0.002  }, // 0.2%
+  { min: 50,  rate: 0.0025 }, // 0.25%
+  { min: 100, rate: 0.003  }, // 0.3%
+];
+function referralCommissionRate(totalReferrals) {
+  const count = parseInt(totalReferrals || 0);
+  let rate = REFERRAL_COMMISSION_TIERS[0].rate;
+  for (const tier of REFERRAL_COMMISSION_TIERS) {
+    if (count >= tier.min) rate = tier.rate;
+  }
+  return rate;
+}
+
+// Pays a referral commission (0.1%-0.3% of the trade amount, by referrer tier) to
+// whoever referred the buyer and/or seller. If both share the same referrer, only
+// one payout is made (no double-dipping). Each referrer's own tier — not the
+// trader's — sets their rate, so two referrers on the same trade can be paid
+// differently.
 async function payReferralCommissions(tradeId, buyerId, sellerId, amountBtc, amountUsd) {
   try {
-    const RATE = 0.0001; // 0.01%
-    const commissionBtc = parseFloat(amountBtc || 0) * RATE;
-    const commissionUsd = parseFloat(amountUsd || 0) * RATE;
-
-    if (commissionBtc <= 0) return;
+    const grossBtc = parseFloat(amountBtc || 0);
+    const grossUsd = parseFloat(amountUsd || 0);
+    if (grossBtc <= 0) return;
 
     const { data: traders } = await supabaseAdmin
       .from('users')
@@ -1595,18 +1615,35 @@ async function payReferralCommissions(tradeId, buyerId, sellerId, amountBtc, amo
 
     if (payouts.size === 0) return;
 
+    // Look up each referrer's own total_referrals to set their tier rate.
+    const referrerIds = [...payouts.keys()];
+    const { data: referrers } = await supabaseAdmin
+      .from('users')
+      .select('id, total_referrals, username')
+      .in('id', referrerIds);
+    const referrerMap = {};
+    (referrers || []).forEach(r => { referrerMap[r.id] = r; });
+
     const rows = [];
+    const notifyPlan = [];
     for (const [referrerId, referredUserId] of payouts) {
+      const rate = referralCommissionRate(referrerMap[referrerId]?.total_referrals);
+      const commissionBtc = parseFloat((grossBtc * rate).toFixed(8));
+      const commissionUsd = parseFloat((grossUsd * rate).toFixed(2));
+      if (commissionBtc <= 0) continue;
       rows.push({
         referrer_id: referrerId,
         referred_user_id: referredUserId,
         trade_id: tradeId,
         commission_btc: commissionBtc,
         commission_usd: commissionUsd,
+        commission_rate: rate * 100,
         status: 'CREDITED',
         created_at: new Date().toISOString(),
       });
+      notifyPlan.push({ referrerId, commissionBtc });
     }
+    if (rows.length === 0) return;
 
     const { error } = await supabaseAdmin.from('affiliate_earnings').insert(rows);
     if (error) {
@@ -1614,14 +1651,23 @@ async function payReferralCommissions(tradeId, buyerId, sellerId, amountBtc, amo
       return;
     }
 
-    // Update referral_earnings_btc for each referrer directly
-    for (const [referrerId] of payouts) {
+    // Update referral_earnings_btc for each referrer directly, and let them know
+    // right away — this is what surfaces the commission on their dashboard/bell
+    // without waiting for the next poll cycle.
+    for (const { referrerId, commissionBtc } of notifyPlan) {
       const { data: allE } = await supabaseAdmin.from('affiliate_earnings').select('commission_btc').eq('referrer_id', referrerId);
       const newTotal = (allE || []).reduce((s, e) => s + parseFloat(e.commission_btc || 0), 0);
       await supabaseAdmin.from('users').update({ referral_earnings_btc: parseFloat(newTotal.toFixed(8)) }).eq('id', referrerId);
+      createNotification(
+        referrerId,
+        'referral',
+        '💰 Referral Commission Earned',
+        `Someone you referred just completed a trade — you earned ₿${commissionBtc.toFixed(8)}. Total: ₿${newTotal.toFixed(8)}`,
+        '/dashboard?tab=affiliate'
+      ).catch(() => {});
     }
 
-    console.log(`✅ [referral] Trade ${tradeId.slice(0, 8)}: paid ₿${commissionBtc.toFixed(8)} to ${rows.length} referrer(s)`);
+    console.log(`✅ [referral] Trade ${tradeId.slice(0, 8)}: paid ${rows.length} referrer(s) — ${rows.map(r => `₿${r.commission_btc.toFixed(8)}`).join(', ')}`);
   } catch (e) {
     console.error('[referral] payReferralCommissions error:', e.message);
   }
