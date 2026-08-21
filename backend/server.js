@@ -6110,8 +6110,15 @@ app.get('/api/listings', async (req, res) => {
     const _listingsTimedOut = !!listErr && (listErr.code === '' || /abort/i.test(listErr.message || ''));
     if (listErr && !_listingsTimedOut) {
       console.error('[/api/listings] Listing query error:', listErr.message, '| code:', listErr.code);
-      // Return empty array so the marketplace doesn't crash — client will retry
-      return res.json({ listings: [], stale: false, error: listErr.message });
+      // A 200 with an empty array reads as "the market is genuinely empty" to the
+      // client — it's not an error, so the frontend's retry logic never fires, and
+      // real offers visibly vanish for a poll cycle on every transient DB hiccup
+      // (this is almost certainly the "pages jumping on and off" symptom). Serve
+      // stale cache if we have it, otherwise 503 so the client's actual retry path
+      // runs, same as the timeout branch below.
+      const staleOnError = getCachedStale(cacheKey);
+      if (staleOnError) return res.json({ listings: staleOnError, stale: true });
+      return res.status(503).json({ error: 'Marketplace is temporarily unavailable. Please try again in a moment.' });
     }
     if (_listingsTimedOut || rawListings === null) {
       const stale = getCachedStale(cacheKey);
