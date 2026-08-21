@@ -1844,9 +1844,23 @@ export default function TradeDetail({user}) {
               {/* ── Safety Status Banner — pinned above the messages, never scrolls away ── */}
               <SafetyBanner user={cp} variant="chat" className="flex-shrink-0" />
 
-              {/* ── Trade Summary Banner — pinned above the messages, never scrolls away ── */}
+              {/* ── Trade Summary Banner — pinned above the messages, never scrolls away ──
+                   Gift card trades flip who's "buying"/"selling" BTC: the card bringer
+                   (seller_id) is spending the card to ACQUIRE BTC — they're buying it (green).
+                   The BTC holder (buyer_id) is giving up BTC to get the card — selling (red).
+                   Same flag drives both the banner color and its text so they can never
+                   disagree with each other. */}
+              {(() => {
+                const isBuyingBtc = isGiftCardTrade ? isSeller : isBuyer;
+                const isSellingBtc = isGiftCardTrade ? isBuyer : isSeller;
+                const bannerText = isBuyingBtc
+                  ? `YOU ARE BUYING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
+                  : isSellingBtc
+                    ? `YOU ARE SELLING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
+                    : `PAY ${userPays.toFixed(2)} (${cur}) VIA ${payMethod} FOR ${fmtBtc(btcReceived)} BTC`;
+                return (
               <div className="flex-shrink-0 flex items-center gap-2.5 px-4 py-2.5"
-                style={{ backgroundColor: isSeller ? C.danger : C.green }}>
+                style={{ backgroundColor: isBuyingBtc ? C.green : C.danger }}>
                 <div className="flex-shrink-0 flex items-center justify-center"
                   style={{
                     width:26, height:26, borderRadius:'50%',
@@ -1859,23 +1873,11 @@ export default function TradeDetail({user}) {
                   <Stamp size={14} style={{color:'#fff'}}/>
                 </div>
                 <p className="text-xs leading-snug font-black uppercase tracking-wide" style={{color:'#fff'}}>
-                  {/* Gift card trades flip who's "buying"/"selling" BTC: the card bringer
-                      (seller_id) is spending the card to ACQUIRE BTC — they're buying it.
-                      The BTC holder (buyer_id) is giving up BTC to get the card — selling. */}
-                  {isGiftCardTrade
-                    ? (isSeller
-                        ? `YOU ARE BUYING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
-                        : isBuyer
-                          ? `YOU ARE SELLING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
-                          : `PAY ${userPays.toFixed(2)} (${cur}) VIA ${payMethod} FOR ${fmtBtc(btcReceived)} BTC`)
-                    : (isBuyer
-                        ? `YOU ARE BUYING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
-                        : isSeller
-                          ? `YOU ARE SELLING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
-                          : `PAY ${userPays.toFixed(2)} (${cur}) VIA ${payMethod} FOR ${fmtBtc(btcReceived)} BTC`)
-                  }
+                  {bannerText}
                 </p>
               </div>
+                );
+              })()}
 
               {/* Messages */}
               <div ref={chatRef} className="flex-1 overflow-y-auto px-4 pb-4 pt-2 space-y-3" style={{backgroundColor:'#F9FAFB',minHeight:0,WebkitOverflowScrolling:'touch',touchAction:'pan-y'}}>
