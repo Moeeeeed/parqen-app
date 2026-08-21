@@ -15,6 +15,7 @@ const { updateOfferStatus }  = require('../services/offerStatusService');
 const { sendTelegramAlert }  = require('../services/telegramService');
 const { createClient } = require('@supabase/supabase-js');
 const rateLimit = require('express-rate-limit');
+const { requireNotBanned, isUserBanned } = require('../middleware/requireNotBanned');
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -401,7 +402,7 @@ async function pauseSellOffersIfEmpty(sellerId) {
   } catch (err) { console.error('[pauseSellOffersIfEmpty withdrawal]', err.message); }
 }
 
-router.post('/send', verifyToken, sendLimiter, async (req, res) => {
+router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res) => {
   // Emergency kill-switch — SENDS_DISABLED=true in .env blocks external
   // withdrawals platform-wide without touching trading/internal transfers.
   // Checked in-process (not DB-backed) so it works even if Supabase is down.
@@ -1013,7 +1014,7 @@ router.get('/ceo-withdrawals', verifyToken, async (req, res) => {
     const { data: users } = userIds.length
       ? await supabaseAdmin
           .from('users')
-          .select('id, username, email, created_at, is_email_verified, email_verified, is_phone_verified, phone_verified, is_id_verified, kyc_verified')
+          .select('id, username, email, created_at, is_email_verified, email_verified, is_phone_verified, phone_verified, is_id_verified, kyc_verified, account_status')
           .in('id', userIds)
       : { data: [] };
     const userMap = Object.fromEntries((users || []).map(u => [u.id, u]));
@@ -1048,6 +1049,17 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
     const { data: txRow } = await supabaseAdmin
       .from('wallet_transactions').select('*').eq('id', id).eq('status', 'PENDING_APPROVAL').maybeSingle();
     if (!txRow) return res.status(404).json({ error: 'No pending withdrawal found with that ID — it may have already been reviewed.' });
+
+    // Re-check the withdrawal OWNER's current ban status (not the approving CEO's) —
+    // an account banned after the withdrawal was requested must never be approved.
+    // Checked before the PROCESSING claim below so a rejection here leaves the row
+    // untouched at PENDING_APPROVAL — no status flip, no audit-trail loss.
+    if (await isUserBanned(txRow.user_id)) {
+      return res.status(403).json({
+        error: 'ACCOUNT_BANNED',
+        message: 'This withdrawal belongs to a banned account and cannot be approved.',
+      });
+    }
 
     // Atomically claim this row before sending anything — flips PENDING_APPROVAL -> PROCESSING
     // only if it's still PENDING_APPROVAL. A double-click, a duplicate approve request, or two

@@ -9,6 +9,7 @@ import {
   CreditCard, CircleDollarSign, ShoppingBag, Plus,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { SafetyBadge } from '../lib/badge';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -157,6 +158,7 @@ export default function Marketplace({ user }) {
               <div>
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <p className="font-bold text-gray-900">{seller.display_name || seller.username || 'Anonymous'}</p>
+                  <SafetyBadge user={seller} size="xs" />
                   {(seller.country_name || seller.country) && (
                     <span className="text-xs text-gray-500 font-semibold">
                       {(() => {

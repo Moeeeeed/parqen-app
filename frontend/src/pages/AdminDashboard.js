@@ -461,6 +461,22 @@ function UsersSection() {
     finally { setActing(false); }
   };
 
+  const toggleWarning = async (u) => {
+    setActing(true);
+    try {
+      const willWarn = !u.has_warning;
+      let reason = '';
+      if (willWarn) {
+        reason = window.prompt('Reason for this warning (shown only to admins, not the user):') || '';
+      }
+      await axios.put(`${API_URL}/admin/users/${u.id}/${willWarn ? 'warn' : 'unwarn'}`, { reason }, { headers: authH() });
+      toast.success(willWarn ? 'Warning issued' : 'Warning cleared');
+      load();
+      if (selected?.id === u.id) setSelected(s => ({ ...s, has_warning: willWarn }));
+    } catch (e) { toast.error(e.response?.data?.error || 'Action failed'); }
+    finally { setActing(false); }
+  };
+
   const del = async (id) => {
     if (!window.confirm('Permanently delete this user? This cannot be undone.')) return;
     try {
@@ -562,9 +578,12 @@ function UsersSection() {
                       </td>
                       <td className="px-4 py-3"><CountryCell user={u} /></td>
                       <td className="px-4 py-3">
-                        <Pill label={u.account_status || 'active'}
-                          color={u.account_status === 'banned' ? '#991B1B' : u.account_status === 'suspended' ? '#92400E' : '#166534'}
-                          bg={u.account_status === 'banned' ? '#FEF2F2' : u.account_status === 'suspended' ? '#FFFBEB' : '#F0FDF4'} />
+                        <div className="flex gap-1 flex-wrap">
+                          <Pill label={u.account_status || 'active'}
+                            color={u.account_status === 'banned' ? '#991B1B' : u.account_status === 'suspended' ? '#92400E' : '#166534'}
+                            bg={u.account_status === 'banned' ? '#FEF2F2' : u.account_status === 'suspended' ? '#FFFBEB' : '#F0FDF4'} />
+                          {u.has_warning && <Pill label="warning" color="#92400E" bg="#FFFBEB" />}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-xs font-bold" style={{ color: C.g700 }}>{u.total_trades || 0}</td>
                       <td className="px-4 py-3">
@@ -584,6 +603,10 @@ function UsersSection() {
                           <button onClick={e => { e.stopPropagation(); act(u.id, { account_status: u.account_status === 'banned' ? 'active' : 'banned' }, u.account_status === 'banned' ? 'Unban' : 'Ban'); }}
                             className="p-1.5 rounded-lg hover:bg-gray-100 transition" title={u.account_status === 'banned' ? 'Unban' : 'Ban'}>
                             <Ban size={13} style={{ color: u.account_status === 'banned' ? C.success : C.danger }} />
+                          </button>
+                          <button onClick={e => { e.stopPropagation(); toggleWarning(u); }}
+                            className="p-1.5 rounded-lg hover:bg-gray-100 transition" title={u.has_warning ? 'Clear warning' : 'Issue warning'}>
+                            <AlertTriangle size={13} style={{ color: u.has_warning ? C.success : '#F59E0B' }} />
                           </button>
                           <button onClick={e => { e.stopPropagation(); del(u.id); }}
                             className="p-1.5 rounded-lg hover:bg-red-50 transition" title="Delete">

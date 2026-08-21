@@ -62,6 +62,7 @@ try {
 // All wallet operations now use hdWalletService (self-custody, keys in .env MNEMONIC).
 const quoteService = require('./services/quoteService');
 const { E, S } = require('./utils/apiErrors');
+const { requireNotBanned, isUserBanned } = require('./middleware/requireNotBanned');
 const emailService = require('./services/emailService');
 const speakeasy = require('speakeasy');
 
@@ -139,7 +140,7 @@ async function _warmListingsCache() {
   try {
     const { data: rawListings } = await Promise.race([
       supabaseAdmin.from('listings').select(
-        'id, seller_id, listing_type, gift_card_brand, status, bitcoin_price, margin, pricing_type, currency, currency_symbol, country, country_name, payment_method, payment_methods, amount_usd, min_limit_usd, max_limit_usd, min_limit_local, max_limit_local, time_limit, trade_instructions, listing_terms, description, created_at, card_values, card_type, face_value'
+        'id, seller_id, listing_type, asset, gift_card_brand, status, bitcoin_price, margin, pricing_type, currency, currency_symbol, country, country_name, payment_method, payment_methods, amount_usd, min_limit_usd, max_limit_usd, min_limit_local, max_limit_local, time_limit, trade_instructions, listing_terms, description, created_at, card_values, card_type, face_value'
       ).eq('status', 'ACTIVE').order('created_at', { ascending: false }).limit(200),
       new Promise(resolve => setTimeout(() => resolve({ data: [] }), 6000)),
     ]);
@@ -150,7 +151,7 @@ async function _warmListingsCache() {
 
     const { data: usersData } = await Promise.race([
       supabaseAdmin.from('users').select(
-        'id, username, full_name, name_display, hide_full_name, average_rating, total_trades, completion_rate, is_id_verified, is_email_verified, last_login, last_seen_at, total_feedback_count, positive_feedback, negative_feedback, country, bio, badge, avatar_url'
+        'id, username, full_name, name_display, hide_full_name, average_rating, total_trades, completion_rate, is_id_verified, is_email_verified, last_login, last_seen_at, total_feedback_count, positive_feedback, negative_feedback, country, bio, badge, avatar_url, account_status, has_warning'
       ).in('id', sellerIdSet),
       new Promise(resolve => setTimeout(() => resolve({ data: [] }), 5000)),
     ]);
@@ -5298,8 +5299,8 @@ app.get('/api/bonus/status', verifyToken, async (req, res) => {
 app.get('/api/users/profile', verifyToken, async (req, res) => {
   try {
     // Core columns — confirmed to exist in every PRAQEN DB schema
-    const coreCols = 'id, email, username, full_name, bio, location, website, phone, avatar_url, average_rating, total_trades, completion_rate, created_at, is_admin, is_moderator, is_id_verified, is_email_verified, is_phone_verified, total_feedback_count, positive_feedback, negative_feedback, last_login, last_seen_at, badge, country, two_factor_enabled, two_factor_method';
-    const essentialCols = 'id, email, username, full_name, avatar_url, average_rating, total_trades, completion_rate, created_at, is_admin, is_moderator, is_id_verified, is_email_verified, total_feedback_count, positive_feedback, negative_feedback, last_login, two_factor_enabled, two_factor_method';
+    const coreCols = 'id, email, username, full_name, bio, location, website, phone, avatar_url, average_rating, total_trades, completion_rate, created_at, is_admin, is_moderator, is_id_verified, is_email_verified, is_phone_verified, total_feedback_count, positive_feedback, negative_feedback, last_login, last_seen_at, badge, country, two_factor_enabled, two_factor_method, account_status, has_warning';
+    const essentialCols = 'id, email, username, full_name, avatar_url, average_rating, total_trades, completion_rate, created_at, is_admin, is_moderator, is_id_verified, is_email_verified, total_feedback_count, positive_feedback, negative_feedback, last_login, two_factor_enabled, two_factor_method, account_status, has_warning';
 
     // The core profile fetch (with its column-missing fallback), the optional
     // extra fields, and the wallet balance don't depend on each other — run all
@@ -5359,8 +5360,15 @@ app.get('/api/users/:userId', async (req, res) => {
   try {
     const param = req.params.userId?.trim();
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(param);
-    // Use select('*') so adding/missing migration columns never breaks this query
-    const SENSITIVE = new Set(['password_hash', 'email', 'phone_number', 'bitcoin_wallet_address']);
+    // Use select('*') so adding/missing migration columns never breaks this query.
+    // Also strips KYC documents/reasons and internal warning notes — this is a public,
+    // unauthenticated endpoint, so anything admin-only or personally identifying must
+    // be excluded here rather than relying on the frontend to hide it.
+    const SENSITIVE = new Set([
+      'password_hash', 'email', 'phone_number', 'bitcoin_wallet_address',
+      'id_front_url', 'id_back_url', 'selfie_url', 'id_type', 'kyc_rejection_reason',
+      'warning_reason', 'warned_by',
+    ]);
     const stripSensitive = row => {
       if (!row) return null;
       return Object.fromEntries(Object.entries(row).filter(([k]) => !SENSITIVE.has(k)));
@@ -5918,7 +5926,7 @@ app.get('/api/featured-offers', async (req, res) => {
     if (allSellerIds.length > 0) {
       const [profilesResult, avatarResult] = await Promise.all([
         supabaseAdmin.from('users').select(
-          'id, username, full_name, average_rating, total_trades, completion_rate, is_id_verified, is_email_verified, last_login, last_seen_at, total_feedback_count, positive_feedback, negative_feedback, country, bio, badge'
+          'id, username, full_name, average_rating, total_trades, completion_rate, is_id_verified, is_email_verified, last_login, last_seen_at, total_feedback_count, positive_feedback, negative_feedback, country, bio, badge, account_status, has_warning'
         ).in('id', allSellerIds),
         supabaseAdmin.from('users').select('id, avatar_url').in('id', allSellerIds),
       ]);
@@ -6088,7 +6096,7 @@ app.get('/api/listings', async (req, res) => {
           const timer = setTimeout(() => ac.abort(), 10000);
           try {
             const result = await Promise.race([
-              supabaseAdmin.from('users').select('id, username, badge, total_feedback_count')
+              supabaseAdmin.from('users').select('id, username, badge, total_feedback_count, account_status, has_warning, total_trades, average_rating, positive_feedback, negative_feedback')
                 .in('id', sellerIdSet),
               new Promise((_, reject) => {
                 ac.signal.addEventListener('abort', () =>
@@ -6268,7 +6276,12 @@ app.get('/api/listings/:id', async (req, res) => {
         ]),
       ]);
       if (sellerResult?.data?.id) {
-        const { password_hash: _ph, email: _em, phone_number: _pn, bitcoin_wallet_address: _bwa, ...sellerSafe } = sellerResult.data;
+        const {
+          password_hash: _ph, email: _em, phone_number: _pn, bitcoin_wallet_address: _bwa,
+          id_front_url: _ifu, id_back_url: _ibu, selfie_url: _su, id_type: _it,
+          kyc_rejection_reason: _krr, warning_reason: _wr, warned_by: _wb,
+          ...sellerSafe
+        } = sellerResult.data;
         seller = { ...sellerSafe, avatar_url: capAvatar(sellerSafe.avatar_url) };
       }
       sellerBalanceBtc = parseFloat(walletResult?.data?.balance_btc || 0);
@@ -6716,7 +6729,7 @@ app.post('/api/offers/:id/view', optionalAuth, async (req, res) => {
 });
 
 // POST create new offer
-app.post('/api/offers', verifyToken, async (req, res) => {
+app.post('/api/offers', verifyToken, requireNotBanned, async (req, res) => {
   try {
     const {
       type,
@@ -7655,7 +7668,7 @@ app.get('/api/trades/:id', verifyToken, async (req, res) => {
     }
 
     // Step 2: fetch listing + buyer + seller in parallel — each capped at 5s, failures tolerated
-    const USER_COLS = 'id, username, avatar_url, average_rating, total_trades, completion_rate, last_login, last_seen_at, badge, positive_feedback, negative_feedback, country';
+    const USER_COLS = 'id, username, avatar_url, average_rating, total_trades, completion_rate, last_login, last_seen_at, badge, positive_feedback, negative_feedback, country, account_status, has_warning';
     const timeout5s = () => new Promise(resolve => setTimeout(() => resolve({ data: null }), 5000));
     // Feedback counts once per trading partner (not per trade — see POST /trades/:id/feedback),
     // so "already gave feedback" must be checked against the counterparty, not this trade_id,
@@ -7696,7 +7709,7 @@ app.post('/api/quotes', async (req, res) => {
   }
 });
 
-app.post('/api/trades', verifyToken, requireEmailVerified, async (req, res) => {
+app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, async (req, res) => {
   try {
     const { offerId: rawOfferId, listingId: rawListingId, amountBtc, amount, paymentMethod, trade_type, amountLocal, currency, currencySymbol, quoteId } = req.body;
     const listingId = rawOfferId || rawListingId;
@@ -8158,6 +8171,17 @@ app.post('/api/trades/:id/cancel', tradeLimiter, verifyToken, async (req, res) =
       return res.status(403).json({ error: 'Not authorized to cancel this trade' });
     }
 
+    // Detect gift card trade from listing_type — same authoritative check used by
+    // mark-paid and release. gift_card_brand alone is unreliable (some Bitcoin
+    // listings have gift_card_brand = 'Bitcoin').
+    let listingType = '';
+    if (trade.listing_id) {
+      const { data: listing } = await supabaseAdmin
+        .from('listings').select('listing_type').eq('id', trade.listing_id).single();
+      listingType = listing?.listing_type || '';
+    }
+    const isGiftCardTrade = listingType.toUpperCase().includes('GIFT_CARD');
+
     if (trade.status === 'DISPUTED') {
       // Only the person who OPENED the dispute can withdraw/self-cancel it — the
       // other party can't cancel their way out of a dispute filed against them.
@@ -8169,6 +8193,17 @@ app.post('/api/trades/:id/cancel', tradeLimiter, verifyToken, async (req, res) =
         // Legacy dispute opened before we tracked who filed it — nobody can
         // self-cancel; safest fallback is to require moderator resolution.
         return res.status(403).json({ error: 'This dispute cannot be self-cancelled — a moderator will resolve it.' });
+      }
+    } else if (isGiftCardTrade) {
+      // Gift card trades lock the BTC BUYER's funds (buyer_id = the card
+      // purchaser paying in BTC), not the seller's — see /api/trades and
+      // tradeEscrowService.releaseBitcoinToBuyer. So here it's the escrow-
+      // holding BUYER who must not be able to cancel on demand (they could
+      // pocket a gift card code sent moments later and still reclaim their
+      // BTC). The SELLER — the one bringing the gift card, with nothing
+      // locked in escrow — can cancel freely; the buyer must dispute instead.
+      if (!isSeller) {
+        return res.status(403).json({ error: 'Only the gift card seller can cancel this trade — open a dispute instead' });
       }
     } else {
       // Not yet disputed: only the BUYER can unilaterally cancel. Sellers hold
@@ -9853,6 +9888,15 @@ app.put('/api/admin/users/:id', verifyToken, async (req, res) => {
     const { data, error } = await supabaseAdmin.from('users').update(updates).eq('id', req.params.id).select().single();
     if (error) return res.status(400).json({ error: error.message });
     logAdminAction(req, 'USER_UPDATE', req.params.id, updates).catch(() => { });
+    // Banning through this generic field-update path must carry the same notification/
+    // email side effects as the dedicated /ban route — otherwise a banned user only
+    // finds out when their next trade or withdrawal is silently blocked.
+    if (updates.account_status === 'banned' && data?.email) {
+      const reason = req.body.reason || '';
+      createNotification(req.params.id, 'security', '🚫 Account Banned',
+        reason ? `Your account has been banned. Reason: ${reason}` : 'Your account has been banned. Contact support if you believe this is a mistake.', '/').catch(() => { });
+      emailService.sendAccountBannedEmail(data, reason).catch(() => { });
+    }
     res.json({ success: true, user: data });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -10758,7 +10802,9 @@ app.put('/api/admin/users/:id/ban', verifyToken, async (req, res) => {
     const { data, error } = await supabaseAdmin.from('users').update({ account_status: 'banned', updated_at: new Date() }).eq('id', req.params.id).select().single();
     if (error) return res.status(400).json({ error: error.message });
     logAdminAction(req, 'BAN', req.params.id, { reason }).catch(() => { });
-    if (reason) await createNotification(req.params.id, 'security', '🚫 Account Banned', `Your account has been banned. Reason: ${reason}`, '/');
+    await createNotification(req.params.id, 'security', '🚫 Account Banned',
+      reason ? `Your account has been banned. Reason: ${reason}` : 'Your account has been banned. Contact support if you believe this is a mistake.', '/');
+    if (data?.email) emailService.sendAccountBannedEmail(data, reason).catch(() => {});
     res.json({ success: true, user: data });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -10771,6 +10817,36 @@ app.put('/api/admin/users/:id/unban', verifyToken, async (req, res) => {
     if (error) return res.status(400).json({ error: error.message });
     logAdminAction(req, 'UNBAN', req.params.id, null).catch(() => { });
     await createNotification(req.params.id, 'system', '✅ Account Reinstated', 'Your account ban has been lifted. Welcome back to PRAQEN!', '/dashboard');
+    res.json({ success: true, user: data });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/admin/users/:id/warn — issue a public safety warning (does not restrict trading)
+app.put('/api/admin/users/:id/warn', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const { reason = '' } = req.body;
+    if (req.params.id === req.userId) return res.status(400).json({ error: 'Cannot warn your own account' });
+    const { data, error } = await supabaseAdmin.from('users')
+      .update({ has_warning: true, warning_reason: reason || null, warned_at: new Date(), warned_by: req.userId, updated_at: new Date() })
+      .eq('id', req.params.id).select().single();
+    if (error) return res.status(400).json({ error: error.message });
+    logAdminAction(req, 'WARN', req.params.id, { reason }).catch(() => { });
+    await createNotification(req.params.id, 'security', '⚠️ Account Warning', 'PRAQEN has issued a warning on your account. Please review our terms and trade responsibly.', '/dashboard');
+    res.json({ success: true, user: data });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/admin/users/:id/unwarn — clear an active warning
+app.put('/api/admin/users/:id/unwarn', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const { data, error } = await supabaseAdmin.from('users')
+      .update({ has_warning: false, warning_reason: null, updated_at: new Date() })
+      .eq('id', req.params.id).select().single();
+    if (error) return res.status(400).json({ error: error.message });
+    logAdminAction(req, 'UNWARN', req.params.id, null).catch(() => { });
+    await createNotification(req.params.id, 'system', '✅ Warning Cleared', 'The warning on your account has been cleared.', '/dashboard');
     res.json({ success: true, user: data });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -11349,7 +11425,7 @@ app.post('/api/wallet/withdraw', verifyToken, authLimiter, requireEmailVerified,
 // No on-chain broadcast, no PRAQEN platform fee, no network miner fee.
 // Only trades (Buy/Sell) carry the 1% fee; Gift Card trades carry 2%.
 // ─────────────────────────────────────────────────────────────────────────────
-app.post('/api/wallet/internal-transfer', verifyToken, async (req, res) => {
+app.post('/api/wallet/internal-transfer', verifyToken, requireNotBanned, async (req, res) => {
   try {
     const { toUsername, toAddress, amountBtc } = req.body;
     const amount = parseFloat(amountBtc);
@@ -11847,7 +11923,7 @@ app.get('/api/wallet/usdt', verifyToken, async (req, res) => {
 // the percentage takes over. No boundary where a bigger withdrawal ever costs
 // less fee than a smaller one — that gap let users dodge the flat fee by
 // nudging just above the old $50 cutoff.
-app.post('/api/wallet/usdt/send', verifyToken, async (req, res) => {
+app.post('/api/wallet/usdt/send', verifyToken, requireNotBanned, async (req, res) => {
   // Emergency kill-switch — SENDS_DISABLED=true in .env blocks external
   // withdrawals platform-wide without touching trading/internal transfers.
   // Checked in-process (not DB-backed) so it works even if Supabase is down.
@@ -12063,7 +12139,7 @@ app.get('/api/swap/rate', verifyToken, async (req, res) => {
 });
 
 // POST /api/swap/btc-to-usdt — swap BTC → USDT (internal ledger)
-app.post('/api/swap/btc-to-usdt', verifyToken, async (req, res) => {
+app.post('/api/swap/btc-to-usdt', verifyToken, requireNotBanned, async (req, res) => {
   try {
     const { btcAmount } = req.body;
     if (!btcAmount || parseFloat(btcAmount) <= 0) {
@@ -12078,7 +12154,7 @@ app.post('/api/swap/btc-to-usdt', verifyToken, async (req, res) => {
 });
 
 // POST /api/swap/usdt-to-btc — swap USDT → BTC (internal ledger)
-app.post('/api/swap/usdt-to-btc', verifyToken, async (req, res) => {
+app.post('/api/swap/usdt-to-btc', verifyToken, requireNotBanned, async (req, res) => {
   try {
     const { usdtAmount } = req.body;
     if (!usdtAmount || parseFloat(usdtAmount) <= 0) {

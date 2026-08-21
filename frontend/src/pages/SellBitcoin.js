@@ -1353,19 +1353,17 @@ export default function SellBitcoin({user}) {
   // traderOfWeekService.js) from real trade counts, not a hardcoded username.
   const activeTraderListingId = traderOfWeek?.listing_id || null;
 
-  // Fast Buyer of the Week — Lhord_Exchange's MTN Mobile Money offer only
-  const FAST_BUYER_USERNAME = 'lhord_exchange';
-  const fastBuyerListingId = offers.find(l =>
-    (l.users?.username || '').toLowerCase() === FAST_BUYER_USERNAME &&
-    String(l.payment_method||'').toLowerCase().includes('mtn')
-  )?.id || null;
-
-  // Hot Offer of the Week — king_cash1's MTN listing only
-  const HOT_OFFER_USERNAME = 'king_cash1';
-  const hotOfferListingId = offers.find(l =>
-    l.users?.username === HOT_OFFER_USERNAME &&
-    String(l.payment_method||'').toLowerCase().includes('mtn')
-  )?.id || null;
+  // Fast Buyer / Hot Offer of the Week — picked dynamically from real trade counts,
+  // same as Active Trader above. Previously these were hardcoded to fixed usernames
+  // ('lhord_exchange', 'king_cash1'), which silently stopped matching the moment that
+  // trader's account was renamed or their listing changed — the badge just vanished
+  // from the market card with no error. Ranking by trade count instead means the
+  // actual best/most-active offers get featured, always, with no code deploy needed.
+  const rankedByTrades = [...offers]
+    .filter(l => l.id !== activeTraderListingId && getTrades(l.users) > 0)
+    .sort((a, b) => getTrades(b.users) - getTrades(a.users));
+  const fastBuyerListingId = rankedByTrades[0]?.id || null;
+  const hotOfferListingId  = rankedByTrades[1]?.id || null;
   const hasFilters  = selPayment!=='all' || sellAmt || selCountry.code!=='ALL' || selCurrency.code!=='USD' || !!traderSearch.trim();
 
   return (

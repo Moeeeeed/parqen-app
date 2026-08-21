@@ -603,10 +603,21 @@ function DepositSecurityModal({ walletUsdt, onClose, onLock, loading, error, pen
   );
 }
 
-export default function CreateOffer() {
+export default function CreateOffer({ user }) {
   const navigate = useNavigate();
   const { rates: USD_RATES, btcUsd: contextBtcUsd } = useRates();
   const payRef = useRef(null);
+
+  // Banned accounts can't trade — bounce them out immediately with a clear
+  // system message instead of letting them fill out the whole form first.
+  // Mirrors the send/swap guard in Wallet.js; server-side enforcement is
+  // requireNotBanned on POST /api/offers.
+  useEffect(() => {
+    if (user?.account_status === 'banned') {
+      toast.error('Your account is banned — you cannot create trade offers. Contact support@praqen.com.');
+      navigate('/dashboard');
+    }
+  }, [user, navigate]);
 
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
@@ -834,6 +845,10 @@ export default function CreateOffer() {
   };
 
   const handleSubmit = async () => {
+    if (user?.account_status === 'banned') {
+      toast.error('Your account is banned — you cannot create trade offers. Contact support@praqen.com.');
+      return;
+    }
     if (!canNext() || submitting) return;
     // canNext() only gates step 2 while stepping through — re-check here since Submit
     // is reachable from the final review step, which doesn't re-run that guard.

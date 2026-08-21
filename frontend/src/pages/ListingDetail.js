@@ -5,7 +5,7 @@ import axios from 'axios';
 import { ArrowRight, BadgeCheck, RefreshCw, Lock, ChevronRight, ThumbsUp, ThumbsDown, Repeat2,
   Gift, CircleDollarSign, Smartphone, Landmark, CreditCard, Satellite, Search, Zap, Star,
   Mail, Fingerprint, CheckCircle, Info, Video, Scale, AlertTriangle, MessageSquare, Send, ShieldCheck } from 'lucide-react';
-import { BadgeChip } from '../lib/badge';
+import { BadgeChip, SafetyBadge } from '../lib/badge';
 import { toast } from 'react-toastify';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
 
@@ -523,6 +523,7 @@ const loadAll = useCallback(async (isBackground = false) => {
                 </button>
                 {seller?.kyc_verified && <BadgeCheck size={13} color={C.paid} />}
                 <BadgeChip user={seller} />
+                <SafetyBadge user={seller} size="xs" />
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: C.g400, fontWeight: 600 }}>
                 <CountryFlag countryCode={sellerCountryCode} className="w-4 h-3" />
@@ -598,6 +599,7 @@ const loadAll = useCallback(async (isBackground = false) => {
                     {/* Badge + country flag */}
                     <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', marginBottom:5 }}>
                       <BadgeChip user={seller}/>
+                      <SafetyBadge user={seller} size="xs" />
                       {seller?.country && (
                         <div style={{ display:'flex', alignItems:'center', gap:3 }}>
                           <CountryFlag countryCode={sellerCountryCode} className="w-4 h-3"/>

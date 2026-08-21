@@ -14,6 +14,7 @@ import {
 import { toast } from 'react-toastify';
 import { QRCodeSVG } from 'qrcode.react';
 import { copyToClipboard } from '../utils/clipboard';
+import { SafetyBanner } from '../lib/badge.js';
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 const C = {
@@ -3274,6 +3275,11 @@ export default function WalletPage({ user }) {
   // ── Asset picker dispatch — Send/Receive/Transfer buttons resolve to this ──
   const openAssetModal = (type, asset) => {
     setAssetPicker(null);
+    // Receiving is always fine — only outbound movement (send/transfer) is locked for a banned account.
+    if (type !== 'receive' && user?.account_status === 'banned') {
+      toast.error('Your account is banned — sending and transfers are disabled. Contact support@praqen.com.');
+      return;
+    }
     if (asset === 'USDT' && !usdtData) loadUsdtWallet();
     if (type === 'send') {
       asset === 'BTC' ? setShowSend(true) : setShowUsdtSend(true);
@@ -3297,6 +3303,10 @@ export default function WalletPage({ user }) {
 
   // ── Execute BTC↔USDT swap ─────────────────────────────────────────────────
   const doSwap = async () => {
+    if (user?.account_status === 'banned') {
+      toast.error('Your account is banned — swaps are disabled. Contact support@praqen.com.');
+      return;
+    }
     // Resolve effective native amount from whichever input mode is active
     const effAmt = swapInputMode === 'usd' && swapRate
       ? (swapFrom === 'BTC'
@@ -3362,6 +3372,8 @@ export default function WalletPage({ user }) {
 
       {/* Display font for hero numerals/headings only — body stays on the existing DM Sans stack. */}
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&display=swap');`}</style>
+
+      <SafetyBanner user={user} variant="profile" />
 
       <div className="max-w-6xl mx-auto w-full px-3 sm:px-5 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-5">
 

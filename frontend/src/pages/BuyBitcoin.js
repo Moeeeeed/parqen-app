@@ -1411,6 +1411,14 @@ export default function BuyBitcoin({user}) {
   // traderOfWeekService.js) from real trade counts, not a hardcoded username.
   const activeTraderListingId = traderOfWeek?.listing_id || null;
 
+  // Fast Responder / Hot Offer — runners-up by the same real trade-count ranking,
+  // so every top offer gets a featured design instead of just the single weekly pick.
+  const rankedByTrades = [...listings]
+    .filter(l => l.id !== activeTraderListingId && getTrades(l.users) > 0)
+    .sort((a, b) => getTrades(b.users) - getTrades(a.users));
+  const fastResponderListingId = rankedByTrades[0]?.id || null;
+  const hotOfferListingId      = rankedByTrades[1]?.id || null;
+
   const hasFilters = selPayment !== 'all' || buyAmt || selCountry.code !== 'ALL' || selCurrency.code !== 'USD' || !!traderSearch.trim();
 
   return (
@@ -1906,7 +1914,7 @@ export default function BuyBitcoin({user}) {
                   listing={l}
                   btcPriceUSD={btcPrice}
                   userBuyAmt={buyAmt}
-                  featuredType={l.id === activeTraderListingId ? 'active_trader' : undefined}
+                  featuredType={l.id === activeTraderListingId ? 'active_trader' : l.id === fastResponderListingId ? 'fast_responder' : l.id === hotOfferListingId ? 'hot_offer' : undefined}
                   liveSeenAt={liveStatus[l.users?.id] || null}
                   onViewSeller={()=>{
                     setModal({seller:l.users||{}, listing:l});

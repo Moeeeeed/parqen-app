@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
-import { TRUST_MAP, deriveBadge, BadgeChip, BADGE_COLORS } from '../lib/badge';
+import { TRUST_MAP, deriveBadge, BadgeChip, BADGE_COLORS, SafetyBadge } from '../lib/badge';
 import ActiveTradeCard from '../components/ActiveTradeCard';
 import PRQFooter from '../components/PRQFooter';
 
@@ -509,8 +509,9 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
 
           {/* Right section: Stacked BadgeChip & Active status pill */}
           <div className="flex flex-col gap-1 items-end flex-shrink-0 pt-0.5">
-            <div>
+            <div className="flex items-center gap-1">
               <BadgeChip user={u} size="xs" />
+              <SafetyBadge user={u} size="xs" />
             </div>
             <div>
               {seen.online ? (

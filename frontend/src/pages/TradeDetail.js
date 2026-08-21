@@ -14,7 +14,7 @@ Smartphone, Building2, ThumbsUp, ThumbsDown, Gift, Repeat2, Heart,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { copyToClipboard } from '../utils/clipboard';
-import { deriveBadge } from '../lib/badge';
+import { deriveBadge, SafetyBadge, SafetyBanner } from '../lib/badge';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -1228,13 +1228,13 @@ export default function TradeDetail({user}) {
         {},
         {headers:authH()});
       setPaidAt(Date.now()); // Record the paid timestamp shown in the system message
-      toast.success(isGiftCardTrade ? 'Code sent! Waiting for seller to verify.' : 'Payment confirmed!');
+      toast.success(isGiftCardTrade ? 'Code sent! Waiting for buyer to verify.' : 'Payment confirmed!');
       // Post this as a real system message in the chat (matches the "Trade
       // Complete"/"Trade Cancelled" system messages below) instead of only a
       // floating banner outside the message flow — the isPmt card renderer
       // in the message list picks this up from the "confirmed payment" text.
       await postSys(isGiftCardTrade
-        ? `Buyer confirmed sending the gift card code. Seller: please verify the code, then release Bitcoin.`
+        ? `Seller confirmed sending the gift card code. Buyer: please verify the code, then release Bitcoin.`
         : `Buyer confirmed payment via ${payMethod}. Seller: please check your account now.`);
       await loadTrade();
     }catch(e){
@@ -1446,27 +1446,29 @@ export default function TradeDetail({user}) {
     grad: `linear-gradient(135deg, ${C.forest}, ${C.green})`,
   };
 
-  // Gift card trade: BUYER pays with gift card (sends code), SELLER verifies & releases BTC
-  // BTC trade:       BUYER sends payment, SELLER confirms & releases BTC
-  const showMarkPaid  = isGiftCardTrade ? (isBuyer&&isEscrow&&isActive)  : (isBuyer&&isEscrow&&isActive);
-  const showRelease   = isGiftCardTrade ? (isSeller&&isPaid&&isActive)   : (isSeller&&isPaid&&isActive);
+  // Gift card trade: card SELLER (the one bringing the card) marks "sent code";
+  //                  BTC BUYER (the one paying in BTC) verifies & releases BTC.
+  // BTC trade:       BUYER sends payment, SELLER confirms & releases BTC.
+  const showMarkPaid  = isGiftCardTrade ? (isSeller&&isEscrow&&isActive)  : (isBuyer&&isEscrow&&isActive);
+  const showRelease   = isGiftCardTrade ? (isBuyer&&isPaid&&isActive)   : (isSeller&&isPaid&&isActive);
   // Dispute is only available AFTER payment has been confirmed as sent.
   // Before that, there's nothing to dispute — the buyer hasn't even indicated
   // they've sent payment yet.
   const showDispute   = isActive&&isPaid&&!isDisputed&&(isBuyer||isSeller);
 
   // ── Cancel eligibility ────────────────────────────────────────────────────
-  // Both buyer AND seller can cancel an active trade before it's completed.
-  // The backend enforces the actual permission rules (e.g. seller can't cancel
-  // after buyer releases). Showing the button lets either party back out; the
-  // server rejects the request if it's not allowed.
+  // The backend enforces the actual permission rules — this only controls whether
+  // the button renders, matching what the server will accept.
   // While DISPUTED: ONLY the person who opened the dispute can cancel.
-  // Only the buyer can cancel a trade — sellers never see Cancel Trade.
-  // While DISPUTED: only the person who opened the dispute can cancel.
+  // BTC trades:       only the BUYER can cancel (the seller holds escrowed BTC and
+  //                    must dispute instead — see /api/trades/:id/cancel).
+  // Gift card trades: escrow holds the BTC BUYER's funds instead, so it's the
+  //                    SELLER (the one bringing the card, nothing locked up) who
+  //                    can cancel; the buyer must dispute instead.
   const showCancelBtn = isActive && (
     isDisputed
       ? !!trade?.disputed_by && String(trade.disputed_by) === String(user?.id)
-      : isBuyer
+      : isGiftCardTrade ? isSeller : isBuyer
   );
 
   // Read receipts: timestamp of the last message the counterparty sent
@@ -1525,9 +1527,9 @@ export default function TradeDetail({user}) {
                 <div className="p-3 rounded-xl text-xs font-semibold border"
                   style={{backgroundColor:'#FFFBEB',borderColor:'#FDE68A',color:'#92400E'}}>
                   {isGiftCardTrade
-                    ? isBuyer
-                      ? <><Gift size={14} style={{flexShrink:0}}/> Your turn: Send your gift card code to the seller in the chat, then click "I SENT THE CODE".</>
-                      : <><Clock size={14} style={{flexShrink:0}}/> Waiting for the buyer to send you the gift card code&hellip;</>
+                    ? isSeller
+                      ? <><Gift size={14} style={{flexShrink:0}}/> Your turn: Send your gift card code to the buyer in the chat, then click "I SENT THE CODE".</>
+                      : <><Clock size={14} style={{flexShrink:0}}/> Waiting for the seller to send you the gift card code&hellip;</>
                     : isBuyer
                       ? <><CreditCard size={14} style={{flexShrink:0}}/> Your turn: Send {payMethod} payment now, then click "I HAVE PAID" to notify the seller.</>
                       : <><Clock size={14} style={{flexShrink:0}}/> Waiting for the buyer to send payment&hellip;</>}
@@ -1536,9 +1538,9 @@ export default function TradeDetail({user}) {
               {isActive&&isPaid&&isGiftCardTrade&&(
                 <div className="p-3 rounded-xl text-xs font-semibold border"
                   style={{backgroundColor:'#F0FDF4',borderColor:'#86EFAC',color:'#166534'}}>
-                  {isSeller
+                  {isBuyer
                     ? <><CheckCircle size={14} style={{flexShrink:0}}/> Gift card code received! Test it — if it works, click RELEASE BITCOIN.</>
-                    : <><Clock size={14} style={{flexShrink:0}}/> Code sent! Seller is verifying your gift card. Bitcoin releases once they confirm.</>}
+                    : <><Clock size={14} style={{flexShrink:0}}/> Code sent! Buyer is verifying your gift card. Bitcoin releases once they confirm.</>}
                 </div>
               )}
 
@@ -1630,7 +1632,7 @@ export default function TradeDetail({user}) {
                   <p className="font-bold text-sm" style={{color:C.g700}}>Trade Cancelled</p>
                   <p className="text-xs mt-0.5 mb-3" style={{color:C.g400}}>Escrow funds returned</p>
                   <div className="flex gap-2 justify-center flex-wrap">
-                    <button onClick={()=>navigate(isSeller?'/sell-bitcoin':'/buy-bitcoin')}
+                    <button onClick={()=>navigate(isGiftCardTrade?'/gift-cards':(isSeller?'/sell-bitcoin':'/buy-bitcoin'))}
                       className="px-3 py-1.5 rounded-lg font-black text-xs text-white hover:opacity-90 transition"
                       style={{backgroundColor:C.green}}>
                       <><Rocket size={14} style={{display:'inline'}}/> Start New Trade</>
@@ -1790,6 +1792,7 @@ export default function TradeDetail({user}) {
     )}
   </div>
   <span className="font-black text-base" style={{color:C.g800}}>{cp?.username || 'User'}</span>
+  <SafetyBadge user={cp} size="xs" />
   {!(cp?.country || cp?.location) && <Globe size={14} style={{color:C.g400}}/>}
 </button>
                   {/* TODO: Confirm positive_feedback/negative_feedback are returned on cp object from /trades/:id — if not, the ?? 0 fallback hides the gap */}
@@ -1837,6 +1840,9 @@ export default function TradeDetail({user}) {
 </button>
                 </div>
               </div>
+
+              {/* ── Safety Status Banner — pinned above the messages, never scrolls away ── */}
+              <SafetyBanner user={cp} variant="chat" className="flex-shrink-0" />
 
               {/* ── Trade Summary Banner — pinned above the messages, never scrolls away ── */}
               <div className="flex-shrink-0 flex items-center gap-2.5 px-4 py-2.5"
@@ -1934,9 +1940,9 @@ export default function TradeDetail({user}) {
                           <p className="text-sm font-black mb-1.5" style={{color:'#15803D'}}>System message</p>
                           <p className="text-sm leading-relaxed font-semibold" style={{color:'#166534'}}>
                             {isGiftCardTrade
-                              ? (isBuyer
-                                ? 'Your gift card code has been sent. The seller is verifying it now. Once they confirm, Bitcoin will be released to you automatically.'
-                                : <>The buyer has sent a gift card code. Verify the code — if valid, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Code not working? Open a dispute so a moderator can help.</>)
+                              ? (isSeller
+                                ? 'Your gift card code has been sent. The buyer is verifying it now. Once they confirm, Bitcoin will be released to you automatically.'
+                                : <>The seller has sent a gift card code. Verify the code — if valid, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Code not working? Open a dispute so a moderator can help.</>)
                               : (isBuyer
                                 ? 'Partner is now verifying your payment. Once partner confirms the payment, funds will be sent to you.'
                                 : <>Buyer confirmed payment via {payMethod}. Check your account — if received, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Payment not received? Open a dispute so a moderator can help.</>)}
@@ -2208,13 +2214,15 @@ export default function TradeDetail({user}) {
                     <div className="px-4 py-3 text-center">
                       <p className="text-white font-black text-sm"><PartyPopper size={20} style={{display:'inline'}}/> Congratulations!</p>
                       <p className="text-xs font-bold mt-0.5 mb-2" style={{color:'rgba(255,255,255,0.8)'}}>
-                        You just {isBuyer?'bought':'sold'} Bitcoin successfully!
+                        {isGiftCardTrade
+                          ? `You just ${isSeller?'sold your gift card':'bought a gift card'} successfully!`
+                          : `You just ${isBuyer?'bought':'sold'} Bitcoin successfully!`}
                       </p>
                       <p className="text-xs mb-3 leading-snug" style={{color:'rgba(255,255,255,0.7)'}}>
                         Always come back &amp; trade more — PRAQEN's safe escrow protects every trade.
                       </p>
                       <div className="flex gap-2 justify-center">
-                        <button onClick={()=>navigate('/buy-bitcoin')}
+                        <button onClick={()=>navigate(isGiftCardTrade?'/gift-cards':'/buy-bitcoin')}
                           className="px-3 py-1.5 rounded-lg font-black text-xs hover:opacity-90 transition"
                           style={{backgroundColor:C.gold,color:C.forest}}>
                           <><Rocket size={14} style={{display:'inline'}}/> Trade Again</>
@@ -2248,7 +2256,7 @@ export default function TradeDetail({user}) {
                         </p>
                       )}
                       <div className="flex gap-2 justify-center flex-wrap">
-                        <button onClick={()=>navigate(isSeller?'/sell-bitcoin':'/buy-bitcoin')}
+                        <button onClick={()=>navigate(isGiftCardTrade?'/gift-cards':(isSeller?'/sell-bitcoin':'/buy-bitcoin'))}
                           className="px-3 py-1.5 rounded-lg font-black text-xs text-white hover:opacity-90 transition"
                           style={{backgroundColor:C.green}}>
                           <><Rocket size={14} style={{display:'inline'}}/> Start New Trade</>
@@ -2276,9 +2284,9 @@ export default function TradeDetail({user}) {
                       <p className="text-sm font-black mb-1.5" style={{color:'#1D4ED8'}}>System message</p>
                       <p className="text-sm leading-relaxed font-semibold" style={{color:'#1E40AF'}}>
                         {isGiftCardTrade
-                          ? (isBuyer
-                            ? 'Your gift card code has been sent. The seller is now verifying it. Once they confirm the code is valid, Bitcoin will be released to you automatically.'
-                            : <>The buyer has sent a gift card code. Please verify the code — if valid, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Code not working? Open a dispute so a moderator can help.</>)
+                          ? (isSeller
+                            ? 'Your gift card code has been sent. The buyer is now verifying it. Once they confirm the code is valid, Bitcoin will be released to you automatically.'
+                            : <>The seller has sent a gift card code. Please verify the code — if valid, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Code not working? Open a dispute so a moderator can help.</>)
                           : (isBuyer
                             ? 'Your payment has been sent successfully. The seller has been notified and will check their account now. Once they confirm receipt, your Bitcoin will be released to you automatically.'
                             : <>The buyer has confirmed payment. Please check your {payMethod} account right now. Check your account — if payment received, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Payment not received? Open a dispute so a moderator can help.</>)}
