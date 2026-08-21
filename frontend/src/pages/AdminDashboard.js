@@ -2426,6 +2426,25 @@ function UsdtWalletCard() {
                   <AlertTriangle size={11} className="inline-block mr-1" /> Sweeps &amp; withdrawals need TRX for gas — top up soon
                 </p>
               )}
+              {/* Same Tron address the USDT hot wallet panel shows above — TRX gas
+                  and USDT both live at this one address — shown here too so it's
+                  always visible right next to the reserve level that needs topping up. */}
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-[11px] bg-gray-50 border px-2 py-1.5 rounded-lg truncate font-mono"
+                  style={{ borderColor: C.g200, color: C.g600 }}>
+                  {s.hot_wallet_address}
+                </code>
+                <button onClick={() => copy(s.hot_wallet_address, 'trx')}
+                  className="px-2.5 py-1.5 rounded-lg text-[11px] font-black transition hover:opacity-80 flex-shrink-0"
+                  style={{ backgroundColor: copied === 'trx' ? trxColor : C.g100, color: copied === 'trx' ? '#fff' : C.g600 }}>
+                  {copied === 'trx' ? '✓ Copied' : 'Copy'}
+                </button>
+              </div>
+              <a href={`https://tronscan.org/#/address/${s.hot_wallet_address}`}
+                target="_blank" rel="noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] font-bold hover:underline" style={{ color: '#2563EB' }}>
+                View on TronScan ↗
+              </a>
             </div>
 
             {/* Company wallet + sweep status */}
