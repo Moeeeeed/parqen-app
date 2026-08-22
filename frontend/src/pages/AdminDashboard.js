@@ -1122,10 +1122,12 @@ function DisputesSection() {
 // disputes, and see the total currently locked across all sellers.
 // ================================================================
 const DEPOSIT_STATUS_PILL = {
+  PENDING_APPROVAL:    { label: 'Pending Review',      color: '#92400E', bg: '#FFFBEB' },
   LOCKED:              { label: 'Locked',              color: '#166534', bg: '#F0FDF4' },
   PENDING_WITHDRAWAL:  { label: 'Pending Withdrawal',  color: '#92400E', bg: '#FFFBEB' },
   WITHDRAWN:           { label: 'Withdrawn',            color: C.g500,   bg: C.g100    },
   SEIZED:              { label: 'Seized',               color: '#991B1B', bg: '#FEF2F2' },
+  REJECTED:            { label: 'Rejected',             color: '#991B1B', bg: '#FEF2F2' },
 };
 
 function SellerDepositsSection() {
@@ -1167,6 +1169,29 @@ function SellerDepositsSection() {
       toast.success('Withdrawal request rejected — deposit stays locked');
       load();
     } catch (e) { toast.error(e.response?.data?.error || 'Failed to reject withdrawal'); }
+  };
+
+  // A newly-locked deposit (PENDING_APPROVAL, before someone's ever sold a card)
+  // had no action buttons at all here — only PENDING_WITHDRAWAL and LOCKED rows
+  // rendered any. The backend endpoints (POST .../approve-deposit and
+  // .../reject-deposit) always existed and Team Dashboard already used them; this
+  // page just never called them, so a brand-new seller had nothing to click here.
+  const approveDeposit = async (userId) => {
+    if (!window.confirm("Approve this seller's $200 security deposit? They'll be able to create gift-card offers immediately.")) return;
+    try {
+      await axios.post(`${API_URL}/admin/seller-deposits/${userId}/approve-deposit`, {}, { headers: authH() });
+      toast.success('Deposit approved — seller can now list gift cards');
+      load();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed to approve deposit'); }
+  };
+
+  const rejectDeposit = async (userId) => {
+    const reason = window.prompt('Reason for rejecting this deposit (optional) — the $200 will be refunded to their wallet:') || '';
+    try {
+      await axios.post(`${API_URL}/admin/seller-deposits/${userId}/reject-deposit`, { reason }, { headers: authH() });
+      toast.success('Deposit rejected and refunded');
+      load();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed to reject deposit'); }
   };
 
   const openSeize = (d) => {
@@ -1234,6 +1259,18 @@ function SellerDepositsSection() {
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-1.5">
+                        {d.status === 'PENDING_APPROVAL' && (
+                          <>
+                            <button onClick={() => approveDeposit(d.user_id)}
+                              className="px-2.5 py-1 rounded-lg font-bold" style={{ backgroundColor: '#F0FDF4', color: '#166534' }}>
+                              Approve
+                            </button>
+                            <button onClick={() => rejectDeposit(d.user_id)}
+                              className="px-2.5 py-1 rounded-lg font-bold" style={{ backgroundColor: '#FEF2F2', color: '#991B1B' }}>
+                              Reject
+                            </button>
+                          </>
+                        )}
                         {d.status === 'PENDING_WITHDRAWAL' && (
                           <>
                             <button onClick={() => approve(d.user_id)}

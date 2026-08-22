@@ -56,9 +56,26 @@ async function auditBtc(userId, username, btcAddress, sweptTotalCache) {
   return { userId, username, currency: 'BTC', address: btcAddress, onchain, totalSwept, totalEverReceived, totalCredited, shortfall };
 }
 
+async function fetchAllUserWallets() {
+  // Unpaginated select() silently truncates at Supabase's default 1000-row cap —
+  // the first run of this script missed the last ~300 accounts because of this.
+  const all = [];
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await db.from('user_wallets').select('user_id, tron_address, btc_address').range(from, from + pageSize - 1);
+    if (error) throw error;
+    all.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
 (async () => {
   console.log('Loading user wallets and usernames...');
-  const { data: uwRows } = await db.from('user_wallets').select('user_id, tron_address, btc_address');
+  const uwRows = await fetchAllUserWallets();
+  console.log(`Fetched ${uwRows.length} user_wallets rows (paginated).`);
   const { data: users } = await db.from('users').select('id, username');
   const nameMap = {};
   (users || []).forEach(u => nameMap[u.id] = u.username);

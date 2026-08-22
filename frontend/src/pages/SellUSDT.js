@@ -206,9 +206,15 @@ const getLastSeen = (u) => {
   if (s<86400) { const h=~~(s/3600); return {label:`${h} ${h===1?'hr':'hrs'} ago`, online:false}; }
   const dy=~~(s/86400); return {label:`${dy} ${dy===1?'day':'days'} ago`, online:false};
 };
-const getRateUSD = (l, usdtPrice) => {
+// Fixed-price listings store bitcoin_price already in the listing's LOCAL currency
+// (CreateOffer.js labels the field "Fixed Price ({currency} per {asset})") — callers
+// used to multiply this function's return value by usdRate unconditionally, which
+// double-converted fixed prices (a listing fixed at 555 XOF/USDT displayed as
+// ~333,000). This now always returns a local-currency rate directly; no further
+// conversion needed at the call site. See quoteService.js for the matching backend fix.
+const getRateLocal = (l, marketPriceUSD, usdRate) => {
   if (l.pricing_type==='fixed') { const s=parseFloat(l.bitcoin_price||0); if(s>0.01) return s; }
-  return (usdtPrice || 1) * (1 + parseFloat(l.margin||0)/100);
+  return (marketPriceUSD || 1) * (1 + parseFloat(l.margin||0)/100) * usdRate;
 };
 
 // ── Avatar ────────────────────────────────────────────────────────────────────
@@ -266,7 +272,7 @@ function OfferCard({listing, usdtPriceUSD, btcPriceUSD, onViewBuyer, onSell, lik
   // pricing must price a BTC listing off the live BTC rate, not the ~$1 USDT
   // peg, or a BTC offer's amounts come out ~88,000x too low.
   const basePriceUSD = asset === 'USDT' ? usdtPriceUSD : (btcPriceUSD || 88000);
-  const rateLocal = getRateUSD(listing, basePriceUSD) * usdRate;
+  const rateLocal = getRateLocal(listing, basePriceUSD, usdRate);
 
   const minLocal = listing.min_limit_local || (listing.min_limit_usd ? listing.min_limit_usd*usdRate : 100*usdRate);
   const maxLocal = listing.max_limit_local || (listing.max_limit_usd ? listing.max_limit_usd*usdRate : 1000*usdRate);
@@ -437,7 +443,7 @@ function BuyerModal({buyer, listing, onClose, onTrade, usdtPriceUSD, btcPriceUSD
   const sym    = listing?.currency_symbol || CUR_SYM[cur] || '₵';
   const usdRate   = USD_RATES[cur] || 1;
   const asset     = (listing?.asset || 'BTC').toUpperCase();
-  const rateLocal = getRateUSD(listing || {}, asset === 'USDT' ? (usdtPriceUSD || 1) : (btcPriceUSD || 88000)) * usdRate;
+  const rateLocal = getRateLocal(listing || {}, asset === 'USDT' ? (usdtPriceUSD || 1) : (btcPriceUSD || 88000), usdRate);
 
   const phoneOk  = !!(u.is_phone_verified || u.phone_verified);
   const emailOk  = !!(u.is_email_verified || u.email_verified);

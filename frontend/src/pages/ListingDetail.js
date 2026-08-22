@@ -260,24 +260,25 @@ const loadAll = useCallback(async (isBackground = false) => {
   const usdRate  = USD_RATES[cur] || 1;
   const margin   = parseFloat(listing.margin || 0);
 
-  // Logic Sync: Calculate base price exactly as backend quotes endpoint should.
-  // If fixed, use the fixed price. If market, use live btcPrice — but only for BTC-asset
-  // listings. A USDT-asset listing's "price" is ~$1 (the peg), not the BTC/USD rate; using
-  // btcPrice unconditionally here made every USDT trade's amount come out ~88,000x too small
-  // (e.g. a real $50 trade computing as 0.0006 USDT instead of $50 USDT), and the `> 100`
-  // fixed-price sanity check — a valid heuristic for BTC, always tens of thousands — silently
-  // rejected any legitimate USDT fixed price (which is necessarily close to 1).
-  const isUsdtAsset      = listing.asset === 'USDT';
-  const basePriceUSD    = isUsdtAsset
-    ? ((listing.pricing_type === 'fixed' && parseFloat(listing.bitcoin_price || 0) > 0)
-        ? parseFloat(listing.bitcoin_price)
-        : 1)
-    : ((listing.pricing_type === 'fixed' && parseFloat(listing.bitcoin_price||0) > 100)
-        ? parseFloat(listing.bitcoin_price)
-        : btcPrice);
-  
-  const sellerRateUSD   = basePriceUSD * (1 + margin / 100);
-  const sellerRateLocal = sellerRateUSD * usdRate;
+  // Logic Sync: Calculate the rate exactly as the backend (quoteService.js / POST
+  // /api/trades) does. CreateOffer.js's fixed-price field is explicitly labelled
+  // "Fixed Price ({currency} per {asset})" and stores exactly what the seller
+  // typed — it's ALREADY denominated in the listing's local currency, for BOTH
+  // BTC and USDT listings, and margin doesn't apply to it (CreateOffer.js only
+  // shows the margin control under 'market' pricing). Treating it as a USD price
+  // needing `* usdRate` (as this used to) inflated a listing fixed at, say, 555
+  // XOF/USDT into an effective rate of ~333,000 — a real ~$16 trade would compute
+  // as ~0.03 USDT. Only the live-market branch needs a USD -> local conversion,
+  // and only BTC-asset listings should fall back to the live BTC price at all —
+  // a USDT-asset listing's market price is the ~1:1 peg, not BTC's rate.
+  const isUsdtAsset  = listing.asset === 'USDT';
+  const isFixedPriced = listing.pricing_type === 'fixed' && parseFloat(listing.bitcoin_price || 0) > 0;
+  const assetUsd     = isUsdtAsset ? 1 : btcPrice;
+
+  const sellerRateLocal = isFixedPriced
+    ? parseFloat(listing.bitcoin_price)
+    : assetUsd * (1 + margin / 100) * usdRate;
+  const sellerRateUSD = usdRate > 0 ? sellerRateLocal / usdRate : sellerRateLocal;
 
   const minLocal = listing.min_limit_local || (listing.min_limit_usd ? listing.min_limit_usd * usdRate : 10 * usdRate);
   const rawMaxLocal = listing.max_limit_local
