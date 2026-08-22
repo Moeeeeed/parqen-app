@@ -175,7 +175,7 @@ User (Settings → Telegram)         Bot (Telegram)
 
 1. User clicks **Connect** in Settings → Notifications
 2. Frontend calls `POST /api/telegram/link` → generates a 6-digit code (expires in 10 min)
-3. User opens Telegram, finds `@PraqenAlertsBot`, sends the code
+3. User opens Telegram, finds `@Praqen_alerts_bot`, sends the code
 4. Bot webhook receives the message → `handleBotMessage()` → `verifyLinkingCode()`
 5. Code is verified, `telegram_chat_id` is saved to the user's DB record
 6. Frontend polls `GET /api/telegram/status` every 3 seconds, detects `connected: true`
@@ -233,7 +233,7 @@ The `TelegramCard` component in `Settings.js` renders one of three states:
 - Cyan-themed card with "Link Your Telegram" heading
 - Large monospace display of the 6-digit code
 - Step-by-step instructions:
-  1. Open Telegram and search for **@PraqenAlertsBot**
+  1. Open Telegram and search for **@Praqen_alerts_bot**
   2. Send the displayed code
   3. Wait — auto-detection will confirm
 - Spinning refresh icon with "Waiting for connection…" text
