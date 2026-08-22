@@ -5805,13 +5805,32 @@ app.post('/api/user/add-balance', verifyToken, (req, res) => {
 // LISTINGS ROUTES
 // ============================================================
 
-app.post('/api/listings', verifyToken, async (req, res) => {
+app.post('/api/listings', verifyToken, requireNotBanned, async (req, res) => {
   try {
     const b = req.body;
     const listingType = b.listing_type || 'SELL';
     const brand = b.giftCardBrand || b.gift_card_brand || (listingType === 'SELL' ? 'Sell Bitcoin' : 'Buy Bitcoin');
     const btcPriceUSD = parseFloat(b.bitcoinPrice || b.bitcoin_price) || 0;
     const marginPct = parseFloat(b.margin) || 0;
+
+    // This route has no frontend caller (the real Create Offer flow posts to
+    // POST /api/offers) but stays live and reachable directly — which is exactly
+    // how it got exploited: 13 listings from one account in a 63-second window,
+    // scripted, with margin as high as 1,000,000%, margin as low as -10,000%, and
+    // a bitcoin_price of -5000. Same bounds as /api/offers: SELL is capped at
+    // -10%/+10%; BUY and gift-card offers get more room at -10%/+100%.
+    const listingUpperType = (listingType || '').toUpperCase();
+    const listingIsSellPriced = ['SELL', 'SELL_BITCOIN'].includes(listingUpperType);
+    const listingIsBuyOrGiftCardPriced = ['BUY', 'BUY_BITCOIN', 'BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(listingUpperType);
+    if (listingIsSellPriced || listingIsBuyOrGiftCardPriced) {
+      const listingMarginMax = listingIsSellPriced ? 10 : 100;
+      if (isNaN(marginPct) || marginPct < -10 || marginPct > listingMarginMax) {
+        return res.status(400).json({ error: `Margin must be between -10% and +${listingMarginMax}%.` });
+      }
+      if ((b.pricing_type || b.pricingType) === 'fixed' && !(btcPriceUSD > 0)) {
+        return res.status(400).json({ error: 'A fixed-rate offer needs a real, positive price.' });
+      }
+    }
     const payMethod = b.paymentMethod || b.payment_method || '';
     const timeLimit = parseInt(b.time_limit || b.processingTime || 30);
     const minUSD = parseFloat(b.min_limit_usd || b.minAmount) || 0;
@@ -6458,13 +6477,17 @@ app.put('/api/listings/:id', verifyToken, async (req, res) => {
     if (min_limit_usd !== undefined && parseFloat(min_limit_usd) < 10) {
       return res.status(400).json({ error: 'Minimum trade amount must be at least $10 USD.' });
     }
-    const isSellListing = ['SELL', 'SELL_BITCOIN'].includes((listing.listing_type || '').toUpperCase());
-    // Sell Bitcoin offers only: same margin cap as offer creation — editing a
-    // listing was the other unvalidated path into an above-market margin.
-    if (isSellListing && margin !== undefined && margin !== null && margin !== '') {
+    const editUpperType = (listing.listing_type || '').toUpperCase();
+    const isSellListing = ['SELL', 'SELL_BITCOIN'].includes(editUpperType);
+    const isBuyOrGiftCardListing = ['BUY', 'BUY_BITCOIN', 'BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(editUpperType);
+    // Same margin cap as offer creation — editing a listing was the other
+    // unvalidated path into an above-market margin (was SELL-only here too,
+    // leaving BUY listings free to be edited to any margin post-creation).
+    if ((isSellListing || isBuyOrGiftCardListing) && margin !== undefined && margin !== null && margin !== '') {
+      const editMarginMax = isSellListing ? 10 : 100;
       const marginNum = parseFloat(margin);
-      if (isNaN(marginNum) || marginNum < -10 || marginNum > 10) {
-        return res.status(400).json({ error: 'Margin must be between -10% and +10% for Sell Bitcoin offers.' });
+      if (isNaN(marginNum) || marginNum < -10 || marginNum > editMarginMax) {
+        return res.status(400).json({ error: `Margin must be between -10% and +${editMarginMax}%.` });
       }
     }
     // For SELL offers: cap max_limit_usd at seller's actual wallet balance
@@ -6855,15 +6878,36 @@ app.post('/api/offers', verifyToken, requireNotBanned, async (req, res) => {
       return res.status(400).json({ error: 'Missing payment_method' });
     }
 
-    // Sell Bitcoin offers only: cap the margin so a seller can't post a wildly
-    // above-market rate (nothing enforced this before — margin was inserted
-    // straight from the request body with no bound at all, which is how a
-    // +69% offer got onto the marketplace). Buy Bitcoin and gift card offers
-    // are untouched — the ask was specifically for the sell page.
-    if (['SELL', 'SELL_BITCOIN'].includes((mappedType || '').toUpperCase())) {
+    // Cap the margin so no offer can post a wildly off-market rate. This used to only
+    // apply to SELL/SELL_BITCOIN listings (added after a +69% SELL offer got through
+    // with margin inserted straight from the request body, no bound at all) — but a
+    // BUY-type listing is what actually populates the "Sell Bitcoin" page's offer
+    // cards (the offer creator wants to buy, so the viewer sells to them), and BUY
+    // was left completely unchecked. That gap is how a BUY_BTC listing with
+    // margin=1000000 (and others with margin=-10000, bitcoin_price=-5000, limits=0 —
+    // 13 garbage listings from one account in a 63-second window, clearly scripted)
+    // made it onto the live market. SELL offers keep the -10%/+10% cap; BUY and
+    // gift-card offers get more room (-10%/+100%) — buyers routinely markup above
+    // market to compete for gift-card/BUY liquidity, unlike a Sell Bitcoin listing.
+    const upperType = (mappedType || '').toUpperCase();
+    const isSellPriced = ['SELL', 'SELL_BITCOIN'].includes(upperType);
+    const isBuyOrGiftCardPriced = ['BUY', 'BUY_BITCOIN', 'BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(upperType);
+    if (isSellPriced || isBuyOrGiftCardPriced) {
+      const marginMax = isSellPriced ? 10 : 100;
       const marginNum = parseFloat(margin);
-      if (margin !== undefined && margin !== null && margin !== '' && (isNaN(marginNum) || marginNum < -10 || marginNum > 10)) {
-        return res.status(400).json({ error: 'Margin must be between -10% and +10% for Sell Bitcoin offers.' });
+      if (margin !== undefined && margin !== null && margin !== '' && (isNaN(marginNum) || marginNum < -10 || marginNum > marginMax)) {
+        return res.status(400).json({ error: `Margin must be between -10% and +${marginMax}%.` });
+      }
+      if (pricing_type === 'fixed') {
+        const priceNum = parseFloat(bitcoin_price);
+        if (bitcoin_price === undefined || bitcoin_price === null || bitcoin_price === '' || isNaN(priceNum) || priceNum <= 0) {
+          return res.status(400).json({ error: 'A fixed-rate offer needs a real, positive price.' });
+        }
+      }
+      const minNum = parseFloat(min_limit_local ?? min_limit_usd);
+      const maxNum = parseFloat(max_limit_local ?? max_limit_usd);
+      if (!isNaN(minNum) && !isNaN(maxNum) && (minNum <= 0 || maxNum <= 0 || maxNum < minNum)) {
+        return res.status(400).json({ error: 'Min/max limits must be positive, with max at or above min.' });
       }
     }
 
@@ -7195,7 +7239,7 @@ app.get('/api/seller-deposit/status', verifyToken, async (req, res) => {
 // POST /api/seller-deposit/withdraw-request — request release; does not move funds.
 // Eligibility (7 days + no open trades) is auto-checked; actual release requires
 // admin approval via /api/admin/seller-deposits/:userId/approve-withdrawal.
-app.post('/api/seller-deposit/withdraw-request', verifyToken, async (req, res) => {
+app.post('/api/seller-deposit/withdraw-request', verifyToken, requireNotBanned, async (req, res) => {
   try {
     const userId = req.userId;
     const { data: deposit } = await supabaseAdmin
@@ -7811,6 +7855,13 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
     const { data: listing } = await supabaseAdmin.from('listings').select('*').eq('id', listingId).single();
     if (!listing) return res.status(404).json({ error: 'Listing not found' });
     if (listing.seller_id === req.userId) return res.status(400).json({ error: 'Cannot trade with yourself' });
+    // requireNotBanned above only checks the trade OPENER — a banned listing owner's
+    // offers get paused the moment they're banned, but that alone doesn't stop a trade
+    // opened directly against a listing that's still ACTIVE for any reason (cache lag,
+    // a race between the ban and this request, a stale client). Block it here too.
+    if (await isUserBanned(listing.seller_id)) {
+      return res.status(403).json({ error: 'ACCOUNT_BANNED', message: 'This offer belongs to a banned account and can no longer be traded.' });
+    }
     const fee = calculateFee(parsedAmountBtc);
 
     // GOLDEN RULE: The offer CREATOR always has the Bitcoin.
@@ -10911,6 +10962,14 @@ app.put('/api/admin/users/:id/ban', verifyToken, async (req, res) => {
     const { data, error } = await supabaseAdmin.from('users').update({ account_status: 'banned', updated_at: new Date() }).eq('id', req.params.id).select().single();
     if (error) return res.status(400).json({ error: error.message });
     logAdminAction(req, 'BAN', req.params.id, { reason }).catch(() => { });
+    // A banned account's listings used to stay ACTIVE and kept showing in the
+    // marketplace — /api/listings and /api/offers only ever check listing status,
+    // never the seller's account_status, so a ban alone never hid a banned user's
+    // offers. Pause them here instead of leaving that as a manual cleanup step.
+    supabaseAdmin.from('listings')
+      .update({ status: 'PAUSED', updated_at: new Date().toISOString() })
+      .eq('seller_id', req.params.id).eq('status', 'ACTIVE')
+      .then(({ error: listErr }) => { if (listErr) console.error('[BAN] Failed to pause listings for', req.params.id, ':', listErr.message); });
     await createNotification(req.params.id, 'security', '🚫 Account Banned',
       reason ? `Your account has been banned. Reason: ${reason}` : 'Your account has been banned. Contact support if you believe this is a mistake.', '/');
     if (data?.email) emailService.sendAccountBannedEmail(data, reason).catch(() => {});
@@ -12385,7 +12444,7 @@ app.get('/api/wallet/usdt/check', verifyToken, async (req, res) => {
 // POST /api/wallet/usdt/internal-transfer — FREE instant USDT transfer between PRAQEN users
 // Internal ledger only — no Tron broadcast, no gas fee, instant settlement.
 // ─────────────────────────────────────────────────────────────────────────────
-app.post('/api/wallet/usdt/internal-transfer', verifyToken, async (req, res) => {
+app.post('/api/wallet/usdt/internal-transfer', verifyToken, requireNotBanned, async (req, res) => {
   try {
     const { toUsername, toTronAddress, amountUsdt } = req.body;
     const amount = parseFloat(amountUsdt);
