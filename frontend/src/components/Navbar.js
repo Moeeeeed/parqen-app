@@ -511,17 +511,33 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
                     </div>
                   </div>
 
-                  {/* P2P Trade row */}
-                  <Link to="/buy-bitcoin" onClick={() => setProfileDrop(false)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      padding: '10px 16px', textDecoration: 'none',
-                      borderBottom: `1px solid ${C.g100}`,
-                      background: isMarketActive ? C.mist : '#fff',
-                    }}>
-                    <TrendingUp size={14} color={isMarketActive ? C.forest : C.green} />
-                    <span style={{ fontSize: 13, fontWeight: 800, color: isMarketActive ? C.forest : C.g800 }}>P2P Trade</span>
-                  </Link>
+                  {/* P2P Trade — was a single link hardcoded to /buy-bitcoin, so Sell
+                      Bitcoin, Buy USDT, and Sell USDT were unreachable from this menu
+                      on mobile even though the desktop dropdown links to all four. */}
+                  <p style={{ margin: 0, padding: '10px 16px 4px', fontSize: 10, fontWeight: 800, letterSpacing: '0.6px', color: C.g400, textTransform: 'uppercase' }}>P2P Trade</p>
+                  <div style={{ paddingBottom: 6, borderBottom: `1px solid ${C.g100}` }}>
+                    {[
+                      { to: '/buy-bitcoin', icon: ShoppingCart, label: 'Buy Bitcoin',  color: '#16A34A' },
+                      { to: '/sell-bitcoin', icon: Tag,          label: 'Sell Bitcoin', color: C.goldDark },
+                      { to: '/buy-usdt',    icon: null,          label: 'Buy USDT',    color: '#0D9488' },
+                      { to: '/sell-usdt',   icon: null,          label: 'Sell USDT',   color: C.goldDark },
+                    ].map(({ to, icon: Icon, label, color }) => (
+                      <Link key={to} to={to} onClick={() => setProfileDrop(false)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '9px 16px', textDecoration: 'none',
+                          background: isActive(to) ? C.mist : '#fff',
+                          transition: 'background 0.15s',
+                        }}
+                        onMouseEnter={e => { if (!isActive(to)) e.currentTarget.style.background = C.g100; }}
+                        onMouseLeave={e => { if (!isActive(to)) e.currentTarget.style.background = '#fff'; }}>
+                        {Icon
+                          ? <Icon size={14} color={isActive(to) ? C.forest : color} style={{ flexShrink: 0 }} />
+                          : <span style={{ width: 14, textAlign: 'center', fontSize: 12, fontWeight: 900, color: isActive(to) ? C.forest : color, flexShrink: 0 }}>₮</span>}
+                        <span style={{ fontSize: 13, fontWeight: 800, color: isActive(to) ? C.forest : C.g800 }}>{label}</span>
+                      </Link>
+                    ))}
+                  </div>
 
                   {/* Nav links */}
                   <div style={{ padding: '6px 0' }}>
