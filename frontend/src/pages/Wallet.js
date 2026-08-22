@@ -756,6 +756,14 @@ function TxReceiptModal({ tx, onClose, onRepeat, btcPrice, user, tradeParties })
     : type === 'TRANSFER_IN'  ? 'Received'
     : type === 'WITHDRAWAL'   ? (isUsdt ? 'USDT Sent' : 'Bitcoin Sent')
     : type === 'DEPOSIT'      ? (isUsdt ? 'USDT Received' : 'Bitcoin Received')
+    : type === 'ESCROW_LOCK'  ? 'Locked in Escrow'
+    : type === 'ESCROW_RELEASE' ? 'Escrow Released'
+    : type === 'SECURITY_DEPOSIT_LOCK' ? 'Security Deposit'
+    : type === 'SECURITY_DEPOSIT_SEIZED' ? 'Deposit Seized'
+    : type === 'SECURITY_DEPOSIT_RELEASE' ? 'Deposit Returned'
+    : type === 'SECURITY_DEPOSIT_CREDIT' ? 'Deposit Credited'
+    : type === 'FEE'           ? 'Platform Fee'
+    : type === 'ESCROW_REFUND' ? 'Escrow Refund'
     : isTrade                 ? 'Trade'
     : isSend                  ? 'Send-out'
     : 'Received';
@@ -1075,11 +1083,17 @@ function TxRow({ tx, onClick, btcPrice }) {
   const absUsd = isUsdt ? absAmt : absAmt * (btcPrice || 88000);
   const dateStr = fmtTxDate(tx.created_at || tx.date);
 
+  // Escrow / security-deposit / fee entries are internal trade-mechanics —
+  // opening a full receipt modal for them is confusing, so we disable the click.
+  const txType = (tx.type || '').toUpperCase();
+  const isEscrowType = txType.includes('ESCROW') || txType.includes('SECURITY_DEPOSIT') || txType === 'FEE';
+  const handleClick = isEscrowType ? undefined : onClick;
+
   return (
     <div
-      className="flex items-center justify-between gap-3 py-3.5 px-3 -mx-3 border-b last:border-0 cursor-pointer hover:bg-slate-50 rounded-2xl transition"
+      className={`flex items-center justify-between gap-3 py-3.5 px-3 -mx-3 border-b last:border-0 rounded-2xl transition ${isEscrowType ? '' : 'cursor-pointer hover:bg-slate-50'}`}
       style={{ borderColor: C.g100 }}
-      onClick={onClick}
+      onClick={handleClick}
     >
       <div className="flex items-center gap-3 min-w-0 flex-1">
         <div
@@ -1120,7 +1134,7 @@ function TxRow({ tx, onClick, btcPrice }) {
             {dateStr}
           </p>
         </div>
-        <ChevronRight size={16} style={{ color: C.g300 }} />
+        {!isEscrowType && <ChevronRight size={16} style={{ color: C.g300 }} />}
       </div>
     </div>
   );
