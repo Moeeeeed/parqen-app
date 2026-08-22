@@ -5527,7 +5527,7 @@ app.put('/api/users/profile', verifyToken, async (req, res) => {
     const { username, full_name, fullName, bio, location, website, phone, hide_full_name, name_display } = req.body;
 
     // Fetch current user to enforce rules
-    const { data: current } = await supabaseAdmin.from('users').select('username, full_name, username_changed_at, is_id_verified, full_name_changed_at').eq('id', req.userId).single();
+    const { data: current } = await supabaseAdmin.from('users').select('username, full_name, username_changed_at, is_id_verified, full_name_changed_at, location').eq('id', req.userId).single();
 
     const updateData = {};
 
@@ -5540,16 +5540,23 @@ app.put('/api/users/profile', verifyToken, async (req, res) => {
       updateData.username_changed_at = new Date().toISOString();
     }
 
-    // Full name: locked after first change OR after ID verification
+    // Full name: locked after first change OR after ID verification. The edit form
+    // always sends full_name (pre-filled with the current value, sent on every save
+    // regardless of what the user actually touched), so these locks used to fire on
+    // ANY profile edit — bio, website, anything — for every KYC-verified user, since
+    // full_name !== undefined was true even when the value hadn't changed. Same bug
+    // hit location right below it. Both now only enforce the lock when the value is
+    // actually different from what's already stored.
     if (full_name !== undefined || fullName !== undefined) {
       const newName = full_name ?? fullName;
-      if (current?.is_id_verified) {
+      const nameChanged = newName !== current?.full_name;
+      if (nameChanged && current?.is_id_verified) {
         return res.status(403).json({ error: 'Full name cannot be changed after ID verification.' });
       }
-      if (current?.full_name_changed_at && newName !== current?.full_name) {
+      if (nameChanged && current?.full_name_changed_at) {
         return res.status(403).json({ error: 'Full name can only be changed once.' });
       }
-      if (newName !== current?.full_name) {
+      if (nameChanged) {
         updateData.full_name_changed_at = new Date().toISOString();
       }
       updateData.full_name = newName;
@@ -5557,7 +5564,7 @@ app.put('/api/users/profile', verifyToken, async (req, res) => {
 
     if (bio !== undefined) updateData.bio = bio;
     if (location !== undefined) {
-      if (current?.is_id_verified) {
+      if (location !== current?.location && current?.is_id_verified) {
         return res.status(403).json({ error: 'Location cannot be changed after ID verification.' });
       }
       updateData.location = location;
@@ -5817,15 +5824,17 @@ app.post('/api/listings', verifyToken, requireNotBanned, async (req, res) => {
     // POST /api/offers) but stays live and reachable directly — which is exactly
     // how it got exploited: 13 listings from one account in a 63-second window,
     // scripted, with margin as high as 1,000,000%, margin as low as -10,000%, and
-    // a bitcoin_price of -5000. Same bounds as /api/offers: SELL is capped at
-    // -10%/+10%; BUY and gift-card offers get more room at -10%/+100%.
+    // a bitcoin_price of -5000. Same bounds as /api/offers: Buy and Sell both
+    // -10%/+10%, gift cards widest at -10%/+100%.
     const listingUpperType = (listingType || '').toUpperCase();
     const listingIsSellPriced = ['SELL', 'SELL_BITCOIN'].includes(listingUpperType);
-    const listingIsBuyOrGiftCardPriced = ['BUY', 'BUY_BITCOIN', 'BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(listingUpperType);
-    if (listingIsSellPriced || listingIsBuyOrGiftCardPriced) {
-      const listingMarginMax = listingIsSellPriced ? 10 : 100;
-      if (isNaN(marginPct) || marginPct < -10 || marginPct > listingMarginMax) {
-        return res.status(400).json({ error: `Margin must be between -10% and +${listingMarginMax}%.` });
+    const listingIsBuyPriced = ['BUY', 'BUY_BITCOIN'].includes(listingUpperType);
+    const listingIsGiftCardPriced = ['BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(listingUpperType);
+    if (listingIsSellPriced || listingIsBuyPriced || listingIsGiftCardPriced) {
+      const listingMarginMin = -10;
+      const listingMarginMax = listingIsGiftCardPriced ? 100 : 10;
+      if (isNaN(marginPct) || marginPct < listingMarginMin || marginPct > listingMarginMax) {
+        return res.status(400).json({ error: `Margin must be between ${listingMarginMin > 0 ? '+' : ''}${listingMarginMin}% and +${listingMarginMax}%.` });
       }
       if ((b.pricing_type || b.pricingType) === 'fixed' && !(btcPriceUSD > 0)) {
         return res.status(400).json({ error: 'A fixed-rate offer needs a real, positive price.' });
@@ -6479,15 +6488,17 @@ app.put('/api/listings/:id', verifyToken, async (req, res) => {
     }
     const editUpperType = (listing.listing_type || '').toUpperCase();
     const isSellListing = ['SELL', 'SELL_BITCOIN'].includes(editUpperType);
-    const isBuyOrGiftCardListing = ['BUY', 'BUY_BITCOIN', 'BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(editUpperType);
-    // Same margin cap as offer creation — editing a listing was the other
+    const isBuyListing = ['BUY', 'BUY_BITCOIN'].includes(editUpperType);
+    const isGiftCardListing = ['BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(editUpperType);
+    // Same margin caps as offer creation — editing a listing was the other
     // unvalidated path into an above-market margin (was SELL-only here too,
     // leaving BUY listings free to be edited to any margin post-creation).
-    if ((isSellListing || isBuyOrGiftCardListing) && margin !== undefined && margin !== null && margin !== '') {
-      const editMarginMax = isSellListing ? 10 : 100;
+    if ((isSellListing || isBuyListing || isGiftCardListing) && margin !== undefined && margin !== null && margin !== '') {
+      const editMarginMin = -10;
+      const editMarginMax = isGiftCardListing ? 100 : 10;
       const marginNum = parseFloat(margin);
-      if (isNaN(marginNum) || marginNum < -10 || marginNum > editMarginMax) {
-        return res.status(400).json({ error: `Margin must be between -10% and +${editMarginMax}%.` });
+      if (isNaN(marginNum) || marginNum < editMarginMin || marginNum > editMarginMax) {
+        return res.status(400).json({ error: `Margin must be between ${editMarginMin > 0 ? '+' : ''}${editMarginMin}% and +${editMarginMax}%.` });
       }
     }
     // For SELL offers: cap max_limit_usd at seller's actual wallet balance
@@ -6886,17 +6897,18 @@ app.post('/api/offers', verifyToken, requireNotBanned, async (req, res) => {
     // was left completely unchecked. That gap is how a BUY_BTC listing with
     // margin=1000000 (and others with margin=-10000, bitcoin_price=-5000, limits=0 —
     // 13 garbage listings from one account in a 63-second window, clearly scripted)
-    // made it onto the live market. SELL offers keep the -10%/+10% cap; BUY and
-    // gift-card offers get more room (-10%/+100%) — buyers routinely markup above
-    // market to compete for gift-card/BUY liquidity, unlike a Sell Bitcoin listing.
+    // made it onto the live market. Every type shares the same -10% floor; Buy and
+    // Sell both have a +10% ceiling (only gift cards go to +100%).
     const upperType = (mappedType || '').toUpperCase();
     const isSellPriced = ['SELL', 'SELL_BITCOIN'].includes(upperType);
-    const isBuyOrGiftCardPriced = ['BUY', 'BUY_BITCOIN', 'BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(upperType);
-    if (isSellPriced || isBuyOrGiftCardPriced) {
-      const marginMax = isSellPriced ? 10 : 100;
+    const isBuyPriced = ['BUY', 'BUY_BITCOIN'].includes(upperType);
+    const isGiftCardPriced = ['BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(upperType);
+    if (isSellPriced || isBuyPriced || isGiftCardPriced) {
+      const marginMin = -10;
+      const marginMax = isGiftCardPriced ? 100 : 10;
       const marginNum = parseFloat(margin);
-      if (margin !== undefined && margin !== null && margin !== '' && (isNaN(marginNum) || marginNum < -10 || marginNum > marginMax)) {
-        return res.status(400).json({ error: `Margin must be between -10% and +${marginMax}%.` });
+      if (margin !== undefined && margin !== null && margin !== '' && (isNaN(marginNum) || marginNum < marginMin || marginNum > marginMax)) {
+        return res.status(400).json({ error: `Margin must be between ${marginMin > 0 ? '+' : ''}${marginMin}% and +${marginMax}%.` });
       }
       if (pricing_type === 'fixed') {
         const priceNum = parseFloat(bitcoin_price);
@@ -7335,10 +7347,23 @@ app.post('/api/admin/seller-deposits/:userId/approve-deposit', verifyToken, asyn
     const targetUserId = req.params.userId;
     const nowIso = new Date().toISOString();
 
-    const { data: rows, error } = await supabaseAdmin.from('seller_deposits')
+    // approved_at only exists once database/seller_deposit_admin_approval_migration.sql
+    // has actually been run in the Supabase SQL Editor — it wasn't, so writing it
+    // failed the whole update and made every approval attempt bounce off a misleading
+    // "No pending deposit approval for this user" 400, even for a real pending row.
+    // Retry without it rather than hard-failing every approval on a missing column.
+    let rows, error;
+    ({ data: rows, error } = await supabaseAdmin.from('seller_deposits')
       .update({ status: 'LOCKED', approved_at: nowIso, updated_at: nowIso })
       .eq('user_id', targetUserId).eq('status', 'PENDING_APPROVAL')
-      .select().single();
+      .select().single());
+    if (error && /approved_at/i.test(error.message || '')) {
+      console.warn('[approve-deposit] approved_at column missing — run database/seller_deposit_admin_approval_migration.sql. Falling back.');
+      ({ data: rows, error } = await supabaseAdmin.from('seller_deposits')
+        .update({ status: 'LOCKED', updated_at: nowIso })
+        .eq('user_id', targetUserId).eq('status', 'PENDING_APPROVAL')
+        .select().single());
+    }
 
     if (error || !rows) {
       return res.status(400).json({ error: 'No pending deposit approval for this user.' });
@@ -7400,9 +7425,24 @@ app.post('/api/admin/seller-deposits/:userId/reject-deposit', verifyToken, async
       return res.status(409).json({ error: 'Wallet balance changed — please retry.' });
     }
 
-    await supabaseAdmin.from('seller_deposits')
+    // rejected_at only exists once database/seller_deposit_admin_approval_migration.sql
+    // has actually been run — it wasn't, so this update was silently failing (its
+    // result was never checked) while the wallet refund above still went through,
+    // leaving the deposit row stuck at PENDING_APPROVAL forever even though the
+    // money had already moved back to the user.
+    let statusUpdErr;
+    ({ error: statusUpdErr } = await supabaseAdmin.from('seller_deposits')
       .update({ status: 'REJECTED', rejected_at: nowIso, admin_notes: reason || null, updated_at: nowIso })
-      .eq('id', deposit.id);
+      .eq('id', deposit.id));
+    if (statusUpdErr && /rejected_at/i.test(statusUpdErr.message || '')) {
+      console.warn('[reject-deposit] rejected_at column missing — run database/seller_deposit_admin_approval_migration.sql. Falling back.');
+      ({ error: statusUpdErr } = await supabaseAdmin.from('seller_deposits')
+        .update({ status: 'REJECTED', admin_notes: reason || null, updated_at: nowIso })
+        .eq('id', deposit.id));
+    }
+    if (statusUpdErr) {
+      console.error(`🚨 [reject-deposit] Refunded ${targetUserId} but failed to update deposit row status — needs manual fix:`, statusUpdErr.message);
+    }
 
     await supabaseAdmin.from('wallet_transactions').insert({
       user_id: targetUserId,
@@ -7939,8 +7979,11 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
         return res.status(400).json({ error: 'Rate quote does not match this listing' });
       }
       verifiedAmountBtc = parseFloat((tradeLocalAmt / quote.executableRate).toFixed(8));
-      tradeAmountUsd = parseFloat((verifiedAmountBtc * quote.components.btcUsd).toFixed(2));
-      console.log(`[Quote] id=${quoteId.slice(0, 8)} rate=${quote.executableRate.toFixed(2)} btc=${verifiedAmountBtc}`);
+      // components.assetUsd is the correct per-unit USD price for whatever this listing's
+      // asset actually is (1 for USDT, live BTC/USD for BTC) — this used to always read
+      // components.btcUsd, pricing every USDT trade's dollar value off the live BTC rate.
+      tradeAmountUsd = parseFloat((verifiedAmountBtc * quote.components.assetUsd).toFixed(2));
+      console.log(`[Quote] id=${quoteId.slice(0, 8)} rate=${quote.executableRate.toFixed(2)} amount=${verifiedAmountBtc}`);
     } else {
       // ── FALLBACK PATH: live rate re-fetch (no quoteId or gift-card trade) ─
       // Reuse the already-hardened multi-source helpers (each source individually
@@ -7958,10 +8001,19 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
       verifiedAmountBtc = parsedAmountBtc;
       if (tradeLocalAmt > 0 && !listingTypeUpper.includes('GIFT_CARD')) {
         const listingMargin = parseFloat(listing.margin || 0);
-        const backendSellerRateUSD = (listing.pricing_type === 'fixed' && parseFloat(listing.bitcoin_price || 0) > 100)
+        // CreateOffer.js's fixed-price field is explicitly labelled "Fixed Price ({currency}
+        // per {asset})" and stores exactly what the seller typed — it is ALREADY denominated
+        // in the listing's local currency, for both BTC and USDT listings (margin doesn't even
+        // apply to fixed pricing; CreateOffer.js only shows the margin control under 'market'
+        // pricing). Multiplying it by tradeCurRate again (as this used to, treating it as a USD
+        // price) inflated the effective rate by roughly the local/USD FX factor — for a listing
+        // priced at 555 XOF/USDT this made a real $16 trade settle as 0.03 USDT (~$0.03) while
+        // displaying a bogus ~$2,469 (the raw quantity misread against the live BTC price
+        // elsewhere). Only the live-market branch needs a USD->local conversion.
+        const isFixedPriced = listing.pricing_type === 'fixed' && parseFloat(listing.bitcoin_price || 0) > 0;
+        const backendSellerRateLocal = isFixedPriced
           ? parseFloat(listing.bitcoin_price)
-          : marketRateUSD * (1 + listingMargin / 100);
-        const backendSellerRateLocal = backendSellerRateUSD * tradeCurRate;
+          : marketRateUSD * (1 + listingMargin / 100) * tradeCurRate;
 
         let finalSellerRateLocal = backendSellerRateLocal;
         if (frontendRateLocal > 0 && backendSellerRateLocal > 0) {
