@@ -395,7 +395,10 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   const cur = listing.currency || 'USD';
   const sym = listing.currency_symbol || CUR_SYM[cur] || '$';
   const usdRate = USD_RATES[cur] || 1;
-  const rateUSD = getRateUSD(listing, btcPriceUSD);
+  // USDT listings trade at ~$1 per token, not BTC price — detect asset type to avoid ~88,000x overstatement
+  const isUsdtCard = (listing.asset || listing.crypto_asset || 'BTC').toUpperCase() === 'USDT';
+  const spotPriceUSD = isUsdtCard ? 1 : btcPriceUSD;
+  const rateUSD = getRateUSD(listing, spotPriceUSD);
   const rateLocal = rateUSD * usdRate;
 
   const cardType = listing.card_type || 'both';
@@ -419,9 +422,10 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   // Convert local currency value into USD equivalent for crypto calculation
   const refUSD = localVal > 0 ? (usdRate > 0 ? localVal / usdRate : localVal) : 1;
   const btcOut = refUSD / (rateUSD || 1);
-  const receiveUSD = btcOut * btcPriceUSD;
+  const receiveUSD = btcOut * spotPriceUSD;
   const viewerIsBuyingCard = listing.listing_type === 'BUY_GIFT_CARD';
-  const cryptoSide = { val: `${fBtc(btcOut)} BTC`, sub: `≈ $${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}` };
+  const assetLabel = isUsdtCard ? 'USDT' : 'BTC';
+  const cryptoSide = { val: `${fBtc(btcOut)} ${assetLabel}`, sub: `≈ $${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}` };
   const youGive    = viewerIsBuyingCard ? cardSide   : cryptoSide;
   const youReceive = viewerIsBuyingCard ? cryptoSide : cardSide;
 
@@ -698,7 +702,9 @@ function SellerModal({ seller, listing, onClose, onTrade, btcPriceUSD }) {
   const cur = listing?.currency || 'USD';
   const sym = listing?.currency_symbol || CUR_SYM[cur] || '$';
   const usdRate = USD_RATES[cur] || 1;
-  const rate = getRateUSD(listing || {}, btcPriceUSD || 68000) * usdRate;
+  const isUsdtCard = ((listing?.asset || listing?.crypto_asset || 'BTC').toUpperCase() === 'USDT');
+  const spotPriceUSD = isUsdtCard ? 1 : (btcPriceUSD || 68000);
+  const rate = getRateUSD(listing || {}, spotPriceUSD) * usdRate;
   const margin = parseFloat(listing?.margin || 0);
 
   const phoneOk = !!(u.is_phone_verified || u.phone_verified);
