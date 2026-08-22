@@ -12133,6 +12133,17 @@ app.post('/api/wallet/usdt/send', verifyToken, requireNotBanned, async (req, res
       error: 'Withdrawals are temporarily disabled for maintenance. Trading and internal transfers are unaffected — please try again later.',
     });
   }
+  // USDT-only kill-switch (SENDS_DISABLED above is shared with BTC and would
+  // take both down together). TRON network delays meant USDT sends were
+  // getting stuck/rejected one at a time via manual CEO review — this blocks
+  // new external USDT withdrawal requests at the source instead, while BTC
+  // withdrawals, trading, and internal transfers stay unaffected.
+  if (process.env.USDT_SENDS_DISABLED === 'true') {
+    return res.status(503).json({
+      error: 'USDT withdrawals are temporarily paused due to a delay on the Tron network. Please use BTC for now, or contact support.',
+      code: 'USDT_SENDS_DISABLED',
+    });
+  }
   const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.02'); // flat 2% — no flat-dollar floor
   const MIN_SEND = parseFloat(process.env.USDT_MIN_SEND || '5.0');  // minimum $5
 

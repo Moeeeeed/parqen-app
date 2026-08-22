@@ -753,7 +753,17 @@ async function sendCeoApprovalRequestEmail(ceoUser, info) {
   });
 }
 
-function withdrawalRejectedHtml(name, amountBtc, reason) {
+// currency: 'BTC' (default, 8 decimals, ₿) or 'USDT' (2 decimals, ₮). The reason
+// a CEO types when rejecting is often the actual next-step instruction (e.g.
+// "please use BTC to send out instead") — it gets its own highlighted block so
+// it can't be missed the way an easy-to-skip in-app notification can be. This
+// email used to only fire for BTC; USDT withdrawals only ever got the in-app
+// notification, so a USDT-rejection reason telling someone to try a different
+// method could go completely unseen.
+function withdrawalRejectedHtml(name, amount, reason, currency = 'BTC') {
+  const isUsdt = currency === 'USDT';
+  const symbol = isUsdt ? '₮' : '₿';
+  const formatted = isUsdt ? parseFloat(amount || 0).toFixed(2) : parseFloat(amount || 0).toFixed(8);
   return base('Withdrawal Declined ⚠️', `
     <div style="text-align:center;margin-bottom:20px;">
       <div style="font-size:48px;">⚠️</div>
@@ -761,23 +771,26 @@ function withdrawalRejectedHtml(name, amountBtc, reason) {
     </div>
     <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>, we weren't able to complete this withdrawal request. The full amount has been returned to your PRAQEN wallet — no funds were lost.</p>
     ${infoBox(`
-      <tr><td style="padding:8px 0;color:#64748B;font-size:13px;font-weight:600;">Amount Returned</td><td style="padding:8px 0;color:#059669;font-size:20px;font-weight:900;text-align:right;">₿ ${parseFloat(amountBtc || 0).toFixed(8)}</td></tr>
-      <tr><td style="padding:7px 0;color:#64748B;font-size:12px;font-weight:600;">Reason</td><td style="padding:7px 0;color:#1E293B;font-size:12px;text-align:right;">${reason}</td></tr>
+      <tr><td style="padding:8px 0;color:#64748B;font-size:13px;font-weight:600;">Amount Returned</td><td style="padding:8px 0;color:#059669;font-size:20px;font-weight:900;text-align:right;">${symbol} ${formatted}</td></tr>
     `)}
+    <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:14px 16px;margin:16px 0;">
+      <p style="margin:0 0 4px;font-size:11px;font-weight:800;color:#92400E;text-transform:uppercase;letter-spacing:0.5px;">Reason &amp; Next Step</p>
+      <p style="margin:0;font-size:14px;color:#78350F;line-height:1.6;font-weight:600;">${reason}</p>
+    </div>
     <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 16px;">
       <p style="margin:0;font-size:13px;color:#991b1b;">If you believe this is a mistake, or need help verifying your destination wallet, contact <a href="mailto:support@praqen.com" style="color:#b45309;font-weight:700;">support@praqen.com</a></p>
     </div>
   `);
 }
 
-async function sendWithdrawalRejectedEmail(user, amountBtc, reason) {
+async function sendWithdrawalRejectedEmail(user, amount, reason, currency = 'BTC') {
   return sendEmail({
     userId:   user.id,
     to:       user.email,
     subject:  `⚠️ Withdrawal Declined — funds returned to your wallet`,
-    html:     withdrawalRejectedHtml(user.username || 'Trader', amountBtc, reason),
+    html:     withdrawalRejectedHtml(user.username || 'Trader', amount, reason, currency),
     type:     'withdrawal_rejected',
-    metadata: { amount_btc: amountBtc, reason },
+    metadata: { amount, currency, reason },
   });
 }
 
