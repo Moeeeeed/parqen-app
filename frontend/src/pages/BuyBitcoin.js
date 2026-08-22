@@ -206,9 +206,15 @@ const getLastSeen = (u) => {
   if (s<86400) { const h=~~(s/3600); return {label:`${h} ${h===1?'hr':'hrs'} ago`, online:false}; }
   const dy=~~(s/86400); return {label:`${dy} ${dy===1?'day':'days'} ago`, online:false};
 };
-const getRateUSD = (l, btcPrice) => {
+// Fixed-price listings store bitcoin_price already in the listing's LOCAL currency
+// (CreateOffer.js labels the field "Fixed Price ({currency} per {asset})") — callers
+// used to multiply this function's return value by usdRate unconditionally, which
+// double-converted fixed prices. This now always returns a local-currency rate
+// directly; no further conversion needed at the call site. See quoteService.js for
+// the matching backend fix.
+const getRateLocal = (l, btcPrice, usdRate) => {
   if (l.pricing_type==='fixed') { const s=parseFloat(l.bitcoin_price||0); if(s>100) return s; }
-  return btcPrice * (1 + parseFloat(l.margin||0)/100);
+  return btcPrice * (1 + parseFloat(l.margin||0)/100) * usdRate;
 };
 const calcBtc = (fiatAmt, btcUSD, marginPct, usdToLocal) => {
   const sellerRateLocal = btcUSD * (1+marginPct/100) * usdToLocal;
@@ -311,7 +317,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
   const cur       = listing.currency || 'GHS';
   const sym       = listing.currency_symbol || CUR_SYM[cur] || '₵';
   const usdRate   = USD_RATES[cur] || 1;
-  const rateLocal = getRateUSD(listing, btcPriceUSD) * usdRate;
+  const rateLocal = getRateLocal(listing, btcPriceUSD, usdRate);
 
   const minLocal = listing.min_limit_local || (listing.min_limit_usd ? listing.min_limit_usd*usdRate : 100*usdRate);
   const maxLocal = listing.max_limit_local || (listing.max_limit_usd ? listing.max_limit_usd*usdRate : 1000*usdRate);
@@ -587,7 +593,7 @@ function ProfileModal({seller, listing, onClose, onTrade, btcPriceUSD}) {
   const cur    = listing?.currency || 'GHS';
   const sym    = listing?.currency_symbol || CUR_SYM[cur] || '₵';
   const usdRate   = USD_RATES[cur] || 1;
-  const rateLocal = getRateUSD(listing || {}, btcPriceUSD || 68000) * usdRate;
+  const rateLocal = getRateLocal(listing || {}, btcPriceUSD || 68000, usdRate);
 
   // Proper verification — only use the dedicated verified flags, never raw phone/email presence
   const phoneOk = !!(u.is_phone_verified || u.phone_verified);

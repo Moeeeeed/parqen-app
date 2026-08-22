@@ -298,16 +298,21 @@ const getLastSeen = (u) => {
   if (s < 86400) { const h = ~~(s / 3600); return { label: `${h} ${h === 1 ? 'hr' : 'hrs'} ago`, online: false }; }
   const dy = ~~(s / 86400); return { label: `${dy} ${dy === 1 ? 'day' : 'days'} ago`, online: false };
 };
-const getRateUSD = (l, btcPrice) => {
-  // Gift cards trade against both BTC and USDT (see the crypto filter below) — a
-  // USDT-asset listing priced at 'market' must use the ~$1 USDT peg, not the BTC
-  // rate, or its amounts come out ~88,000x too high.
-  const isUsdt = l.asset === 'USDT';
+// Fixed-price listings store bitcoin_price already in the listing's LOCAL currency
+// (CreateOffer.js labels the field "Fixed Price ({currency} per {asset})") — this
+// now always returns a local-currency rate directly, so callers must NOT multiply
+// by usdRate again (that used to double-convert fixed prices — a listing fixed at
+// 555 XOF/USDT displayed as ~333,000). See quoteService.js for the matching backend
+// fix. Gift cards trade against both BTC and USDT (see the crypto filter below) — a
+// USDT-asset listing priced at 'market' must use the ~$1 USDT peg, not the BTC
+// rate, or its amounts come out ~88,000x too high.
+const getRateLocal = (l, btcPrice, usdRate) => {
+  const isUsdt = (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'USDT';
   if (l.pricing_type === 'fixed') {
     const s = parseFloat(l.bitcoin_price || 0);
     if (s > (isUsdt ? 0.01 : 100)) return s;
   }
-  return (isUsdt ? 1 : btcPrice) * (1 + parseFloat(l.margin || 0) / 100);
+  return (isUsdt ? 1 : btcPrice) * (1 + parseFloat(l.margin || 0) / 100) * usdRate;
 };
 const getBrand = (l) => l.gift_card_brand || l.giftCardBrand || l.card_brand || 'Gift Card';
 const getFaceVal = (l) => { const v = l.face_value || l.card_value || l.amount_usd; return v ? parseFloat(v) : null; };
@@ -402,11 +407,10 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   const cur = listing.currency || 'USD';
   const sym = listing.currency_symbol || CUR_SYM[cur] || '$';
   const usdRate = USD_RATES[cur] || 1;
-  // USDT listings trade at ~$1 per token, not BTC price — detect asset type to avoid ~88,000x overstatement
   const isUsdtCard = (listing.asset || listing.crypto_asset || 'BTC').toUpperCase() === 'USDT';
   const spotPriceUSD = isUsdtCard ? 1 : btcPriceUSD;
-  const rateUSD = getRateUSD(listing, spotPriceUSD);
-  const rateLocal = rateUSD * usdRate;
+  const rateLocal = getRateLocal(listing, btcPriceUSD, usdRate);
+  const rateUSD = usdRate > 0 ? rateLocal / usdRate : rateLocal;
 
   const cardType = listing.card_type || 'both';
   const cardRange = getCardRange(listing);
@@ -709,9 +713,7 @@ function SellerModal({ seller, listing, onClose, onTrade, btcPriceUSD }) {
   const cur = listing?.currency || 'USD';
   const sym = listing?.currency_symbol || CUR_SYM[cur] || '$';
   const usdRate = USD_RATES[cur] || 1;
-  const isUsdtCard = ((listing?.asset || listing?.crypto_asset || 'BTC').toUpperCase() === 'USDT');
-  const spotPriceUSD = isUsdtCard ? 1 : (btcPriceUSD || 68000);
-  const rate = getRateUSD(listing || {}, spotPriceUSD) * usdRate;
+  const rate = getRateLocal(listing || {}, btcPriceUSD || 68000, usdRate);
   const margin = parseFloat(listing?.margin || 0);
 
   const phoneOk = !!(u.is_phone_verified || u.phone_verified);

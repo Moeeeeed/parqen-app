@@ -77,19 +77,32 @@ async function createQuote(listing) {
   const currency   = listing.currency || 'USD';
   const usdToLocal = fxRates[currency] || getFxRate(currency);
   const margin     = parseFloat(listing.margin || 0);
+  const isUsdtAsset = listing.asset === 'USDT';
+  // This function used to assume every listing was BTC-priced: a live-market USDT
+  // listing got quoted against the BTC/USD rate (making a $50 USDT trade compute
+  // as ~0.0006 USDT), and a 'fixed' listing's bitcoin_price -- already stored in
+  // the listing's LOCAL currency (CreateOffer.js labels the field "Fixed Price
+  // ({currency} per {asset})" and stores exactly what the seller typed) -- was
+  // treated as a USD price and multiplied by usdToLocal a second time. For a
+  // listing fixed at 555 XOF/USDT that turned a real ~$16 trade into an
+  // executableRate of ~333,000 (555 * 600), so a 10,000 XOF payment settled for
+  // 0.03 USDT instead of ~18, and separately the trade's displayed dollar value
+  // was computed by multiplying that ~0.03 USDT quantity by the live BTC price
+  // (components.btcUsd) -- unrelated to a USDT trade entirely -- producing the
+  // ~$2,469 shown for what was really a few cents.
+  const assetUsd = isUsdtAsset ? 1 : btcUsd; // USDT is ~1:1 with USD; BTC needs the live rate
+  const isFixedPriced = listing.pricing_type === 'fixed' && parseFloat(listing.bitcoin_price || 0) > 0;
 
-  const basePriceUSD = (listing.pricing_type === 'fixed' && parseFloat(listing.bitcoin_price || 0) > 100)
-    ? parseFloat(listing.bitcoin_price)
-    : btcUsd;
-
-  const executableRate = basePriceUSD * (1 + margin / 100) * usdToLocal;
+  const executableRate = isFixedPriced
+    ? parseFloat(listing.bitcoin_price) // already local-currency-denominated; no margin, no FX conversion
+    : assetUsd * (1 + margin / 100) * usdToLocal;
 
   const quoteId = crypto.randomBytes(16).toString('hex');
   quotes.set(quoteId, {
     quoteId,
     listingId: String(listing.id),
     executableRate,
-    components: { btcUsd, usdToLocal, margin, currency },
+    components: { assetUsd, usdToLocal, margin, currency },
     expiresAt: Date.now() + 30000,
     used: false,
   });

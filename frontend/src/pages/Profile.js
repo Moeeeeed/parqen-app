@@ -535,7 +535,7 @@ export default function Profile({ userId: propUserId }) {
       const tk = localStorage.getItem('token');
       const r = await axios.put(`${API_URL}/users/profile`, form, { headers: { Authorization: `Bearer ${tk}` } });
       if (r.data.success) { const u = r.data.user || { ...user, ...form }; setUser(u); const cu = JSON.parse(localStorage.getItem('user') || '{}'); Object.assign(cu, form); localStorage.setItem('user', JSON.stringify(cu)); window.dispatchEvent(new Event('userUpdated')); toast.success('Profile updated!'); setEditing(false); }
-    } catch (err) { toast.error('Update failed'); }
+    } catch (err) { toast.error(err?.response?.data?.error || 'Update failed'); }
     finally { setSaving(false); }
   };
 

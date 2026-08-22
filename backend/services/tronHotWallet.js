@@ -313,6 +313,7 @@ class TronHotWallet {
       const tx   = await tronWallet.sendUSDT(`user_${userId}`, hotAddr, amountUsdt);
       const txid = tx.txid;
       await this._recordSweep(userId, userAddress, amountUsdt, 'COMPLETED', txid, null);
+      await this._decrementOnchainCheckpoint(userId, amountUsdt);
       console.log(`✅ [HotWallet] Sweep complete: ₮${amountUsdt} | txid: ${txid}`);
       return { deferred: false, txid };
     } catch (sweepErr) {
@@ -379,6 +380,7 @@ class TronHotWallet {
         await supabase.from('hot_wallet_sweeps')
           .update({ status: 'COMPLETED', txid, error: null, updated_at: new Date().toISOString() })
           .eq('id', row.id);
+        await this._decrementOnchainCheckpoint(row.user_id, sweepAmt);
 
         console.log(`✅ [HotWallet] Retry sweep OK: ₮${sweepAmt} from ${row.from_address} | txid: ${txid}`);
 
@@ -480,6 +482,33 @@ class TronHotWallet {
 
     console.log(`[HotWallet] Sent ${fundAmount} TRX → ${toAddress} | txid: ${tx.txid}`);
     return tx;
+  }
+
+  /**
+   * usdtDepositMonitor detects new deposits by comparing the address's current
+   * on-chain USDT balance against user_wallets.last_onchain_usdt (the balance
+   * as of the last check). A sweep moves funds OUT of that address on-chain,
+   * so its real balance drops — but nothing was updating this checkpoint to
+   * match. The next deposit then got compared against a checkpoint that was
+   * still sitting at the pre-sweep high, permanently under-crediting the
+   * user by exactly whatever had already been swept away (or silently
+   * skipping the deposit outright if it didn't exceed that stale value).
+   * Decrementing the checkpoint by the swept amount keeps it tracking the
+   * address's true current on-chain balance.
+   */
+  async _decrementOnchainCheckpoint(userId, sweptAmount) {
+    const { data: uw, error } = await supabase
+      .from('user_wallets').select('last_onchain_usdt').eq('user_id', userId).maybeSingle();
+    if (error || !uw) {
+      console.warn(`[HotWallet] Could not read last_onchain_usdt to decrement for user ${userId}:`, error?.message || 'no row');
+      return;
+    }
+    const newCheckpoint = Math.max(0, parseFloat((parseFloat(uw.last_onchain_usdt || 0) - sweptAmount).toFixed(6)));
+    const { error: updErr } = await supabase
+      .from('user_wallets')
+      .update({ last_onchain_usdt: newCheckpoint, updated_at: new Date().toISOString() })
+      .eq('user_id', userId);
+    if (updErr) console.warn(`[HotWallet] Failed to decrement last_onchain_usdt for user ${userId}:`, updErr.message);
   }
 
   /** Insert a sweep record into hot_wallet_sweeps */

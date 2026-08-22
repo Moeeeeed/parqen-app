@@ -1256,11 +1256,15 @@ router.post('/ceo-withdrawals/:id/reject', verifyToken, async (req, res) => {
       status: 'REJECTED', reviewed_by: ceo.id, reviewed_at: ts, rejection_reason: reason,
     }).eq('id', id);
 
-    // BTC has a dedicated rejection-email template; USDT relies on the in-app notification
-    // below for now — same scope decision as the approve handler above.
+    // A CEO's rejection reason is often the actual next-step instruction (e.g.
+    // "please use BTC instead") — this used to only reach BTC users, since the
+    // rejection email only fired for !isUsdt. USDT users got nothing but an
+    // in-app notification, easy to miss, which is how a reason telling someone
+    // to switch withdrawal methods went unseen and they just resubmitted the
+    // same USDT withdrawal again. Both currencies now get the email.
     const { data: targetUser } = await supabaseAdmin.from('users').select('id, email, username').eq('id', userId).single();
-    if (!isUsdt && targetUser?.email) {
-      emailService.sendWithdrawalRejectedEmail(targetUser, sendAmount, reason).catch(() => {});
+    if (!isFeeCollection && targetUser?.email) {
+      emailService.sendWithdrawalRejectedEmail(targetUser, sendAmount, reason, isUsdt ? 'USDT' : 'BTC').catch(() => {});
     }
     const symbol = isUsdt ? '₮' : '₿';
     const decimals = isUsdt ? 2 : 8;
@@ -1269,7 +1273,7 @@ router.post('/ceo-withdrawals/:id/reject', verifyToken, async (req, res) => {
       title: isFeeCollection ? '⚠️ Fee Collection Declined' : '⚠️ Withdrawal Declined',
       message: isFeeCollection
         ? `Fee collection of ${symbol}${sendAmount.toFixed(decimals)} was declined — the full amount was returned to the company wallet. Reason: ${reason}`
-        : `We weren't able to complete your withdrawal of ${symbol}${sendAmount.toFixed(decimals)} — the full amount (${symbol}${refundAmount.toFixed(decimals)}) was returned to your wallet. Reason: ${reason}`,
+        : `We weren't able to complete your withdrawal of ${symbol}${sendAmount.toFixed(decimals)} — the full amount (${symbol}${refundAmount.toFixed(decimals)}) was returned to your wallet. Next step: ${reason}`,
       action: '/wallet', is_read: false, created_at: ts,
     }).then(null, () => {});
 

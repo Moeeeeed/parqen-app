@@ -800,6 +800,22 @@ export default function CreateOffer({ user }) {
   const cur = currencyCode || 'USD';
 
   const isSellSide = offerType === 'sell';
+  const isBuySide  = offerType === 'buy';
+  // Every type shares the same -10%/+10% range, matching the backend bound
+  // exactly (server.js POST /api/offers, POST /api/listings, PUT /api/listings/:id).
+  // Buy and Sell are both capped at +10% — only gift cards go to +100%.
+  // Submitting past this locally just fails server-side, so all three must
+  // stay in sync with the backend.
+  const marginMin = -10;
+  const marginMax = (isBuySide || isSellSide) ? 10 : 100;
+  const quickMargins = isSellSide ? [-10, -5, -1, 0, 1, 3, 5, 10]
+    : isBuySide ? [-10, -5, -1, 0, 1, 5, 10]
+    : [-5, -1, 0, 1, 3, 5, 10, 25, 50, 100];
+  // Switching between offer types would otherwise leave margin sitting outside
+  // the new type's range with nothing to pull it back in.
+  useEffect(() => {
+    setMargin(m => Math.min(marginMax, Math.max(marginMin, m)));
+  }, [offerType, marginMin, marginMax]);
   const walletKey = asset.toLowerCase();
   const walletCapacityLocal = (walletBal[walletKey] || 0) * assetLocal;
   // Backend rejects SELL offers under $10 wallet balance (server.js calcFee gate) —
@@ -1706,17 +1722,19 @@ export default function CreateOffer({ user }) {
                 </div>
               </div>
 
-              {/* Market margin — -10 to +10%, Sell Bitcoin only. Was -10 to 100 with no
-                  server-side check at all, which is how an above-market offer (seen live
-                  at +69%) could get posted — see the margin validation in POST /api/offers
-                  and PUT /api/listings/:id. */}
+              {/* Market margin — via marginMin/marginMax/quickMargins above: every type
+                  shares the same -10% floor; only Buy has a narrower +10% ceiling
+                  (Sell and gift cards go to +100%). (This was -10 to 100 with no
+                  server-side check at all, which is how an above-market offer seen
+                  live at +69%, then later +1,000,000% via BUY, got posted — see the
+                  margin validation in POST /api/offers and POST /api/listings.) */}
               {pricingType === 'market' && (
                 <div>
                   <div className="mb-2">
                     <label className="text-sm font-bold block mb-1.5" style={{ color: C.g700 }}>Your Margin</label>
                     <div className="flex flex-wrap items-center gap-1">
                       <span className="text-xs flex-shrink-0" style={{ color: C.g500 }}>Quick:</span>
-                      {[-5, -1, 0, 1, 3, 5, 10].map(v => (
+                      {quickMargins.map(v => (
                         <button key={v} onClick={() => setMargin(v)}
                           className="px-1.5 py-0.5 rounded-full text-xs font-bold transition"
                           style={{
@@ -1730,7 +1748,7 @@ export default function CreateOffer({ user }) {
                   <div className="p-4 rounded-2xl border-2" style={{ borderColor: C.g200 }}>
                     {/* Big margin display + stepper */}
                     <div className="flex items-center gap-3 mb-4">
-                      <button onClick={() => setMargin(m => Math.max(-10, parseFloat((m - 0.5).toFixed(1))))}
+                      <button onClick={() => setMargin(m => Math.max(marginMin, parseFloat((m - 0.5).toFixed(1))))}
                         className="w-11 h-11 rounded-xl flex items-center justify-center active:scale-95 flex-shrink-0 transition-colors"
                         style={{ border: 'none', backgroundColor: 'transparent' }}
                         onMouseEnter={e => e.currentTarget.style.backgroundColor = `${C.danger}10`}
@@ -1751,7 +1769,7 @@ export default function CreateOffer({ user }) {
                           {margin < 0 ? 'Discount below market — buyers get more BTC' : margin === 0 ? 'Exactly at market rate' : 'Your markup rate above market'}
                         </p>
                       </div>
-                      <button onClick={() => setMargin(m => Math.min(10, parseFloat((m + 0.5).toFixed(1))))}
+                      <button onClick={() => setMargin(m => Math.min(marginMax, parseFloat((m + 0.5).toFixed(1))))}
                         className="w-11 h-11 rounded-xl flex items-center justify-center active:scale-95 flex-shrink-0 transition-colors"
                         style={{ border: 'none', backgroundColor: 'transparent' }}
                         onMouseEnter={e => e.currentTarget.style.backgroundColor = `${C.success}10`}
@@ -1761,25 +1779,25 @@ export default function CreateOffer({ user }) {
                     </div>
 
 
-                    <input type="range" min="-10" max="10" step="0.5"
+                    <input type="range" min={marginMin} max={marginMax} step="0.5"
                       value={margin} onChange={e => setMargin(parseFloat(e.target.value))}
                       className="w-full custom-slider"
                       style={{
                         color: margin < 0 ? C.danger : C.success,
-                        background: `linear-gradient(to right, ${margin < 0 ? C.danger : C.success} 0%, ${margin < 0 ? C.danger : C.success} ${((margin + 10) / 20) * 100}%, #E2E8F0 ${((margin + 10) / 20) * 100}%, #E2E8F0 100%)`
+                        background: `linear-gradient(to right, ${margin < 0 ? C.danger : C.success} 0%, ${margin < 0 ? C.danger : C.success} ${((margin - marginMin) / (marginMax - marginMin)) * 100}%, #E2E8F0 ${((margin - marginMin) / (marginMax - marginMin)) * 100}%, #E2E8F0 100%)`
                       }} />
                     <div className="flex justify-between text-xs mt-0.5" style={{ color: C.g400 }}>
-                      <span>-10%</span>
+                      <span>{marginMin > 0 ? '+' : ''}{marginMin}%</span>
                       <span>0% (market)</span>
-                      <span>+10%</span>
+                      <span>+{marginMax}%</span>
                     </div>
 
                     {/* Type exact margin */}
                     <div className="mt-3 flex items-center gap-2">
                       <label className="text-xs font-bold flex-shrink-0" style={{ color: C.g500 }}>Custom:</label>
                       <div className="relative flex-1">
-                        <input type="number" min="-10" max="10" step="0.5"
-                          value={margin} onChange={e => setMargin(Math.min(10, Math.max(-10, parseFloat(e.target.value) || 0)))}
+                        <input type="number" min={marginMin} max={marginMax} step="0.5"
+                          value={margin} onChange={e => setMargin(Math.min(marginMax, Math.max(marginMin, parseFloat(e.target.value) || 0)))}
                           className="w-full pl-3 pr-7 py-2 text-xs border-2 rounded-xl focus:outline-none font-bold"
                           style={{ borderColor: C.g200, color: C.forest }} />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold" style={{ color: C.g400 }}>%</span>

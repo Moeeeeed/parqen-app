@@ -5392,7 +5392,7 @@ app.put('/api/users/profile', verifyToken, async (req, res) => {
     const { username, full_name, fullName, bio, location, website, phone, hide_full_name, name_display } = req.body;
 
     // Fetch current user to enforce rules
-    const { data: current } = await supabaseAdmin.from('users').select('username, full_name, username_changed_at, is_id_verified, full_name_changed_at').eq('id', req.userId).single();
+    const { data: current } = await supabaseAdmin.from('users').select('username, full_name, username_changed_at, is_id_verified, full_name_changed_at, location').eq('id', req.userId).single();
 
     const updateData = {};
 
@@ -5405,16 +5405,23 @@ app.put('/api/users/profile', verifyToken, async (req, res) => {
       updateData.username_changed_at = new Date().toISOString();
     }
 
-    // Full name: locked after first change OR after ID verification
+    // Full name: locked after first change OR after ID verification. The edit form
+    // always sends full_name (pre-filled with the current value, sent on every save
+    // regardless of what the user actually touched), so these locks used to fire on
+    // ANY profile edit — bio, website, anything — for every KYC-verified user, since
+    // full_name !== undefined was true even when the value hadn't changed. Same bug
+    // hit location right below it. Both now only enforce the lock when the value is
+    // actually different from what's already stored.
     if (full_name !== undefined || fullName !== undefined) {
       const newName = full_name ?? fullName;
-      if (current?.is_id_verified) {
+      const nameChanged = newName !== current?.full_name;
+      if (nameChanged && current?.is_id_verified) {
         return res.status(403).json({ error: 'Full name cannot be changed after ID verification.' });
       }
-      if (current?.full_name_changed_at && newName !== current?.full_name) {
+      if (nameChanged && current?.full_name_changed_at) {
         return res.status(403).json({ error: 'Full name can only be changed once.' });
       }
-      if (newName !== current?.full_name) {
+      if (nameChanged) {
         updateData.full_name_changed_at = new Date().toISOString();
       }
       updateData.full_name = newName;
@@ -5422,7 +5429,7 @@ app.put('/api/users/profile', verifyToken, async (req, res) => {
 
     if (bio !== undefined) updateData.bio = bio;
     if (location !== undefined) {
-      if (current?.is_id_verified) {
+      if (location !== current?.location && current?.is_id_verified) {
         return res.status(403).json({ error: 'Location cannot be changed after ID verification.' });
       }
       updateData.location = location;
@@ -5670,13 +5677,34 @@ app.post('/api/user/add-balance', verifyToken, (req, res) => {
 // LISTINGS ROUTES
 // ============================================================
 
-app.post('/api/listings', verifyToken, async (req, res) => {
+app.post('/api/listings', verifyToken, requireNotBanned, async (req, res) => {
   try {
     const b = req.body;
     const listingType = b.listing_type || 'SELL';
     const brand = b.giftCardBrand || b.gift_card_brand || (listingType === 'SELL' ? 'Sell Bitcoin' : 'Buy Bitcoin');
     const btcPriceUSD = parseFloat(b.bitcoinPrice || b.bitcoin_price) || 0;
     const marginPct = parseFloat(b.margin) || 0;
+
+    // This route has no frontend caller (the real Create Offer flow posts to
+    // POST /api/offers) but stays live and reachable directly — which is exactly
+    // how it got exploited: 13 listings from one account in a 63-second window,
+    // scripted, with margin as high as 1,000,000%, margin as low as -10,000%, and
+    // a bitcoin_price of -5000. Same bounds as /api/offers: Buy and Sell both
+    // -10%/+10%, gift cards widest at -10%/+100%.
+    const listingUpperType = (listingType || '').toUpperCase();
+    const listingIsSellPriced = ['SELL', 'SELL_BITCOIN'].includes(listingUpperType);
+    const listingIsBuyPriced = ['BUY', 'BUY_BITCOIN'].includes(listingUpperType);
+    const listingIsGiftCardPriced = ['BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(listingUpperType);
+    if (listingIsSellPriced || listingIsBuyPriced || listingIsGiftCardPriced) {
+      const listingMarginMin = -10;
+      const listingMarginMax = listingIsGiftCardPriced ? 100 : 10;
+      if (isNaN(marginPct) || marginPct < listingMarginMin || marginPct > listingMarginMax) {
+        return res.status(400).json({ error: `Margin must be between ${listingMarginMin > 0 ? '+' : ''}${listingMarginMin}% and +${listingMarginMax}%.` });
+      }
+      if ((b.pricing_type || b.pricingType) === 'fixed' && !(btcPriceUSD > 0)) {
+        return res.status(400).json({ error: 'A fixed-rate offer needs a real, positive price.' });
+      }
+    }
     const payMethod = b.paymentMethod || b.payment_method || '';
     const timeLimit = parseInt(b.time_limit || b.processingTime || 30);
     const minUSD = parseFloat(b.min_limit_usd || b.minAmount) || 0;
@@ -6323,13 +6351,19 @@ app.put('/api/listings/:id', verifyToken, async (req, res) => {
     if (min_limit_usd !== undefined && parseFloat(min_limit_usd) < 10) {
       return res.status(400).json({ error: 'Minimum trade amount must be at least $10 USD.' });
     }
-    const isSellListing = ['SELL', 'SELL_BITCOIN'].includes((listing.listing_type || '').toUpperCase());
-    // Sell Bitcoin offers only: same margin cap as offer creation — editing a
-    // listing was the other unvalidated path into an above-market margin.
-    if (isSellListing && margin !== undefined && margin !== null && margin !== '') {
+    const editUpperType = (listing.listing_type || '').toUpperCase();
+    const isSellListing = ['SELL', 'SELL_BITCOIN'].includes(editUpperType);
+    const isBuyListing = ['BUY', 'BUY_BITCOIN'].includes(editUpperType);
+    const isGiftCardListing = ['BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(editUpperType);
+    // Same margin caps as offer creation — editing a listing was the other
+    // unvalidated path into an above-market margin (was SELL-only here too,
+    // leaving BUY listings free to be edited to any margin post-creation).
+    if ((isSellListing || isBuyListing || isGiftCardListing) && margin !== undefined && margin !== null && margin !== '') {
+      const editMarginMin = -10;
+      const editMarginMax = isGiftCardListing ? 100 : 10;
       const marginNum = parseFloat(margin);
-      if (isNaN(marginNum) || marginNum < -10 || marginNum > 10) {
-        return res.status(400).json({ error: 'Margin must be between -10% and +10% for Sell Bitcoin offers.' });
+      if (isNaN(marginNum) || marginNum < editMarginMin || marginNum > editMarginMax) {
+        return res.status(400).json({ error: `Margin must be between ${editMarginMin > 0 ? '+' : ''}${editMarginMin}% and +${editMarginMax}%.` });
       }
     }
     // For SELL offers: cap max_limit_usd at seller's actual wallet balance
@@ -6720,15 +6754,37 @@ app.post('/api/offers', verifyToken, requireNotBanned, async (req, res) => {
       return res.status(400).json({ error: 'Missing payment_method' });
     }
 
-    // Sell Bitcoin offers only: cap the margin so a seller can't post a wildly
-    // above-market rate (nothing enforced this before — margin was inserted
-    // straight from the request body with no bound at all, which is how a
-    // +69% offer got onto the marketplace). Buy Bitcoin and gift card offers
-    // are untouched — the ask was specifically for the sell page.
-    if (['SELL', 'SELL_BITCOIN'].includes((mappedType || '').toUpperCase())) {
+    // Cap the margin so no offer can post a wildly off-market rate. This used to only
+    // apply to SELL/SELL_BITCOIN listings (added after a +69% SELL offer got through
+    // with margin inserted straight from the request body, no bound at all) — but a
+    // BUY-type listing is what actually populates the "Sell Bitcoin" page's offer
+    // cards (the offer creator wants to buy, so the viewer sells to them), and BUY
+    // was left completely unchecked. That gap is how a BUY_BTC listing with
+    // margin=1000000 (and others with margin=-10000, bitcoin_price=-5000, limits=0 —
+    // 13 garbage listings from one account in a 63-second window, clearly scripted)
+    // made it onto the live market. Every type shares the same -10% floor; Buy and
+    // Sell both have a +10% ceiling (only gift cards go to +100%).
+    const upperType = (mappedType || '').toUpperCase();
+    const isSellPriced = ['SELL', 'SELL_BITCOIN'].includes(upperType);
+    const isBuyPriced = ['BUY', 'BUY_BITCOIN'].includes(upperType);
+    const isGiftCardPriced = ['BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(upperType);
+    if (isSellPriced || isBuyPriced || isGiftCardPriced) {
+      const marginMin = -10;
+      const marginMax = isGiftCardPriced ? 100 : 10;
       const marginNum = parseFloat(margin);
-      if (margin !== undefined && margin !== null && margin !== '' && (isNaN(marginNum) || marginNum < -10 || marginNum > 10)) {
-        return res.status(400).json({ error: 'Margin must be between -10% and +10% for Sell Bitcoin offers.' });
+      if (margin !== undefined && margin !== null && margin !== '' && (isNaN(marginNum) || marginNum < marginMin || marginNum > marginMax)) {
+        return res.status(400).json({ error: `Margin must be between ${marginMin > 0 ? '+' : ''}${marginMin}% and +${marginMax}%.` });
+      }
+      if (pricing_type === 'fixed') {
+        const priceNum = parseFloat(bitcoin_price);
+        if (bitcoin_price === undefined || bitcoin_price === null || bitcoin_price === '' || isNaN(priceNum) || priceNum <= 0) {
+          return res.status(400).json({ error: 'A fixed-rate offer needs a real, positive price.' });
+        }
+      }
+      const minNum = parseFloat(min_limit_local ?? min_limit_usd);
+      const maxNum = parseFloat(max_limit_local ?? max_limit_usd);
+      if (!isNaN(minNum) && !isNaN(maxNum) && (minNum <= 0 || maxNum <= 0 || maxNum < minNum)) {
+        return res.status(400).json({ error: 'Min/max limits must be positive, with max at or above min.' });
       }
     }
 
@@ -7060,7 +7116,7 @@ app.get('/api/seller-deposit/status', verifyToken, async (req, res) => {
 // POST /api/seller-deposit/withdraw-request — request release; does not move funds.
 // Eligibility (7 days + no open trades) is auto-checked; actual release requires
 // admin approval via /api/admin/seller-deposits/:userId/approve-withdrawal.
-app.post('/api/seller-deposit/withdraw-request', verifyToken, async (req, res) => {
+app.post('/api/seller-deposit/withdraw-request', verifyToken, requireNotBanned, async (req, res) => {
   try {
     const userId = req.userId;
     const { data: deposit } = await supabaseAdmin
@@ -7156,10 +7212,23 @@ app.post('/api/admin/seller-deposits/:userId/approve-deposit', verifyToken, asyn
     const targetUserId = req.params.userId;
     const nowIso = new Date().toISOString();
 
-    const { data: rows, error } = await supabaseAdmin.from('seller_deposits')
+    // approved_at only exists once database/seller_deposit_admin_approval_migration.sql
+    // has actually been run in the Supabase SQL Editor — it wasn't, so writing it
+    // failed the whole update and made every approval attempt bounce off a misleading
+    // "No pending deposit approval for this user" 400, even for a real pending row.
+    // Retry without it rather than hard-failing every approval on a missing column.
+    let rows, error;
+    ({ data: rows, error } = await supabaseAdmin.from('seller_deposits')
       .update({ status: 'LOCKED', approved_at: nowIso, updated_at: nowIso })
       .eq('user_id', targetUserId).eq('status', 'PENDING_APPROVAL')
-      .select().single();
+      .select().single());
+    if (error && /approved_at/i.test(error.message || '')) {
+      console.warn('[approve-deposit] approved_at column missing — run database/seller_deposit_admin_approval_migration.sql. Falling back.');
+      ({ data: rows, error } = await supabaseAdmin.from('seller_deposits')
+        .update({ status: 'LOCKED', updated_at: nowIso })
+        .eq('user_id', targetUserId).eq('status', 'PENDING_APPROVAL')
+        .select().single());
+    }
 
     if (error || !rows) {
       return res.status(400).json({ error: 'No pending deposit approval for this user.' });
@@ -7221,9 +7290,24 @@ app.post('/api/admin/seller-deposits/:userId/reject-deposit', verifyToken, async
       return res.status(409).json({ error: 'Wallet balance changed — please retry.' });
     }
 
-    await supabaseAdmin.from('seller_deposits')
+    // rejected_at only exists once database/seller_deposit_admin_approval_migration.sql
+    // has actually been run — it wasn't, so this update was silently failing (its
+    // result was never checked) while the wallet refund above still went through,
+    // leaving the deposit row stuck at PENDING_APPROVAL forever even though the
+    // money had already moved back to the user.
+    let statusUpdErr;
+    ({ error: statusUpdErr } = await supabaseAdmin.from('seller_deposits')
       .update({ status: 'REJECTED', rejected_at: nowIso, admin_notes: reason || null, updated_at: nowIso })
-      .eq('id', deposit.id);
+      .eq('id', deposit.id));
+    if (statusUpdErr && /rejected_at/i.test(statusUpdErr.message || '')) {
+      console.warn('[reject-deposit] rejected_at column missing — run database/seller_deposit_admin_approval_migration.sql. Falling back.');
+      ({ error: statusUpdErr } = await supabaseAdmin.from('seller_deposits')
+        .update({ status: 'REJECTED', admin_notes: reason || null, updated_at: nowIso })
+        .eq('id', deposit.id));
+    }
+    if (statusUpdErr) {
+      console.error(`🚨 [reject-deposit] Refunded ${targetUserId} but failed to update deposit row status — needs manual fix:`, statusUpdErr.message);
+    }
 
     await supabaseAdmin.from('wallet_transactions').insert({
       user_id: targetUserId,
@@ -7676,6 +7760,13 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
     const { data: listing } = await supabaseAdmin.from('listings').select('*').eq('id', listingId).single();
     if (!listing) return res.status(404).json({ error: 'Listing not found' });
     if (listing.seller_id === req.userId) return res.status(400).json({ error: 'Cannot trade with yourself' });
+    // requireNotBanned above only checks the trade OPENER — a banned listing owner's
+    // offers get paused the moment they're banned, but that alone doesn't stop a trade
+    // opened directly against a listing that's still ACTIVE for any reason (cache lag,
+    // a race between the ban and this request, a stale client). Block it here too.
+    if (await isUserBanned(listing.seller_id)) {
+      return res.status(403).json({ error: 'ACCOUNT_BANNED', message: 'This offer belongs to a banned account and can no longer be traded.' });
+    }
     const fee = calculateFee(parsedAmountBtc);
 
     // GOLDEN RULE: The offer CREATOR always has the Bitcoin.
@@ -7753,10 +7844,12 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
         return res.status(400).json({ error: 'Rate quote does not match this listing' });
       }
       verifiedAmountBtc = parseFloat((tradeLocalAmt / quote.executableRate).toFixed(8));
-      tradeAmountUsd = parseFloat((verifiedAmountBtc * quote.components.btcUsd).toFixed(2));
-      // Fiat value of the BTC at market rate — what the buyer actually RECEIVES
-      amountReceiveUsd = tradeAmountUsd; // quote path: btcUsd is the market rate
-      console.log(`[Quote] id=${quoteId.slice(0, 8)} rate=${quote.executableRate.toFixed(2)} btc=${verifiedAmountBtc}`);
+      // components.assetUsd is the correct per-unit USD price for whatever this listing's
+      // asset actually is (1 for USDT, live BTC/USD for BTC) — this used to always read
+      // components.btcUsd, pricing every USDT trade's dollar value off the live BTC rate.
+      tradeAmountUsd = parseFloat((verifiedAmountBtc * quote.components.assetUsd).toFixed(2));
+      amountReceiveUsd = tradeAmountUsd; // quote path: assetUsd is the market rate for the actual asset
+      console.log(`[Quote] id=${quoteId.slice(0, 8)} rate=${quote.executableRate.toFixed(2)} amount=${verifiedAmountBtc}`);
     } else {
       // ── FALLBACK PATH: live rate re-fetch (no quoteId or gift-card trade) ─
       // Reuse the already-hardened multi-source helpers (each source individually
@@ -7774,10 +7867,19 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
       verifiedAmountBtc = parsedAmountBtc;
       if (tradeLocalAmt > 0 && !listingTypeUpper.includes('GIFT_CARD')) {
         const listingMargin = parseFloat(listing.margin || 0);
-        const backendSellerRateUSD = (listing.pricing_type === 'fixed' && parseFloat(listing.bitcoin_price || 0) > 100)
+        // CreateOffer.js's fixed-price field is explicitly labelled "Fixed Price ({currency}
+        // per {asset})" and stores exactly what the seller typed — it is ALREADY denominated
+        // in the listing's local currency, for both BTC and USDT listings (margin doesn't even
+        // apply to fixed pricing; CreateOffer.js only shows the margin control under 'market'
+        // pricing). Multiplying it by tradeCurRate again (as this used to, treating it as a USD
+        // price) inflated the effective rate by roughly the local/USD FX factor — for a listing
+        // priced at 555 XOF/USDT this made a real $16 trade settle as 0.03 USDT (~$0.03) while
+        // displaying a bogus ~$2,469 (the raw quantity misread against the live BTC price
+        // elsewhere). Only the live-market branch needs a USD->local conversion.
+        const isFixedPriced = listing.pricing_type === 'fixed' && parseFloat(listing.bitcoin_price || 0) > 0;
+        const backendSellerRateLocal = isFixedPriced
           ? parseFloat(listing.bitcoin_price)
-          : marketRateUSD * (1 + listingMargin / 100);
-        const backendSellerRateLocal = backendSellerRateUSD * tradeCurRate;
+          : marketRateUSD * (1 + listingMargin / 100) * tradeCurRate;
 
         let finalSellerRateLocal = backendSellerRateLocal;
         if (frontendRateLocal > 0 && backendSellerRateLocal > 0) {
@@ -10784,6 +10886,14 @@ app.put('/api/admin/users/:id/ban', verifyToken, async (req, res) => {
     const { data, error } = await supabaseAdmin.from('users').update({ account_status: 'banned', updated_at: new Date() }).eq('id', req.params.id).select().single();
     if (error) return res.status(400).json({ error: error.message });
     logAdminAction(req, 'BAN', req.params.id, { reason }).catch(() => { });
+    // A banned account's listings used to stay ACTIVE and kept showing in the
+    // marketplace — /api/listings and /api/offers only ever check listing status,
+    // never the seller's account_status, so a ban alone never hid a banned user's
+    // offers. Pause them here instead of leaving that as a manual cleanup step.
+    supabaseAdmin.from('listings')
+      .update({ status: 'PAUSED', updated_at: new Date().toISOString() })
+      .eq('seller_id', req.params.id).eq('status', 'ACTIVE')
+      .then(({ error: listErr }) => { if (listErr) console.error('[BAN] Failed to pause listings for', req.params.id, ':', listErr.message); });
     await createNotification(req.params.id, 'security', '🚫 Account Banned',
       reason ? `Your account has been banned. Reason: ${reason}` : 'Your account has been banned. Contact support if you believe this is a mistake.', '/');
     if (data?.email) emailService.sendAccountBannedEmail(data, reason).catch(() => {});
@@ -12582,6 +12692,17 @@ app.post('/api/wallet/usdt/send', verifyToken, requireNotBanned, async (req, res
       error: 'Withdrawals are temporarily disabled for maintenance. Trading and internal transfers are unaffected — please try again later.',
     });
   }
+  // USDT-only kill-switch (SENDS_DISABLED above is shared with BTC and would
+  // take both down together). TRON network delays meant USDT sends were
+  // getting stuck/rejected one at a time via manual CEO review — this blocks
+  // new external USDT withdrawal requests at the source instead, while BTC
+  // withdrawals, trading, and internal transfers stay unaffected.
+  if (process.env.USDT_SENDS_DISABLED === 'true') {
+    return res.status(503).json({
+      error: 'USDT withdrawals are temporarily paused due to a delay on the Tron network. Please use BTC for now, or contact support.',
+      code: 'USDT_SENDS_DISABLED',
+    });
+  }
   const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.02'); // flat 2% — no flat-dollar floor
   const MIN_SEND = parseFloat(process.env.USDT_MIN_SEND || '5.0');  // minimum $5
 
@@ -12893,7 +13014,7 @@ app.get('/api/wallet/usdt/check', verifyToken, async (req, res) => {
 // POST /api/wallet/usdt/internal-transfer — FREE instant USDT transfer between PRAQEN users
 // Internal ledger only — no Tron broadcast, no gas fee, instant settlement.
 // ─────────────────────────────────────────────────────────────────────────────
-app.post('/api/wallet/usdt/internal-transfer', verifyToken, async (req, res) => {
+app.post('/api/wallet/usdt/internal-transfer', verifyToken, requireNotBanned, async (req, res) => {
   try {
     const { toUsername, toTronAddress, amountUsdt } = req.body;
     const amount = parseFloat(amountUsdt);

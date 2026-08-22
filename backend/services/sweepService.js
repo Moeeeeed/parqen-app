@@ -241,6 +241,20 @@ class SweepService {
       console.log(`[SweepService] ✅ Swept ₿${sendBtc} | TX: ${result.txid}`);
       console.log(`[SweepService]    Explorer: ${result.explorer_url}`);
 
+      // Step 4b — Decrement the deposit-detection checkpoint by the full amount that
+      // just left this address (onChainBtc — the whole swept UTXO value, fee included,
+      // not just sendBtc net of fee). last_onchain_btc is NOT a balance (the class
+      // comment above about "never touches user DB balance" is about wallets/
+      // user_balances/balance_btc) — it's DepositMonitor's bookkeeping for "on-chain
+      // balance already accounted for," and its own code treats it as monotonically
+      // increasing only. Once this sweep empties the address, the next deposit here
+      // gets compared against a checkpoint that's still sitting at the pre-sweep
+      // high-water mark — DepositMonitor then either under-credits it (delta math
+      // comes out short by exactly what was swept) or silently drops it entirely if
+      // the new deposit doesn't exceed that stale value. Same bug class already fixed
+      // for USDT in tronHotWallet.js.
+      await this._decrementOnchainCheckpoint(userId, onChainBtc);
+
       // Step 5 — Log the sweep for audit trail (SWEEP type is hidden from users)
       // This NEVER modifies any user balance — it is purely informational
       await supabaseAdmin.from('wallet_transactions').insert({
@@ -296,6 +310,24 @@ class SweepService {
       in_progress:      this._inProgress.size,
       hot_wallet:       hdWallet.getHotWalletAddress(),
     };
+  }
+
+  /** Pulls last_onchain_btc down by whatever just left the address, so the next
+   *  deposit there is compared against reality instead of a pre-sweep high-water
+   *  mark. Only touches this one checkpoint column — never balance_btc. */
+  async _decrementOnchainCheckpoint(userId, sweptAmount) {
+    const { data: uw, error } = await supabaseAdmin
+      .from('user_wallets').select('last_onchain_btc').eq('user_id', userId).maybeSingle();
+    if (error || !uw) {
+      console.warn(`[SweepService] Could not read last_onchain_btc to decrement for user ${userId.slice(0,8)}:`, error?.message || 'no row');
+      return;
+    }
+    const newCheckpoint = Math.max(0, parseFloat((parseFloat(uw.last_onchain_btc || 0) - sweptAmount).toFixed(8)));
+    const { error: updErr } = await supabaseAdmin
+      .from('user_wallets')
+      .update({ last_onchain_btc: newCheckpoint, updated_at: new Date().toISOString() })
+      .eq('user_id', userId);
+    if (updErr) console.warn(`[SweepService] Failed to decrement last_onchain_btc for ${userId.slice(0,8)}:`, updErr.message);
   }
 
   _sleep(ms) {
