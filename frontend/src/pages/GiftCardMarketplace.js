@@ -427,16 +427,12 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   })();
 
   // Convert local currency value into USD equivalent for crypto calculation
-    const refUSD = localVal > 0 ? (usdRate > 0 ? localVal / usdRate : localVal) : 1;
-    const btcOut = refUSD / (rateUSD || 1);
-    const viewerIsBuyingCard = listing.listing_type === 'BUY_GIFT_CARD';
-    const isUsdtCard = (listing.asset || 'BTC').toUpperCase() === 'USDT';
-    // Spot price (no margin) for the offer's actual asset — was hardcoded to
-    // btcPriceUSD, which overstated a USDT listing's local value by ~88,000x.
-    const spotPriceUSD = isUsdtCard ? 1 : btcPriceUSD;
-    const assetLabel = isUsdtCard ? 'USDT' : 'BTC';
-    const receiveUSD = btcOut * spotPriceUSD;
-    const cryptoSide = { val: `${fBtc(btcOut)} ${assetLabel}`, sub: `≈ $${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}` };
+  const refUSD = localVal > 0 ? (usdRate > 0 ? localVal / usdRate : localVal) : 1;
+  const btcOut = refUSD / (rateUSD || 1);
+  const viewerIsBuyingCard = listing.listing_type === 'BUY_GIFT_CARD';
+  const assetLabel = isUsdtCard ? 'USDT' : 'BTC';
+  const receiveUSD = btcOut * spotPriceUSD;
+  const cryptoSide = { val: `${fBtc(btcOut)} ${assetLabel}`, sub: `≈ $${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}` };
   const youGive    = viewerIsBuyingCard ? cardSide   : cryptoSide;
   const youReceive = viewerIsBuyingCard ? cryptoSide : cardSide;
 
