@@ -299,8 +299,15 @@ const getLastSeen = (u) => {
   const dy = ~~(s / 86400); return { label: `${dy} ${dy === 1 ? 'day' : 'days'} ago`, online: false };
 };
 const getRateUSD = (l, btcPrice) => {
-  if (l.pricing_type === 'fixed') { const s = parseFloat(l.bitcoin_price || 0); if (s > 100) return s; }
-  return btcPrice * (1 + parseFloat(l.margin || 0) / 100);
+  // Gift cards trade against both BTC and USDT (see the crypto filter below) — a
+  // USDT-asset listing priced at 'market' must use the ~$1 USDT peg, not the BTC
+  // rate, or its amounts come out ~88,000x too high.
+  const isUsdt = l.asset === 'USDT';
+  if (l.pricing_type === 'fixed') {
+    const s = parseFloat(l.bitcoin_price || 0);
+    if (s > (isUsdt ? 0.01 : 100)) return s;
+  }
+  return (isUsdt ? 1 : btcPrice) * (1 + parseFloat(l.margin || 0) / 100);
 };
 const getBrand = (l) => l.gift_card_brand || l.giftCardBrand || l.card_brand || 'Gift Card';
 const getFaceVal = (l) => { const v = l.face_value || l.card_value || l.amount_usd; return v ? parseFloat(v) : null; };
@@ -420,12 +427,16 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   })();
 
   // Convert local currency value into USD equivalent for crypto calculation
-  const refUSD = localVal > 0 ? (usdRate > 0 ? localVal / usdRate : localVal) : 1;
-  const btcOut = refUSD / (rateUSD || 1);
-  const receiveUSD = btcOut * spotPriceUSD;
-  const viewerIsBuyingCard = listing.listing_type === 'BUY_GIFT_CARD';
-  const assetLabel = isUsdtCard ? 'USDT' : 'BTC';
-  const cryptoSide = { val: `${fBtc(btcOut)} ${assetLabel}`, sub: `≈ $${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}` };
+    const refUSD = localVal > 0 ? (usdRate > 0 ? localVal / usdRate : localVal) : 1;
+    const btcOut = refUSD / (rateUSD || 1);
+    const viewerIsBuyingCard = listing.listing_type === 'BUY_GIFT_CARD';
+    const isUsdtCard = (listing.asset || 'BTC').toUpperCase() === 'USDT';
+    // Spot price (no margin) for the offer's actual asset — was hardcoded to
+    // btcPriceUSD, which overstated a USDT listing's local value by ~88,000x.
+    const spotPriceUSD = isUsdtCard ? 1 : btcPriceUSD;
+    const assetLabel = isUsdtCard ? 'USDT' : 'BTC';
+    const receiveUSD = btcOut * spotPriceUSD;
+    const cryptoSide = { val: `${fBtc(btcOut)} ${assetLabel}`, sub: `≈ $${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}` };
   const youGive    = viewerIsBuyingCard ? cardSide   : cryptoSide;
   const youReceive = viewerIsBuyingCard ? cryptoSide : cardSide;
 
@@ -714,6 +725,9 @@ function SellerModal({ seller, listing, onClose, onTrade, btcPriceUSD }) {
   const neg = parseInt(u.negative_feedback || 0);
   const total = pos + neg;
   const trust = total > 0 ? Math.round(pos / total * 100) : trades > 0 ? 100 : 0;
+  // pos/neg is a legacy trust counter that's never allowed to decrease and can be wildly
+  // inflated relative to real reviews — the tab count must match what actually loads there.
+  const reviewCount = parseInt(u.total_feedback_count ?? total);
   const compRate = parseFloat(u.completion_rate || 0);
   const blocks = parseInt(u.blocks_received || u.blocks_count || 0);
   const ccCode = resolveCode(u.country || u.location);
@@ -737,7 +751,7 @@ function SellerModal({ seller, listing, onClose, onTrade, btcPriceUSD }) {
 
   const TABS = [
     { id: 'overview', label: '👤 Profile' },
-    { id: 'feedback', label: `💬 Reviews (${total})` },
+    { id: 'feedback', label: `💬 Reviews (${reviewCount})` },
     { id: 'rules', label: '📋 Rules' },
     { id: 'offer', label: '📊 Offer' },
   ];

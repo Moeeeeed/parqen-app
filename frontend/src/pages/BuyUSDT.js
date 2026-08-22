@@ -295,7 +295,7 @@ const FEATURED = {
 };
 
 // ── Offer Card ────────────────────────────────────────────────────────────────
-function OfferCard({listing, usdtPriceUSD, onViewSeller, onBuy, liked, onToggleLike, featuredType, liveSeenAt, userBuyAmt}) {
+function OfferCard({listing, usdtPriceUSD, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLike, featuredType, liveSeenAt, userBuyAmt}) {
   const { rates: USD_RATES } = useRates();
   const u         = getUser(listing.users);
   const [seen, setSeen] = useState(() => getLastSeen({ ...u, last_seen_at: liveSeenAt || u.last_seen_at }));
@@ -311,7 +311,12 @@ function OfferCard({listing, usdtPriceUSD, onViewSeller, onBuy, liked, onToggleL
   const cur       = listing.currency || 'GHS';
   const sym       = listing.currency_symbol || CUR_SYM[cur] || '₵';
   const usdRate   = USD_RATES[cur] || 1;
-  const rateLocal = getRateUSD(listing, usdtPriceUSD) * usdRate;
+  const asset     = (listing.asset || 'BTC').toUpperCase();
+  // This page shows both USDT and BTC offers (via the crypto filter) — 'market'
+  // pricing must price a BTC listing off the live BTC rate, not the ~$1 USDT
+  // peg, or a BTC offer's amounts come out ~88,000x too low.
+  const basePriceUSD = asset === 'USDT' ? usdtPriceUSD : (btcPriceUSD || 88000);
+  const rateLocal = getRateUSD(listing, basePriceUSD) * usdRate;
 
   const minLocal = listing.min_limit_local || (listing.min_limit_usd ? listing.min_limit_usd*usdRate : 100*usdRate);
   const maxLocal = listing.max_limit_local || (listing.max_limit_usd ? listing.max_limit_usd*usdRate : 1000*usdRate);
@@ -319,8 +324,8 @@ function OfferCard({listing, usdtPriceUSD, onViewSeller, onBuy, liked, onToggleL
   const examplePay = (userBuyAmt && parseFloat(userBuyAmt) > 0)
     ? parseFloat(userBuyAmt)
     : (minLocal || Math.round(100*usdRate));
-  const { usdtReceived } = calcUsdt(examplePay, usdtPriceUSD, margin, usdRate);
-  const fiatEquiv = parseFloat((usdtReceived * (usdtPriceUSD || 1) * usdRate).toFixed(2));
+  const { usdtReceived: cryptoReceived } = calcUsdt(examplePay, basePriceUSD, margin, usdRate);
+  const fiatEquiv = parseFloat((cryptoReceived * (basePriceUSD || 1) * usdRate).toFixed(2));
 
   const marginLabel = margin===0 ? 'Market rate' : margin>0 ? `+${margin}% above market` : `${Math.abs(margin)}% below market`;
   const marginBg    = margin>0 ? C.danger : margin<0 ? C.success : C.g400;
@@ -463,10 +468,10 @@ function OfferCard({listing, usdtPriceUSD, onViewSeller, onBuy, liked, onToggleL
           <div className="flex items-center gap-1.5 mt-0.5">
             <span className="flex items-center justify-center rounded-full flex-shrink-0"
               style={{width:14, height:14, backgroundColor:`${C.gold}22`, border:`1px solid ${C.gold}55`, color:'#B4790A', fontSize:8, fontWeight:900}}>
-              ₮
+              {asset === 'USDT' ? '₮' : '₿'}
             </span>
             <p className="text-[10px] font-semibold" style={{color:C.g500}}>
-              ≈ {fUsdt(usdtReceived)}
+              ≈ {asset === 'USDT' ? fUsdt(cryptoReceived) : cryptoReceived.toFixed(6)} {asset}
             </p>
           </div>
         </div>
@@ -558,7 +563,7 @@ function OfferCard({listing, usdtPriceUSD, onViewSeller, onBuy, liked, onToggleL
               background: ft ? ft.btnGradient : C.forest,
               boxShadow: ft ? ft.btnShadow : undefined,
             }}>
-            BUY USDT <ArrowRight size={15}/>
+            BUY {(listing.asset || 'BTC').toUpperCase()} <ArrowRight size={15}/>
           </button>
         </div>
       </div>
@@ -567,7 +572,7 @@ function OfferCard({listing, usdtPriceUSD, onViewSeller, onBuy, liked, onToggleL
 }
 
 // ── Profile Modal ─────────────────────────────────────────────────────────────
-function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
+function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD, btcPriceUSD}) {
   const [tab,        setTab]        = useState('overview');
   const [reviews,    setReviews]    = useState([]);
   const [rvLoad,     setRvLoad]     = useState(false);
@@ -591,7 +596,8 @@ function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
   const cur    = listing?.currency || 'GHS';
   const sym    = listing?.currency_symbol || CUR_SYM[cur] || '₵';
   const usdRate   = USD_RATES[cur] || 1;
-  const rateLocal = getRateUSD(listing || {}, usdtPriceUSD || 1) * usdRate;
+  const asset     = (listing?.asset || 'BTC').toUpperCase();
+  const rateLocal = getRateUSD(listing || {}, asset === 'USDT' ? (usdtPriceUSD || 1) : (btcPriceUSD || 88000)) * usdRate;
 
   // Proper verification — only use the dedicated verified flags, never raw phone/email presence
   const phoneOk = !!(u.is_phone_verified || u.phone_verified);
@@ -601,6 +607,9 @@ function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
   const neg     = parseInt(u.negative_feedback || 0);
   const total   = pos + neg;
   const trust   = total > 0 ? Math.round(pos / total * 100) : trades > 0 ? 100 : 0;
+  // pos/neg is a legacy trust counter that's never allowed to decrease and can be wildly
+  // inflated relative to real reviews — the tab count must match what actually loads there.
+  const reviewCount = parseInt(u.total_feedback_count ?? total);
   const compRate = parseFloat(u.completion_rate || 0);
   const blocks  = parseInt(u.blocks_received || u.blocks_count || 0);
   const ccCode  = resolveCode(u.country || u.location);
@@ -625,7 +634,7 @@ function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
 
   const TABS = [
     { id:'overview',  label:<span className="inline-flex items-center gap-1.5"><User size={14}/>Profile</span> },
-    { id:'feedback',  label:<span className="inline-flex items-center gap-1.5"><MessageSquare size={14}/>Reviews ({total})</span>},
+    { id:'feedback',  label:<span className="inline-flex items-center gap-1.5"><MessageSquare size={14}/>Reviews ({reviewCount})</span>},
     { id:'rules',     label:<span className="inline-flex items-center gap-1.5"><List size={14}/>Rules</span> },
     { id:'offer',     label:<span className="inline-flex items-center gap-1.5"><BarChart2 size={14}/>Offer</span> },
   ];
@@ -983,7 +992,7 @@ function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
             <div className="rounded-xl overflow-hidden" style={{border:`1px solid ${C.g200}`}}>
               {[
                 {label:'Payment Method', value:listing?.payment_method||'—'},
-                {label:'Rate / USDT',    value:`${sym}${fmt(rateLocal,2)} ${cur}`},
+                {label:`Rate / ${(listing?.asset || 'BTC').toUpperCase()}`, value:`${sym}${fmt(rateLocal,2)} ${cur}`},
                 {label:'Margin',         value:margin===0?'At market':margin>0?`+${margin}% above market`:`${margin}% below market`},
                 {label:'Trade Limits',   value:listing?.min_limit_local && listing?.max_limit_local
                   ? `${sym}${fmt(listing.min_limit_local)} – ${sym}${fmt(listing.max_limit_local)} ${cur}`
@@ -1321,6 +1330,12 @@ export default function BuyUSDT({user}) {
     if (sortBy === 'rate_high') return (b.margin || 0) - (a.margin || 0);
     return 0;
   });
+
+  const handleTradeExpire = (id) => setActiveTrades(prev => prev.filter(t =>
+    t.id !== id ||
+    ['PAYMENT_SENT','DISPUTED'].includes(t.status) ||
+    !t.expires_at  // server cleared the deadline (buyer marked paid) — never remove
+  ));
 
   const handleCreateOffer = () => {
     if (!user) { navigate('/login?message=Please log in to create an offer'); return; }
@@ -1852,6 +1867,7 @@ export default function BuyUSDT({user}) {
                 <OfferCard
                   listing={l}
                   usdtPriceUSD={usdtPrice}
+                  btcPriceUSD={contextBtcUsd}
                   userBuyAmt={buyAmt}
                   featuredType={null}
                   liveSeenAt={liveStatus[getUser(l.users)?.id] || null}
@@ -2003,6 +2019,7 @@ export default function BuyUSDT({user}) {
           seller={modal.seller}
           listing={modal.listing}
           usdtPriceUSD={usdtPrice}
+          btcPriceUSD={contextBtcUsd}
           onClose={()=>setModal(null)}
           onTrade={()=>handleBuy(modal.listing?.id)}
         />

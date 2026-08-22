@@ -350,4 +350,86 @@ async function deactivateStaleOffers() {
   }
 }
 
-module.exports = { updateOfferStatus, syncAllOfferStatuses, deactivateStaleOffers, setCacheBuster, setBtcPriceGetter };
+/**
+ * Companion to deactivateStaleOffers — that function pauses any listing once its
+ * seller goes 10+ days quiet, but nothing ever reversed it. A seller who logs back
+ * in the very next day stayed permanently hidden from the market with no self-service
+ * way back (unlike the balance-based pause above, which reactivates automatically the
+ * moment the wallet is topped up). Found via a live audit: 24 sellers had 50 paused
+ * BUY listings between them, and 19 of those 24 had ZERO active listings left at all.
+ * Runs at startup and every 6 hours, right after deactivateStaleOffers.
+ *
+ * There's no stored reason on `listings` distinguishing "auto-paused for staleness"
+ * from "seller paused this on purpose" — so this only reactivates a PAUSED listing
+ * once its seller is demonstrably active again (seen within the last 10 days), and
+ * for BTC/USDT-required types, only if their wallet still clears the same $10 bar
+ * every other reactivation path already enforces. A seller who truly wants a listing
+ * to stay off is one click away from pausing it again from My Listings.
+ */
+async function reactivateReturnedSellers() {
+  try {
+    const TEN_DAYS_AGO = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: pausedListings, error } = await supabaseAdmin
+      .from('listings')
+      .select('id, seller_id, listing_type, asset')
+      .eq('status', 'PAUSED');
+    if (error) { console.error('[reactivateReturnedSellers] listings query:', error.message); return; }
+    if (!pausedListings?.length) return;
+
+    const sellerIds = [...new Set(pausedListings.map(l => l.seller_id))];
+    const { data: sellers, error: usersErr } = await supabaseAdmin
+      .from('users')
+      .select('id, last_seen_at, last_login, account_status')
+      .in('id', sellerIds);
+    if (usersErr || !sellers?.length) return;
+
+    const activeSellerIds = new Set(
+      sellers
+        .filter(s => s.account_status !== 'banned' && s.account_status !== 'BANNED')
+        .filter(s => {
+          const lastActive = s.last_seen_at || s.last_login;
+          return lastActive && new Date(lastActive) >= new Date(TEN_DAYS_AGO);
+        })
+        .map(s => s.id)
+    );
+    if (activeSellerIds.size === 0) return;
+
+    const candidates = pausedListings.filter(l => activeSellerIds.has(l.seller_id));
+    if (!candidates.length) return;
+
+    const nonGated = candidates.filter(l => !BTC_REQUIRED_TYPES.includes(l.listing_type));
+    const gated = candidates.filter(l => BTC_REQUIRED_TYPES.includes(l.listing_type));
+
+    let toReactivate = nonGated.map(l => l.id);
+
+    if (gated.length > 0) {
+      const gatedSellerIds = [...new Set(gated.map(l => l.seller_id))];
+      const { data: wallets } = await supabaseAdmin
+        .from('wallets').select('user_id, balance_btc, balance_usdt').in('user_id', gatedSellerIds);
+      const balMap = {}, usdtBalMap = {};
+      (wallets || []).forEach(w => {
+        balMap[w.user_id] = parseFloat(w.balance_btc || 0);
+        usdtBalMap[w.user_id] = parseFloat(w.balance_usdt || 0);
+      });
+      const livePrice = _getLiveBtcPrice();
+      const solvent = gated.filter(l => {
+        const balUsd = l.asset === 'USDT' ? (usdtBalMap[l.seller_id] || 0) : (balMap[l.seller_id] || 0) * livePrice;
+        return balUsd >= MIN_USD;
+      });
+      toReactivate = toReactivate.concat(solvent.map(l => l.id));
+    }
+
+    if (toReactivate.length === 0) return;
+
+    await supabaseAdmin.from('listings')
+      .update({ status: 'ACTIVE', updated_at: new Date().toISOString() })
+      .in('id', toReactivate);
+    console.log(`[reactivateReturnedSellers] ✅ Reactivated ${toReactivate.length} listing(s) for sellers who came back within 10 days.`);
+    _bustCache();
+  } catch (err) {
+    console.error('[reactivateReturnedSellers]', err.message);
+  }
+}
+
+module.exports = { updateOfferStatus, syncAllOfferStatuses, deactivateStaleOffers, reactivateReturnedSellers, setCacheBuster, setBtcPriceGetter };

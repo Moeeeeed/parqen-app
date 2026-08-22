@@ -597,6 +597,9 @@ function ProfileModal({seller, listing, onClose, onTrade, btcPriceUSD}) {
   const neg     = parseInt(u.negative_feedback || 0);
   const total   = pos + neg;
   const trust   = total > 0 ? Math.round(pos / total * 100) : trades > 0 ? 100 : 0;
+  // pos/neg is a legacy trust counter that's never allowed to decrease and can be wildly
+  // inflated relative to real reviews — the tab count must match what actually loads there.
+  const reviewCount = parseInt(u.total_feedback_count ?? total);
   const compRate = parseFloat(u.completion_rate || 0);
   const blocks  = parseInt(u.blocks_received || u.blocks_count || 0);
   const ccCode  = resolveCode(u.country || u.location);
@@ -621,7 +624,7 @@ function ProfileModal({seller, listing, onClose, onTrade, btcPriceUSD}) {
 
   const TABS = [
     { id:'overview',  label:<span className="inline-flex items-center gap-1"><User size={12}/> Profile</span>    },
-    { id:'feedback',  label:<span className="inline-flex items-center gap-1"><MessageSquare size={12}/> Reviews ({total})</span>},
+    { id:'feedback',  label:<span className="inline-flex items-center gap-1"><MessageSquare size={12}/> Reviews ({reviewCount})</span>},
     { id:'rules',     label:<span className="inline-flex items-center gap-1"><Shield size={12}/> Rules</span>      },
     { id:'offer',     label:<span className="inline-flex items-center gap-1"><BarChart2 size={12}/> Offer</span>      },
   ];
@@ -1062,7 +1065,7 @@ export default function BuyBitcoin({user}) {
   // If users are all null the cache is stale/bad — skip it and force a fresh fetch.
   const _hasUsers  = (data) => Array.isArray(data) && data.some(l => l.users && (l.users.id || l.users.username));
   const _cacheAll  = () => { try { const c=JSON.parse(localStorage.getItem('praqen_market_all')||'null'); if(!c||Date.now()-c.ts>1800000||!_hasUsers(c.data)) return null; return c?.data||null; } catch { return null; } };
-  const _sellNow   = () => { const a=_cacheAll(); return a?a.filter(l=>(l.listing_type==='SELL'||l.listing_type==='SELL_BITCOIN')):[]; };
+  const _sellNow   = () => { const a=_cacheAll(); return a?a.filter(l=>((l.listing_type==='SELL'||l.listing_type==='SELL_BITCOIN')&&(l.asset||'BTC')==='BTC')):[]; };
   const [listings,     setListings]     = useState(()=>_sellNow());
   const [traderOfWeek, setTraderOfWeek] = useState(null); // auto-picked winner from the backend, not hardcoded
   const [loading,      setLoading]      = useState(()=>_sellNow().length===0);
@@ -1174,7 +1177,7 @@ export default function BuyBitcoin({user}) {
       try {
         const c = JSON.parse(localStorage.getItem('praqen_market_all') || 'null');
         if (c && Date.now() - c.ts < 300000 && _hasUsers(c.data)) {
-          const sellOffers = (c.data || []).filter(l => (l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN'));
+          const sellOffers = (c.data || []).filter(l => ((l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN') && (l.asset || 'BTC') === 'BTC'));
           if (sellOffers.length > 0) {
             setListings(sellOffers);
             setLoading(false);
@@ -1188,7 +1191,7 @@ export default function BuyBitcoin({user}) {
     try {
       const r = await axios.get(`${API_URL}/listings`, { timeout: 20000 });
       const all = (r.data.listings || []).map(l => ({...l, users: Array.isArray(l.users) ? l.users[0] : l.users}));
-      const sellOffers = all.filter(l => (l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN'));
+      const sellOffers = all.filter(l => ((l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN') && (l.asset || 'BTC') === 'BTC'));
       if (sellOffers.length > 0) {
         setListings(sellOffers);
         setLastSynced(new Date());
@@ -1207,7 +1210,7 @@ export default function BuyBitcoin({user}) {
         try {
           const stale = JSON.parse(localStorage.getItem('praqen_market_all') || 'null');
           if (stale && _hasUsers(stale.data)) {
-            const sellOffers = (stale.data || []).filter(l => (l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN'));
+            const sellOffers = (stale.data || []).filter(l => ((l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN') && (l.asset || 'BTC') === 'BTC'));
             if (sellOffers.length > 0) {
               setListings(sellOffers);
               toast.warn('Showing cached offers — server is busy. Prices may be slightly outdated.', { autoClose: 6000 });

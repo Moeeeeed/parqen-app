@@ -614,6 +614,11 @@ function BuyerModal({buyer, listing, onClose, onTrade, btcPriceUSD}) {
   const neg      = parseInt(u.negative_feedback || 0);
   const total    = pos + neg;
   const trust    = total > 0 ? Math.round(pos / total * 100) : trades > 0 ? 100 : 0;
+  // pos/neg can be a legacy-inflated trust counter that's never allowed to decrease —
+  // real seen case: 4156 positive_feedback against 1 actual row in the reviews table.
+  // The Reviews tab count must match what the tab actually fetches and displays, not
+  // that inflated sum, or it reads as "feedback isn't showing" when the tab opens.
+  const reviewCount = parseInt(u.total_feedback_count ?? total);
   const compRate = parseFloat(u.completion_rate || 0);
   const blocks   = parseInt(u.blocks_received || u.blocks_count || 0);
   const ccCode   = resolveCode(u.country || u.location);
@@ -637,7 +642,7 @@ function BuyerModal({buyer, listing, onClose, onTrade, btcPriceUSD}) {
 
   const TABS = [
     { id:'overview', label:<span className="inline-flex items-center gap-1"><User size={12} className="inline-block"/>Profile</span>},
-    { id:'feedback', label:<span className="inline-flex items-center gap-1"><MessageCircle size={12} className="inline-block"/>Reviews ({total})</span>},
+    { id:'feedback', label:<span className="inline-flex items-center gap-1"><MessageCircle size={12} className="inline-block"/>Reviews ({reviewCount})</span>},
     { id:'rules',    label:<span className="inline-flex items-center gap-1"><ClipboardList size={12} className="inline-block"/>Rules</span>},
     { id:'offer',    label:<span className="inline-flex items-center gap-1"><BarChart3 size={12} className="inline-block"/>Offer</span>},
   ];
@@ -1049,7 +1054,7 @@ export default function SellBitcoin({user}) {
   // Use cached data only if it actually contains user profile data — null users = bad cache
   const _hasUsers  = (data) => Array.isArray(data) && data.some(l => l.users && (l.users.id || l.users.username));
   const _cacheAll  = () => { try { const c=JSON.parse(localStorage.getItem('praqen_market_all')||'null'); if(!c||Date.now()-c.ts>1800000||!_hasUsers(c.data)) return null; return c?.data||null; } catch { return null; } };
-  const _buyNow    = () => { const a=_cacheAll(); return a?a.filter(l=>(l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN')):[]; };
+  const _buyNow    = () => { const a=_cacheAll(); return a?a.filter(l=>((l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN')&&(l.asset||'BTC')==='BTC')):[]; };
   const [offers,       setOffers]       = useState(()=>_buyNow());
   const [traderOfWeek, setTraderOfWeek] = useState(null); // auto-picked winner from the backend, not hardcoded
   const [loading,      setLoading]      = useState(()=>_buyNow().length===0);
@@ -1262,7 +1267,7 @@ export default function SellBitcoin({user}) {
       try {
         const c = JSON.parse(localStorage.getItem('praqen_market_all') || 'null');
         if (c && Date.now() - c.ts < 300000 && _hasUsers(c.data)) {
-          const buyOffers = (c.data || []).filter(l => (l.listing_type === 'BUY' || l.listing_type === 'BUY_BITCOIN'));
+          const buyOffers = (c.data || []).filter(l => ((l.listing_type === 'BUY' || l.listing_type === 'BUY_BITCOIN') && (l.asset || 'BTC') === 'BTC'));
           if (buyOffers.length > 0) {
             setOffers(buyOffers);
             setLoading(false);
@@ -1276,7 +1281,7 @@ export default function SellBitcoin({user}) {
     try {
       const res = await axios.get(`${API_URL}/listings`, { timeout: 20000 });
       const all = (res.data.listings||[]).map(l=>({...l, users:Array.isArray(l.users)?l.users[0]:l.users}));
-      const data = all.filter(l=>(l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN'));
+      const data = all.filter(l=>((l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN')&&(l.asset||'BTC')==='BTC'));
       if (data.length > 0) {
         setOffers(data);
         try { localStorage.setItem('praqen_market_all', JSON.stringify({ data: all, ts: Date.now() })); } catch {}
