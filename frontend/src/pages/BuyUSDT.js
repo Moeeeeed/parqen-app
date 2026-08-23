@@ -1067,7 +1067,11 @@ export default function BuyUSDT({user}) {
   const [showPayment,   setShowPayment]   = useState(false);
   const [showBuyMenu, setShowBuyMenu] = useState(false);
   const [showSellMenu, setShowSellMenu] = useState(false);
-  const [cryptoFilter, setCryptoFilter] = useState('ALL'); // 'ALL' | 'BTC' | 'USDT'
+  // Defaults to USDT-only — this is the dedicated Buy USDT page, so it should show
+  // USDT offers first, not the BTC offers that dominate the combined "All Crypto" view
+  // (175 active BTC vs 73 USDT). Users can still switch to "All Crypto" or "Bitcoin"
+  // manually via the dropdown.
+  const [cryptoFilter, setCryptoFilter] = useState('USDT'); // 'ALL' | 'BTC' | 'USDT'
   const [showCryptoMenu, setShowCryptoMenu] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [sortBy,       setSortBy]       = useState('rate_low');

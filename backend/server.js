@@ -330,6 +330,21 @@ const tradeLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Offer/listing creation: 10 per 15 minutes per account (keyed on req.userId, set by
+// verifyToken earlier in the chain — per-account rather than per-IP since this is an
+// authenticated action). Added after an account scripted 27 listings across nearly
+// every currency/payment-method combo in a ~25-minute burst, one every ~55 seconds —
+// each individually valid (margin right at the cap) so the margin check alone didn't
+// stop it. A legitimate trader posting offers by hand won't hit this; a script will.
+const offerCreationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => req.userId || req.ip,
+  message: { error: 'Too many offers created recently. Please wait a few minutes before creating more.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // ── 6. HD Wallet + Deposit Monitor ────────────────────────────────────────
 const hdWalletService = require('./services/hdWalletService');
 const depositMonitor = require('./services/depositMonitor');
@@ -5812,7 +5827,7 @@ app.post('/api/user/add-balance', verifyToken, (req, res) => {
 // LISTINGS ROUTES
 // ============================================================
 
-app.post('/api/listings', verifyToken, requireNotBanned, async (req, res) => {
+app.post('/api/listings', verifyToken, requireNotBanned, offerCreationLimiter, async (req, res) => {
   try {
     const b = req.body;
     const listingType = b.listing_type || 'SELL';
@@ -6095,6 +6110,24 @@ function parseListingsCursor(raw) {
   return { ts, id };
 }
 
+// Listings/offers whose margin falls outside the create-time cap (see the -10%/+10%
+// note above POST /api/offers) can predate that validation and still be sitting in
+// the DB as ACTIVE — filter them out of every market read so an old out-of-bounds
+// row (e.g. margin=25, from before the cap existed) can't keep showing up as a live
+// offer even though new ones can no longer be created or edited that way.
+function isListingMarginInBounds(listingType, margin) {
+  if (margin === null || margin === undefined || margin === '') return true;
+  const marginNum = parseFloat(margin);
+  if (isNaN(marginNum)) return true;
+  const upperType = (listingType || '').toUpperCase();
+  const isPricedType = ['SELL', 'SELL_BITCOIN', 'BUY', 'BUY_BITCOIN', 'BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(upperType);
+  if (!isPricedType) return true;
+  const isGiftCardPriced = ['BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(upperType);
+  const marginMin = -10;
+  const marginMax = isGiftCardPriced ? 100 : 10;
+  return marginNum >= marginMin && marginNum <= marginMax;
+}
+
 app.get('/api/listings', async (req, res) => {
   try {
     const { brand, minPrice, maxPrice, type } = req.query;
@@ -6251,11 +6284,13 @@ app.get('/api/listings', async (req, res) => {
       );
     }
 
-    let listings = (rawListings || []).map(l => ({
-      ...l,
-      users: userMap[l.seller_id] || null,
-      seller_has_deposit: l.listing_type === 'SELL_GIFT_CARD' ? depositedSellerIds.has(l.seller_id) : undefined,
-    }));
+    let listings = (rawListings || [])
+      .filter(l => isListingMarginInBounds(l.listing_type, l.margin))
+      .map(l => ({
+        ...l,
+        users: userMap[l.seller_id] || null,
+        seller_has_deposit: l.listing_type === 'SELL_GIFT_CARD' ? depositedSellerIds.has(l.seller_id) : undefined,
+      }));
 
     const balanceCheckedListings = listings.filter(l => btcRequiredTypes.includes(l.listing_type));
 
@@ -6613,12 +6648,19 @@ app.patch('/api/listings/:id/status', verifyToken, async (req, res) => {
 
     const { data: listing, error: findError } = await supabaseAdmin
       .from('listings')
-      .select('seller_id, listing_type, asset, min_limit_usd, bitcoin_price')
+      .select('seller_id, listing_type, asset, min_limit_usd, bitcoin_price, margin')
       .eq('id', id).single();
 
     if (findError || !listing) return res.status(404).json({ error: 'Listing not found' });
     if (listing.seller_id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
 
+    // A listing paused for having an out-of-bounds margin (predating the -10%/+10% cap, or
+    // paused by review) must not be self-reactivatable back to ACTIVE as-is — otherwise the
+    // owner can just click "Activate" on their dashboard to undo a pause, same as they did
+    // here. Edit the margin into bounds via PUT /api/listings/:id first, then activate.
+    if (status === 'ACTIVE' && !isListingMarginInBounds(listing.listing_type, listing.margin)) {
+      return res.status(400).json({ error: 'This offer\'s margin is outside the allowed range (-10% to +10%, or up to +100% for gift cards). Edit the offer to fix the margin before reactivating it.' });
+    }
 
     // Reactivating a SELL / SELL_BITCOIN / BUY_GIFT_CARD offer still requires >= $10 of the
     // offer's asset — otherwise a user could bypass the wallet-balance requirement just by
@@ -6668,11 +6710,13 @@ app.get('/api/offers', async (req, res) => {
     if (country) query = query.eq('country', country);
     if (assetFilter) query = query.eq('asset', assetFilter);
 
-    const { data: listings, error } = await query
+    const { data: rawOfferListings, error } = await query
       .order('created_at', { ascending: false })
       .limit(parseInt(limit));
 
     if (error) throw error;
+
+    const listings = (rawOfferListings || []).filter(l => isListingMarginInBounds(l.listing_type, l.margin));
 
     const userIds = [...new Set((listings || []).map(l => l.seller_id).filter(Boolean))];
 
@@ -6840,7 +6884,7 @@ app.post('/api/offers/:id/view', optionalAuth, async (req, res) => {
 });
 
 // POST create new offer
-app.post('/api/offers', verifyToken, requireNotBanned, async (req, res) => {
+app.post('/api/offers', verifyToken, requireNotBanned, offerCreationLimiter, async (req, res) => {
   try {
     const {
       type,

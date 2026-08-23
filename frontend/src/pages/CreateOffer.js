@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRates } from '../contexts/RatesContext';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -711,15 +711,31 @@ export default function CreateOffer({ user }) {
     }
   }, [offerType, isGC, currencyCode]);
 
+  // A user who was mid-flow when their deposit got admin-approved would otherwise stay
+  // stuck on the cached pre-approval status forever — this component never re-fetches
+  // once depositStatus is set, so their eligibility never updates without a full page
+  // reload. fetchDepositStatus is reused both for the initial check and to force a fresh
+  // read right before gating "Next", so approval that happened while the tab was open
+  // takes effect immediately instead of requiring a reload.
+  const fetchDepositStatus = useCallback(async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return null;
+    try {
+      const res = await axios.get(`${API_URL}/seller-deposit/status`, { headers: { Authorization: `Bearer ${token}` } });
+      setDepositStatus(res.data);
+      return res.data;
+    } catch {
+      const fallback = { has_deposit: false, can_create_sell_listing: false };
+      setDepositStatus(fallback);
+      return fallback;
+    }
+  }, []);
+
   // Fetch seller deposit status once the user picks "Sell Gift Card"
   useEffect(() => {
     if (offerType !== 'gc_sell' || depositStatus !== null) return;
-    const token = localStorage.getItem('token');
-    if (!token) return;
-    axios.get(`${API_URL}/seller-deposit/status`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(res => setDepositStatus(res.data))
-      .catch(() => setDepositStatus({ has_deposit: false, can_create_sell_listing: false }));
-  }, [offerType, depositStatus]);
+    fetchDepositStatus();
+  }, [offerType, depositStatus, fetchDepositStatus]);
 
   const canCreateSellListing = depositStatus?.can_create_sell_listing === true;
 
@@ -876,11 +892,14 @@ export default function CreateOffer({ user }) {
 };
 
   const back = () => setStep(s => Math.max(1, s - 1));
-  const next = () => {
+  const next = async () => {
     if (!canNext()) return;
     if (step === 1 && offerType === 'gc_sell') {
       if (depositStatus === null) return; // still checking deposit status
-      if (!canCreateSellListing) { setShowDepositModal(true); return; }
+      // Re-fetch rather than trusting the cached flag — an admin approval that landed
+      // while this tab sat open would otherwise never be seen without a page reload.
+      const fresh = await fetchDepositStatus();
+      if (!(fresh?.can_create_sell_listing === true)) { setShowDepositModal(true); return; }
     }
     setStep(s => Math.min(steps.length, s + 1));
   };
