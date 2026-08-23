@@ -69,42 +69,61 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // ── Lazy-loaded pages ────────────────────────────────────────────────────────
-const GiftCardMarketplace = lazy(() => import('./pages/GiftCardMarketplace'));
-const Blog = lazy(() => import('./pages/Blog'));
-const BlogPost = lazy(() => import('./pages/BlogPost'));
-const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
-const TermsOfService = lazy(() => import('./pages/TermsOfService'));
-const LandingPage = lazy(() => import('./pages/LandingPage'));
-const Register = lazy(() => import('./pages/Register'));
-const Login = lazy(() => import('./pages/Login'));
-const CreateListing = lazy(() => import('./pages/CreateListing'));
-const CreateOffer = lazy(() => import('./pages/CreateOffer'));
-const ListingDetail = lazy(() => import('./pages/ListingDetail'));
-const MyTrades = lazy(() => import('./pages/MyTrades'));
-const TradeDetail = lazy(() => import('./pages/TradeDetail'));
-const Profile = lazy(() => import('./pages/Profile'));
-const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
-const ModeratorDashboard = lazy(() => import('./pages/ModeratorDashboard'));
-const TeamDashboard = lazy(() => import('./pages/TeamDashboard'));
-const CeoDashboard = lazy(() => import('./pages/CeoDashboard'));
-const EscrowVerification = lazy(() => import('./pages/EscrowVerification'));
-const WalletPage = lazy(() => import('./pages/Wallet'));
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Settings = lazy(() => import('./pages/Settings'));
-const MyListings = lazy(() => import('./pages/MyListings'));
-const EditListing = lazy(() => import('./pages/EditListing'));
-const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
-const Feedback = lazy(() => import('./pages/Feedback'));
-const TradeChat = lazy(() => import('./pages/TradeChat'));
-const BuyBitcoin = lazy(() => import('./pages/BuyBitcoin'));
-const SellBitcoin = lazy(() => import('./pages/SellBitcoin'));
-const BuyUSDT = lazy(() => import('./pages/BuyUSDT'));
-const SellUSDT = lazy(() => import('./pages/SellUSDT'));
-const SellGiftCardMarketplace = lazy(() => import('./pages/SellGiftCardMarketplace'));
-const VerifyOTP = lazy(() => import('./pages/VerifyOTP'));
-const ResetPassword = lazy(() => import('./pages/ResetPassword'));
-const EmailConfirmation = lazy(() => import('./pages/EmailConfirmation'));
-const CheckEmail = lazy(() => import('./pages/CheckEmail'));
+// A dynamic import() can fail if the tab has an older build's chunk manifest in
+// memory and the dev/build server has since redeployed — the failed fetch throws,
+// Suspense propagates it to the nearest ErrorBoundary, and the user sees the
+// generic "Something went wrong" card on whatever route they happened to be on,
+// with no connection to that page's own code. Retrying once via a full reload
+// picks up the current chunk manifest and recovers transparently; a second
+// failure (session storage flag already set) is a real error, so it's let through.
+function lazyRetry(importer) {
+  return lazy(() =>
+    importer().catch((err) => {
+      const alreadyRetried = sessionStorage.getItem('chunk_reload_done');
+      if (alreadyRetried) throw err;
+      sessionStorage.setItem('chunk_reload_done', '1');
+      window.location.reload();
+      return new Promise(() => {});
+    })
+  );
+}
+
+const GiftCardMarketplace = lazyRetry(() => import('./pages/GiftCardMarketplace'));
+const Blog = lazyRetry(() => import('./pages/Blog'));
+const BlogPost = lazyRetry(() => import('./pages/BlogPost'));
+const PrivacyPolicy = lazyRetry(() => import('./pages/PrivacyPolicy'));
+const TermsOfService = lazyRetry(() => import('./pages/TermsOfService'));
+const LandingPage = lazyRetry(() => import('./pages/LandingPage'));
+const Register = lazyRetry(() => import('./pages/Register'));
+const Login = lazyRetry(() => import('./pages/Login'));
+const CreateListing = lazyRetry(() => import('./pages/CreateListing'));
+const CreateOffer = lazyRetry(() => import('./pages/CreateOffer'));
+const ListingDetail = lazyRetry(() => import('./pages/ListingDetail'));
+const MyTrades = lazyRetry(() => import('./pages/MyTrades'));
+const TradeDetail = lazyRetry(() => import('./pages/TradeDetail'));
+const Profile = lazyRetry(() => import('./pages/Profile'));
+const AdminDashboard = lazyRetry(() => import('./pages/AdminDashboard'));
+const ModeratorDashboard = lazyRetry(() => import('./pages/ModeratorDashboard'));
+const TeamDashboard = lazyRetry(() => import('./pages/TeamDashboard'));
+const CeoDashboard = lazyRetry(() => import('./pages/CeoDashboard'));
+const EscrowVerification = lazyRetry(() => import('./pages/EscrowVerification'));
+const WalletPage = lazyRetry(() => import('./pages/Wallet'));
+const Dashboard = lazyRetry(() => import('./pages/Dashboard'));
+const Settings = lazyRetry(() => import('./pages/Settings'));
+const MyListings = lazyRetry(() => import('./pages/MyListings'));
+const EditListing = lazyRetry(() => import('./pages/EditListing'));
+const ForgotPassword = lazyRetry(() => import('./pages/ForgotPassword'));
+const Feedback = lazyRetry(() => import('./pages/Feedback'));
+const TradeChat = lazyRetry(() => import('./pages/TradeChat'));
+const BuyBitcoin = lazyRetry(() => import('./pages/BuyBitcoin'));
+const SellBitcoin = lazyRetry(() => import('./pages/SellBitcoin'));
+const BuyUSDT = lazyRetry(() => import('./pages/BuyUSDT'));
+const SellUSDT = lazyRetry(() => import('./pages/SellUSDT'));
+const SellGiftCardMarketplace = lazyRetry(() => import('./pages/SellGiftCardMarketplace'));
+const VerifyOTP = lazyRetry(() => import('./pages/VerifyOTP'));
+const ResetPassword = lazyRetry(() => import('./pages/ResetPassword'));
+const EmailConfirmation = lazyRetry(() => import('./pages/EmailConfirmation'));
+const CheckEmail = lazyRetry(() => import('./pages/CheckEmail'));
 
 // ── Page Loader ──────────────────────────────────────────────────────────────
 function PageLoader() {
@@ -177,6 +196,13 @@ function App() {
       initOneSignal(user.id);
     }
   }, [token, user?.id]);
+
+  // A successful mount means the current chunk manifest loaded fine — clear the
+  // lazyRetry flag so a *future* chunk failure (after the next deploy) gets its
+  // own single retry instead of being treated as "already retried, give up."
+  useEffect(() => {
+    sessionStorage.removeItem('chunk_reload_done');
+  }, []);
 
   // ── Setup axios interceptor ──────────────────────────────────────────────
   useEffect(() => {

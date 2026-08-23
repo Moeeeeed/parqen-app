@@ -135,7 +135,14 @@ function setCached(key, data) { _marketCache.set(key, { data, ts: Date.now() });
 // kick off a background refresh so the NEXT user request hits a warm cache.
 let _cacheRefreshTimer = null;
 function bustCache() {
-  _marketCache.clear();
+  // Mark every entry expired (so getCached() forces a fresh read) without deleting
+  // it outright — getCachedStale() needs the data to still be there as a fallback
+  // during the ~1s window before _warmListingsCache() below finishes re-warming.
+  // A hard _marketCache.clear() here used to wipe that safety net at exactly the
+  // moment concurrent load is highest (every reader missing cache at once right
+  // after a write), turning a slow DB response into a 503 instead of stale data.
+  const expiredTs = Date.now() - MARKET_CACHE_TTL - 1;
+  for (const entry of _marketCache.values()) entry.ts = expiredTs;
   // Debounce: wait 1s then warm up the default listings key in the background
   clearTimeout(_cacheRefreshTimer);
   _cacheRefreshTimer = setTimeout(_warmListingsCache, 1000);
@@ -6515,9 +6522,20 @@ app.put('/api/listings/:id', verifyToken, async (req, res) => {
     const { id } = req.params;
     const { margin, min_limit_usd, max_limit_usd, min_limit_local, max_limit_local,
       payment_method, trade_instructions, listing_terms, time_limit, status } = req.body;
-    const { data: listing, error: findError } = await supabaseAdmin.from('listings').select('seller_id, listing_type, asset').eq('id', id).single();
+    const { data: listing, error: findError } = await supabaseAdmin.from('listings').select('seller_id, listing_type, asset, margin').eq('id', id).single();
     if (findError || !listing) return res.status(404).json({ error: 'Listing not found' });
     if (listing.seller_id !== req.userId) return res.status(403).json({ error: 'You can only edit your own listings' });
+    // This edit route also accepts `status` in the same payload as margin, so a request
+    // that flips status to ACTIVE must be checked against whichever margin will actually
+    // end up on the row (the one in this request if it's changing margin, otherwise the
+    // row's existing margin) — same gap as the dedicated PATCH .../status endpoint, just
+    // reachable through this route instead: nothing here validated a reactivate-via-edit.
+    if (status === 'ACTIVE') {
+      const effectiveMargin = (margin !== undefined && margin !== null && margin !== '') ? margin : listing.margin;
+      if (!isListingMarginInBounds(listing.listing_type, effectiveMargin)) {
+        return res.status(400).json({ error: 'This offer\'s margin is outside the allowed range (-10% to +10%, or up to +100% for gift cards). Fix the margin before activating it.' });
+      }
+    }
     if (min_limit_usd !== undefined && parseFloat(min_limit_usd) < 10) {
       return res.status(400).json({ error: 'Minimum trade amount must be at least $10 USD.' });
     }
