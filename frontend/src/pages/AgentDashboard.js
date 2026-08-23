@@ -9,8 +9,11 @@ import {
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+// Dedicated agentToken (own login, below) takes priority — falls back to the main site's
+// token only so an admin/moderator already logged into the main app can still open this
+// page without a second login, same fallback pattern CeoDashboard uses for ceoToken/token.
 const authH = () => {
-  const t = localStorage.getItem('token');
+  const t = localStorage.getItem('agentToken') || localStorage.getItem('token');
   return t ? { Authorization: `Bearer ${t}` } : {};
 };
 
@@ -55,7 +58,169 @@ function TypingIndicator() {
   );
 }
 
-export default function AgentDashboard({ user }) {
+// ── Support-only login screen — its own page, not the customer-facing /login. Same
+// password → email-OTP → (optional) 2FA flow as CeoDashboard's CeoLogin, hitting the exact
+// same /api/auth/* endpoints, just checking is_agent/is_admin/is_moderator instead of
+// is_ceo and storing under agentToken/agentUser so a support rep's session here is
+// completely separate from any customer session in the same browser.
+function AgentLogin({ onAuth }) {
+  const [step, setStep]           = useState('password'); // 'password' | 'email-otp' | '2fa'
+  const [email, setEmail]         = useState('');
+  const [password, setPassword]   = useState('');
+  const [emailOtp, setEmailOtp]   = useState('');
+  const [twoFACode, setTwoFACode] = useState('');
+  const [tempToken, setTempToken] = useState('');
+  const [loading, setLoading]     = useState(false);
+  const [err, setErr]             = useState('');
+  const [notice, setNotice]       = useState('');
+
+  const finish = (u, token) => {
+    if (!(u?.is_agent || u?.is_admin || u?.is_moderator)) {
+      setErr("This account doesn't have Support Dashboard access. Ask an admin to grant it from Admin Panel → Users.");
+      return;
+    }
+    localStorage.setItem('agentToken', token);
+    localStorage.setItem('agentUser', JSON.stringify(u));
+    onAuth(u);
+  };
+
+  const submitPassword = async (e) => {
+    e.preventDefault();
+    setErr(''); setNotice(''); setLoading(true);
+    try {
+      const { data } = await axios.post(`${API_URL}/auth/login`, { email, password });
+      if (data.requiresOtp) {
+        setEmailOtp('');
+        setNotice(`A 6-digit code was sent to ${data.email || email}`);
+        setStep('email-otp');
+      } else if (data.success) {
+        finish(data.user, data.token);
+      }
+    } catch (e) {
+      setErr(e.response?.data?.error || 'Login failed. Check your details and try again.');
+    } finally { setLoading(false); }
+  };
+
+  const submitEmailOtp = async (e) => {
+    e.preventDefault();
+    if (emailOtp.length !== 6) { setErr('Enter the full 6-digit code'); return; }
+    setErr(''); setLoading(true);
+    try {
+      const { data } = await axios.post(`${API_URL}/auth/verify-login-otp`, { email, code: emailOtp });
+      if (data.requires2FA) {
+        setTempToken(data.tempToken);
+        setNotice(`Enter the code from your ${data.twoFactorMethod === 'totp' ? 'authenticator app' : data.twoFactorMethod === 'sms' ? 'phone' : 'email'}`);
+        setTwoFACode('');
+        setStep('2fa');
+      } else if (data.success) {
+        finish(data.user, data.token);
+      }
+    } catch (e) {
+      setErr(e.response?.data?.error || 'Invalid code. Please try again.');
+      setEmailOtp('');
+    } finally { setLoading(false); }
+  };
+
+  const submit2FA = async (e) => {
+    e.preventDefault();
+    if (twoFACode.length !== 6) { setErr('Enter the full 6-digit code'); return; }
+    setErr(''); setLoading(true);
+    try {
+      const { data } = await axios.post(`${API_URL}/auth/verify-2fa-login`, { tempToken, code: twoFACode });
+      if (data.success) finish(data.user, data.token);
+    } catch (e) {
+      setErr(e.response?.data?.error || 'Invalid code. Please try again.');
+      setTwoFACode('');
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: `linear-gradient(145deg,${C.forest} 0%,#0c2418 50%,${C.forestLight} 100%)` }}>
+      <div className="w-full max-w-sm bg-white rounded-3xl p-7 shadow-2xl">
+        <div className="flex flex-col items-center mb-6">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: C.forest }}>
+            <Headphones size={26} color="#fff" />
+          </div>
+          <h1 className="font-black text-lg" style={{ color: C.g800 }}>PRAQEN Support</h1>
+          <p className="text-xs mt-1" style={{ color: C.g400 }}>Support Dashboard — sign in with your support account</p>
+        </div>
+
+        {step === 'password' && (
+          <form onSubmit={submitPassword} className="space-y-3">
+            <input type="email" required placeholder="Email" value={email} onChange={e => setEmail(e.target.value)}
+              className="w-full border rounded-xl px-4 py-3 text-sm outline-none" style={{ borderColor: C.g200 }} />
+            <input type="password" required placeholder="Password" value={password} onChange={e => setPassword(e.target.value)}
+              className="w-full border rounded-xl px-4 py-3 text-sm outline-none" style={{ borderColor: C.g200 }} />
+            {err && <p className="text-xs font-bold" style={{ color: '#DC2626' }}>{err}</p>}
+            <button type="submit" disabled={loading}
+              className="w-full py-3 rounded-xl text-sm font-black transition"
+              style={{ backgroundColor: loading ? C.g200 : C.forest, color: loading ? C.g400 : '#fff' }}>
+              {loading ? 'Signing in…' : 'Sign In'}
+            </button>
+          </form>
+        )}
+
+        {step === 'email-otp' && (
+          <form onSubmit={submitEmailOtp} className="space-y-3">
+            {notice && <p className="text-xs font-semibold" style={{ color: C.g600 }}>{notice}</p>}
+            <input type="text" inputMode="numeric" maxLength={6} required placeholder="6-digit code"
+              value={emailOtp} onChange={e => setEmailOtp(e.target.value.replace(/\D/g, ''))}
+              className="w-full border rounded-xl px-4 py-3 text-sm outline-none tracking-widest text-center font-black" style={{ borderColor: C.g200 }} />
+            {err && <p className="text-xs font-bold" style={{ color: '#DC2626' }}>{err}</p>}
+            <button type="submit" disabled={loading}
+              className="w-full py-3 rounded-xl text-sm font-black transition"
+              style={{ backgroundColor: loading ? C.g200 : C.forest, color: loading ? C.g400 : '#fff' }}>
+              {loading ? 'Verifying…' : 'Verify Code'}
+            </button>
+            <button type="button" onClick={() => { setStep('password'); setErr(''); setNotice(''); }}
+              className="w-full text-xs font-bold py-1" style={{ color: C.g500 }}>
+              ← Back
+            </button>
+          </form>
+        )}
+
+        {step === '2fa' && (
+          <form onSubmit={submit2FA} className="space-y-3">
+            {notice && <p className="text-xs font-semibold" style={{ color: C.g600 }}>{notice}</p>}
+            <input type="text" inputMode="numeric" maxLength={6} required placeholder="6-digit 2FA code"
+              value={twoFACode} onChange={e => setTwoFACode(e.target.value.replace(/\D/g, ''))}
+              className="w-full border rounded-xl px-4 py-3 text-sm outline-none tracking-widest text-center font-black" style={{ borderColor: C.g200 }} />
+            {err && <p className="text-xs font-bold" style={{ color: '#DC2626' }}>{err}</p>}
+            <button type="submit" disabled={loading}
+              className="w-full py-3 rounded-xl text-sm font-black transition"
+              style={{ backgroundColor: loading ? C.g200 : C.forest, color: loading ? C.g400 : '#fff' }}>
+              {loading ? 'Verifying…' : 'Verify & Sign In'}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function AgentDashboard({ user: appUser }) {
+  const [agentUser, setAgentUser] = useState(null);
+  useEffect(() => {
+    // Prefer a dedicated agent-session login; fall back to the main app's session if that
+    // user already carries agent/admin/moderator rights (e.g. an admin opening this page
+    // from within the already-logged-in main app, same convenience CeoDashboard offers).
+    const stored = localStorage.getItem('agentUser');
+    const token  = localStorage.getItem('agentToken');
+    if (stored && token) {
+      try {
+        const u = JSON.parse(stored);
+        if (u?.is_agent || u?.is_admin || u?.is_moderator) { setAgentUser(u); return; }
+      } catch {}
+    }
+    if (appUser && (appUser.is_agent || appUser.is_admin || appUser.is_moderator)) setAgentUser(appUser);
+  }, [appUser]);
+
+  if (!agentUser) return <AgentLogin onAuth={setAgentUser} />;
+
+  return <AgentDashboardInner user={agentUser} />;
+}
+
+function AgentDashboardInner({ user }) {
   const [agentStatus, setAgentStatus] = useState(null);
   const [isOnline, setIsOnline] = useState(false);
   const [displayName, setDisplayName] = useState(user?.full_name || user?.username || '');
@@ -259,9 +424,12 @@ export default function AgentDashboard({ user }) {
     if (isOnline) {
       await axios.post(`${API_URL}/agent/status`, { is_online: false }, { headers: authH() }).catch(() => {});
     }
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    window.location.href = '/login';
+    // Only clear the dedicated agent session — never the main site's token/user, in case
+    // this was an admin/moderator using their existing main-app login as a fallback (see
+    // AgentDashboard's auth-gate above) rather than a real agentToken.
+    localStorage.removeItem('agentToken');
+    localStorage.removeItem('agentUser');
+    window.location.href = '/agent-dashboard';
   };
 
   // ── Filtered tickets ───────────────────────────────────────────────────
@@ -512,9 +680,8 @@ export default function AgentDashboard({ user }) {
                     <div className="bg-gray-50 rounded-xl p-3 max-w-sm text-left">
                       <p className="text-[10px] font-bold mb-1" style={{ color: C.g600 }}>How to get access:</p>
                       <ol className="text-[10px] space-y-1" style={{ color: C.g500 }}>
-                        <li>1. Ask an admin to go to Admin Dashboard → Users</li>
-                        <li>2. Find your account and click the agent toggle</li>
-                        <li>3. Or have an admin run: <code className="bg-gray-200 px-1 rounded text-[9px]">PUT /api/admin/users/YOUR_ID/toggle-agent</code></li>
+                        <li>1. Ask an admin to open the Admin Panel → Users</li>
+                        <li>2. Find your account and click "Grant Support Access"</li>
                       </ol>
                     </div>
                   </>

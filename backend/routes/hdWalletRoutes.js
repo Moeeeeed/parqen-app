@@ -16,6 +16,7 @@ const { sendTelegramAlert }  = require('../services/telegramService');
 const { createClient } = require('@supabase/supabase-js');
 const rateLimit = require('express-rate-limit');
 const { requireNotBanned, isUserBanned } = require('../middleware/requireNotBanned');
+const { getClientIp, isLockedOut, LOCKOUT_THRESHOLD } = require('../services/securityLogService');
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -780,11 +781,28 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
 // ============================================================
 const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
 
+// SECURITY: the ADMIN_EMAIL fallback below must never fire for an unverified email —
+// see the identical warning on requireAdmin/requireFullAdminOrCeo in server.js:9869-9877.
+// Registration issues a working JWT before the verification code is ever confirmed, so
+// without the is_email_verified check anyone could register support@praqen.com and get
+// instant, unverified CEO treasury access. This file doesn't share server.js's helpers,
+// so the same fix is duplicated here rather than left out.
 async function requireCeo(req, res) {
   const { data: u } = await supabaseAdmin
-    .from('users').select('id, is_ceo, email, username').eq('id', req.userId).single();
-  const ok = !!(u?.is_ceo || u?.email === ADMIN_EMAIL);
+    .from('users').select('id, is_ceo, email, username, is_email_verified').eq('id', req.userId).single();
+  const ok = !!(u?.is_ceo || (u?.email === ADMIN_EMAIL && u?.is_email_verified));
   if (!ok) { res.status(403).json({ error: 'CEO access required' }); return null; }
+  return u;
+}
+
+// Same idea as requireCeo, but also accepts is_admin/is_moderator — used by the handful
+// of routes (like /hot-wallet below) that legitimately need to be readable by the wider
+// admin/moderator team, not just the CEO.
+async function requireAdminOrCeo(req, res) {
+  const { data: u } = await supabaseAdmin
+    .from('users').select('id, is_admin, is_moderator, is_ceo, email, is_email_verified').eq('id', req.userId).single();
+  const ok = !!(u?.is_admin || u?.is_moderator || u?.is_ceo || (u?.email === ADMIN_EMAIL && u?.is_email_verified));
+  if (!ok) { res.status(403).json({ error: 'Admin access required' }); return null; }
   return u;
 }
 
@@ -863,6 +881,49 @@ router.get('/ceo/treasury', verifyToken, async (req, res) => {
   }
 });
 
+// Shared by GET /ceo/pulse's alert badge count and GET /ceo/security-events' full list —
+// flags a security_events row as alert-worthy if it's a failed/blocked login against a
+// privileged (CEO/admin/moderator) account, OR its IP has 3+ failures in the window
+// (catches someone hammering regular-user accounts too, without lighting up on one normal
+// typo). Defensive: security_events may not exist yet if the migration hasn't been run —
+// returns a safe all-zero result with tableMissing:true rather than ever throwing.
+async function getSecurityAlertSummary(windowHours = 24) {
+  try {
+    const sinceISO = new Date(Date.now() - windowHours * 3600000).toISOString();
+    const [{ data: events, error }, { data: privUsers }] = await Promise.all([
+      supabaseAdmin.from('security_events')
+        .select('id, user_id, email_attempted, event_type, ip_address, created_at')
+        .in('event_type', ['LOGIN_FAILED_PASSWORD', 'LOGIN_FAILED_OTP', 'LOGIN_FAILED_2FA', 'LOGIN_BLOCKED_BANNED', 'LOGIN_BLOCKED_LOCKOUT'])
+        .gte('created_at', sinceISO).order('created_at', { ascending: false }).limit(500),
+      supabaseAdmin.from('users').select('id').or('is_ceo.eq.true,is_admin.eq.true,is_moderator.eq.true'),
+    ]);
+    if (error) {
+      if (/relation .*security_events.* does not exist/i.test(error.message || '')) {
+        return { count: 0, events: [], topIps: [], privilegedFailures: 0, tableMissing: true };
+      }
+      throw error;
+    }
+
+    const privilegedIds = new Set((privUsers || []).map(u => u.id));
+    const ipCounts = {};
+    for (const e of events || []) { if (e.ip_address) ipCounts[e.ip_address] = (ipCounts[e.ip_address] || 0) + 1; }
+    const flaggedIps = new Set(Object.entries(ipCounts).filter(([, c]) => c >= 3).map(([ip]) => ip));
+
+    let privilegedFailures = 0;
+    const flagged = (events || []).filter(e => {
+      const isPriv = !!(e.user_id && privilegedIds.has(e.user_id));
+      if (isPriv) privilegedFailures++;
+      return isPriv || (e.ip_address && flaggedIps.has(e.ip_address));
+    });
+    const topIps = Object.entries(ipCounts).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([ip, count]) => ({ ip, count }));
+
+    return { count: flagged.length, events: flagged, topIps, privilegedFailures, tableMissing: false };
+  } catch (err) {
+    console.error('[hdWalletRoutes getSecurityAlertSummary]', err.message);
+    return { count: 0, events: [], topIps: [], privilegedFailures: 0, tableMissing: false };
+  }
+}
+
 // GET /api/hd-wallet/ceo/pulse
 // Company-wide read-only snapshot for the CEO dashboard: money in/out, trade volume,
 // pending-approval counts across every queue in the app, new-user growth, and a recent
@@ -876,8 +937,10 @@ router.get('/ceo/pulse', verifyToken, async (req, res) => {
 
     const nowMs = Date.now();
     const since24hMs = nowMs - 86400000;
+    const since48hMs = nowMs - 2 * 86400000;
     const since7dMs = nowMs - 7 * 86400000;
-    const since7dISO = new Date(since7dMs).toISOString();
+    const since14dMs = nowMs - 14 * 86400000;
+    const since14dISO = new Date(since14dMs).toISOString();
     const todayStartMs = new Date().setHours(0, 0, 0, 0);
 
     const [
@@ -885,40 +948,50 @@ router.get('/ceo/pulse', verifyToken, async (req, res) => {
       pendingWdR, pendingKycR, pendingDisputesR, pendingMigrationR,
       newUsersR, activityR, totalUsersR,
       tradeFeesR, swapFeesR,
+      kycApprovedR, kycRejectedR, bannedR, warnedR, securityAlertsR,
     ] = await Promise.allSettled([
-      // 7d window fetched once; 24h is derived from the same rows below — avoids a second
-      // round trip for the overlapping window. Bounded .limit() matches the existing
-      // swap_transactions precedent above ("fine at current volume, move to a DB-side
-      // aggregate once this scan gets expensive").
+      // Widened to 14d (was 7d) so "vs previous period" growth (prev24h = 24-48h ago,
+      // prev7d = 7-14d ago) can be bucketed from the same fetch — no second round trip.
+      // Bounded .limit() matches the existing swap_transactions precedent below ("fine at
+      // current volume, move to a DB-side aggregate once this scan gets expensive").
       supabaseAdmin.from('wallet_transactions').select('amount_btc, amount_usdt, created_at')
-        .eq('type', 'DEPOSIT').eq('status', 'CONFIRMED').gte('created_at', since7dISO).limit(5000),
+        .eq('type', 'DEPOSIT').eq('status', 'CONFIRMED').gte('created_at', since14dISO).limit(5000),
       // Also pulls platform_fee_btc/platform_fee_usdt — same rows feed both "money out"
       // (amount_btc/usdt, what the user received) and the withdrawal-fee breakdown below
       // (what PRAQEN collected, in whichever currency), so this is fetched once, not twice.
       supabaseAdmin.from('wallet_transactions').select('amount_btc, amount_usdt, platform_fee_btc, platform_fee_usdt, created_at')
-        .eq('type', 'WITHDRAWAL').eq('status', 'CONFIRMED').gte('created_at', since7dISO).limit(5000),
+        .eq('type', 'WITHDRAWAL').eq('status', 'CONFIRMED').gte('created_at', since14dISO).limit(5000),
       supabaseAdmin.from('trades').select('amount_usd, amount_btc, created_at')
-        .eq('status', 'COMPLETED').gte('created_at', since7dISO).limit(5000),
+        .eq('status', 'COMPLETED').gte('created_at', since14dISO).limit(5000),
       supabaseAdmin.from('wallet_transactions').select('id', { count: 'exact', head: true })
         .eq('type', 'WITHDRAWAL').eq('status', 'PENDING_APPROVAL'),
       supabaseAdmin.from('users').select('id', { count: 'exact', head: true }).eq('kyc_status', 'pending'),
       supabaseAdmin.from('trades').select('id', { count: 'exact', head: true }).eq('status', 'DISPUTED'),
       supabaseAdmin.from('p2p_migration_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-      supabaseAdmin.from('users').select('id, created_at').gte('created_at', since7dISO).limit(5000),
+      supabaseAdmin.from('users').select('id, created_at').gte('created_at', since14dISO).limit(5000),
       supabaseAdmin.from('team_activity_log').select('actor, action, details, category, created_at')
         .order('created_at', { ascending: false }).limit(20),
       supabaseAdmin.from('users').select('id', { count: 'exact', head: true }),
       // Trade fees — company_profits is the canonical trade-fee ledger, written by
       // tradeEscrowService._creditCompanyFee-equivalent logic on every completed release.
       supabaseAdmin.from('company_profits').select('profit_btc, profit_usdt, profit_usd, collected_at')
-        .gte('collected_at', since7dISO).limit(5000),
+        .gte('collected_at', since14dISO).limit(5000),
       // Swap fees — swap_transactions.fee_btc/fee_usdt, written by swapService._recordSwap
       // alongside the actual company-wallet credit (see swapService.js:_creditCompanyFee).
       supabaseAdmin.from('swap_transactions').select('fee_btc, fee_usdt, created_at')
-        .gte('created_at', since7dISO).limit(5000),
+        .gte('created_at', since14dISO).limit(5000),
+      // Account health — same simple count-query pattern as pendingKycR above.
+      supabaseAdmin.from('users').select('id', { count: 'exact', head: true }).eq('kyc_status', 'approved'),
+      supabaseAdmin.from('users').select('id', { count: 'exact', head: true }).eq('kyc_status', 'rejected'),
+      supabaseAdmin.from('users').select('id', { count: 'exact', head: true }).eq('account_status', 'banned'),
+      supabaseAdmin.from('users').select('id', { count: 'exact', head: true }).eq('has_warning', true),
+      // Login-security alert count — see getSecurityAlertSummary below. Wrapped in its own
+      // try/catch there since security_events may not exist yet (migration not yet run).
+      getSecurityAlertSummary(24),
     ]);
 
-    // Splits an already-fetched 7d row set into 24h/7d sums for both currency columns.
+    // Splits an already-fetched 14d row set into last24h/last7d (rolling, as before) PLUS
+    // prev24h ([24h,48h) ago) and prev7d ([7d,14d) ago) for "vs previous period" growth.
     // Compares as real Date values (not raw ISO strings) so it's correct regardless of the
     // exact timestamp precision/offset format Postgres returns.
     // btcField/usdtField/tsField are configurable so this same windowing logic works for
@@ -926,17 +999,18 @@ router.get('/ceo/pulse', verifyToken, async (req, res) => {
     // profit_usdt/collected_at from company_profits), and swap fees (fee_btc/fee_usdt/
     // created_at from swap_transactions) without three near-duplicate reducers.
     const sumWindow = (rows, btcField = 'amount_btc', usdtField = 'amount_usdt', tsField = 'created_at') => {
-      const r24 = { btc: 0, usdt: 0 }, r7 = { btc: 0, usdt: 0 };
+      const r24 = { btc: 0, usdt: 0 }, r7 = { btc: 0, usdt: 0 }, p24 = { btc: 0, usdt: 0 }, p7 = { btc: 0, usdt: 0 };
       for (const row of rows) {
         const btc = parseFloat(row[btcField] || 0);
         const usdt = usdtField ? parseFloat(row[usdtField] || 0) : 0;
-        r7.btc += btc; r7.usdt += usdt;
-        if (new Date(row[tsField]).getTime() >= since24hMs) { r24.btc += btc; r24.usdt += usdt; }
+        const t = new Date(row[tsField]).getTime();
+        if (t >= since24hMs) { r24.btc += btc; r24.usdt += usdt; }
+        else if (t >= since48hMs) { p24.btc += btc; p24.usdt += usdt; }
+        if (t >= since7dMs) { r7.btc += btc; r7.usdt += usdt; }
+        else if (t >= since14dMs) { p7.btc += btc; p7.usdt += usdt; }
       }
-      return {
-        last24h: { btc: parseFloat(r24.btc.toFixed(8)), usdt: parseFloat(r24.usdt.toFixed(2)) },
-        last7d: { btc: parseFloat(r7.btc.toFixed(8)), usdt: parseFloat(r7.usdt.toFixed(2)) },
-      };
+      const round = (w) => ({ btc: parseFloat(w.btc.toFixed(8)), usdt: parseFloat(w.usdt.toFixed(2)) });
+      return { last24h: round(r24), last7d: round(r7), prev24h: round(p24), prev7d: round(p7) };
     };
 
     const depositRows = depositsR.status === 'fulfilled' ? (depositsR.value.data || []) : [];
@@ -958,15 +1032,20 @@ router.get('/ceo/pulse', verifyToken, async (req, res) => {
     };
 
     const tradeVolume = (() => {
-      let v24 = 0, v7 = 0, c24 = 0, c7 = 0;
+      let v24 = 0, v7 = 0, c24 = 0, c7 = 0, p24 = 0, p7 = 0, pc24 = 0, pc7 = 0;
       for (const t of tradeRows) {
         const usd = parseFloat(t.amount_usd || 0);
-        v7 += usd; c7++;
-        if (new Date(t.created_at).getTime() >= since24hMs) { v24 += usd; c24++; }
+        const ts = new Date(t.created_at).getTime();
+        if (ts >= since24hMs) { v24 += usd; c24++; }
+        else if (ts >= since48hMs) { p24 += usd; pc24++; }
+        if (ts >= since7dMs) { v7 += usd; c7++; }
+        else if (ts >= since14dMs) { p7 += usd; pc7++; }
       }
       return {
         last24h: { usd: parseFloat(v24.toFixed(2)), count: c24 },
         last7d: { usd: parseFloat(v7.toFixed(2)), count: c7 },
+        prev24h: { usd: parseFloat(p24.toFixed(2)), count: pc24 },
+        prev7d: { usd: parseFloat(p7.toFixed(2)), count: pc7 },
       };
     })();
 
@@ -974,24 +1053,136 @@ router.get('/ceo/pulse', verifyToken, async (req, res) => {
     const countOf = (r) => r.status === 'fulfilled' ? (r.value.count || 0) : 0;
     const newUsers = {
       today: newUsersRows.filter(u => new Date(u.created_at).getTime() >= todayStartMs).length,
-      week: newUsersRows.length,
+      week: newUsersRows.filter(u => new Date(u.created_at).getTime() >= since7dMs).length,
+      lastWeek: newUsersRows.filter(u => { const t = new Date(u.created_at).getTime(); return t < since7dMs && t >= since14dMs; }).length,
       total: countOf(totalUsersR),
     };
+
+    const securityAlerts = securityAlertsR.status === 'fulfilled' ? securityAlertsR.value : { count: 0, tableMissing: true };
 
     res.json({
       success: true,
       moneyIn, moneyOut, tradeVolume, newUsers, fees,
+      accountHealth: {
+        kycApproved: countOf(kycApprovedR), kycRejected: countOf(kycRejectedR),
+        banned: countOf(bannedR), warned: countOf(warnedR),
+      },
       pending: {
         withdrawals: countOf(pendingWdR),
         kyc: countOf(pendingKycR),
         disputes: countOf(pendingDisputesR),
         p2pMigration: countOf(pendingMigrationR),
+        securityAlerts: securityAlerts.count || 0,
       },
+      securityTableMissing: !!securityAlerts.tableMissing,
       recentActivity: activityR.status === 'fulfilled' ? (activityR.value.data || []) : [],
     });
   } catch (error) {
     console.error('[hdWalletRoutes GET /ceo/pulse]', error.message);
     res.status(500).json({ error: 'Failed to load company pulse.' });
+  }
+});
+
+// GET /api/hd-wallet/ceo/security-events
+// Full 7-day login-security feed for the Security Alerts modal: every flagged failed/blocked
+// login (see getSecurityAlertSummary above for what counts as "flagged"), which accounts are
+// currently locked out, and the top offending IPs. Read-only.
+router.get('/ceo/security-events', verifyToken, async (req, res) => {
+  try {
+    const ceo = await requireCeo(req, res); if (!ceo) return;
+
+    const since7dISO = new Date(Date.now() - 7 * 86400000).toISOString();
+    const { data: events, error } = await supabaseAdmin.from('security_events')
+      .select('id, user_id, email_attempted, event_type, ip_address, user_agent, details, created_at')
+      .gte('created_at', since7dISO).order('created_at', { ascending: false }).limit(200);
+
+    if (error) {
+      if (/relation .*security_events.* does not exist/i.test(error.message || '')) {
+        return res.json({
+          success: true, tableMissing: true, events: [],
+          summary: { privilegedFailures: 0, lockedAccounts: [], topIps: [] },
+        });
+      }
+      throw error;
+    }
+
+    const { data: privUsers } = await supabaseAdmin.from('users')
+      .select('id, username, email, is_ceo, is_admin, is_moderator')
+      .or('is_ceo.eq.true,is_admin.eq.true,is_moderator.eq.true');
+    const privMap = Object.fromEntries((privUsers || []).map(u => [u.id, u]));
+
+    const failEvents = (events || []).filter(e => e.event_type.startsWith('LOGIN_FAILED') || e.event_type.startsWith('LOGIN_BLOCKED'));
+    const privilegedFailures = failEvents.filter(e => e.user_id && privMap[e.user_id]).length;
+
+    const ipCounts = {};
+    for (const e of failEvents) { if (e.ip_address) ipCounts[e.ip_address] = (ipCounts[e.ip_address] || 0) + 1; }
+    const topIps = Object.entries(ipCounts).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([ip, count]) => ({ ip, count }));
+
+    // Candidate locked accounts: users with >= LOCKOUT_THRESHOLD failed-password events in
+    // the last 30 minutes among these rows — confirmed via isLockedOut (which also respects
+    // a LOCKOUT_CLEARED marker, so a CEO-cleared account won't show as locked here either).
+    const since30MinMs = Date.now() - 30 * 60000;
+    const candidateCounts = {};
+    for (const e of events || []) {
+      if (e.event_type === 'LOGIN_FAILED_PASSWORD' && e.user_id && new Date(e.created_at).getTime() >= since30MinMs) {
+        candidateCounts[e.user_id] = (candidateCounts[e.user_id] || 0) + 1;
+      }
+    }
+    const candidates = Object.keys(candidateCounts).filter(id => candidateCounts[id] >= LOCKOUT_THRESHOLD);
+    const lockStates = await Promise.all(candidates.map(async id => ({ id, ...(await isLockedOut(id)) })));
+    const lockedIds = lockStates.filter(l => l.locked).map(l => l.id);
+    const { data: lockedUsers } = lockedIds.length
+      ? await supabaseAdmin.from('users').select('id, username, email').in('id', lockedIds)
+      : { data: [] };
+    const lockedUserMap = Object.fromEntries((lockedUsers || []).map(u => [u.id, u]));
+    const lockedAccounts = lockStates.filter(l => l.locked).map(l => ({ ...l, user: lockedUserMap[l.id] || null }));
+
+    // Resolve a readable "who" for each event (email_attempted already covers the
+    // no-matching-account case; user_id resolves to a real account when there is one).
+    const userIds = [...new Set((events || []).map(e => e.user_id).filter(Boolean))];
+    const { data: eventUsers } = userIds.length
+      ? await supabaseAdmin.from('users').select('id, username, email').in('id', userIds)
+      : { data: [] };
+    const eventUserMap = Object.fromEntries((eventUsers || []).map(u => [u.id, u]));
+
+    res.json({
+      success: true,
+      tableMissing: false,
+      events: (events || []).map(e => ({
+        ...e,
+        user: e.user_id ? (eventUserMap[e.user_id] || null) : null,
+        is_privileged: !!(e.user_id && privMap[e.user_id]),
+      })),
+      summary: { privilegedFailures, lockedAccounts, topIps },
+    });
+  } catch (error) {
+    console.error('[hdWalletRoutes GET /ceo/security-events]', error.message);
+    res.status(500).json({ error: 'Failed to load security events.' });
+  }
+});
+
+// POST /api/hd-wallet/ceo/security-events/:userId/unlock
+// Manually clears a login lockout for a legitimate user caught by the failed-password
+// threshold — inserts a LOCKOUT_CLEARED marker that isLockedOut() treats as resetting the
+// failure count (see securityLogService.js), so no schema change is needed just for this.
+router.post('/ceo/security-events/:userId/unlock', verifyToken, async (req, res) => {
+  try {
+    const ceo = await requireCeo(req, res); if (!ceo) return;
+    const { userId } = req.params;
+
+    const { error } = await supabaseAdmin.from('security_events').insert({
+      user_id: userId,
+      event_type: 'LOCKOUT_CLEARED',
+      ip_address: getClientIp(req),
+      user_agent: (req.headers['user-agent'] || '').slice(0, 500),
+      details: { clearedBy: ceo.email || ceo.username || ceo.id },
+    });
+    if (error) throw error;
+
+    res.json({ success: true, message: 'Lockout cleared — this account can log in again immediately.' });
+  } catch (error) {
+    console.error('[hdWalletRoutes POST /ceo/security-events/:userId/unlock]', error.message);
+    res.status(500).json({ error: 'Failed to clear lockout: ' + error.message });
   }
 });
 
@@ -1047,6 +1238,131 @@ router.get('/ceo-withdrawals', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('[hdWalletRoutes GET /ceo-withdrawals]', error.message);
     res.status(500).json({ error: 'Failed to load withdrawal requests.' });
+  }
+});
+
+// GET /api/hd-wallet/ceo-withdrawals/:id/audit
+// Read-only — pulls together everything the CEO needs to decide approve/reject on one
+// withdrawal request: KYC status, wallet balance, first deposit, recent completed trades
+// (what funded the balance — gift card sale, payment-method sale, or straight BTC buy),
+// this user's own send-out history, and dispute record. Nothing here mutates any row —
+// it's purely informational, called from the "Audit" button next to Approve/Reject.
+router.get('/ceo-withdrawals/:id/audit', verifyToken, async (req, res) => {
+  try {
+    const ceo = await requireCeo(req, res); if (!ceo) return;
+    const { id } = req.params;
+
+    const { data: txRow } = await supabaseAdmin
+      .from('wallet_transactions').select('*').eq('id', id).eq('type', 'WITHDRAWAL').maybeSingle();
+    if (!txRow) return res.status(404).json({ error: 'Withdrawal request not found.' });
+
+    if (txRow.user_id === COMPANY_WALLET_ID) {
+      return res.json({ success: true, is_fee_collection: true });
+    }
+
+    const userId = txRow.user_id;
+
+    const [
+      userR, walletR, firstDepositR, depositAggR,
+      recentTradesR, tradeVolumeR, withdrawalHistR, disputeTradesR, btcPrice,
+    ] = await Promise.all([
+      supabaseAdmin.from('users').select(
+        'id, username, email, full_name, created_at, is_email_verified, email_verified, ' +
+        'is_phone_verified, phone_verified, is_id_verified, kyc_verified, kyc_status, kyc_submitted_at, ' +
+        'account_status, has_warning, total_trades, average_rating, positive_feedback, negative_feedback'
+      ).eq('id', userId).maybeSingle(),
+      supabaseAdmin.from('wallets').select('balance_btc, locked_balance_btc, balance_usdt, locked_balance_usdt').eq('user_id', userId).maybeSingle(),
+      supabaseAdmin.from('wallet_transactions').select('id, currency, amount_btc, amount_usdt, created_at, tx_hash')
+        .eq('user_id', userId).eq('type', 'DEPOSIT').eq('status', 'CONFIRMED')
+        .order('created_at', { ascending: true }).limit(1).maybeSingle(),
+      supabaseAdmin.from('wallet_transactions').select('currency, amount_btc, amount_usdt', { count: 'exact' })
+        .eq('user_id', userId).eq('type', 'DEPOSIT').eq('status', 'CONFIRMED').limit(1000),
+      supabaseAdmin.from('trades').select(
+        'id, status, trade_type, trade_ref, amount_btc, amount_usd, payment_method, gift_card_brand, ' +
+        'buyer_id, seller_id, created_at, completed_at'
+      ).or(`buyer_id.eq.${userId},seller_id.eq.${userId}`).eq('status', 'COMPLETED')
+        .order('completed_at', { ascending: false }).limit(15),
+      supabaseAdmin.from('trades').select('amount_usd', { count: 'exact' })
+        .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`).eq('status', 'COMPLETED').limit(1000),
+      supabaseAdmin.from('wallet_transactions').select(
+        'id, currency, amount_btc, amount_usdt, destination_address, status, tx_hash, rejection_reason, created_at, reviewed_at'
+      ).eq('user_id', userId).eq('type', 'WITHDRAWAL').neq('id', id)
+        .order('created_at', { ascending: false }).limit(15),
+      supabaseAdmin.from('trades').select('id, buyer_id, seller_id, dispute_resolution, disputed_at, resolved_at')
+        .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`).not('dispute_resolution', 'is', null),
+      getLiveBtcPrice().catch(() => null),
+    ]);
+
+    const user = userR.data;
+    if (!user) return res.status(404).json({ error: 'This withdrawal has no matching user record.' });
+
+    const deposits = depositAggR.data || [];
+    const depositTotalBtc  = deposits.reduce((s, d) => s + parseFloat(d.amount_btc || 0), 0);
+    const depositTotalUsdt = deposits.reduce((s, d) => s + parseFloat(d.amount_usdt || 0), 0);
+
+    const trades = recentTradesR.data || [];
+    const volumeRows = tradeVolumeR.data || [];
+    const totalVolumeUsd = volumeRows.reduce((s, t) => s + parseFloat(t.amount_usd || 0), 0);
+
+    const withdrawalHistory = withdrawalHistR.data || [];
+    const rejectedCount = withdrawalHistory.filter(w => w.status === 'REJECTED').length;
+    const confirmedCount = withdrawalHistory.filter(w => w.status === 'CONFIRMED').length;
+
+    let wins = 0, losses = 0, neutral = 0;
+    for (const t of (disputeTradesR.data || [])) {
+      const wasBuyer = t.buyer_id === userId;
+      if (t.dispute_resolution === 'CANCEL') neutral++;
+      else if ((wasBuyer && t.dispute_resolution === 'BUYER_WINS') || (!wasBuyer && t.dispute_resolution === 'SELLER_WINS')) wins++;
+      else losses++;
+    }
+
+    const kycApproved = !!(user.is_id_verified || user.kyc_verified) && (user.kyc_status ? user.kyc_status === 'approved' : true);
+    const accountAgeMs = user.created_at ? Date.now() - new Date(user.created_at).getTime() : null;
+
+    // Flags are signals for the CEO to weigh, not a verdict — no auto approve/reject logic here.
+    const flags = [];
+    if (!kycApproved) flags.push({ level: 'high', text: 'KYC is not approved for this account' });
+    if (user.account_status === 'banned') flags.push({ level: 'high', text: 'Account is banned' });
+    if (user.has_warning) flags.push({ level: 'medium', text: 'Account has an active warning' });
+    if (accountAgeMs !== null && accountAgeMs < 24 * 3600 * 1000) flags.push({ level: 'high', text: 'Account is less than 24 hours old' });
+    if ((volumeRows.length || 0) === 0) flags.push({ level: 'high', text: 'No completed trades — no trading history to explain the funds' });
+    if (deposits.length === 0) flags.push({ level: 'medium', text: 'No confirmed deposits on record' });
+    if (rejectedCount > 0) flags.push({ level: 'medium', text: `${rejectedCount} previous withdrawal(s) from this user were rejected` });
+    if (losses > 0) flags.push({ level: 'medium', text: `Lost ${losses} dispute(s) as the party at fault` });
+    if ((user.negative_feedback || 0) > 0) flags.push({ level: 'low', text: `${user.negative_feedback} negative feedback rating(s)` });
+
+    res.json({
+      success: true,
+      is_fee_collection: false,
+      request: {
+        currency: txRow.currency, amount_btc: txRow.amount_btc, amount_usdt: txRow.amount_usdt,
+        destination_address: txRow.destination_address, created_at: txRow.created_at,
+      },
+      user: { ...user, kyc_approved: kycApproved },
+      wallet: walletR.data || { balance_btc: 0, locked_balance_btc: 0, balance_usdt: 0, locked_balance_usdt: 0 },
+      btcUsdPrice: btcPrice,
+      firstDeposit: firstDepositR.data || null,
+      deposits: {
+        count: depositAggR.count ?? deposits.length,
+        totalBtc: depositTotalBtc, totalUsdt: depositTotalUsdt,
+        capped: deposits.length >= 1000,
+      },
+      trades: {
+        recent: trades,
+        totalCompleted: tradeVolumeR.count ?? volumeRows.length,
+        totalVolumeUsd,
+        capped: volumeRows.length >= 1000,
+      },
+      withdrawals: {
+        history: withdrawalHistory,
+        confirmedCount, rejectedCount,
+      },
+      disputes: { wins, losses, neutral, total: wins + losses + neutral },
+      flags,
+    });
+  } catch (error) {
+    console.error('[hdWalletRoutes GET /ceo-withdrawals/:id/audit]', error.message);
+    res.status(500).json({ error: 'Failed to load audit details: ' + error.message });
   }
 });
 
@@ -1361,6 +1677,9 @@ router.post('/escrow-address', verifyToken, async (req, res) => {
 // ============================================================
 router.get('/hot-wallet', verifyToken, async (req, res) => {
   try {
+    // Was gated by verifyToken only — any logged-in trader could read the live hot-wallet
+    // address and balance. Only the admin/moderator/CEO team should see this.
+    const admin = await requireAdminOrCeo(req, res); if (!admin) return;
     const info = await hdWallet.getHotWalletBalance();
     const total = info.total_btc ?? info.confirmed_btc;
     res.json({

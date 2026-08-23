@@ -429,7 +429,26 @@ function UsersSection() {
   const [acting, setActing]       = useState(false);
   const [zoomImg, setZoomImg]     = useState(null);
   const [geoStats, setGeoStats]   = useState(null);
+  const [userDetail, setUserDetail]     = useState(null);
+  const [walletDetail, setWalletDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const LIMIT = 20;
+
+  // One click → real trade volume/active-trade status (same endpoint the Team Portal uses)
+  // PLUS wallet balance and full send-out history — the admin-only superset, gated
+  // server-side by requireFullAdmin on /wallet-detail (moderators never see this).
+  const viewUser = async (u) => {
+    setSelected(u); setUserDetail(null); setWalletDetail(null);
+    setDetailLoading(true);
+    try {
+      const [detailR, walletR] = await Promise.all([
+        axios.get(`${API_URL}/admin/users/${u.id}/detail`, { headers: authH() }).catch(() => null),
+        axios.get(`${API_URL}/admin/users/${u.id}/wallet-detail`, { headers: authH() }).catch(() => null),
+      ]);
+      if (detailR) setUserDetail(detailR.data);
+      if (walletR) setWalletDetail(walletR.data);
+    } finally { setDetailLoading(false); }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -564,7 +583,7 @@ function UsersSection() {
                   {users.map((u, i) => (
                     <tr key={u.id} className="border-t hover:bg-gray-50 cursor-pointer transition"
                       style={{ borderColor: C.g100 }}
-                      onClick={() => setSelected(u)}>
+                      onClick={() => viewUser(u)}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0"
@@ -574,6 +593,7 @@ function UsersSection() {
                             <p className="text-xs" style={{ color: C.g400 }}>{u.email}</p>
                           </div>
                           {u.is_admin && <span className="text-xs px-1.5 py-0.5 rounded font-black" style={{ backgroundColor:'#FFFBEB', color:'#92400E' }}>ADMIN</span>}
+                          {u.is_agent && <span className="text-xs px-1.5 py-0.5 rounded font-black" style={{ backgroundColor:'#EFF6FF', color:'#1D4ED8' }}>SUPPORT</span>}
                         </div>
                       </td>
                       <td className="px-4 py-3"><CountryCell user={u} /></td>
@@ -639,10 +659,10 @@ function UsersSection() {
 
         {/* User detail panel */}
         {selected && (
-          <div className="w-72 bg-white rounded-2xl border p-4 flex-shrink-0" style={{ borderColor: C.g200 }}>
+          <div className="w-96 bg-white rounded-2xl border p-4 flex-shrink-0" style={{ borderColor: C.g200, maxHeight: '85vh', overflowY: 'auto' }}>
             <div className="flex items-start justify-between mb-4">
               <h3 className="font-black text-sm" style={{ color: C.g800 }}>User Detail</h3>
-              <button onClick={() => setSelected(null)}><X size={14} style={{ color: C.g400 }} /></button>
+              <button onClick={() => { setSelected(null); setUserDetail(null); setWalletDetail(null); }}><X size={14} style={{ color: C.g400 }} /></button>
             </div>
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-black text-white mb-3" style={{ backgroundColor: C.forest }}>
               {(selected.username || '?')[0].toUpperCase()}
@@ -722,6 +742,91 @@ function UsersSection() {
                 </div>
               )}
             </div>
+
+            {/* ── Trade activity (real trade volume / active-trade status — same data the
+                Team Portal's Users tab shows, recomputed fresh from trades/reviews) ── */}
+            {detailLoading ? <div className="py-3"><Spin /></div> : userDetail && (
+              <div className="mb-4 pb-3 border-b" style={{ borderColor: C.g100 }}>
+                <p className="text-xs font-black uppercase tracking-wider inline-flex items-center gap-1 mb-1.5" style={{ color: C.g400 }}>
+                  <TrendingUp size={13} /> Trade Activity
+                </p>
+                <div className="space-y-1">
+                  {[
+                    { l: 'Trade volume', v: `$${fmt(userDetail.tradeVolumeUsd, 0)}${userDetail.tradeVolumeCapped ? '+' : ''}` },
+                    {
+                      l: 'Active/pending trade',
+                      v: userDetail.activeTradeCount > 0
+                        ? <span style={{ color: '#92400E' }}>{userDetail.activeTradeCount} in progress</span>
+                        : <span style={{ color: C.success }}>None right now</span>,
+                    },
+                    { l: 'Feedback', v: `+${userDetail.user.positive_feedback} / -${userDetail.user.negative_feedback}` },
+                  ].map(({ l, v }) => (
+                    <div key={l} className="flex items-center justify-between text-xs">
+                      <span style={{ color: C.g500 }}>{l}</span>
+                      <span className="font-bold" style={{ color: C.g700 }}>{v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Wallet & Send-Outs — admin-only (requireFullAdmin on the backend; a
+                moderator on the Team Portal never sees this). Current balance plus the
+                user's full withdrawal history, so an admin can see exactly what's left
+                and what's already gone out before acting on anything. ── */}
+            {walletDetail && (
+              <div className="mb-4 pb-3 border-b" style={{ borderColor: C.g100 }}>
+                <p className="text-xs font-black uppercase tracking-wider inline-flex items-center gap-1 mb-1.5" style={{ color: C.g400 }}>
+                  <Landmark size={13} /> Wallet &amp; Send-Outs
+                </p>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <div className="rounded-lg p-2" style={{ backgroundColor: C.g50 }}>
+                    <p className="text-xs" style={{ color: C.g400 }}>BTC balance</p>
+                    <p className="text-sm font-black" style={{ color: C.g800 }}>₿{fmtBtc(walletDetail.wallet.balance_btc)}</p>
+                    {parseFloat(walletDetail.wallet.locked_balance_btc || 0) > 0 && (
+                      <p className="text-xs" style={{ color: C.g400 }}>+₿{fmtBtc(walletDetail.wallet.locked_balance_btc)} locked</p>
+                    )}
+                  </div>
+                  <div className="rounded-lg p-2" style={{ backgroundColor: C.g50 }}>
+                    <p className="text-xs" style={{ color: C.g400 }}>USDT balance</p>
+                    <p className="text-sm font-black" style={{ color: C.g800 }}>₮{parseFloat(walletDetail.wallet.balance_usdt || 0).toFixed(2)}</p>
+                    {parseFloat(walletDetail.wallet.locked_balance_usdt || 0) > 0 && (
+                      <p className="text-xs" style={{ color: C.g400 }}>+₮{parseFloat(walletDetail.wallet.locked_balance_usdt).toFixed(2)} locked</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between text-xs mb-2">
+                  <span style={{ color: C.g500 }}>Sent out all-time</span>
+                  <span className="font-bold" style={{ color: C.g700 }}>
+                    ₿{fmtBtc(walletDetail.withdrawals.sentTotalBtc)} + ₮{walletDetail.withdrawals.sentTotalUsdt.toFixed(2)}
+                    <span style={{ color: C.g400 }}> ({walletDetail.withdrawals.confirmedCount} sent · {walletDetail.withdrawals.rejectedCount} rejected)</span>
+                  </span>
+                </div>
+                {walletDetail.withdrawals.history.length === 0 ? (
+                  <p className="text-xs text-center py-2" style={{ color: C.g400 }}>No withdrawal requests yet</p>
+                ) : (
+                  <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                    {walletDetail.withdrawals.history.map(w => {
+                      const statusStyle = w.status === 'CONFIRMED' ? { c: '#166534', bg: '#F0FDF4' }
+                        : w.status === 'REJECTED' ? { c: '#991B1B', bg: '#FEF2F2' }
+                        : { c: '#92400E', bg: '#FFFBEB' };
+                      return (
+                        <div key={w.id} className="flex items-center justify-between px-2 py-1.5 rounded-lg" style={{ backgroundColor: C.g50 }}>
+                          <div>
+                            <span className="text-xs font-bold" style={{ color: C.g700 }}>
+                              {w.currency === 'USDT' ? `₮${parseFloat(w.amount_usdt || 0).toFixed(2)}` : `₿${fmtBtc(w.amount_btc)}`}
+                            </span>
+                            <span className="text-xs ml-1.5 px-1.5 py-0.5 rounded font-bold" style={{ color: statusStyle.c, backgroundColor: statusStyle.bg }}>{w.status}</span>
+                          </div>
+                          <span className="text-xs" style={{ color: C.g400 }}>{fmtAge(w.created_at)}</span>
+                        </div>
+                      );
+                    })}
+                    {walletDetail.withdrawals.capped && <p className="text-xs text-center pt-1" style={{ color: C.g400 }}>Showing most recent 30</p>}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ── KYC ID images ── */}
             {(selected.id_front_url || selected.id_back_url) && (
@@ -843,6 +948,23 @@ function UsersSection() {
                 className="w-full py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5"
                 style={{ backgroundColor: '#FFFBEB', color: '#92400E' }}>
                 <UserCheck size={12} /> {selected.is_admin ? 'Remove Admin' : 'Make Admin'}
+              </button>
+              {/* Support Agent toggle — grants access to the Support Dashboard (/agent-dashboard)
+                  ONLY (no admin/moderator/CEO powers). Was previously only settable via a raw
+                  PUT /api/admin/users/:id/toggle-agent call — this is the first UI for it. */}
+              <button disabled={acting} onClick={async () => {
+                setActing(true);
+                try {
+                  const r = await axios.put(`${API_URL}/admin/users/${selected.id}/toggle-agent`, {}, { headers: authH() });
+                  toast.success(r.data.is_agent ? 'Support Dashboard access granted' : 'Support Dashboard access removed');
+                  load();
+                  setSelected(s => ({ ...s, is_agent: r.data.is_agent }));
+                } catch (e) { toast.error(e.response?.data?.error || 'Action failed'); }
+                finally { setActing(false); }
+              }}
+                className="w-full py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5"
+                style={{ backgroundColor: '#EFF6FF', color: '#1D4ED8' }}>
+                <MessageSquare size={12} /> {selected.is_agent ? 'Remove Support Access' : 'Grant Support Access'}
               </button>
               <button onClick={() => del(selected.id)}
                 className="w-full py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5"

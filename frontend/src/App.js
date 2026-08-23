@@ -480,7 +480,11 @@ function App() {
               <Route path="/team" element={<TeamDashboard user={user} />} />
               <Route path="/moderator" element={<ModeratorDashboard user={user} />} />
               <Route path="/ceo" element={<CeoDashboard user={user} />} />
-              <Route path="/agent-dashboard" element={user ? <AgentDashboard user={user} /> : <Navigate to="/login" />} />
+              {/* No route-level guard — same as /team, /ceo, /admin, /moderator above.
+                  AgentDashboard.js now owns its own login (AgentLogin), completely separate
+                  from the customer-facing /login page, so a support rep who isn't logged
+                  into the main app at all can still sign in here directly. */}
+              <Route path="/agent-dashboard" element={<AgentDashboard user={user} />} />
 
               {/* ── ALL OTHER ROUTES — wrapped in main app chrome ── */}
               <Route path="*" element={

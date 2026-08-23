@@ -368,6 +368,7 @@ const hdWalletRoutes = require('./routes/hdWalletRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const tradeEscrowService = require('./services/tradeEscrowService');
 const actionCodeService = require('./services/actionCodeService');
+const { getClientIp, logSecurityEvent, isLockedOut } = require('./services/securityLogService');
 const balanceIntegrity = require('./services/balanceIntegrityService');
 const { checkAndAwardBadges } = require('./services/badgeService');
 const { syncAllOfferStatuses, deactivateStaleOffers, reactivateReturnedSellers, setCacheBuster, setBtcPriceGetter, updateOfferStatus } = require('./services/offerStatusService');
@@ -2195,9 +2196,15 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       }
       if (!data) return res.status(404).json({ error: 'No account found for this phone number. Please register first.' });
 
+      if (data.account_status === 'banned') {
+        logSecurityEvent({ userId: data.id, email: data.email, eventType: 'LOGIN_BLOCKED_BANNED', ip: getClientIp(req), userAgent: req.headers['user-agent'], details: { via: 'phone' } });
+        return res.status(403).json({ error: 'This account has been suspended. Contact support if you believe this is a mistake.' });
+      }
+
       // 2FA login gate removed — Settings > Security "Enable 2FA" toggle still
       // exists and is stored, it just no longer blocks login with a second code.
       const token = jwt.sign({ userId: data.id, email: data.email }, JWT_SECRET, { expiresIn: '7d' });
+      logSecurityEvent({ userId: data.id, email: data.email, eventType: 'LOGIN_SUCCESS', ip: getClientIp(req), userAgent: req.headers['user-agent'], details: { via: 'phone' } });
       const nowPhone = new Date().toISOString();
       await supabaseAdmin.from('users').update({ last_login: nowPhone, last_seen_at: nowPhone }).eq('id', data.id);
       detectAndSaveCountry(data.id, req, phone).catch(() => { });
@@ -2223,10 +2230,33 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     // ── Email + password login ────────────────────────────────────────────────
     if (!email || !password) return res.status(400).json({ error: 'Missing email or password' });
     const normalizedLoginEmail = email.toLowerCase().trim();
+    const clientIp = getClientIp(req);
+    const userAgent = req.headers['user-agent'];
     const { data, error } = await supabaseAdmin.from('users').select('*').eq('email', normalizedLoginEmail).single();
     if (error || !data) return res.status(401).json({ error: 'Invalid credentials' });
+
+    // Banned accounts must never get a token — this used to only be enforced downstream
+    // on individual routes (e.g. withdrawals), so a banned account could still log in and
+    // use the rest of the app. Blocked at the door now, for every account.
+    if (data.account_status === 'banned') {
+      logSecurityEvent({ userId: data.id, email: normalizedLoginEmail, eventType: 'LOGIN_BLOCKED_BANNED', ip: clientIp, userAgent });
+      return res.status(403).json({ error: 'This account has been suspended. Contact support if you believe this is a mistake.' });
+    }
+
+    // Per-account lockout after repeated wrong passwords — see securityLogService for the
+    // exact threshold/window. Account-scoped (not IP-scoped) so rotating IPs can't bypass it.
+    const lock = await isLockedOut(data.id);
+    if (lock.locked) {
+      logSecurityEvent({ userId: data.id, email: normalizedLoginEmail, eventType: 'LOGIN_BLOCKED_LOCKOUT', ip: clientIp, userAgent, details: { unlocksAt: lock.unlocksAt } });
+      const minsLeft = Math.max(1, Math.ceil((new Date(lock.unlocksAt).getTime() - Date.now()) / 60000));
+      return res.status(429).json({ error: `Too many failed attempts on this account. Try again in about ${minsLeft} minute${minsLeft === 1 ? '' : 's'}.` });
+    }
+
     const validPassword = await bcrypt.compare(password, data.password_hash);
-    if (!validPassword) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!validPassword) {
+      logSecurityEvent({ userId: data.id, email: normalizedLoginEmail, eventType: 'LOGIN_FAILED_PASSWORD', ip: clientIp, userAgent });
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
 
     // Generate 6-digit OTP and store it for 10 minutes
     const loginOtp = String(Math.floor(100000 + Math.random() * 900000));
@@ -2266,6 +2296,8 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
     if (!email || !code) return res.status(400).json({ error: 'Email and code are required' });
 
     const key = email.toLowerCase();
+    const clientIp = getClientIp(req);
+    const userAgent = req.headers['user-agent'];
     const record = emailLoginOtpStore.get(key);
     if (!record) return res.status(400).json({ error: 'No pending verification for this email. Please log in again.' });
     if (Date.now() > record.expires) {
@@ -2273,6 +2305,7 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Code has expired. Please log in again.' });
     }
     if (record.code !== String(code).trim()) {
+      logSecurityEvent({ userId: record.userId, email: key, eventType: 'LOGIN_FAILED_OTP', ip: clientIp, userAgent });
       return res.status(400).json({ error: 'Incorrect code. Please try again.' });
     }
 
@@ -2282,8 +2315,38 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
     const { data } = await supabaseAdmin.from('users').select('*').eq('id', record.userId).single();
     if (!data) return res.status(404).json({ error: 'User not found' });
 
-    // 2FA login gate removed — Settings > Security "Enable 2FA" toggle still
-    // exists and is stored, it just no longer blocks login with a second code.
+    // 2FA at login is enforced for privileged accounts only (CEO/admin/moderator) with
+    // 2FA actually turned on — regular trader login is unchanged from before. This is what
+    // makes the CeoLogin UI's existing requires2FA/tempToken handling (previously dead code,
+    // since nothing ever triggered it) actually fire.
+    const isPrivileged = !!(data.is_ceo || data.is_admin || data.is_moderator);
+    if (isPrivileged && data.two_factor_enabled && data.two_factor_method) {
+      const tempToken = jwt.sign({ userId: data.id, pending2FA: true }, JWT_SECRET, { expiresIn: '10m' });
+      const method = data.two_factor_method;
+
+      if (method !== 'totp') {
+        // TOTP is verified live against the stored secret in /verify-2fa-login — nothing to
+        // send. email/sms/whatsapp need an actual code delivered and held until verified.
+        const code2fa = String(Math.floor(100000 + Math.random() * 900000));
+        pending2FALogin.set(tempToken, { code: code2fa, expires: Date.now() + 5 * 60 * 1000, method });
+        try {
+          if ((method === 'sms' || method === 'whatsapp') && data.phone && (data.is_phone_verified || data.phone_verified)) {
+            await sendSmsOtp(data.phone, `${code2fa} is your PRAQEN 2FA code. Valid for 5 minutes. Don't share this with anyone.`);
+          } else {
+            await sendVerificationEmail(data.email, code2fa, 'Your PRAQEN 2FA Code');
+          }
+        } catch (sendErr) {
+          pending2FALogin.delete(tempToken);
+          console.error('[verify-login-otp] 2FA code send failed:', sendErr.message);
+          return res.status(500).json({ error: 'Could not send your 2FA code right now. Please try again in a moment.' });
+        }
+      }
+
+      logSecurityEvent({ userId: data.id, email: data.email, eventType: 'LOGIN_2FA_REQUIRED', ip: clientIp, userAgent, details: { method } });
+      return res.json({ success: true, requires2FA: true, tempToken, twoFactorMethod: method });
+    }
+
+    logSecurityEvent({ userId: data.id, email: data.email, eventType: 'LOGIN_SUCCESS', ip: clientIp, userAgent });
 
     // ── Issue real JWT ──────────────────────────────────────────────────────
     const token = jwt.sign({ userId: data.id, email: data.email }, JWT_SECRET, { expiresIn: '7d' });
@@ -2302,7 +2365,7 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
         id: data.id, email: data.email, username: data.username, full_name: data.full_name,
         average_rating: data.average_rating || 0, total_trades: data.total_trades || 0,
         avatar_url: data.avatar_url || null, is_admin: data.is_admin || false,
-        is_moderator: data.is_moderator || false, is_ceo: data.is_ceo || false,
+        is_moderator: data.is_moderator || false, is_ceo: data.is_ceo || false, is_agent: data.is_agent || false,
         referral_code: data.referral_code || null,
         bitcoin_wallet_address: btcAddress,
         total_referrals: data.total_referrals || 0,
@@ -2356,6 +2419,7 @@ app.post('/api/auth/verify-2fa-login', authLimiter, async (req, res) => {
           window: 1,
         });
         if (!isVerified) {
+          logSecurityEvent({ userId: decoded.userId, eventType: 'LOGIN_FAILED_2FA', ip: getClientIp(req), userAgent: req.headers['user-agent'], details: { method: 'totp' } });
           return res.status(400).json({ error: 'Incorrect authenticator code. Please try again.' });
         }
         pending2FALogin.delete(tempToken);
@@ -2366,6 +2430,7 @@ app.post('/api/auth/verify-2fa-login', authLimiter, async (req, res) => {
           return res.status(400).json({ error: 'Code has expired. Please log in again.' });
         }
         if (pending.code !== String(code).trim()) {
+          logSecurityEvent({ userId: decoded.userId, eventType: 'LOGIN_FAILED_2FA', ip: getClientIp(req), userAgent: req.headers['user-agent'], details: { method: pending.method } });
           return res.status(400).json({ error: 'Incorrect code. Please try again.' });
         }
         isVerified = true;
@@ -2385,6 +2450,7 @@ app.post('/api/auth/verify-2fa-login', authLimiter, async (req, res) => {
           window: 1,
         });
         if (!isVerified) {
+          logSecurityEvent({ userId: decoded.userId, eventType: 'LOGIN_FAILED_2FA', ip: getClientIp(req), userAgent: req.headers['user-agent'], details: { method: 'totp' } });
           return res.status(400).json({ error: 'Incorrect authenticator code. Please try again.' });
         }
       } else {
@@ -2393,12 +2459,15 @@ app.post('/api/auth/verify-2fa-login', authLimiter, async (req, res) => {
     }
 
     if (!isVerified) {
+      logSecurityEvent({ userId: decoded.userId, eventType: 'LOGIN_FAILED_2FA', ip: getClientIp(req), userAgent: req.headers['user-agent'] });
       return res.status(400).json({ error: '2FA verification failed. Please try again.' });
     }
 
     // Issue real JWT
     const { data } = await supabaseAdmin.from('users').select('*').eq('id', decoded.userId).single();
     if (!data) return res.status(404).json({ error: 'User not found' });
+
+    logSecurityEvent({ userId: data.id, email: data.email, eventType: 'LOGIN_SUCCESS', ip: getClientIp(req), userAgent: req.headers['user-agent'], details: { via: '2fa' } });
 
     const token = jwt.sign({ userId: data.id, email: data.email }, JWT_SECRET, { expiresIn: '7d' });
     const now = new Date().toISOString();
@@ -2417,7 +2486,7 @@ app.post('/api/auth/verify-2fa-login', authLimiter, async (req, res) => {
         id: data.id, email: data.email, username: data.username, full_name: data.full_name,
         average_rating: data.average_rating || 0, total_trades: data.total_trades || 0,
         avatar_url: data.avatar_url || null, is_admin: data.is_admin || false,
-        is_moderator: data.is_moderator || false, is_ceo: data.is_ceo || false,
+        is_moderator: data.is_moderator || false, is_ceo: data.is_ceo || false, is_agent: data.is_agent || false,
         referral_code: data.referral_code || null,
         bitcoin_wallet_address: btcAddress,
         total_referrals: data.total_referrals || 0,
@@ -10022,6 +10091,105 @@ app.get('/api/admin/users', verifyToken, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/admin/users/:id/detail — one-click lookup for the Team Portal's Users tab.
+// Read-only, team-accessible (requireAdmin — is_admin/is_moderator, not CEO-only). Shows
+// enough to know who they're talking to: join date, KYC status, real trade volume/count,
+// live active/pending trades, and feedback — recomputed fresh from trades/reviews the same
+// way GET /api/users/:userId already does (users.total_trades/positive_feedback/
+// negative_feedback are denormalized counters that can lag, so trust a fresh count/sum
+// instead of the cached column). Deliberately does NOT include wallet balance, withdrawal
+// history, or funding-source detail — that's the separate CEO-only audit on ceo-withdrawals.
+app.get('/api/admin/users/:id/detail', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const { id } = req.params;
+
+    const { data: user, error } = await supabaseAdmin.from('users').select(
+      'id, username, email, full_name, avatar_url, badge, country, account_status, has_warning, ' +
+      'created_at, last_login, last_seen_at, kyc_status, is_id_verified, is_email_verified, is_phone_verified, ' +
+      'average_rating, total_trades, positive_feedback, negative_feedback'
+    ).eq('id', id).maybeSingle();
+    if (error) throw error;
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const OPEN_TRADE_STATUSES = ['CREATED', 'FUNDS_LOCKED', 'PAYMENT_SENT', 'DISPUTED'];
+    const [completedR, activeR, reviewsR] = await Promise.all([
+      supabaseAdmin.from('trades').select('amount_usd', { count: 'exact' })
+        .or(`buyer_id.eq.${id},seller_id.eq.${id}`).eq('status', 'COMPLETED').limit(2000),
+      supabaseAdmin.from('trades').select('id, status, trade_type, amount_usd, buyer_id, seller_id, gift_card_brand, payment_method, created_at')
+        .or(`buyer_id.eq.${id},seller_id.eq.${id}`).in('status', OPEN_TRADE_STATUSES)
+        .order('created_at', { ascending: false }).limit(20),
+      supabaseAdmin.from('reviews').select('rating').eq('reviewee_id', id).limit(2000),
+    ]);
+
+    const completedRows = completedR.data || [];
+    const realTotalTrades = Math.max(completedR.count ?? completedRows.length, user.total_trades || 0);
+    const tradeVolumeUsd = completedRows.reduce((s, t) => s + parseFloat(t.amount_usd || 0), 0);
+
+    const reviewRows = reviewsR.data || [];
+    const realPositive = Math.max(reviewRows.filter(r => r.rating >= 4).length, user.positive_feedback || 0);
+    const realNegative = Math.max(reviewRows.filter(r => r.rating <= 2).length, user.negative_feedback || 0);
+
+    const activeTrades = (activeR.data || []).map(t => ({ ...t, role: t.buyer_id === id ? 'buyer' : 'seller' }));
+
+    res.json({
+      success: true,
+      user: { ...user, total_trades: realTotalTrades, positive_feedback: realPositive, negative_feedback: realNegative },
+      tradeVolumeUsd: parseFloat(tradeVolumeUsd.toFixed(2)),
+      tradeVolumeCapped: completedRows.length >= 2000,
+      activeTradeCount: activeTrades.length,
+      activeTrades,
+    });
+  } catch (error) {
+    console.error('[GET /api/admin/users/:id/detail]', error.message);
+    res.status(500).json({ error: 'Failed to load user details: ' + error.message });
+  }
+});
+
+// GET /api/admin/users/:id/wallet-detail — the "more powerful" view for the Admin Panel's
+// Users tab: current wallet balance and full send-out (withdrawal) history. Deliberately
+// gated by requireFullAdmin, NOT requireAdmin — moderators can open the Team Portal's Users
+// tab (GET /api/admin/users/:id/detail above) but must never see wallet balances or
+// withdrawal history, only real admins can (same tier AdminDashboard.js itself is gated by
+// on the frontend — see `!user?.is_admin` check there). Read-only.
+app.get('/api/admin/users/:id/wallet-detail', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const { id } = req.params;
+
+    const [walletR, withdrawalsR] = await Promise.all([
+      supabaseAdmin.from('wallets').select('balance_btc, locked_balance_btc, balance_usdt, locked_balance_usdt').eq('user_id', id).maybeSingle(),
+      supabaseAdmin.from('wallet_transactions').select(
+        'id, currency, amount_btc, amount_usdt, platform_fee_btc, platform_fee_usdt, destination_address, status, tx_hash, rejection_reason, created_at, reviewed_at'
+      ).eq('user_id', id).eq('type', 'WITHDRAWAL').order('created_at', { ascending: false }).limit(30),
+    ]);
+    if (walletR.error) throw walletR.error;
+    if (withdrawalsR.error) throw withdrawalsR.error;
+
+    const withdrawals = withdrawalsR.data || [];
+    const confirmed = withdrawals.filter(w => w.status === 'CONFIRMED');
+    const sentTotalBtc = confirmed.filter(w => w.currency !== 'USDT').reduce((s, w) => s + parseFloat(w.amount_btc || 0), 0);
+    const sentTotalUsdt = confirmed.filter(w => w.currency === 'USDT').reduce((s, w) => s + parseFloat(w.amount_usdt || 0), 0);
+
+    res.json({
+      success: true,
+      wallet: walletR.data || { balance_btc: 0, locked_balance_btc: 0, balance_usdt: 0, locked_balance_usdt: 0 },
+      withdrawals: {
+        history: withdrawals,
+        capped: withdrawals.length >= 30,
+        confirmedCount: confirmed.length,
+        rejectedCount: withdrawals.filter(w => w.status === 'REJECTED').length,
+        pendingCount: withdrawals.filter(w => w.status === 'PENDING_APPROVAL').length,
+        sentTotalBtc: parseFloat(sentTotalBtc.toFixed(8)),
+        sentTotalUsdt: parseFloat(sentTotalUsdt.toFixed(2)),
+      },
+    });
+  } catch (error) {
+    console.error('[GET /api/admin/users/:id/wallet-detail]', error.message);
+    res.status(500).json({ error: 'Failed to load wallet details: ' + error.message });
+  }
+});
+
 // PUT /api/admin/users/:id — update user (ban, make admin, verify, etc.)
 app.put('/api/admin/users/:id', verifyToken, async (req, res) => {
   try {
@@ -13346,8 +13514,10 @@ app.post('/api/admin/hot-wallet/process-sweeps', verifyToken, async (req, res) =
 // branches on currency to call tronHotWallet.sendUsdtToExternal for USDT.
 app.post('/api/admin/hot-wallet/collect-fees', verifyToken, async (req, res) => {
   try {
-    const { data: me } = await supabaseAdmin.from('users').select('is_ceo, email').eq('id', req.userId).single();
-    if (!me?.is_ceo && me?.email !== ADMIN_EMAIL) return res.status(403).json({ error: 'CEO access required' });
+    // SECURITY: is_email_verified must gate the ADMIN_EMAIL fallback here too — see the
+    // warning at requireAdmin (line ~9869) for why an unverified email match is exploitable.
+    const { data: me } = await supabaseAdmin.from('users').select('is_ceo, email, is_email_verified').eq('id', req.userId).single();
+    if (!me?.is_ceo && !(me?.email === ADMIN_EMAIL && me?.is_email_verified)) return res.status(403).json({ error: 'CEO access required' });
 
     const { toAddress, amountUsdt } = req.body;
     const amount = parseFloat(amountUsdt);

@@ -11,9 +11,9 @@ import { toast } from 'react-toastify';
 import { useRates } from '../contexts/RatesContext';
 import {
   Bitcoin, Fuel, Wallet, ArrowUpRight, ArrowDownRight, RefreshCw, LogOut, ShieldCheck,
-  Shield, Repeat, Clock, CheckCircle, XCircle, Landmark, TrendingUp, Users, ExternalLink,
+  Shield, Repeat, Clock, CheckCircle, XCircle, Landmark, TrendingUp, TrendingDown, Users, ExternalLink,
   Activity, AlertCircle, MessageSquare, Search, X, Send, AlertTriangle, Paperclip,
-  MessageCircle, Gift, CreditCard,
+  MessageCircle, Gift, CreditCard, Lock, Unlock, UserCheck, UserX,
 } from 'lucide-react';
 
 const API_URL     = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -216,11 +216,39 @@ function CeoLogin({ onAuth }) {
   );
 }
 
+// ─── Growth badge — arrow + percentage vs. the previous equivalent period. No charting
+// library in this project (checked package.json) so this stays a plain text+icon delta,
+// matching every other stat visual on this page. null/undefined pct (previous period was
+// zero, or data not available) renders nothing rather than a misleading "0%" or "∞%".
+function GrowthBadge({ pct, label }) {
+  if (pct === null || pct === undefined || !isFinite(pct)) return null;
+  const up = pct >= 0;
+  const Icon = up ? TrendingUp : TrendingDown;
+  const color = up ? '#166534' : '#991B1B';
+  const bg = up ? '#F0FDF4' : '#FEF2F2';
+  return (
+    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-xs font-black" style={{ color, backgroundColor: bg }}>
+      <Icon size={11} /> {Math.abs(pct).toFixed(1)}%{label ? ` ${label}` : ''}
+    </span>
+  );
+}
+
+// Growth % of a combined-USD current window vs. its equivalent previous window. Both sides
+// use the same usdOf(btc, usdt) conversion the rest of this page already uses, so a growth
+// figure combining BTC+USDT rows is apples-to-apples. null when there's no previous-period
+// data to compare against (avoids a division-by-zero "∞%" or a misleading spike from 0).
+const growthOf = (usdOfFn, current, previous) => {
+  const curUsd = usdOfFn(current?.btc, current?.usdt);
+  const prevUsd = usdOfFn(previous?.btc, previous?.usdt);
+  if (!prevUsd) return null;
+  return ((curUsd - prevUsd) / prevUsd) * 100;
+};
+
 // ─── Treasury stat card ─────────────────────────────────────────────────────
 // primaryColor/secondaryColor default to the card's own icon `color` when not given, so a
 // card's headline number matches its theme (green for money in, red for money out, etc.)
 // instead of always being plain gray.
-function TreasuryCard({ icon, label, primary, primarySub, secondary, secondarySub, color, bg, footer, primaryColor, secondaryColor }) {
+function TreasuryCard({ icon, label, primary, primarySub, secondary, secondarySub, color, bg, footer, primaryColor, secondaryColor, growthPct }) {
   return (
     <div className="bg-white rounded-2xl border p-5" style={{ borderColor: C.g200 }}>
       <div className="flex items-center gap-3 mb-3">
@@ -229,7 +257,10 @@ function TreasuryCard({ icon, label, primary, primarySub, secondary, secondarySu
         </div>
         <p className="text-xs font-black uppercase tracking-wide" style={{ color: C.g500 }}>{label}</p>
       </div>
-      <p className="text-2xl font-black" style={{ color: primaryColor || color || C.g800 }}>{primary}</p>
+      <div className="flex items-center gap-2 flex-wrap">
+        <p className="text-2xl font-black" style={{ color: primaryColor || color || C.g800 }}>{primary}</p>
+        <GrowthBadge pct={growthPct} label="vs prior" />
+      </div>
       {primarySub && <p className="text-xs font-semibold mt-0.5" style={{ color: C.g400 }}>{primarySub}</p>}
       {secondary && (
         <div className="mt-2 pt-2 border-t" style={{ borderColor: C.g100 }}>
@@ -267,12 +298,225 @@ function VerifBadges({ user }) {
   return <div className="flex items-center gap-1 mt-1">{badge('EMAIL', email)}{badge('PHONE', phone)}{badge('KYC', kyc)}</div>;
 }
 
+// ─── Audit panel — everything the CEO needs to decide approve/reject on one withdrawal,
+// pulled from GET /ceo-withdrawals/:id/audit (read-only, no mutation). Renders inside an
+// expanded table row so it stays anchored to the request it's about; its own body scrolls
+// (max-height + overflow-y-auto) instead of pushing the whole page around.
+function AuditRow({ label, value, mono }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-1">
+      <span className="text-xs font-semibold" style={{ color: C.g500 }}>{label}</span>
+      <span className={`text-xs font-bold text-right ${mono ? 'font-mono' : ''}`} style={{ color: C.g800, wordBreak: mono ? 'break-all' : 'normal' }}>{value}</span>
+    </div>
+  );
+}
+
+function AuditSection({ icon, title, children }) {
+  return (
+    <div className="bg-white rounded-xl border p-3.5" style={{ borderColor: C.g200 }}>
+      <h4 className="text-xs font-black uppercase tracking-wide flex items-center gap-1.5 mb-2" style={{ color: C.g600 }}>
+        {icon} {title}
+      </h4>
+      {children}
+    </div>
+  );
+}
+
+const FLAG_STYLE = {
+  high:   { color: '#991B1B', bg: '#FEF2F2', border: '#FECACA' },
+  medium: { color: '#92400E', bg: '#FFFBEB', border: '#FDE68A' },
+  low:    { color: '#475569', bg: '#F1F5F9', border: '#E2E8F0' },
+};
+
+function AuditPanel({ data, loading, error }) {
+  if (loading) return <div className="py-8"><Spin /></div>;
+  if (error) return (
+    <div className="flex flex-col items-center py-8 gap-2">
+      <XCircle size={28} strokeWidth={1.5} style={{ color: C.danger }} />
+      <p className="text-sm font-semibold" style={{ color: C.danger }}>{error}</p>
+    </div>
+  );
+  if (!data) return null;
+
+  if (data.is_fee_collection) {
+    return (
+      <div className="flex items-center gap-2 py-6 justify-center">
+        <Landmark size={16} style={{ color: C.g500 }} />
+        <p className="text-sm font-semibold" style={{ color: C.g500 }}>This is PRAQEN's own fee-collection cash-out — no customer to audit.</p>
+      </div>
+    );
+  }
+
+  const { user, wallet, firstDeposit, deposits, trades, withdrawals, disputes, flags, request, btcUsdPrice } = data;
+
+  return (
+    <div className="max-h-[70vh] overflow-y-auto pr-1 space-y-3">
+      {/* Risk flags first — the fastest read for a go/no-go call */}
+      {flags.length > 0 ? (
+        <div className="space-y-1.5">
+          {flags.map((f, i) => {
+            const s = FLAG_STYLE[f.level] || FLAG_STYLE.low;
+            return (
+              <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg border" style={{ backgroundColor: s.bg, borderColor: s.border }}>
+                <AlertTriangle size={13} style={{ color: s.color, flexShrink: 0 }} />
+                <span className="text-xs font-bold" style={{ color: s.color }}>{f.text}</span>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg border" style={{ backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }}>
+          <ShieldCheck size={13} style={{ color: '#166534', flexShrink: 0 }} />
+          <span className="text-xs font-bold" style={{ color: '#166534' }}>No red flags found — KYC approved, verified account, trading history present.</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <AuditSection icon={<ShieldCheck size={13} />} title="Identity & KYC">
+          <p className="font-black text-sm mb-0.5" style={{ color: C.g800 }}>{user.username || user.email}</p>
+          <p className="text-xs mb-1.5" style={{ color: C.g400 }}>{user.email}</p>
+          <VerifBadges user={user} />
+          <div className="mt-2 space-y-0.5">
+            <AuditRow label="KYC status" value={user.kyc_approved ? 'Approved' : (user.kyc_status || 'Not approved')} />
+            <AuditRow label="Account status" value={user.account_status || 'active'} />
+            <AuditRow label="Account age" value={user.created_at ? fmtAge(user.created_at) : '—'} />
+            <AuditRow label="Rating" value={`${parseFloat(user.average_rating || 0).toFixed(1)} ★ · +${user.positive_feedback || 0} / -${user.negative_feedback || 0}`} />
+          </div>
+        </AuditSection>
+
+        <AuditSection icon={<Wallet size={13} />} title="Current Wallet Balance">
+          <AuditRow label="BTC available" value={`₿${fmtBtc(wallet.balance_btc)} ${btcUsdPrice ? `($${fmtUsd(parseFloat(wallet.balance_btc || 0) * btcUsdPrice)})` : ''}`} />
+          {parseFloat(wallet.locked_balance_btc || 0) > 0 && <AuditRow label="BTC locked" value={`₿${fmtBtc(wallet.locked_balance_btc)}`} />}
+          <AuditRow label="USDT available" value={`₮${fmtUsdt(wallet.balance_usdt)} ($${fmtUsd(wallet.balance_usdt)})`} />
+          {parseFloat(wallet.locked_balance_usdt || 0) > 0 && <AuditRow label="USDT locked" value={`₮${fmtUsdt(wallet.locked_balance_usdt)}`} />}
+          <div className="mt-2 pt-2 border-t" style={{ borderColor: C.g100 }}>
+            <AuditRow label="This request" value={
+              request.currency === 'USDT'
+                ? `₮${fmtUsdt(request.amount_usdt)} ($${fmtUsd(request.amount_usdt)})`
+                : `₿${fmtBtc(request.amount_btc)}${btcUsdPrice ? ` ($${fmtUsd(parseFloat(request.amount_btc || 0) * btcUsdPrice)})` : ''}`
+            } />
+            <AuditRow label="Waiting" value={fmtAge(request.created_at)} />
+            <AuditRow label="Destination" value={(request.destination_address || '').slice(0, 14) + '…'} mono />
+          </div>
+        </AuditSection>
+
+        <AuditSection icon={<ArrowDownRight size={13} />} title="First Deposit">
+          {firstDeposit ? (
+            <>
+              <AuditRow label="Date" value={fmtAge(firstDeposit.created_at)} />
+              <AuditRow label="Amount" value={firstDeposit.currency === 'USDT' ? `₮${fmtUsdt(firstDeposit.amount_usdt)}` : `₿${fmtBtc(firstDeposit.amount_btc)}`} />
+              <div className="mt-2 pt-2 border-t" style={{ borderColor: C.g100 }}>
+                <AuditRow label="Total deposits" value={`${deposits.count}${deposits.capped ? '+' : ''}`} />
+                <AuditRow label="Deposited (all-time)" value={`₿${fmtBtc(deposits.totalBtc)} + ₮${fmtUsdt(deposits.totalUsdt)}`} />
+              </div>
+            </>
+          ) : (
+            <p className="text-xs font-semibold" style={{ color: C.danger }}>No confirmed deposit on record — funds must have come entirely from trades.</p>
+          )}
+        </AuditSection>
+
+        <AuditSection icon={<TrendingUp size={13} />} title="Trade Volume">
+          <AuditRow label="Completed trades" value={`${trades.totalCompleted}${trades.capped ? '+' : ''}`} />
+          <AuditRow label="Lifetime volume" value={`$${fmtUsd(trades.totalVolumeUsd)}`} />
+          <AuditRow label="Disputes" value={`${disputes.total} total · ${disputes.wins} won · ${disputes.losses} lost`} />
+          {btcUsdPrice && <AuditRow label="Live BTC price" value={`$${fmtUsd(btcUsdPrice)}`} />}
+        </AuditSection>
+      </div>
+
+      {/* What funded the balance — recent completed trades, gift card / payment method visible per row */}
+      <AuditSection icon={<Gift size={13} />} title={`Recent Completed Trades (${trades.recent.length})`}>
+        {trades.recent.length === 0 ? (
+          <p className="text-xs font-semibold" style={{ color: C.g400 }}>No completed trades — this account has no trading history.</p>
+        ) : (
+          <div className="overflow-x-auto -mx-1">
+            <table className="w-full text-xs">
+              <thead>
+                <tr>
+                  {['When', 'Role', 'Type', 'Amount', 'Funded via'].map(h => (
+                    <th key={h} className="text-left px-2 py-1.5 font-black" style={{ color: C.g400 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {trades.recent.map(t => {
+                  const isBuyer = t.buyer_id === user.id;
+                  const isGC = !!t.gift_card_brand;
+                  return (
+                    <tr key={t.id} className="border-t" style={{ borderColor: C.g100 }}>
+                      <td className="px-2 py-1.5 whitespace-nowrap" style={{ color: C.g500 }}>{fmtAge(t.completed_at || t.created_at)}</td>
+                      <td className="px-2 py-1.5"><Pill label={isBuyer ? 'Buyer' : 'Seller'} color={isBuyer ? '#2D6A4F' : '#3B82F6'} bg={isBuyer ? '#F0FDF4' : '#EFF6FF'} /></td>
+                      <td className="px-2 py-1.5 font-bold" style={{ color: C.g700 }}>{t.trade_type || '—'}</td>
+                      <td className="px-2 py-1.5 font-bold whitespace-nowrap" style={{ color: C.g700 }}>${fmtUsd(t.amount_usd)} <span className="font-medium" style={{ color: C.g400 }}>(₿{fmtBtc(t.amount_btc)})</span></td>
+                      <td className="px-2 py-1.5">
+                        <span className="inline-flex items-center gap-1 font-bold" style={{ color: isGC ? '#92400E' : C.g600 }}>
+                          {isGC ? <Gift size={11} /> : <CreditCard size={11} />} {isGC ? t.gift_card_brand : (t.payment_method || '—')}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </AuditSection>
+
+      {/* Prior send-outs — has this user withdrawn before, and did any of those get declined? */}
+      <AuditSection icon={<Clock size={13} />} title={`Previous Send-Outs (${withdrawals.history.length}) — ${withdrawals.confirmedCount} sent · ${withdrawals.rejectedCount} rejected`}>
+        {withdrawals.history.length === 0 ? (
+          <p className="text-xs font-semibold" style={{ color: C.g400 }}>This is this user's first withdrawal request.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {withdrawals.history.map(w => (
+              <div key={w.id} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg" style={{ backgroundColor: C.g50 }}>
+                <span className="text-xs font-bold" style={{ color: C.g700 }}>
+                  {w.currency === 'USDT' ? `₮${fmtUsdt(w.amount_usdt)}` : `₿${fmtBtc(w.amount_btc)}`}
+                </span>
+                <span className="text-xs" style={{ color: C.g400 }}>{fmtAge(w.created_at)}</span>
+                <Pill label={WD_STATUS_PILL[w.status]?.label || w.status} color={(WD_STATUS_PILL[w.status] || {}).color || C.g500} bg={(WD_STATUS_PILL[w.status] || {}).bg || C.g100} />
+                {w.status === 'REJECTED' && w.rejection_reason && <span className="text-xs italic flex-1 text-right" style={{ color: C.g400 }}>{w.rejection_reason}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </AuditSection>
+    </div>
+  );
+}
+
+// Waiting time gets more urgent the longer a request sits — green under an hour,
+// amber up to 6h, red past that, so a stale request stands out in the list at a glance.
+const waitColor = (ageMs) => {
+  const h = ageMs / 3600000;
+  if (h < 1) return '#166534';
+  if (h < 6) return '#92400E';
+  return '#991B1B';
+};
+
 function WithdrawalApprovals() {
+  const { btcUsd } = useRates();
   const [tab, setTab]         = useState('PENDING_APPROVAL');
   const [rows, setRows]       = useState([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId]   = useState(null);
   const [loadErr, setLoadErr] = useState('');
+  const [auditId, setAuditId]         = useState(null);
+  const [auditCache, setAuditCache]   = useState({});
+  const [auditLoading, setAuditLoading] = useState(null);
+  const [auditErr, setAuditErr]       = useState({});
+
+  const toggleAudit = async (id) => {
+    if (auditId === id) { setAuditId(null); return; }
+    setAuditId(id);
+    if (auditCache[id]) return;
+    setAuditLoading(id);
+    try {
+      const r = await axios.get(`${API_URL}/hd-wallet/ceo-withdrawals/${id}/audit`, { headers: authH() });
+      setAuditCache(c => ({ ...c, [id]: r.data }));
+    } catch (e) {
+      setAuditErr(er => ({ ...er, [id]: e.response?.data?.error || 'Failed to load audit details' }));
+    } finally { setAuditLoading(null); }
+  };
 
   const load = useCallback(async (status, silent = false) => {
     if (!silent) setLoading(true);
@@ -373,7 +617,7 @@ function WithdrawalApprovals() {
           <table className="w-full text-xs">
             <thead>
               <tr style={{ backgroundColor: C.g50 }}>
-                {['User', 'Amount', 'Destination', 'Requested', 'Status', 'Actions'].map(h => (
+                {['User', 'Amount', 'Destination', 'Waiting', 'Status', 'Actions'].map(h => (
                   <th key={h} className="text-left px-3 py-2.5 font-black whitespace-nowrap" style={{ color: C.g500 }}>{h}</th>
                 ))}
               </tr>
@@ -382,7 +626,8 @@ function WithdrawalApprovals() {
               {rows.map(w => {
                 const pill = WD_STATUS_PILL[w.status] || { label: w.status, color: C.g500, bg: C.g100 };
                 return (
-                  <tr key={w.id} className="border-t align-top" style={{ borderColor: C.g100 }}>
+                  <React.Fragment key={w.id}>
+                  <tr className="border-t align-top" style={{ borderColor: C.g100 }}>
                     <td className="px-3 py-2.5">
                       {w.is_fee_collection ? (
                         <>
@@ -401,36 +646,64 @@ function WithdrawalApprovals() {
                       )}
                     </td>
                     <td className="px-3 py-2.5 font-bold whitespace-nowrap" style={{ color: C.g700 }}>
-                      {w.currency === 'USDT' ? `₮${fmtUsdt(w.amount_usdt)}` : `₿${fmtBtc(w.amount_btc)}`}
+                      <div className="flex items-center gap-1.5">
+                        <Pill label={w.currency === 'USDT' ? 'USDT' : 'BTC'} color={w.currency === 'USDT' ? '#0F766E' : '#B45309'} bg={w.currency === 'USDT' ? '#F0FDFA' : '#FEF3C7'} />
+                        <span>{w.currency === 'USDT' ? `₮${fmtUsdt(w.amount_usdt)}` : `₿${fmtBtc(w.amount_btc)}`}</span>
+                      </div>
+                      <p className="font-black mt-0.5" style={{ color: C.forest }}>
+                        ${fmtUsd(w.currency === 'USDT' ? w.amount_usdt : parseFloat(w.amount_btc || 0) * btcUsd)}
+                      </p>
                       {w.currency === 'USDT'
                         ? (w.platform_fee_usdt ? <p className="font-medium" style={{ color: C.g400 }}>fee ₮{fmtUsdt(w.platform_fee_usdt)}</p> : null)
                         : (w.platform_fee_btc ? <p className="font-medium" style={{ color: C.g400 }}>fee ₿{fmtBtc(w.platform_fee_btc)}</p> : null)}
                     </td>
                     <td className="px-3 py-2.5 font-mono" style={{ color: C.g600, wordBreak: 'break-all', maxWidth: 200 }}>{w.destination_address}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: C.g500 }}>{fmtAge(w.created_at)}</td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <span className="font-bold" style={{ color: w.status === 'PENDING_APPROVAL' ? waitColor(Date.now() - new Date(w.created_at)) : C.g500 }}>
+                        {fmtAge(w.created_at)}
+                      </span>
+                      {w.reviewed_at && <p className="mt-0.5" style={{ color: C.g400 }}>Reviewed {fmtAge(w.reviewed_at)}</p>}
+                    </td>
                     <td className="px-3 py-2.5">
                       <Pill label={pill.label} color={pill.color} bg={pill.bg} />
                       {w.status === 'REJECTED' && w.rejection_reason && <p className="mt-1" style={{ color: C.g400 }}>{w.rejection_reason}</p>}
                       {w.tx_hash && <p className="mt-1 font-mono" style={{ color: C.g400 }}>{w.tx_hash.slice(0, 16)}…</p>}
                     </td>
                     <td className="px-3 py-2.5">
-                      {w.status === 'PENDING_APPROVAL' && (
-                        <div className="flex items-center gap-1.5">
-                          <button disabled={busyId === w.id || w.user?.account_status === 'banned'}
-                            onClick={() => approve(w.id)}
-                            title={w.user?.account_status === 'banned' ? 'This account is banned — reject instead' : undefined}
-                            className="px-2.5 py-1 rounded-lg font-bold"
-                            style={{ backgroundColor: '#F0FDF4', color: '#166534', opacity: (busyId === w.id || w.user?.account_status === 'banned') ? 0.4 : 1 }}>
-                            Approve
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {!w.is_fee_collection && (
+                          <button disabled={auditLoading === w.id} onClick={() => toggleAudit(w.id)}
+                            className="px-2.5 py-1 rounded-lg font-bold flex items-center gap-1"
+                            style={{ backgroundColor: auditId === w.id ? C.forest : C.g100, color: auditId === w.id ? '#fff' : C.g600, opacity: auditLoading === w.id ? 0.6 : 1 }}>
+                            <Search size={11} /> {auditId === w.id ? 'Hide Audit' : 'Audit'}
                           </button>
-                          <button disabled={busyId === w.id} onClick={() => reject(w.id)}
-                            className="px-2.5 py-1 rounded-lg font-bold" style={{ backgroundColor: '#FEF2F2', color: '#991B1B', opacity: busyId === w.id ? 0.5 : 1 }}>
-                            Reject
-                          </button>
-                        </div>
-                      )}
+                        )}
+                        {w.status === 'PENDING_APPROVAL' && (
+                          <>
+                            <button disabled={busyId === w.id || w.user?.account_status === 'banned'}
+                              onClick={() => approve(w.id)}
+                              title={w.user?.account_status === 'banned' ? 'This account is banned — reject instead' : undefined}
+                              className="px-2.5 py-1 rounded-lg font-bold"
+                              style={{ backgroundColor: '#F0FDF4', color: '#166534', opacity: (busyId === w.id || w.user?.account_status === 'banned') ? 0.4 : 1 }}>
+                              Approve
+                            </button>
+                            <button disabled={busyId === w.id} onClick={() => reject(w.id)}
+                              className="px-2.5 py-1 rounded-lg font-bold" style={{ backgroundColor: '#FEF2F2', color: '#991B1B', opacity: busyId === w.id ? 0.5 : 1 }}>
+                              Reject
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
+                  {auditId === w.id && (
+                    <tr style={{ borderColor: C.g100 }} className="border-t">
+                      <td colSpan={6} className="px-3 py-3" style={{ backgroundColor: C.g50 }}>
+                        <AuditPanel data={auditCache[w.id]} loading={auditLoading === w.id} error={auditErr[w.id]} />
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
                 );
               })}
             </tbody>
@@ -687,6 +960,156 @@ function MigrationReviewModal({ onClose, onActed }) {
         </div>
       </div>
       <ImageZoomModal src={zoomSrc} onClose={() => setZoomSrc(null)} />
+    </div>
+  );
+}
+
+const SECURITY_EVENT_LABEL = {
+  LOGIN_SUCCESS: { label: 'Login succeeded', color: '#166534', bg: '#F0FDF4' },
+  LOGIN_FAILED_PASSWORD: { label: 'Wrong password', color: '#991B1B', bg: '#FEF2F2' },
+  LOGIN_FAILED_OTP: { label: 'Wrong email code', color: '#991B1B', bg: '#FEF2F2' },
+  LOGIN_FAILED_2FA: { label: 'Wrong 2FA code', color: '#991B1B', bg: '#FEF2F2' },
+  LOGIN_2FA_REQUIRED: { label: '2FA code sent', color: '#7C3AED', bg: '#F5F3FF' },
+  LOGIN_BLOCKED_BANNED: { label: 'Blocked — banned account', color: '#991B1B', bg: '#FEF2F2' },
+  LOGIN_BLOCKED_LOCKOUT: { label: 'Blocked — locked out', color: '#92400E', bg: '#FFFBEB' },
+  LOCKOUT_CLEARED: { label: 'Lockout cleared by CEO', color: '#166534', bg: '#F0FDF4' },
+};
+
+// ─── Security Alerts modal — real login-security data (see database/security_events.sql +
+// backend/services/securityLogService.js): failed passwords, failed OTP/2FA codes, blocked
+// banned-account logins, blocked lockouts, and which accounts are currently locked out with
+// a one-click Unlock. Same modal shell as KycReviewModal/MigrationReviewModal above.
+function SecurityAlertsModal({ ceoUser, onClose, onActed }) {
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState('');
+  const [busyId, setBusyId]   = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true); setLoadErr('');
+    try {
+      const r = await axios.get(`${API_URL}/hd-wallet/ceo/security-events`, { headers: authH() });
+      setData(r.data);
+    } catch (e) { setLoadErr(e.response?.data?.error || 'Failed to load security events'); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const unlock = async (userId) => {
+    setBusyId(userId);
+    try {
+      await axios.post(`${API_URL}/hd-wallet/ceo/security-events/${userId}/unlock`, {}, { headers: authH() });
+      toast.success('Lockout cleared — this account can log in again');
+      load();
+      onActed();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed to clear lockout'); }
+    finally { setBusyId(null); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-2xl flex flex-col" style={{ maxHeight: '88vh' }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0" style={{ borderColor: C.g200 }}>
+          <h2 className="font-black text-base flex items-center gap-2" style={{ color: C.g800 }}>
+            <Lock size={18} /> Security Alerts — last 7 days
+          </h2>
+          <button onClick={onClose} className="p-2 rounded-xl" style={{ backgroundColor: C.g100 }}>
+            <XCircle size={16} style={{ color: C.g500 }} />
+          </button>
+        </div>
+        <div className="p-5 space-y-4 overflow-y-auto flex-1">
+          {!ceoUser?.two_factor_enabled && (
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl border" style={{ borderColor: '#FDE68A', backgroundColor: '#FFFBEB' }}>
+              <AlertTriangle size={14} style={{ color: '#92400E', flexShrink: 0, marginTop: 1 }} />
+              <p className="text-xs font-bold" style={{ color: '#92400E' }}>
+                2FA isn't enabled on your own account yet — turn it on in Settings → Security so your CEO login gets the same protection this page is built to enforce.
+              </p>
+            </div>
+          )}
+          {loading ? <Spin /> : loadErr ? (
+            <p className="text-sm font-semibold text-center py-10" style={{ color: C.danger }}>{loadErr}</p>
+          ) : data?.tableMissing ? (
+            <div className="flex flex-col items-center py-10 gap-2 text-center">
+              <AlertTriangle size={36} strokeWidth={1.5} style={{ color: C.warn }} />
+              <p className="text-sm font-bold" style={{ color: C.g700 }}>Security logging isn't set up yet</p>
+              <p className="text-xs max-w-sm" style={{ color: C.g500 }}>
+                Run <code className="font-mono px-1 rounded" style={{ backgroundColor: C.g100 }}>database/security_events.sql</code> once in the Supabase SQL Editor, then this fills in automatically on every login attempt.
+              </p>
+            </div>
+          ) : (
+            <>
+              {data.summary.lockedAccounts.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-wide mb-2" style={{ color: C.g500 }}>
+                    Currently Locked Out ({data.summary.lockedAccounts.length})
+                  </h3>
+                  <div className="space-y-1.5">
+                    {data.summary.lockedAccounts.map(l => (
+                      <div key={l.id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border" style={{ borderColor: '#FDE68A', backgroundColor: '#FFFBEB' }}>
+                        <div>
+                          <p className="text-sm font-bold" style={{ color: C.g800 }}>{l.user?.username || l.id.slice(0, 8)}</p>
+                          <p className="text-xs" style={{ color: C.g500 }}>{l.user?.email} · {l.failureCount} failed attempts · unlocks in {Math.max(1, Math.ceil((new Date(l.unlocksAt).getTime() - Date.now()) / 60000))}m</p>
+                        </div>
+                        <button disabled={busyId === l.id} onClick={() => unlock(l.id)}
+                          className="px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 flex-shrink-0"
+                          style={{ backgroundColor: '#F0FDF4', color: '#166534', opacity: busyId === l.id ? 0.5 : 1 }}>
+                          <Unlock size={12} /> Unlock now
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {data.summary.topIps.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-wide mb-2" style={{ color: C.g500 }}>Top IPs by Failed Attempts</h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {data.summary.topIps.map(ip => (
+                      <span key={ip.ip} className="text-xs font-mono px-2 py-1 rounded-lg" style={{ backgroundColor: C.g100, color: C.g700 }}>
+                        {ip.ip} <span className="font-black" style={{ color: C.danger }}>×{ip.count}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wide mb-2" style={{ color: C.g500 }}>
+                  Recent Events ({data.events.length}) · {data.summary.privilegedFailures} against admin/CEO accounts
+                </h3>
+                {data.events.length === 0 ? (
+                  <div className="flex flex-col items-center py-10 gap-2">
+                    <ShieldCheck size={32} strokeWidth={1.5} style={{ color: C.g400 }} />
+                    <p className="text-sm font-semibold" style={{ color: C.g500 }}>Nothing flagged in the last 7 days</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {data.events.map(e => {
+                      const pill = SECURITY_EVENT_LABEL[e.event_type] || { label: e.event_type, color: C.g600, bg: C.g100 };
+                      return (
+                        <div key={e.id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: C.g50 }}>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <Pill label={pill.label} color={pill.color} bg={pill.bg} />
+                              {e.is_privileged && <Pill label="⚠️ Admin/CEO account" color="#991B1B" bg="#FEF2F2" />}
+                            </div>
+                            <p className="text-xs mt-1 truncate" style={{ color: C.g600 }}>
+                              {e.user?.username || e.email_attempted || 'Unknown'} · <span className="font-mono">{e.ip_address || '—'}</span>
+                            </p>
+                          </div>
+                          <span className="text-xs flex-shrink-0" style={{ color: C.g400 }}>{fmtAge(e.created_at)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1024,6 +1447,7 @@ export default function CeoDashboard({ user: appUser }) {
   const [loadingP, setLoadingP]   = useState(true);
   const [kycModalOpen, setKycModalOpen] = useState(false);
   const [migrationModalOpen, setMigrationModalOpen] = useState(false);
+  const [securityModalOpen, setSecurityModalOpen] = useState(false);
   // BTC + USDT (≈$1) combined into one USD figure for the Company Pulse headlines below.
   const usdOf = (btc, usdt) => (parseFloat(btc || 0) * btcUsd) + parseFloat(usdt || 0);
 
@@ -1120,6 +1544,7 @@ export default function CeoDashboard({ user: appUser }) {
                   <TreasuryCard
                     icon={<ArrowDownRight size={18} />} label="Money In · 24h" color="#059669" bg="#F0FDF4"
                     primary={`$${fmtUsd(usdOf(pulse.moneyIn.last24h.btc, pulse.moneyIn.last24h.usdt))}`}
+                    growthPct={growthOf(usdOf, pulse.moneyIn.last24h, pulse.moneyIn.prev24h)}
                     primarySub={`₿${fmtBtc(pulse.moneyIn.last24h.btc)} + ₮${fmtUsdt(pulse.moneyIn.last24h.usdt)} USDT`}
                     secondary={`$${fmtUsd(usdOf(pulse.moneyIn.last7d.btc, pulse.moneyIn.last7d.usdt))}`}
                     secondaryColor="#059669"
@@ -1129,6 +1554,7 @@ export default function CeoDashboard({ user: appUser }) {
                   <TreasuryCard
                     icon={<ArrowUpRight size={18} />} label="Money Out · 24h" color="#DC2626" bg="#FEF2F2"
                     primary={`$${fmtUsd(usdOf(pulse.moneyOut.last24h.btc, pulse.moneyOut.last24h.usdt))}`}
+                    growthPct={growthOf(usdOf, pulse.moneyOut.last24h, pulse.moneyOut.prev24h)}
                     primarySub={`₿${fmtBtc(pulse.moneyOut.last24h.btc)} + ₮${fmtUsdt(pulse.moneyOut.last24h.usdt)} USDT`}
                     secondary={`$${fmtUsd(usdOf(pulse.moneyOut.last7d.btc, pulse.moneyOut.last7d.usdt))}`}
                     secondaryColor="#DC2626"
@@ -1138,6 +1564,7 @@ export default function CeoDashboard({ user: appUser }) {
                   <TreasuryCard
                     icon={<TrendingUp size={18} />} label="Trade Volume · 24h" color="#7C3AED" bg="#F5F3FF"
                     primary={`$${fmtUsd(pulse.tradeVolume.last24h.usd)}`}
+                    growthPct={pulse.tradeVolume.prev24h?.usd ? ((pulse.tradeVolume.last24h.usd - pulse.tradeVolume.prev24h.usd) / pulse.tradeVolume.prev24h.usd) * 100 : null}
                     primarySub={`${pulse.tradeVolume.last24h.count} completed trade${pulse.tradeVolume.last24h.count !== 1 ? 's' : ''}`}
                     secondary={`$${fmtUsd(pulse.tradeVolume.last7d.usd)}`}
                     secondaryColor="#7C3AED"
@@ -1149,7 +1576,12 @@ export default function CeoDashboard({ user: appUser }) {
                     primarySub="Signed up today"
                     secondary={pulse.newUsers.week}
                     secondaryColor="#F59E0B"
-                    secondarySub="This week"
+                    secondarySub={
+                      <span className="inline-flex items-center gap-1.5">
+                        This week
+                        <GrowthBadge pct={pulse.newUsers.lastWeek ? ((pulse.newUsers.week - pulse.newUsers.lastWeek) / pulse.newUsers.lastWeek) * 100 : null} label="vs last week" />
+                      </span>
+                    }
                     footer={pulse.newUsers.total != null ? `${pulse.newUsers.total.toLocaleString()} total users on PRAQEN` : undefined} />
                 </div>
               </div>
@@ -1168,6 +1600,7 @@ export default function CeoDashboard({ user: appUser }) {
                   <TreasuryCard
                     icon={<Bitcoin size={18} />} label="Trade Fees · 24h" color="#1B4332" bg="#F0FDF4"
                     primary={`$${fmtUsd(usdOf(pulse.fees.trade.last24h.btc, pulse.fees.trade.last24h.usdt))}`}
+                    growthPct={growthOf(usdOf, pulse.fees.trade.last24h, pulse.fees.trade.prev24h)}
                     primarySub={`₿${fmtBtc(pulse.fees.trade.last24h.btc)} + ₮${fmtUsdt(pulse.fees.trade.last24h.usdt)}`}
                     secondary={`$${fmtUsd(usdOf(pulse.fees.trade.last7d.btc, pulse.fees.trade.last7d.usdt))}`}
                     secondaryColor="#1B4332"
@@ -1177,6 +1610,7 @@ export default function CeoDashboard({ user: appUser }) {
                   <TreasuryCard
                     icon={<ArrowUpRight size={18} />} label="Withdrawal Fees · 24h" color="#DC2626" bg="#FEF2F2"
                     primary={`$${fmtUsd(usdOf(pulse.fees.withdrawal.last24h.btc, pulse.fees.withdrawal.last24h.usdt))}`}
+                    growthPct={growthOf(usdOf, pulse.fees.withdrawal.last24h, pulse.fees.withdrawal.prev24h)}
                     primarySub={`₿${fmtBtc(pulse.fees.withdrawal.last24h.btc)} + ₮${fmtUsdt(pulse.fees.withdrawal.last24h.usdt)}`}
                     secondary={`$${fmtUsd(usdOf(pulse.fees.withdrawal.last7d.btc, pulse.fees.withdrawal.last7d.usdt))}`}
                     secondaryColor="#DC2626"
@@ -1186,6 +1620,7 @@ export default function CeoDashboard({ user: appUser }) {
                   <TreasuryCard
                     icon={<Repeat size={18} />} label="Swap Fees · 24h" color="#7C3AED" bg="#F5F3FF"
                     primary={`$${fmtUsd(usdOf(pulse.fees.swap.last24h.btc, pulse.fees.swap.last24h.usdt))}`}
+                    growthPct={growthOf(usdOf, pulse.fees.swap.last24h, pulse.fees.swap.prev24h)}
                     primarySub={`₿${fmtBtc(pulse.fees.swap.last24h.btc)} + ₮${fmtUsdt(pulse.fees.swap.last24h.usdt)}`}
                     secondary={`$${fmtUsd(usdOf(pulse.fees.swap.last7d.btc, pulse.fees.swap.last7d.usdt))}`}
                     secondaryColor="#7C3AED"
@@ -1199,6 +1634,15 @@ export default function CeoDashboard({ user: appUser }) {
                       usdOf(pulse.fees.withdrawal.last24h.btc, pulse.fees.withdrawal.last24h.usdt) +
                       usdOf(pulse.fees.swap.last24h.btc, pulse.fees.swap.last24h.usdt)
                     )}`}
+                    growthPct={(() => {
+                      const cur = usdOf(pulse.fees.trade.last24h.btc, pulse.fees.trade.last24h.usdt)
+                        + usdOf(pulse.fees.withdrawal.last24h.btc, pulse.fees.withdrawal.last24h.usdt)
+                        + usdOf(pulse.fees.swap.last24h.btc, pulse.fees.swap.last24h.usdt);
+                      const prev = usdOf(pulse.fees.trade.prev24h.btc, pulse.fees.trade.prev24h.usdt)
+                        + usdOf(pulse.fees.withdrawal.prev24h.btc, pulse.fees.withdrawal.prev24h.usdt)
+                        + usdOf(pulse.fees.swap.prev24h.btc, pulse.fees.swap.prev24h.usdt);
+                      return prev ? ((cur - prev) / prev) * 100 : null;
+                    })()}
                     secondary={`$${fmtUsd(
                       usdOf(pulse.fees.trade.last7d.btc, pulse.fees.trade.last7d.usdt) +
                       usdOf(pulse.fees.withdrawal.last7d.btc, pulse.fees.withdrawal.last7d.usdt) +
@@ -1206,7 +1650,47 @@ export default function CeoDashboard({ user: appUser }) {
                     )}`}
                     secondaryColor="#F59E0B"
                     secondarySub="Last 7 days"
-                    footer="Trade + withdrawal + swap, combined" />
+                    footer="Trade + withdrawal + swap, combined — vs. the prior 24h period" />
+                </div>
+              </div>
+            )}
+
+            {/* 📈 Growth & Health — the "is this platform actually growing, and is anything
+                quietly going wrong" section: signups vs last week, KYC pipeline breakdown,
+                and account-standing counts. All from GET /ceo/pulse's accountHealth/newUsers
+                fields (Part 3) — no new endpoint needed, same TreasuryCard grid as above. */}
+            {pulse && (
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-wide mb-3" style={{ color: C.g500 }}>📈 Growth &amp; Health</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <TreasuryCard
+                    icon={<Users size={18} />} label="Signups This Week" color="#2D6A4F" bg="#F0FDF4"
+                    primary={pulse.newUsers.week}
+                    growthPct={pulse.newUsers.lastWeek ? ((pulse.newUsers.week - pulse.newUsers.lastWeek) / pulse.newUsers.lastWeek) * 100 : null}
+                    primarySub={`${pulse.newUsers.lastWeek} the week before`}
+                    footer={`${pulse.newUsers.today} today · ${pulse.newUsers.total?.toLocaleString?.() ?? pulse.newUsers.total} total`} />
+
+                  <TreasuryCard
+                    icon={<ShieldCheck size={18} />} label="KYC Pipeline" color="#3B82F6" bg="#EFF6FF"
+                    primary={pulse.accountHealth.kycApproved}
+                    primarySub="Approved"
+                    secondary={`${pulse.pending.kyc} pending`}
+                    secondaryColor="#92400E"
+                    secondarySub={`${pulse.accountHealth.kycRejected} rejected all-time`} />
+
+                  <TreasuryCard
+                    icon={<UserCheck size={18} />} label="Account Standing" color="#059669" bg="#F0FDF4"
+                    primary={(pulse.newUsers.total || 0) - pulse.accountHealth.banned}
+                    primarySub="Active accounts"
+                    secondary={pulse.accountHealth.banned}
+                    secondaryColor="#991B1B"
+                    secondarySub="Banned" />
+
+                  <TreasuryCard
+                    icon={<UserX size={18} />} label="Active Warnings" color="#F59E0B" bg="#FFFBEB"
+                    primary={pulse.accountHealth.warned}
+                    primarySub="Accounts with an open warning"
+                    footer="Warned, not restricted from trading" />
                 </div>
               </div>
             )}
@@ -1226,6 +1710,7 @@ export default function CeoDashboard({ user: appUser }) {
                   <AttentionBadge icon={<ShieldCheck size={16} />} label="KYC Pending" count={pulse.pending.kyc} onClick={() => setKycModalOpen(true)} />
                   <AttentionBadge icon={<Repeat size={16} />} label="Migration Requests" count={pulse.pending.p2pMigration} onClick={() => setMigrationModalOpen(true)} />
                   <AttentionBadge icon={<AlertCircle size={16} />} label="Disputes Open · resolved by moderator vote" count={pulse.pending.disputes} href="/moderator" />
+                  <AttentionBadge icon={<Lock size={16} />} label="Security Alerts" count={pulse.pending.securityAlerts} onClick={() => setSecurityModalOpen(true)} />
                 </div>
                 <WithdrawalApprovals />
               </div>
@@ -1347,6 +1832,7 @@ export default function CeoDashboard({ user: appUser }) {
 
       {kycModalOpen && <KycReviewModal onClose={() => setKycModalOpen(false)} onActed={loadPulse} />}
       {migrationModalOpen && <MigrationReviewModal onClose={() => setMigrationModalOpen(false)} onActed={loadPulse} />}
+      {securityModalOpen && <SecurityAlertsModal ceoUser={ceoUser} onClose={() => setSecurityModalOpen(false)} onActed={loadPulse} />}
     </div>
   );
 }

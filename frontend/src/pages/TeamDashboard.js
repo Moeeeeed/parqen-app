@@ -5002,6 +5002,8 @@ function UsersSection() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
   const [userReviews, setUserReviews] = useState([]);
+  const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const LIMIT = 20;
 
   const load = useCallback(async () => {
@@ -5016,9 +5018,21 @@ function UsersSection() {
   useEffect(() => { setPage(1); }, [search]);
   useEffect(() => { load(); }, [load]);
 
+  // One click → real trade volume, active/pending trade status, and trustworthy trade/feedback
+  // counts (the users list only has the denormalized columns, which can lag — the detail
+  // endpoint recomputes them fresh from trades/reviews, same as the public profile endpoint).
   const viewUser = async (u) => {
-    setSelected(u); setUserReviews([]);
-    try { const r = await axios.get(`${API_URL}/users/${u.id}/reviews`); setUserReviews(r.data.reviews?.slice(0, 4) || []); } catch {}
+    setSelected(u); setUserReviews([]); setDetail(null);
+    if (!u) return;
+    setDetailLoading(true);
+    try {
+      const [reviewsR, detailR] = await Promise.all([
+        axios.get(`${API_URL}/users/${u.id}/reviews`).catch(() => null),
+        axios.get(`${API_URL}/admin/users/${u.id}/detail`, { headers: authH() }).catch(() => null),
+      ]);
+      if (reviewsR) setUserReviews(reviewsR.data.reviews?.slice(0, 4) || []);
+      if (detailR) setDetail(detailR.data);
+    } finally { setDetailLoading(false); }
   };
 
   return (
@@ -5094,28 +5108,55 @@ function UsersSection() {
           )}
         </div>
         {selected && (
-          <div className="w-64 bg-white rounded-2xl border p-4 flex-shrink-0" style={{ borderColor: C.g200 }}>
+          <div className="w-80 bg-white rounded-2xl border p-4 flex-shrink-0" style={{ borderColor: C.g200 }}>
             <div className="flex items-start justify-between mb-3"><h3 className="font-black text-sm" style={{ color: C.g800 }}>User Detail</h3><button onClick={() => setSelected(null)}><X size={14} style={{ color: C.g400 }} /></button></div>
             <div className="w-12 h-12 rounded-xl flex items-center justify-center text-xl font-black text-white mb-2" style={{ backgroundColor: C.forest }}>{(selected.username || '?')[0].toUpperCase()}</div>
             <p className="font-black text-sm" style={{ color: C.g800 }}>{selected.username}</p>
             <p className="text-xs mb-3" style={{ color: C.g400 }}>{selected.email}</p>
-            <div className="space-y-1.5 mb-3">
-              {[
-                { l: 'Status', v: selected.account_status || 'active' },
-                { l: 'Trades', v: fmt(selected.total_trades) },
-                { l: 'Volume', v: selected.total_volume_usd ? `$${fmt(selected.total_volume_usd, 0)}` : '—' },
-                { l: 'Rating', v: <span className="inline-flex items-center gap-1"><Star size={12} className="inline-block" style={{ color: C.gold }} />{parseFloat(selected.average_rating || 0).toFixed(1)}</span> },
-                { l: 'Badge', v: selected.badge || 'BEGINNER' },
-                { l: 'Phone', v: selected.phone_number || '—' },
-                { l: 'KYC', v: selected.kyc_status || '—' },
-                { l: 'Last Active', v: fmtAge(selected.last_seen_at) },
-                { l: 'Joined', v: fmtDate(selected.created_at) },
-              ].map(({ l, v }) => (
-                <div key={l} className="flex justify-between py-1 border-b text-xs" style={{ borderColor: C.g100 }}>
-                  <span style={{ color: C.g400 }}>{l}</span><span className="font-bold" style={{ color: C.g700 }}>{v}</span>
+
+            {detailLoading ? <div className="py-4"><Spin /></div> : (
+              <div className="space-y-1.5 mb-3">
+                {[
+                  { l: 'Status', v: (detail?.user?.account_status || selected.account_status) || 'active' },
+                  { l: 'Joined', v: fmtDate(selected.created_at) },
+                  { l: 'KYC', v: (detail?.user?.is_id_verified || detail?.user?.kyc_status === 'approved') ? '✅ Verified' : (detail?.user?.kyc_status || 'Not verified') },
+                  { l: 'Trades (completed)', v: fmt(detail?.user?.total_trades ?? selected.total_trades) },
+                  { l: 'Trade Volume', v: detail ? `$${fmt(detail.tradeVolumeUsd, 0)}${detail.tradeVolumeCapped ? '+' : ''}` : '—' },
+                  {
+                    l: 'Active/Pending Trade',
+                    v: detail
+                      ? (detail.activeTradeCount > 0
+                        ? <span style={{ color: '#92400E' }}>{detail.activeTradeCount} in progress</span>
+                        : <span style={{ color: '#166534' }}>None right now</span>)
+                      : '—',
+                  },
+                  { l: 'Feedback', v: detail ? `+${detail.user.positive_feedback} / -${detail.user.negative_feedback}` : '—' },
+                  { l: 'Rating', v: <span className="inline-flex items-center gap-1"><Star size={12} className="inline-block" style={{ color: C.gold }} />{parseFloat(selected.average_rating || 0).toFixed(1)}</span> },
+                  { l: 'Badge', v: selected.badge || 'BEGINNER' },
+                  { l: 'Phone', v: selected.phone_number || '—' },
+                  { l: 'Last Active', v: fmtAge(selected.last_seen_at) },
+                ].map(({ l, v }) => (
+                  <div key={l} className="flex justify-between py-1 border-b text-xs" style={{ borderColor: C.g100 }}>
+                    <span style={{ color: C.g400 }}>{l}</span><span className="font-bold text-right" style={{ color: C.g700 }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {detail?.activeTrades?.length > 0 && (
+              <div className="mb-3">
+                <p className="text-xs font-black mb-1.5" style={{ color: C.g600 }}>In Progress</p>
+                <div className="space-y-1">
+                  {detail.activeTrades.map(t => (
+                    <div key={t.id} className="flex items-center justify-between px-2 py-1.5 rounded-lg text-xs" style={{ backgroundColor: '#FFFBEB' }}>
+                      <span className="font-bold" style={{ color: '#92400E' }}>{t.role === 'buyer' ? 'Buying' : 'Selling'} · {t.status}</span>
+                      <span className="font-black" style={{ color: C.g700 }}>${fmt(t.amount_usd, 0)}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
+
             <p className="text-xs font-black mb-2" style={{ color: C.g600 }}>Recent Reviews</p>
             {userReviews.length === 0
               ? <p className="text-xs text-center py-2" style={{ color: C.g400 }}>No reviews</p>
