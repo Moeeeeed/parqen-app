@@ -14,7 +14,7 @@ import {
   CalendarDays, Download, Tag, Pin, GripVertical, CheckSquare, Square, FileDown,
   Globe, ShieldOff, UserX, Layers,
   Gift, User, Mail, Smartphone, Circle, Medal, Scale, Minus, MailOpen,
-  Repeat, ChevronUp, Bug, Lightbulb,
+  Repeat, ChevronUp, Bug, Lightbulb, Headphones,
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -5329,6 +5329,7 @@ export default function TeamDashboard({ user: propUser }) {
       { id: 'trade-lookup',   label: 'Trade Lookup',    icon: Hash },
       { id: 'disputes',       label: 'Disputes',        icon: Gavel,        badge: disputeCount },
       { id: 'support-chat',   label: 'Support Chat',    icon: MessageSquare },
+      { id: 'agent-dashboard', label: 'Live Agent Chat', icon: Headphones,  external: '/agent-dashboard' },
       { id: 'p2p-migration',  label: 'P2P Migration',   icon: Repeat },
       { id: 'user-messages',  label: 'User Messages',   icon: Lightbulb },
       { id: 'feedback',       label: 'Feedback',        icon: Star },
@@ -5407,10 +5408,10 @@ export default function TeamDashboard({ user: propUser }) {
               ) : (
                 <div style={{ height: 10 }} />
               )}
-              {group.items.map(({ id, label, icon: Icon, badge }) => {
+              {group.items.map(({ id, label, icon: Icon, badge, external }) => {
                 const active = section === id;
                 return (
-                  <button key={id} onClick={() => setSection(id)}
+                  <button key={id} onClick={() => external ? window.open(external, '_blank') : setSection(id)}
                     style={{
                       width: '100%', display: 'flex', alignItems: 'center',
                       gap: sidebarOpen ? 10 : 0, justifyContent: sidebarOpen ? 'flex-start' : 'center',
