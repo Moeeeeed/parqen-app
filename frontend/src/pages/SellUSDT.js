@@ -239,7 +239,7 @@ function Avatar({user, size=36, radius='rounded-xl'}) {
   const url = u?.avatar_url || lazyUrl;
   if (url && !err) {
     return (
-      <img src={url} alt={u.username||'user'} onError={()=>setErr(true)}
+      <img src={url} alt={u.username||'user'} loading="lazy" onError={()=>setErr(true)}
         className={`object-cover flex-shrink-0 ${radius}`}
         style={{width:size, height:size}}/>
     );
@@ -878,7 +878,10 @@ export default function SellUSDT({user}) {
   const [showPayment,   setShowPayment]   = useState(false);
   const [showAssetMenu, setShowAssetMenu] = useState(false);
   const [showSellAssetMenu, setShowSellAssetMenu] = useState(false);
-  const [cryptoFilter, setCryptoFilter] = useState('ALL'); // 'ALL' | 'BTC' | 'USDT'
+  // Defaults to USDT-only — this is the dedicated Sell USDT page, so it should show
+  // USDT offers first rather than the combined "All Crypto" view where BTC offers can
+  // dominate. Users can still switch to "All Crypto" or "Bitcoin" manually via the dropdown.
+  const [cryptoFilter, setCryptoFilter] = useState('USDT'); // 'ALL' | 'BTC' | 'USDT'
   const [showCryptoMenu, setShowCryptoMenu] = useState(false);
   const [sortBy,       setSortBy]       = useState('rate_high');
   const [modal,        setModal]        = useState(null);

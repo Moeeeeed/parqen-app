@@ -232,6 +232,30 @@ class USDTDepositMonitor {
       console.log(`   Address     : ${address}`);
       console.log(`   On-chain now: ${onchainUsdt} USDT | Last: ${lastOnchainUsdt} USDT`);
 
+      // ── Step 2b: Primary idempotency gate — deposit_tracking table ──────────
+      // Same guard as depositMonitor.js's BTC path: a UNIQUE constraint on
+      // (user_id, currency, onchain_balance) rejects a second concurrent
+      // attempt to process the same on-chain state atomically, before either
+      // caller touches a wallet balance. Primary guard; the last_onchain_usdt
+      // claim and the balance credit below are defense-in-depth behind it.
+      const { error: usdtTrackErr } = await supabaseAdmin.from('deposit_tracking').insert({
+        user_id:         userId,
+        currency:        'USDT',
+        onchain_balance: onchainUsdt,
+        amount_credited: depositUsdt,
+      });
+      if (usdtTrackErr) {
+        if (/duplicate|unique/i.test(usdtTrackErr.message || '')) {
+          console.log(`[USDTMonitor] deposit_tracking: this on-chain balance for ${username} was already processed — skipping duplicate credit`);
+          return;
+        }
+        if (/relation .* does not exist/i.test(usdtTrackErr.message || '')) {
+          console.warn('[USDTMonitor] deposit_tracking table missing — run database/deposit_tracking.sql. Falling back to last_onchain_usdt claim only.');
+        } else {
+          console.warn(`[USDTMonitor] deposit_tracking insert error for ${username} (non-fatal, continuing on other guards):`, usdtTrackErr.message);
+        }
+      }
+
       // ── Step 3: Atomically claim this deposit (compare-and-swap on last_onchain_usdt) ──
       // The unconditional update this replaced always wrote regardless of what the row
       // currently held — but the periodic scanner (sequential, one address at a time) and the

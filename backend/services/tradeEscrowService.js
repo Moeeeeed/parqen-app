@@ -1044,6 +1044,20 @@ class TradeEscrowService {
       console.log(`[cancelTrade] No escrow funds to refund for trade ${tradeId.slice(0,8)}`);
     }
 
+    // ── Finalize the escrow_locks row ─────────────────────────────────────────
+    // The claim above (step 3) flips LOCKED→REFUNDING but nothing ever flipped it
+    // to a terminal REFUNDED after a successful refund — it sat at REFUNDING
+    // forever, indistinguishable from a genuinely stuck/crashed refund. Harmless
+    // to the actual funds (the credit above already completed correctly), but it
+    // makes every completed refund look like an open incident to any later audit
+    // or admin dashboard that checks for locks stuck in a transient state.
+    if (esc) {
+      await supabaseAdmin.from('escrow_locks')
+        .update({ status: 'REFUNDED', released_at: new Date().toISOString() })
+        .eq('trade_id', tradeId).eq('status', 'REFUNDING')
+        .then(null, (e) => console.error(`[cancelTrade] Failed to finalize escrow_locks status for trade ${tradeId.slice(0,8)}:`, e.message));
+    }
+
     // ── 6. Mark trade CANCELLED ───────────────────────────────────────────────
     await supabaseAdmin
       .from('trades')

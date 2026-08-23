@@ -357,7 +357,7 @@ function Avatar({ user, size = 48, radius = 'rounded-xl' }) {
   }, [u?.id, u?.avatar_url, err]);
   const url = u?.avatar_url || lazyUrl;
   if (url && !err) return (
-    <img src={url} alt={u.username || 'user'} onError={() => setErr(true)}
+    <img src={url} alt={u.username || 'user'} loading="lazy" onError={() => setErr(true)}
       loading="lazy" width={size} height={size}
       className={`object-cover flex-shrink-0 ${radius}`} style={{ width: size, height: size }} />
   );

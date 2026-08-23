@@ -93,6 +93,25 @@ function lazyRetry(importFn) {
 }
 
 // ── Lazy-loaded pages ────────────────────────────────────────────────────────
+// A dynamic import() can fail if the tab has an older build's chunk manifest in
+// memory and the dev/build server has since redeployed — the failed fetch throws,
+// Suspense propagates it to the nearest ErrorBoundary, and the user sees the
+// generic "Something went wrong" card on whatever route they happened to be on,
+// with no connection to that page's own code. Retrying once via a full reload
+// picks up the current chunk manifest and recovers transparently; a second
+// failure (session storage flag already set) is a real error, so it's let through.
+function lazyRetry(importer) {
+  return lazy(() =>
+    importer().catch((err) => {
+      const alreadyRetried = sessionStorage.getItem('chunk_reload_done');
+      if (alreadyRetried) throw err;
+      sessionStorage.setItem('chunk_reload_done', '1');
+      window.location.reload();
+      return new Promise(() => {});
+    })
+  );
+}
+
 const GiftCardMarketplace = lazyRetry(() => import('./pages/GiftCardMarketplace'));
 const Blog = lazyRetry(() => import('./pages/Blog'));
 const BlogPost = lazyRetry(() => import('./pages/BlogPost'));
@@ -202,6 +221,13 @@ function App() {
       initOneSignal(user.id);
     }
   }, [token, user?.id]);
+
+  // A successful mount means the current chunk manifest loaded fine — clear the
+  // lazyRetry flag so a *future* chunk failure (after the next deploy) gets its
+  // own single retry instead of being treated as "already retried, give up."
+  useEffect(() => {
+    sessionStorage.removeItem('chunk_reload_done');
+  }, []);
 
   // ── Setup axios interceptor ──────────────────────────────────────────────
   useEffect(() => {

@@ -17,6 +17,18 @@ class ErrorBoundary extends React.Component {
     // Without this, an uncaught render error unmounts the whole tree and the
     // page just goes blank with nothing in the console pointing at why.
     console.error('[ErrorBoundary] caught render error:', error, info?.componentStack);
+
+    // A failed lazy-chunk import (stale build manifest in this tab) throws here
+    // same as any other render error — App.js's lazyRetry already retries once
+    // via reload for the common case, but if that flag was already consumed by
+    // an unrelated earlier retry this session, fall back to the same recovery
+    // here rather than showing "Something went wrong" for what's just a stale bundle.
+    const msg = String(error?.message || '');
+    const isChunkError = error?.name === 'ChunkLoadError' || /Loading chunk|dynamically imported module|Failed to fetch dynamically/i.test(msg);
+    if (isChunkError && !sessionStorage.getItem('chunk_reload_done')) {
+      sessionStorage.setItem('chunk_reload_done', '1');
+      window.location.reload();
+    }
   }
 
   render() {

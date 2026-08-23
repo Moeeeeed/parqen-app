@@ -391,6 +391,36 @@ class DepositMonitor {
       const currentBalanceBTC = parseFloat(walRow?.balance_btc || 0);
       const newBalanceBTC     = parseFloat((currentBalanceBTC + depositBTC).toFixed(8));
 
+      // ── Step 4c: Primary idempotency gate — deposit_tracking table ──────────
+      // Deposits here are detected by balance delta, not a specific on-chain tx
+      // hash (this insert below has no tx_hash to key on), so the on-chain
+      // balance value itself is the natural unique key — each distinct balance
+      // can only be reached once on the way up. A UNIQUE constraint on
+      // (user_id, currency, onchain_balance) rejects a second concurrent
+      // attempt to process the same on-chain state atomically, at the database
+      // level, before either caller touches a wallet balance — this is the
+      // primary guard; the last_onchain_btc claim and the optimistic lock on
+      // the balance credit below are defense-in-depth behind it.
+      // Table may not exist yet if database/deposit_tracking.sql hasn't been
+      // run — fall back to those other guards rather than blocking deposits.
+      const { error: trackErr } = await supabaseAdmin.from('deposit_tracking').insert({
+        user_id:         userId,
+        currency:        'BTC',
+        onchain_balance: blockchainBTC,
+        amount_credited: depositBTC,
+      });
+      if (trackErr) {
+        if (/duplicate|unique/i.test(trackErr.message || '')) {
+          console.log(`[DepositMonitor] deposit_tracking: this on-chain balance for ${username} was already processed — skipping duplicate credit`);
+          return;
+        }
+        if (/relation .* does not exist/i.test(trackErr.message || '')) {
+          console.warn('[DepositMonitor] deposit_tracking table missing — run database/deposit_tracking.sql. Falling back to last_onchain_btc claim only.');
+        } else {
+          console.warn(`[DepositMonitor] deposit_tracking insert error for ${username} (non-fatal, continuing on other guards):`, trackErr.message);
+        }
+      }
+
       // ── Step 5a: Atomically claim this deposit (compare-and-swap on last_onchain_btc) ──
       // The upsert this replaced always wrote unconditionally, regardless of what the row
       // currently held — but blockchainBTC was read (Step 1) and this claim happens several
@@ -443,17 +473,39 @@ class DepositMonitor {
       // ── Step 5b: Credit wallets table FIRST (single source of truth) ────────
       // wallets is the authoritative balance table read by escrow, HD wallet routes,
       // and all balance checks. This must succeed before anything else.
-      const walletCreditErr = walRow
-        ? (await supabaseAdmin.from('wallets')
-            .update({ balance_btc: newBalanceBTC, updated_at: new Date().toISOString() })
-            .eq('user_id', userId)).error
-        : (await supabaseAdmin.from('wallets').insert({
+      // Optimistic lock on the UPDATE branch: the Step 5a claim above should already
+      // serialize concurrent invocations for this address, but this credit is the
+      // actual money movement — it must not depend on that alone. Multiple confirmed
+      // cases (duplicate DEPOSIT rows logged for the same on-chain transaction,
+      // ~0.2-0.4s apart — a realtime WebSocket trigger and a poll/manual-check
+      // trigger both reaching this far) showed the double LOG entry did not always
+      // mean a double CREDIT, but relying on that being true by luck isn't safe.
+      // Matching balance_btc against what was just read means a second concurrent
+      // writer gets 0 rows affected here and is treated as a lost race, not a
+      // silent double-credit.
+      let walletCreditErr = null, creditLostRace = false;
+      if (walRow) {
+        const { data: creditRows, error } = await supabaseAdmin.from('wallets')
+          .update({ balance_btc: newBalanceBTC, updated_at: new Date().toISOString() })
+          .eq('user_id', userId)
+          .eq('balance_btc', currentBalanceBTC)
+          .select('user_id');
+        walletCreditErr = error;
+        if (!error && (!creditRows || creditRows.length === 0)) creditLostRace = true;
+      } else {
+        walletCreditErr = (await supabaseAdmin.from('wallets').insert({
             user_id:            userId,
             address:            address,
             balance_btc:        depositBTC,
             locked_balance_btc: 0,
             updated_at:         new Date().toISOString(),
           })).error;
+      }
+
+      if (creditLostRace) {
+        console.log(`[DepositMonitor] wallets.balance_btc for ${username} changed concurrently — a parallel deposit check already credited this. Skipping duplicate credit and its log entry.`);
+        return;
+      }
 
       if (walletCreditErr) {
         // The atomic claim above (Step 5a) already advanced last_onchain_btc, marking this

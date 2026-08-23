@@ -125,6 +125,57 @@ class SwapService {
     return audited;
   }
 
+  // ── Ledger-true USDT balance check ────────────────────────────────────────
+  // Mirrors _assertLedgerTrueBtc above, for the direction that guard didn't cover
+  // (see its comment: "No equivalent audit table exists for USDT yet — this check
+  // only guards BTC→USDT"). There's no dedicated USDT integrity-sync cron/table,
+  // but balance_audit already accumulates trustworthy USDT snapshots as a side
+  // effect of normal operation: ESCROW_RELEASE/ESCROW_REFUND stamp the resulting
+  // USDT balance with change_btc=0 for USDT-currency trades (tradeEscrowService.js),
+  // and swapBtcToUsdt/swapUsdtToBtc below stamp their own resulting USDT balance
+  // the same way. change_btc=0 is what marks a row as "this new_balance is a USDT
+  // figure, not BTC" — every BTC-context reason (INTEGRITY_SYNC, BTC-side SWAP
+  // stamps, real BTC trades) writes a genuine non-zero change_btc in practice.
+  async _assertLedgerTrueUsdt(userId, walletUsdt) {
+    const { data: lastAudit, error } = await supabaseAdmin
+      .from('balance_audit')
+      .select('new_balance, created_at')
+      .eq('user_id', userId)
+      .eq('change_btc', 0)
+      .in('reason', ['ESCROW_RELEASE', 'ESCROW_REFUND', 'SWAP_USDT'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(`Ledger check failed: ${error.message}`);
+    if (!lastAudit) return walletUsdt; // no USDT integrity history yet — nothing to check against
+
+    const audited = parseFloat(lastAudit.new_balance);
+    const EPSILON = 0.00001; // rounding tolerance across chained 6-decimal operations
+    if (Math.abs(walletUsdt - audited) > EPSILON) {
+      throw new Error(
+        `Swap refused: your USDT balance ($${walletUsdt.toFixed(6)}) does not match your last verified ` +
+        `balance ($${audited.toFixed(6)} as of ${lastAudit.created_at}). This needs a balance review before ` +
+        `swapping — please contact support.`
+      );
+    }
+    return audited;
+  }
+
+  // ── Stamp a trusted USDT snapshot after a swap ────────────────────────────
+  // Keeps _assertLedgerTrueUsdt's reference current after every swap that moves
+  // USDT — without this, the check above would compare against a stale
+  // pre-swap figure on the next call and falsely block a legitimate swap.
+  // Fire-and-forget like every other balance_audit write in this codebase.
+  _stampUsdtLedger(userId, newUsdtBalance) {
+    supabaseAdmin.from('balance_audit').insert({
+      user_id:     userId,
+      change_btc:  0,
+      new_balance: newUsdtBalance,
+      reason:      'SWAP_USDT',
+      created_at:  new Date().toISOString(),
+    }).then(null, (e) => console.error(`[SwapService] ⚠️ USDT ledger stamp failed for ${userId.slice(0, 8)} — their next USDT→BTC swap may be falsely blocked:`, e.message));
+  }
+
   // ── Credit company fee wallet ─────────────────────────────────────────────
   // Throws on failure instead of swallowing errors — same fix applied to
   // tronHotWallet.creditFeeToCompany earlier: a blind update-with-no-error-
@@ -259,6 +310,7 @@ class SwapService {
       reason:      'SWAP',
       created_at:  new Date().toISOString(),
     }).then(null, (e) => console.error(`[SwapService] ⚠️ balance_audit stamp failed after BTC→USDT swap for ${userId.slice(0, 8)} — their next swap may be falsely blocked:`, e.message));
+    this._stampUsdtLedger(userId, newUsdt);
 
     // Platform fee → company wallet (in USDT). The user's own swap already
     // committed above — don't fail their successful swap over an internal
@@ -313,9 +365,10 @@ class SwapService {
     const netBtc    = parseFloat((grossBtc - feeBtc).toFixed(8));
 
     const wallet = await this._getWallet(userId);
-    if (wallet.usdt < amount) {
+    const ledgerUsdt = await this._assertLedgerTrueUsdt(userId, wallet.usdt);
+    if (ledgerUsdt < amount) {
       throw new Error(
-        `Insufficient USDT balance. Available: $${wallet.usdt.toFixed(2)} USDT, Required: $${amount.toFixed(2)} USDT`
+        `Insufficient USDT balance. Available: $${ledgerUsdt.toFixed(2)} USDT, Required: $${amount.toFixed(2)} USDT`
       );
     }
 
@@ -343,6 +396,7 @@ class SwapService {
       reason:      'SWAP',
       created_at:  new Date().toISOString(),
     }).then(null, (e) => console.error(`[SwapService] ⚠️ balance_audit stamp failed after USDT→BTC swap for ${userId.slice(0, 8)} — their next BTC→USDT swap may be falsely blocked:`, e.message));
+    this._stampUsdtLedger(userId, newUsdt);
 
     // Platform fee → company wallet (in BTC). The user's own swap already
     // committed above — don't fail their successful swap over an internal
