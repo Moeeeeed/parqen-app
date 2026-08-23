@@ -347,6 +347,13 @@ const offerCreationLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   keyGenerator: (req) => req.userId || req.ip,
+  // Without this, a legitimate user retrying after a validation rejection (e.g.
+  // SECURITY_DEPOSIT_REQUIRED while their gift-card deposit is still pending
+  // admin approval) burns through the same 10-request budget as successful
+  // creates — someone retrying out of confusion could rack up rejected 402s
+  // and then get hit with an unrelated 429 on top of the real problem. Only
+  // count requests that actually created a listing (2xx) against the limit.
+  skipFailedRequests: true,
   message: { error: 'Too many offers created recently. Please wait a few minutes before creating more.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -12745,6 +12752,14 @@ app.get('/api/wallet/usdt', verifyToken, async (req, res) => {
 // the percentage takes over. No boundary where a bigger withdrawal ever costs
 // less fee than a smaller one — that gap let users dodge the flat fee by
 // nudging just above the old $50 cutoff.
+// GET /api/wallet/usdt/send-status — lets the frontend proactively lock the
+// external-send form (instead of only failing at submit time) using the same
+// USDT_SENDS_DISABLED flag the POST route below already enforces. No auth
+// needed — this isn't sensitive, and the wallet page checks it on load.
+app.get('/api/wallet/usdt/send-status', (req, res) => {
+  res.json({ disabled: process.env.USDT_SENDS_DISABLED === 'true' });
+});
+
 app.post('/api/wallet/usdt/send', verifyToken, requireNotBanned, async (req, res) => {
   // Emergency kill-switch — SENDS_DISABLED=true in .env blocks external
   // withdrawals platform-wide without touching trading/internal transfers.
@@ -12755,13 +12770,14 @@ app.post('/api/wallet/usdt/send', verifyToken, requireNotBanned, async (req, res
     });
   }
   // USDT-only kill-switch (SENDS_DISABLED above is shared with BTC and would
-  // take both down together). TRON network delays meant USDT sends were
-  // getting stuck/rejected one at a time via manual CEO review — this blocks
-  // new external USDT withdrawal requests at the source instead, while BTC
-  // withdrawals, trading, and internal transfers stay unaffected.
+  // take both down together). This blocks new external USDT withdrawal
+  // requests at the source instead, while BTC withdrawals, trading, and
+  // internal transfers stay unaffected. Same wording as the frontend banner
+  // (Wallet.js) so a user never sees two different explanations for the same
+  // thing, whichever path they hit it through.
   if (process.env.USDT_SENDS_DISABLED === 'true') {
     return res.status(503).json({
-      error: 'USDT withdrawals are temporarily paused due to a delay on the Tron network. Please use BTC for now, or contact support.',
+      error: "We're experiencing send-out delays with USDT. Please kindly use BTC for now, or contact support.",
       code: 'USDT_SENDS_DISABLED',
     });
   }

@@ -233,9 +233,21 @@ class SwapService {
   }
 
   // ── Record swap in swap_transactions ─────────────────────────────────────
+  // Also logs a SWAP row in wallet_transactions for the user themselves — swap
+  // proceeds previously only existed in swap_transactions (and the FEE row
+  // below only covers the company wallet), so a user's swap history was
+  // invisible to anyone auditing wallet_transactions alone: legitimate swap
+  // proceeds looked like an unexplained credit with no record backing them.
+  // Not a single DB transaction (this codebase has no cross-table transaction
+  // primitive over the Supabase REST client — every multi-row write here is
+  // Promise.all'd best-effort, same as the swap_transactions/FEE pair already
+  // was) but the user's balance itself was already committed by the caller
+  // before this runs, so these three inserts are all after-the-fact bookkeeping
+  // for a transfer that has already happened, not the transfer itself.
   async _recordSwap(userId, fromCurrency, toCurrency, fromAmount, toAmount, rate, feeBtc, feeUsdt) {
     const now = new Date().toISOString();
-    const [swapResult, feeResult] = await Promise.all([
+    const isBtcSource = fromCurrency === 'BTC';
+    const [swapResult, userRowResult, feeResult] = await Promise.all([
       supabaseAdmin.from('swap_transactions').insert({
         user_id:       userId,
         from_currency: fromCurrency,
@@ -247,6 +259,17 @@ class SwapService {
         fee_usdt:      feeUsdt,
         status:        'COMPLETED',
         created_at:    now,
+      }),
+      // User-facing audit trail: SWAP row in wallet_transactions
+      supabaseAdmin.from('wallet_transactions').insert({
+        user_id:     userId,
+        type:        'SWAP',
+        currency:    toCurrency,
+        amount_btc:  isBtcSource ? -fromAmount : toAmount,
+        amount_usdt: isBtcSource ? toAmount : -fromAmount,
+        status:      'CONFIRMED',
+        notes:       `Swap: ${fromCurrency} → ${toCurrency} | sold ${isBtcSource ? '₿' : '₮'}${fromAmount} | received ${isBtcSource ? '₮' : '₿'}${toAmount} | rate ${rate}`,
+        created_at:  now,
       }),
       // Audit trail: FEE row in wallet_transactions for company wallet
       supabaseAdmin.from('wallet_transactions').insert({
@@ -260,8 +283,9 @@ class SwapService {
         created_at:  now,
       }),
     ]);
-    if (swapResult.error) console.warn('[SwapService] swap_transactions insert error:', swapResult.error.message);
-    if (feeResult.error)  console.warn('[SwapService] wallet_transactions fee insert error:', feeResult.error.message);
+    if (swapResult.error)   console.warn('[SwapService] swap_transactions insert error:', swapResult.error.message);
+    if (userRowResult.error) console.warn('[SwapService] wallet_transactions user SWAP row insert error:', userRowResult.error.message);
+    if (feeResult.error)    console.warn('[SwapService] wallet_transactions fee insert error:', feeResult.error.message);
   }
 
   // ── BTC → USDT ────────────────────────────────────────────────────────────

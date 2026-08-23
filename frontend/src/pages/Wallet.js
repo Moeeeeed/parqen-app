@@ -1650,6 +1650,15 @@ function UsdtWithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoF
   const [sending,       setSending]       = useState(false);
   const [sendError,     setSendError]     = useState('');
   const [sendResult,    setSendResult]    = useState(null);
+  // Defaults to locked (fail-safe) until the real flag loads, rather than
+  // briefly showing an editable form that would only fail once submitted.
+  const [sendLocked,    setSendLocked]    = useState(true);
+
+  useEffect(() => {
+    axios.get(`${API_URL}/wallet/usdt/send-status`)
+      .then(r => setSendLocked(!!r.data?.disabled))
+      .catch(() => setSendLocked(true)); // can't confirm it's safe — stay locked
+  }, []);
 
   // Fee = flat 2% of amount, no flat-dollar floor — mirrors backend calcFee()
   // in POST /api/wallet/usdt/send.
@@ -1757,8 +1766,27 @@ function UsdtWithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoF
             </p>
           </div>
 
-          {/* ── KYC gate ── */}
-          {kycStatus && !(kycStatus.email && kycStatus.phone && kycStatus.kyc) ? (
+          {/* ── Locked: USDT sends paused, don't let anyone fill out a form that
+              can only fail at submission — send them to BTC instead. ── */}
+          {sendLocked ? (
+            <div className="flex flex-col items-center text-center py-6 space-y-3">
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
+                style={{ background: 'linear-gradient(135deg, #f59e0b22, #f59e0b11)', border: '1px solid #f59e0b30' }}>
+                <AlertTriangle size={28} style={{ color: '#B45309' }} />
+              </div>
+              <div>
+                <h3 className="font-black text-base mb-1" style={{ color: '#1f2937' }}>USDT Sends Paused</h3>
+                <p className="text-sm max-w-xs" style={{ color: '#6b7280' }}>
+                  We're experiencing send-out delays with USDT. Please kindly use BTC for now, or contact support.
+                </p>
+              </div>
+              <button onClick={onClose}
+                className="w-full py-3.5 rounded-2xl text-white font-black text-sm transition hover:opacity-90"
+                style={{ background: `linear-gradient(135deg, ${C.forest}, ${C.green})` }}>
+                Close &amp; Send BTC Instead
+              </button>
+            </div>
+          ) : kycStatus && !(kycStatus.email && kycStatus.phone && kycStatus.kyc) ? (
             <div className="space-y-4">
               <div className="flex flex-col items-center text-center py-4">
                 <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-3"

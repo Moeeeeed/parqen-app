@@ -16,6 +16,30 @@ const BTC_REQUIRED_TYPES = ['SELL', 'SELL_BITCOIN', 'BUY_GIFT_CARD'];
 const MIN_USD = 10;
 const BTC_PRICE_APPROX = 88000; // used only when listing has no bitcoin_price set
 
+// Every auto-reactivation path below (balance recovered, seller came back) was
+// reactivating a PAUSED listing purely on balance/activity — none of them checked
+// whether its margin was still within the -10%/+10% (100% gift card) cap enforced
+// at creation. A listing paused specifically FOR an out-of-bounds margin (see
+// server.js's isListingMarginInBounds) would silently come back to life the next
+// time any of these ran — including reactivateReturnedSellers(), which runs on
+// every server startup. Repeated startups during active development were enough
+// on their own to keep undoing a manual pause of exactly this kind of listing.
+// Mirrors server.js's isListingMarginInBounds exactly — duplicated here rather
+// than shared since this module runs with its own supabaseAdmin client and no
+// import path back into server.js.
+function isListingMarginInBounds(listingType, margin) {
+  if (margin === null || margin === undefined || margin === '') return true;
+  const marginNum = parseFloat(margin);
+  if (isNaN(marginNum)) return true;
+  const upperType = (listingType || '').toUpperCase();
+  const isPricedType = ['SELL', 'SELL_BITCOIN', 'BUY', 'BUY_BITCOIN', 'BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(upperType);
+  if (!isPricedType) return true;
+  const isGiftCardPriced = ['BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(upperType);
+  const marginMin = -10;
+  const marginMax = isGiftCardPriced ? 100 : 10;
+  return marginNum >= marginMin && marginNum <= marginMax;
+}
+
 // Gift-card vendors don't need wallet funds to fulfil a sale — they hand over a card,
 // the buyer sends the crypto, not the other way round. But a vendor who has drained
 // their own wallet down near zero right after locking the mandatory $200 seller
@@ -85,7 +109,7 @@ async function updateOfferStatus(userId) {
 
     const { data: offers } = await supabaseAdmin
       .from('listings')
-      .select('id, status, listing_type, asset')
+      .select('id, status, listing_type, asset, margin')
       .eq('seller_id', userId)
       .in('listing_type', BTC_REQUIRED_TYPES)
       .in('status', ['ACTIVE', 'PAUSED']);
@@ -94,7 +118,7 @@ async function updateOfferStatus(userId) {
 
     const balUsdFor = (o) => o.asset === 'USDT' ? usdtBalUsd : btcBalUsd;
     const toPause      = offers.filter(o => o.status === 'ACTIVE'  && balUsdFor(o) < MIN_USD).map(o => o.id);
-    const toReactivate = offers.filter(o => o.status === 'PAUSED'  && balUsdFor(o) >= MIN_USD).map(o => o.id);
+    const toReactivate = offers.filter(o => o.status === 'PAUSED'  && balUsdFor(o) >= MIN_USD && isListingMarginInBounds(o.listing_type, o.margin)).map(o => o.id);
 
     if (toPause.length > 0) {
       await supabaseAdmin.from('listings')
@@ -146,7 +170,7 @@ async function syncAllOfferStatuses() {
     // Fetch all ACTIVE and PAUSED BTC/USDT-required listings
     const { data: listings, error } = await supabaseAdmin
       .from('listings')
-      .select('id, seller_id, status, listing_type, asset, bitcoin_price, min_limit_usd')
+      .select('id, seller_id, status, listing_type, asset, bitcoin_price, min_limit_usd, margin')
       .in('listing_type', BTC_REQUIRED_TYPES)
       .in('status', ['ACTIVE', 'PAUSED']);
 
@@ -182,7 +206,7 @@ async function syncAllOfferStatuses() {
       // Pause if balance < $10 or can't meet the offer's own minimum
       const cantFulfil = balUsd < MIN_USD || (minUsd > 0 && balUsd < minUsd);
       if (listing.status === 'ACTIVE'  && cantFulfil)  toPause.push(listing.id);
-      if (listing.status === 'PAUSED'  && !cantFulfil) toReactivate.push(listing.id);
+      if (listing.status === 'PAUSED'  && !cantFulfil && isListingMarginInBounds(listing.listing_type, listing.margin)) toReactivate.push(listing.id);
 
       // NOTE: we intentionally do NOT permanently cap max_limit_usd/max_limit_local to the
       // live balance here. That used to clamp max down (with a $10 floor) but never restore
@@ -372,7 +396,7 @@ async function reactivateReturnedSellers() {
 
     const { data: pausedListings, error } = await supabaseAdmin
       .from('listings')
-      .select('id, seller_id, listing_type, asset')
+      .select('id, seller_id, listing_type, asset, margin')
       .eq('status', 'PAUSED');
     if (error) { console.error('[reactivateReturnedSellers] listings query:', error.message); return; }
     if (!pausedListings?.length) return;
@@ -398,8 +422,13 @@ async function reactivateReturnedSellers() {
     const candidates = pausedListings.filter(l => activeSellerIds.has(l.seller_id));
     if (!candidates.length) return;
 
-    const nonGated = candidates.filter(l => !BTC_REQUIRED_TYPES.includes(l.listing_type));
-    const gated = candidates.filter(l => BTC_REQUIRED_TYPES.includes(l.listing_type));
+    // A listing paused for an out-of-bounds margin must not come back just because
+    // its seller logged back in — that pause has nothing to do with activity or
+    // balance, and "came back within 10 days" is not a margin review.
+    const marginOk = candidates.filter(l => isListingMarginInBounds(l.listing_type, l.margin));
+
+    const nonGated = marginOk.filter(l => !BTC_REQUIRED_TYPES.includes(l.listing_type));
+    const gated = marginOk.filter(l => BTC_REQUIRED_TYPES.includes(l.listing_type));
 
     let toReactivate = nonGated.map(l => l.id);
 

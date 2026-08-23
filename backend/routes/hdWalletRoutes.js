@@ -616,6 +616,20 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
     feeLabel = feeResult.label;
     amountUserReceives = parseFloat((amount - platformFee).toFixed(8));
 
+    // Bitcoin's dust relay policy rejects any on-chain output below ~546 sats —
+    // the network itself will never broadcast one. Nothing upstream of this
+    // ever checked amountUserReceives (what actually gets sent) against that,
+    // so a request just above 0 could reach CEO approval, fail to broadcast
+    // every single time, and revert back to the queue in a permanent loop —
+    // exactly what happened to a 126-sat request. Reject it here instead,
+    // with a clear reason, before it can ever be queued for approval.
+    const MIN_ONCHAIN_SEND_SATS = 1000; // safely above the 546-sat dust limit
+    if (Math.round(amountUserReceives * 1e8) < MIN_ONCHAIN_SEND_SATS) {
+      return res.status(400).json({
+        error: `Withdrawal too small to send on-chain. After the ${feeLabel} fee, ₿${amountUserReceives.toFixed(8)} would be sent — Bitcoin's network minimum is ₿${(MIN_ONCHAIN_SEND_SATS / 1e8).toFixed(8)}. Please withdraw a larger amount.`,
+      });
+    }
+
     if (available < amount) {
       return res.status(400).json({
         error: `Insufficient balance. Available: ₿${available.toFixed(8)}, requested ₿${amount.toFixed(8)} (includes ${feeLabel} = ₿${platformFee.toFixed(8)})`,

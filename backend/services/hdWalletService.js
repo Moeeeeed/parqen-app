@@ -470,6 +470,19 @@ class HDWalletService {
 
     const amountSats = Math.floor(amountBTC * 1e8);
 
+    // The destination output was never checked against Bitcoin's ~546-sat dust
+    // relay limit (only the change output, below, ever was) — a send at or
+    // below dust builds and signs fine but the network refuses to broadcast
+    // it, throwing at the broadcast step every time. The caller (CEO-approval
+    // route) then correctly reverts the withdrawal back to PENDING_APPROVAL
+    // since nothing broadcast — which just means it fails the exact same way
+    // on the next approval attempt too, forever. Reject it here as a second
+    // layer behind the request-time check in routes/hdWalletRoutes.js /send,
+    // so any other caller of sendBitcoin/sendWithdrawal is covered too.
+    if (amountSats <= 546) {
+      throw new Error(`DUST_AMOUNT: ${amountSats} sats is at or below Bitcoin's dust limit (546 sats) and cannot be broadcast.`);
+    }
+
     if (inputSum < amountSats) {
       throw new Error(
         `INSUFFICIENT_UTXOS: have ${inputSum} sats, need ${amountSats} sats`
