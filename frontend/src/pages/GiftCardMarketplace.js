@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import { useRates } from '../contexts/RatesContext';
 import { useNavigate, Link } from 'react-router-dom';
 import SEO from '../components/SEO';
@@ -1706,18 +1706,21 @@ useEffect(() => {
                               </div>
                             ))
                             : (lastRegion = c.region, null);
-                          return [regionHdr,
-                            <button key={c.code} onClick={() => { setSelCurrency(c); setShowCurrency(false); setCurrencySearch(''); }}
-                              className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 border-b last:border-0 transition"
-                              style={{ borderColor: C.g50, backgroundColor: selCurrency.code === c.code ? `${C.forest}08` : 'transparent' }}>
-                              <span className="text-sm font-bold w-6 text-center flex-shrink-0" style={{ color: C.forest }}>{c.symbol}</span>
-                              <div className="flex-1 text-left">
-                                <p className="font-bold text-xs" style={{ color: C.g800 }}>{c.code}</p>
-                                <p className="text-xs" style={{ color: C.g400 }}>{c.name}</p>
-                              </div>
-                              {selCurrency.code === c.code && <CheckCircle size={13} style={{ color: C.green }} />}
-                            </button>
-                          ];
+                          return (
+                            <Fragment key={c.code}>
+                              {regionHdr}
+                              <button onClick={() => { setSelCurrency(c); setShowCurrency(false); setCurrencySearch(''); }}
+                                className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 border-b last:border-0 transition"
+                                style={{ borderColor: C.g50, backgroundColor: selCurrency.code === c.code ? `${C.forest}08` : 'transparent' }}>
+                                <span className="text-sm font-bold w-6 text-center flex-shrink-0" style={{ color: C.forest }}>{c.symbol}</span>
+                                <div className="flex-1 text-left">
+                                  <p className="font-bold text-xs" style={{ color: C.g800 }}>{c.code}</p>
+                                  <p className="text-xs" style={{ color: C.g400 }}>{c.name}</p>
+                                </div>
+                                {selCurrency.code === c.code && <CheckCircle size={13} style={{ color: C.green }} />}
+                              </button>
+                            </Fragment>
+                          );
                         });
                       })()}
                     </div>
@@ -1839,15 +1842,18 @@ useEffect(() => {
                               <span className="text-xs font-bold uppercase tracking-wider" style={{ color: COUNTRY_REGIONS[c.region] || C.g500 }}>{c.region}</span>
                             </div>)
                             : (c.region && (lastReg = c.region), null);
-                          return [regHdr,
-                            <button key={c.code} onClick={() => { setSelCountry(c); setShowCountry(false); setCountrySearch(''); }}
-                              className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50 border-b last:border-0 transition"
-                              style={{ borderColor: C.g50, backgroundColor: selCountry.code === c.code ? `${C.forest}08` : 'transparent' }}>
-                              <span className="text-sm">{c.flag}</span>
-                              <span className="text-xs font-bold flex-1 text-left" style={{ color: C.g800 }}>{c.name}</span>
-                              {selCountry.code === c.code && <CheckCircle size={13} style={{ color: C.green }} />}
-                            </button>
-                          ];
+                          return (
+                            <Fragment key={c.code}>
+                              {regHdr}
+                              <button onClick={() => { setSelCountry(c); setShowCountry(false); setCountrySearch(''); }}
+                                className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50 border-b last:border-0 transition"
+                                style={{ borderColor: C.g50, backgroundColor: selCountry.code === c.code ? `${C.forest}08` : 'transparent' }}>
+                                <span className="text-sm">{c.flag}</span>
+                                <span className="text-xs font-bold flex-1 text-left" style={{ color: C.g800 }}>{c.name}</span>
+                                {selCountry.code === c.code && <CheckCircle size={13} style={{ color: C.green }} />}
+                              </button>
+                            </Fragment>
+                          );
                         });
                       })()}
                     </div>
@@ -2055,14 +2061,14 @@ useEffect(() => {
                 {icon:'⚡',label:'Verify',  sub:'stays safe'},
                 {icon:'₿', label:'1 Trade', sub:'$2 unlocks'},
               ].map(({icon,label,sub},i,arr)=>(
-                <>
-                  <div key={label} style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.14)',borderRadius:8,padding:'6px 4px',textAlign:'center'}}>
+                <Fragment key={label}>
+                  <div style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.14)',borderRadius:8,padding:'6px 4px',textAlign:'center'}}>
                     <div style={{fontSize:13,lineHeight:1,marginBottom:2}}>{icon}</div>
                     <div style={{fontSize:9,fontWeight:800,color:'#fff',lineHeight:1}}>{label}</div>
                     <div style={{fontSize:7,color:'rgba(255,255,255,0.45)',marginTop:2,lineHeight:1}}>{sub}</div>
                   </div>
-                  {i < arr.length-1 && <div key={`sep-${i}`} style={{fontSize:10,color:'rgba(255,255,255,0.25)',textAlign:'center',flexShrink:0}}>›</div>}
-                </>
+                  {i < arr.length-1 && <div style={{fontSize:10,color:'rgba(255,255,255,0.25)',textAlign:'center',flexShrink:0}}>›</div>}
+                </Fragment>
               ))}
             </div>
           </div>

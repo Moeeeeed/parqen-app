@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import { useRates } from '../contexts/RatesContext';
 import { useNavigate, Link } from 'react-router-dom';
 import SEO from '../components/SEO';
@@ -1695,15 +1695,18 @@ export default function BuyBitcoin({user}) {
                           <span className="text-xs font-black uppercase tracking-wider" style={{color:PM_CAT_COLORS[p.cat]||C.g500}}>{p.cat}</span>
                         </div>
                       )) : (lastCat = p.cat || lastCat, null);
-                      return [catHeader, (
-                        <button key={p.value} onClick={()=>{setSelPayment(p.value);setShowPayment(false);setPaymentSearch('');}}
-                          className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 transition"
-                          style={{backgroundColor:selPayment===p.value?`${C.forest}08`:'transparent'}}>
-                          <span className="text-sm flex-shrink-0">{p.icon}</span>
-                          <span className="flex-1 text-left font-semibold text-xs leading-tight" style={{color:C.g800}}>{p.label}</span>
-                          {selPayment===p.value && <CheckCircle size={11} style={{color:C.green,flexShrink:0}}/>}
-                        </button>
-                      )];
+                      return (
+                        <Fragment key={p.value}>
+                          {catHeader}
+                          <button onClick={()=>{setSelPayment(p.value);setShowPayment(false);setPaymentSearch('');}}
+                            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 transition"
+                            style={{backgroundColor:selPayment===p.value?`${C.forest}08`:'transparent'}}>
+                            <span className="text-sm flex-shrink-0">{p.icon}</span>
+                            <span className="flex-1 text-left font-semibold text-xs leading-tight" style={{color:C.g800}}>{p.label}</span>
+                            {selPayment===p.value && <CheckCircle size={11} style={{color:C.green,flexShrink:0}}/>}
+                          </button>
+                        </Fragment>
+                      );
                     });
                   })()}
                   </div>
@@ -1756,18 +1759,21 @@ export default function BuyBitcoin({user}) {
                               <span className="text-xs font-black uppercase tracking-wider" style={{color:COUNTRY_REGIONS[c.region]||C.g500}}>{c.region}</span>
                             </div>)
                           : (c.region&&(lastReg=c.region), null);
-                        return [regHdr,
-                          <button key={c.code} onClick={()=>{setSelCountry(c);setShowCountry(false);setCountrySearch('');if(c.currency){const matched=CURRENCIES.find(cur=>cur.code===c.currency);if(matched)setSelCurrency(matched);}}}
-                            className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50 border-b last:border-0 transition"
-                            style={{borderColor:C.g50,backgroundColor:selCountry.code===c.code?`${C.forest}08`:'transparent'}}>
-                            <span className="text-base flex-shrink-0">{c.flag}</span>
-                            <div className="flex-1 text-left min-w-0">
-                              <p className="font-bold text-xs truncate" style={{color:C.g800}}>{c.name}</p>
-                              {c.currency&&<p className="text-xs" style={{color:C.g400}}>{c.symbol} {c.currency}</p>}
-                            </div>
-                            {selCountry.code===c.code&&<CheckCircle size={11} style={{color:C.green,flexShrink:0}}/>}
-                          </button>
-                        ];
+                        return (
+                          <Fragment key={c.code}>
+                            {regHdr}
+                            <button onClick={()=>{setSelCountry(c);setShowCountry(false);setCountrySearch('');if(c.currency){const matched=CURRENCIES.find(cur=>cur.code===c.currency);if(matched)setSelCurrency(matched);}}}
+                              className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50 border-b last:border-0 transition"
+                              style={{borderColor:C.g50,backgroundColor:selCountry.code===c.code?`${C.forest}08`:'transparent'}}>
+                              <span className="text-base flex-shrink-0">{c.flag}</span>
+                              <div className="flex-1 text-left min-w-0">
+                                <p className="font-bold text-xs truncate" style={{color:C.g800}}>{c.name}</p>
+                                {c.currency&&<p className="text-xs" style={{color:C.g400}}>{c.symbol} {c.currency}</p>}
+                              </div>
+                              {selCountry.code===c.code&&<CheckCircle size={11} style={{color:C.green,flexShrink:0}}/>}
+                            </button>
+                          </Fragment>
+                        );
                       });
                     })()}
                   </div>
@@ -1979,14 +1985,14 @@ export default function BuyBitcoin({user}) {
                 {icon:<Zap size={13} style={{color:'#fff'}}/>,label:'Verify',  sub:'stays safe'},
                 {icon:<Bitcoin size={13} style={{color:'#fff'}}/>, label:'1 Trade', sub:'$2 unlocks'},
               ].map(({icon,label,sub},i,arr)=>(
-                <>
-                  <div key={label} style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.14)',borderRadius:8,padding:'6px 4px',textAlign:'center'}}>
+                <Fragment key={label}>
+                  <div style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.14)',borderRadius:8,padding:'6px 4px',textAlign:'center'}}>
                     <div style={{fontSize:13,lineHeight:1,marginBottom:2}}>{icon}</div>
                     <div style={{fontSize:9,fontWeight:800,color:'#fff',lineHeight:1}}>{label}</div>
                     <div style={{fontSize:7,color:'rgba(255,255,255,0.45)',marginTop:2,lineHeight:1}}>{sub}</div>
                   </div>
-                  {i < arr.length-1 && <div key={`sep-${i}`} style={{fontSize:10,color:'rgba(255,255,255,0.25)',textAlign:'center',flexShrink:0}}>›</div>}
-                </>
+                  {i < arr.length-1 && <div style={{fontSize:10,color:'rgba(255,255,255,0.25)',textAlign:'center',flexShrink:0}}>›</div>}
+                </Fragment>
               ))}
             </div>
           </div>

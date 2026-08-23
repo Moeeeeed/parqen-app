@@ -16,6 +16,20 @@ import { toast } from 'react-toastify';
 import CountryFlag from '../components/CountryFlag';
 import ActiveTradeCard from '../components/ActiveTradeCard';
 import { BadgeChip, SafetyBadge } from '../lib/badge';
+import { useRates } from '../contexts/RatesContext';
+
+// Mirrors ListingDetail.js / GiftCardMarketplace.js's getRateLocal: a 'fixed' priced
+// offer's bitcoin_price is already the quoted rate (local currency per asset unit,
+// margin doesn't apply to it); a 'market' priced offer is live price * (1 + margin%).
+// This page trades in USD only, so no separate local-currency FX factor is needed.
+const getOfferRate = (offer, liveBtcUsd) => {
+  const isUsdt = (offer.asset || '').toUpperCase() === 'USDT';
+  if (offer.pricing_type === 'fixed') {
+    const fixed = parseFloat(offer.bitcoin_price || 0);
+    if (fixed > (isUsdt ? 0.01 : 100)) return fixed;
+  }
+  return (isUsdt ? 1 : (liveBtcUsd || 88000)) * (1 + parseFloat(offer.margin || 0) / 100);
+};
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -45,14 +59,14 @@ const CARD_TYPES = [
 ];
 
 // Buyer Offer Card Component
-function BuyerOfferCard({ offer, onSelect, user }) {
+function BuyerOfferCard({ offer, onSelect, user, liveBtcUsd }) {
   const navigate = useNavigate();
   const buyer = offer.users || {};
   const rating = buyer.average_rating || 0;
   const totalTrades = buyer.total_trades || 0;
   const completionRate = buyer.completion_rate || 98;
   const margin = offer.margin || 0;
-  const btcRate = offer.bitcoin_price || 0.00444;
+  const btcRate = getOfferRate(offer, liveBtcUsd);
   const minAmount = offer.min_amount || offer.minAmount || 10;
   const maxAmount = offer.max_amount || offer.maxAmount || 500;
   const paymentMethods = offer.payment_methods || ['bank_transfer'];
@@ -138,7 +152,7 @@ function BuyerOfferCard({ offer, onSelect, user }) {
           <div className="text-center">
             <p className="text-xs text-gray-500">Rate</p>
             <p className="text-sm font-bold" style={{ color: PRAQEN.primary }}>
-              1 BTC ≈ ${formatNumber(btcRate * 45000)}
+              1 BTC ≈ ${formatNumber(btcRate)}
             </p>
           </div>
           <div className="text-center">
@@ -182,6 +196,7 @@ function BuyerOfferCard({ offer, onSelect, user }) {
 
 export default function SellGiftCardMarketplace({ user }) {
   const navigate = useNavigate();
+  const { btcUsd: liveBtcUsd } = useRates();
   const [searchParams] = useSearchParams();
   const cardTypeParam = searchParams.get('type') || 'ecode';
   
@@ -298,9 +313,10 @@ export default function SellGiftCardMarketplace({ user }) {
     setSubmitting(true);
     try {
       const token = localStorage.getItem('token') || localStorage.getItem('authToken') || sessionStorage.getItem('token');
+      const rate = getOfferRate(selectedOffer, liveBtcUsd);
       const response = await axios.post(`${API_URL}/trades`, {
         listingId:  selectedOffer.id,
-        amountBtc:  (parseFloat(tradeAmount) / 45000).toFixed(8),
+        amountBtc:  (parseFloat(tradeAmount) / rate).toFixed(8),
         trade_type: 'SELL',
       }, { headers: { Authorization: `Bearer ${token}` } });
 
@@ -476,11 +492,12 @@ export default function SellGiftCardMarketplace({ user }) {
         ) : (
           <div className="space-y-3">
             {filteredOffers.map((offer) => (
-              <BuyerOfferCard 
-                key={offer.id} 
-                offer={offer} 
+              <BuyerOfferCard
+                key={offer.id}
+                offer={offer}
                 onSelect={handleSelectOffer}
                 user={user}
+                liveBtcUsd={liveBtcUsd}
               />
             ))}
           </div>
@@ -516,7 +533,9 @@ export default function SellGiftCardMarketplace({ user }) {
       </div>
 
       {/* Trade Modal */}
-      {showTradeModal && selectedOffer && (
+      {showTradeModal && selectedOffer && (() => {
+        const modalRate = getOfferRate(selectedOffer, liveBtcUsd);
+        return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6">
             <div className="flex justify-between items-center mb-4">
@@ -525,12 +544,12 @@ export default function SellGiftCardMarketplace({ user }) {
                 <X size={24} />
               </button>
             </div>
-            
+
             <div className="space-y-4">
               <div className="p-3 rounded-lg" style={{ backgroundColor: PRAQEN.lightBg }}>
                 <div className="flex justify-between mb-2">
                   <span className="text-sm text-gray-600">Buyer's Rate:</span>
-                  <span className="font-semibold">1 BTC ≈ ${(selectedOffer.bitcoin_price * 45000).toFixed(2)} USD</span>
+                  <span className="font-semibold">1 BTC ≈ ${modalRate.toFixed(2)} USD</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">Buyer since:</span>
@@ -556,13 +575,13 @@ export default function SellGiftCardMarketplace({ user }) {
               <div className="p-3 rounded-lg" style={{ backgroundColor: PRAQEN.lightBg }}>
                 <p className="text-sm font-semibold mb-2">You Will Receive:</p>
                 <p className="text-2xl font-bold text-orange-600">
-                  {(parseFloat(tradeAmount) / 45000).toFixed(8)} BTC
+                  {(parseFloat(tradeAmount || 0) / modalRate).toFixed(8)} BTC
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
                   ≈ ${tradeAmount} USD value
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  Platform fee: 0.5% ({(parseFloat(tradeAmount) / 45000 * 0.005).toFixed(8)} BTC)
+                  Platform fee: 0.5% ({(parseFloat(tradeAmount || 0) / modalRate * 0.005).toFixed(8)} BTC)
                 </p>
               </div>
               
@@ -584,7 +603,8 @@ export default function SellGiftCardMarketplace({ user }) {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
