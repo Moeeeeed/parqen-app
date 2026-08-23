@@ -68,44 +68,68 @@ if (process.env.NODE_ENV === 'production') {
   console.warn = noop;
 }
 
+// ── lazyRetry: auto-reload once if a lazy chunk fails to load ─────────────
+// When a chunk fails (e.g. stale cache after a deploy), clear browser caches
+// and retry the import once before giving up.
+function lazyRetry(importFn) {
+  return lazy(() =>
+    importFn().catch((err) => {
+      // Clear service-worker registrations so stale chunks aren't served
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then((regs) => {
+          regs.forEach((reg) => reg.unregister());
+        });
+      }
+      // Clear the Cache API as well
+      if ('caches' in window) {
+        caches.keys().then((names) => {
+          names.forEach((name) => caches.delete(name));
+        });
+      }
+      // Retry once
+      return importFn();
+    })
+  );
+}
+
 // ── Lazy-loaded pages ────────────────────────────────────────────────────────
-const GiftCardMarketplace = lazy(() => import('./pages/GiftCardMarketplace'));
-const Blog = lazy(() => import('./pages/Blog'));
-const BlogPost = lazy(() => import('./pages/BlogPost'));
-const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
-const TermsOfService = lazy(() => import('./pages/TermsOfService'));
-const LandingPage = lazy(() => import('./pages/LandingPage'));
-const Register = lazy(() => import('./pages/Register'));
-const Login = lazy(() => import('./pages/Login'));
-const CreateListing = lazy(() => import('./pages/CreateListing'));
-const CreateOffer = lazy(() => import('./pages/CreateOffer'));
-const ListingDetail = lazy(() => import('./pages/ListingDetail'));
-const MyTrades = lazy(() => import('./pages/MyTrades'));
-const TradeDetail = lazy(() => import('./pages/TradeDetail'));
-const Profile = lazy(() => import('./pages/Profile'));
-const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
-const ModeratorDashboard = lazy(() => import('./pages/ModeratorDashboard'));
-const TeamDashboard = lazy(() => import('./pages/TeamDashboard'));
-const CeoDashboard = lazy(() => import('./pages/CeoDashboard'));
-const EscrowVerification = lazy(() => import('./pages/EscrowVerification'));
-const WalletPage = lazy(() => import('./pages/Wallet'));
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Settings = lazy(() => import('./pages/Settings'));
-const MyListings = lazy(() => import('./pages/MyListings'));
-const EditListing = lazy(() => import('./pages/EditListing'));
-const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
-const Feedback = lazy(() => import('./pages/Feedback'));
-const TradeChat = lazy(() => import('./pages/TradeChat'));
-const BuyBitcoin = lazy(() => import('./pages/BuyBitcoin'));
-const SellBitcoin = lazy(() => import('./pages/SellBitcoin'));
-const BuyUSDT = lazy(() => import('./pages/BuyUSDT'));
-const SellUSDT = lazy(() => import('./pages/SellUSDT'));
-const SellGiftCardMarketplace = lazy(() => import('./pages/SellGiftCardMarketplace'));
-const AgentDashboard = lazy(() => import('./pages/AgentDashboard'));
-const VerifyOTP = lazy(() => import('./pages/VerifyOTP'));
-const ResetPassword = lazy(() => import('./pages/ResetPassword'));
-const EmailConfirmation = lazy(() => import('./pages/EmailConfirmation'));
-const CheckEmail = lazy(() => import('./pages/CheckEmail'));
+const GiftCardMarketplace = lazyRetry(() => import('./pages/GiftCardMarketplace'));
+const Blog = lazyRetry(() => import('./pages/Blog'));
+const BlogPost = lazyRetry(() => import('./pages/BlogPost'));
+const PrivacyPolicy = lazyRetry(() => import('./pages/PrivacyPolicy'));
+const TermsOfService = lazyRetry(() => import('./pages/TermsOfService'));
+const LandingPage = lazyRetry(() => import('./pages/LandingPage'));
+const Register = lazyRetry(() => import('./pages/Register'));
+const Login = lazyRetry(() => import('./pages/Login'));
+const CreateListing = lazyRetry(() => import('./pages/CreateListing'));
+const CreateOffer = lazyRetry(() => import('./pages/CreateOffer'));
+const ListingDetail = lazyRetry(() => import('./pages/ListingDetail'));
+const MyTrades = lazyRetry(() => import('./pages/MyTrades'));
+const TradeDetail = lazyRetry(() => import('./pages/TradeDetail'));
+const Profile = lazyRetry(() => import('./pages/Profile'));
+const AdminDashboard = lazyRetry(() => import('./pages/AdminDashboard'));
+const ModeratorDashboard = lazyRetry(() => import('./pages/ModeratorDashboard'));
+const TeamDashboard = lazyRetry(() => import('./pages/TeamDashboard'));
+const CeoDashboard = lazyRetry(() => import('./pages/CeoDashboard'));
+const EscrowVerification = lazyRetry(() => import('./pages/EscrowVerification'));
+const WalletPage = lazyRetry(() => import('./pages/Wallet'));
+const Dashboard = lazyRetry(() => import('./pages/Dashboard'));
+const Settings = lazyRetry(() => import('./pages/Settings'));
+const MyListings = lazyRetry(() => import('./pages/MyListings'));
+const EditListing = lazyRetry(() => import('./pages/EditListing'));
+const ForgotPassword = lazyRetry(() => import('./pages/ForgotPassword'));
+const Feedback = lazyRetry(() => import('./pages/Feedback'));
+const TradeChat = lazyRetry(() => import('./pages/TradeChat'));
+const BuyBitcoin = lazyRetry(() => import('./pages/BuyBitcoin'));
+const SellBitcoin = lazyRetry(() => import('./pages/SellBitcoin'));
+const BuyUSDT = lazyRetry(() => import('./pages/BuyUSDT'));
+const SellUSDT = lazyRetry(() => import('./pages/SellUSDT'));
+const SellGiftCardMarketplace = lazyRetry(() => import('./pages/SellGiftCardMarketplace'));
+const AgentDashboard = lazyRetry(() => import('./pages/AgentDashboard'));
+const VerifyOTP = lazyRetry(() => import('./pages/VerifyOTP'));
+const ResetPassword = lazyRetry(() => import('./pages/ResetPassword'));
+const EmailConfirmation = lazyRetry(() => import('./pages/EmailConfirmation'));
+const CheckEmail = lazyRetry(() => import('./pages/CheckEmail'));
 
 // ── Page Loader ──────────────────────────────────────────────────────────────
 function PageLoader() {
