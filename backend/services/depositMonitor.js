@@ -443,17 +443,39 @@ class DepositMonitor {
       // ── Step 5b: Credit wallets table FIRST (single source of truth) ────────
       // wallets is the authoritative balance table read by escrow, HD wallet routes,
       // and all balance checks. This must succeed before anything else.
-      const walletCreditErr = walRow
-        ? (await supabaseAdmin.from('wallets')
-            .update({ balance_btc: newBalanceBTC, updated_at: new Date().toISOString() })
-            .eq('user_id', userId)).error
-        : (await supabaseAdmin.from('wallets').insert({
+      // Optimistic lock on the UPDATE branch: the Step 5a claim above should already
+      // serialize concurrent invocations for this address, but this credit is the
+      // actual money movement — it must not depend on that alone. Multiple confirmed
+      // cases (duplicate DEPOSIT rows logged for the same on-chain transaction,
+      // ~0.2-0.4s apart — a realtime WebSocket trigger and a poll/manual-check
+      // trigger both reaching this far) showed the double LOG entry did not always
+      // mean a double CREDIT, but relying on that being true by luck isn't safe.
+      // Matching balance_btc against what was just read means a second concurrent
+      // writer gets 0 rows affected here and is treated as a lost race, not a
+      // silent double-credit.
+      let walletCreditErr = null, creditLostRace = false;
+      if (walRow) {
+        const { data: creditRows, error } = await supabaseAdmin.from('wallets')
+          .update({ balance_btc: newBalanceBTC, updated_at: new Date().toISOString() })
+          .eq('user_id', userId)
+          .eq('balance_btc', currentBalanceBTC)
+          .select('user_id');
+        walletCreditErr = error;
+        if (!error && (!creditRows || creditRows.length === 0)) creditLostRace = true;
+      } else {
+        walletCreditErr = (await supabaseAdmin.from('wallets').insert({
             user_id:            userId,
             address:            address,
             balance_btc:        depositBTC,
             locked_balance_btc: 0,
             updated_at:         new Date().toISOString(),
           })).error;
+      }
+
+      if (creditLostRace) {
+        console.log(`[DepositMonitor] wallets.balance_btc for ${username} changed concurrently — a parallel deposit check already credited this. Skipping duplicate credit and its log entry.`);
+        return;
+      }
 
       if (walletCreditErr) {
         // The atomic claim above (Step 5a) already advanced last_onchain_btc, marking this
