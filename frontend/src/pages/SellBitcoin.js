@@ -1099,7 +1099,15 @@ export default function SellBitcoin({user}) {
   const [activeGuide, setActiveGuide] = useState(null);
   const guideTimer   = useRef(null);
 
-  function handleGuideEnter(id) { clearTimeout(guideTimer.current); setActiveGuide(id); }
+  // Touch devices synthesize mouseenter/focus on tap with no real mouseleave to
+  // clear it afterward, so these hover-hint bubbles were getting stuck open over
+  // the controls beneath them (reported: stuck open over the BTC/USDT picker on
+  // mobile). Hover-hint tooltips only make sense where hover exists — skip them
+  // entirely on touch; the field labels alone are still there for touch users.
+  function handleGuideEnter(id) {
+    if (typeof window !== 'undefined' && window.matchMedia && !window.matchMedia('(hover: hover)').matches) return;
+    clearTimeout(guideTimer.current); setActiveGuide(id);
+  }
   function handleGuideLeave()   { guideTimer.current = setTimeout(() => setActiveGuide(null), 140); }
 
   const GUIDE_TOTAL = 4;

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Shield, ShoppingCart, Gift, TrendingUp,
   Wallet, MessageCircle, X, ChevronRight,
@@ -88,12 +88,20 @@ const STEPS = [
   },
 ];
 
+// Only interrupt the user with this tour on a "safe" landing page — popping up
+// mid-flow (e.g. over the Create Offer wizard) silently ate the Publish/Continue
+// click with no error shown, because the click landed on this modal's card instead.
+const ONBOARDING_MODAL_ALLOWED_PATHS = ['/', '/dashboard'];
+
 export default function WelcomeModal({ user, onClose }) {
   const [step, setStep] = useState(0);
   const navigate = useNavigate();
+  const location = useLocation();
   const current = STEPS[step];
   const isLast = step === STEPS.length - 1;
   const name = user?.username || user?.full_name?.split(' ')[0] || '';
+
+  if (!ONBOARDING_MODAL_ALLOWED_PATHS.includes(location.pathname)) return null;
 
   const handleClose = () => {
     if (user?.id) localStorage.setItem(`prq_welcomed_${user.id}`, '1');

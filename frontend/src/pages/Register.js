@@ -691,15 +691,27 @@ export default function Register({ onLogin }) {
       if (res.data.success && res.data.token) {
         localStorage.setItem('token', res.data.token);
         localStorage.removeItem('referralCode');
-        onLogin(res.data.user, res.data.token);
+        // Don't call onLogin() yet — it sets `user` in App.js, and App.js's
+        // /register route is `!user ? <Register/> : <Navigate to="/"/>`. Setting
+        // user while we're still sitting on /register (to show the migration
+        // gate below) makes the parent swap this whole component out for a
+        // redirect to "/" on the very next render, before the gate or the
+        // verify-email navigation ever happens — new users skipped email
+        // verification entirely. Deferring onLogin() to the same moment we
+        // navigate ourselves means we're already leaving /register by the
+        // time App.js's redirect would apply, so nothing races it.
         if (method === 'email' && email) {
           // Email users go to dedicated verification page
-          pendingNavRef.current = () => navigate(`/verify-email?email=${encodeURIComponent(email)}`);
+          pendingNavRef.current = () => {
+            onLogin(res.data.user, res.data.token);
+            navigate(`/verify-email?email=${encodeURIComponent(email)}`);
+          };
         } else {
           // Phone users: the SMS code was already sent during registration —
           // send them straight to Settings to enter it, instead of silently
           // leaving the account unverified.
           pendingNavRef.current = () => {
+            onLogin(res.data.user, res.data.token);
             setStep(4);
             setTimeout(() => navigate('/settings?tab=verification'), 1800);
           };

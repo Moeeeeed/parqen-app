@@ -817,14 +817,13 @@ export default function CreateOffer({ user }) {
 
   const isSellSide = offerType === 'sell';
   const isBuySide  = offerType === 'buy';
-  // Every type shares the same -10%/+10% range, matching the backend bound
-  // exactly (server.js POST /api/offers, POST /api/listings, PUT /api/listings/:id).
-  // Buy and Sell are both capped at +10% — only gift cards go to +100%.
+  // Matches the backend bound exactly (server.js POST /api/offers, POST /api/listings,
+  // PUT /api/listings/:id). Buy stays capped at +10% — Sell and gift cards go to +100%.
   // Submitting past this locally just fails server-side, so all three must
   // stay in sync with the backend.
   const marginMin = -10;
-  const marginMax = (isBuySide || isSellSide) ? 10 : 100;
-  const quickMargins = isSellSide ? [-10, -5, -1, 0, 1, 3, 5, 10]
+  const marginMax = isBuySide ? 10 : 100;
+  const quickMargins = isSellSide ? [-10, -5, -1, 0, 1, 3, 5, 10, 25, 50, 100]
     : isBuySide ? [-10, -5, -1, 0, 1, 5, 10]
     : [-5, -1, 0, 1, 3, 5, 10, 25, 50, 100];
   // Switching between offer types would otherwise leave margin sitting outside
@@ -2208,7 +2207,7 @@ export default function CreateOffer({ user }) {
                   {/* Details list */}
                   <div className="space-y-1">
                     {[
-                      { label: 'Type', val: OFFER_TYPES.find(o => o.id === offerType)?.title },
+                      { label: 'Type', val: OFFER_TYPES.find(o => o.id === offerType)?.title(assetLabel) },
                       ...(isGC ? [
                         { label: 'Brand', val: gcBrand },
                         { label: 'Card Type', val: gcCardType === 'physical' ? 'Physical' : gcCardType === 'ecode' ? 'E-Code' : 'Physical & E-Code' },

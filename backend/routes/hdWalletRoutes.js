@@ -106,10 +106,16 @@ async function autoHealOrphanedEscrows(userId) {
 
         if (!locks || locks.length === 0) return 0;
 
+        // Batch-fetch every lock's trade in one round trip instead of one query per
+        // lock — with several stale locks this loop was the wallet page's slowest
+        // part, doing N sequential DB round trips before the wallet data even loaded.
+        const { data: tradesData } = await supabaseAdmin
+            .from('trades').select('id, status').in('id', locks.map(l => l.trade_id));
+        const tradeById = new Map((tradesData || []).map(t => [t.id, t]));
+
         let healed = 0;
         for (const lock of locks) {
-            const { data: trade } = await supabaseAdmin
-                .from('trades').select('id, status').eq('id', lock.trade_id).single();
+            const trade = tradeById.get(lock.trade_id);
 
             if (!trade) continue;
             // Only auto-refund when the trade is definitively over
@@ -204,9 +210,25 @@ router.get('/wallet', verifyToken, async (req, res) => {
         await autoHealOrphanedEscrows(userId);
 
         // ── SINGLE SOURCE OF TRUTH: wallets table only ──────────────────────────
-        const [{ data: walletRow, error: walletErr }, liveBtcPrice] = await Promise.all([
+        // All four reads below are independent of each other — run them in one
+        // round trip instead of four sequential ones (was the other big chunk of
+        // wallet page load time, on top of the autoHealOrphanedEscrows N+1 above).
+        const [
+            { data: walletRow, error: walletErr },
+            liveBtcPrice,
+            { data: uwRow },
+            { data: txs },
+        ] = await Promise.all([
             supabaseAdmin.from('wallets').select('balance_btc, locked_balance_btc, balance_usdt, locked_balance_usdt').eq('user_id', userId).single(),
             getLiveBtcPrice(),
+            supabaseAdmin.from('user_wallets').select('btc_address').eq('user_id', userId).maybeSingle(),
+            supabaseAdmin
+                .from('wallet_transactions')
+                .select('id, type, status, currency, amount_btc, amount_usdt, tx_hash, notes, created_at')
+                .eq('user_id', userId)
+                .neq('type', 'SWEEP')  // internal platform operation — never shown to users
+                .order('created_at', { ascending: false })
+                .limit(50),
         ]);
 
         if (walletErr || !walletRow) {
@@ -222,22 +244,12 @@ router.get('/wallet', verifyToken, async (req, res) => {
         console.log(`[Wallet] user=${userId.slice(0,8)} avail=${available_btc} locked=${locked_btc} total=${total_btc} price=${liveBtcPrice} usd=${balance_usd}`);
 
         // BTC deposit address — from user_wallets or users table (display only, NOT for balance)
-        const { data: uwRow } = await supabaseAdmin
-            .from('user_wallets').select('btc_address').eq('user_id', userId).maybeSingle();
         let address = uwRow?.btc_address || null;
         if (!address) {
             const { data: userRow } = await supabaseAdmin
                 .from('users').select('bitcoin_wallet_address').eq('id', userId).single();
             address = userRow?.bitcoin_wallet_address || null;
         }
-
-        const { data: txs } = await supabaseAdmin
-            .from('wallet_transactions')
-            .select('id, type, status, currency, amount_btc, amount_usdt, tx_hash, notes, created_at')
-            .eq('user_id', userId)
-            .neq('type', 'SWEEP')  // internal platform operation — never shown to users
-            .order('created_at', { ascending: false })
-            .limit(50);
 
         res.json({
             success:      true,

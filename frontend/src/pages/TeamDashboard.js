@@ -15,6 +15,7 @@ import {
   Globe, ShieldOff, UserX, Layers,
   Gift, User, Mail, Smartphone, Circle, Medal, Scale, Minus, MailOpen,
   Repeat, ChevronUp, Bug, Lightbulb, Headphones,
+  Ban, ShieldCheck, History,
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -4992,6 +4993,139 @@ function TopTradersSection() {
 }
 
 // ================================================================
+// USERS AUDIT — account/status change history (read-only for the team, same
+// admin_audit_log the Admin dashboard reads — see server.js GET /api/admin/audit-log).
+// ================================================================
+const AUDIT_ACTION_META = {
+  BAN:                  { label: 'Banned',               color: '#991B1B', bg: '#FEF2F2', icon: Ban },
+  UNBAN:                { label: 'Unbanned',              color: '#166534', bg: '#F0FDF4', icon: UserCheck },
+  KYC_APPROVE:          { label: 'KYC Approved',          color: '#166534', bg: '#F0FDF4', icon: ShieldCheck },
+  VERIFY_EMAIL:         { label: 'Email Verified',        color: '#0E7490', bg: '#ECFEFF', icon: Mail },
+  VERIFY_PHONE:         { label: 'Phone Verified',        color: '#0E7490', bg: '#ECFEFF', icon: Phone },
+  WARN:                 { label: 'Warned',                 color: '#92400E', bg: '#FFFBEB', icon: AlertTriangle },
+  UNWARN:               { label: 'Warning Cleared',        color: '#166534', bg: '#F0FDF4', icon: CheckCircle },
+  MAKE_ADMIN:           { label: 'Admin Role Changed',     color: '#6D28D9', bg: '#F5F3FF', icon: Shield },
+  TOGGLE_AGENT:         { label: 'Agent Role Changed',     color: '#6D28D9', bg: '#F5F3FF', icon: Shield },
+  USER_UPDATE:          { label: 'Profile Field Edited',   color: C.g600,    bg: C.g100,     icon: UserCheck },
+  HOLD_BALANCE:         { label: 'Balance Held',           color: '#92400E', bg: '#FFFBEB', icon: Lock },
+  P2P_MIGRATION_APPROVE:{ label: 'P2P Migration Approved', color: '#166534', bg: '#F0FDF4', icon: CheckCircle },
+  P2P_MIGRATION_REJECT: { label: 'P2P Migration Rejected', color: '#991B1B', bg: '#FEF2F2', icon: XCircle },
+};
+function auditActionMeta(action) {
+  if (AUDIT_ACTION_META[action]) return AUDIT_ACTION_META[action];
+  if (action?.startsWith('RESOLVE_HOLD')) return { label: action.replace('RESOLVE_HOLD_', 'Hold Resolved: '), color: C.g600, bg: C.g100, icon: Lock };
+  if (action?.startsWith('SELLER_DEPOSIT')) return { label: action.replace(/_/g, ' '), color: C.g600, bg: C.g100, icon: DollarSign };
+  return { label: action || 'Unknown', color: C.g600, bg: C.g100, icon: History };
+}
+function auditDetailsText(details) {
+  if (!details) return '—';
+  if (typeof details === 'string') return details;
+  try { return Object.entries(details).map(([k, v]) => `${k}: ${v}`).join(' · ') || '—'; }
+  catch { return '—'; }
+}
+
+function UsersAuditSection() {
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [actionFilter, setActionFilter] = useState('ALL');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await axios.get(`${API_URL}/admin/audit-log`, { headers: authH() });
+      setEntries(r.data.entries || []);
+    } catch { toast.error('Failed to load audit log'); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const actionTypes = [...new Set(entries.map(e => e.action))].sort();
+
+  const filtered = entries.filter(e => {
+    if (actionFilter !== 'ALL' && e.action !== actionFilter) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return [e.target?.username, e.target?.email, e.admin?.username, e.admin?.email, e.action]
+      .filter(Boolean).some(v => v.toLowerCase().includes(q));
+  });
+
+  return (
+    <div className="space-y-4">
+      <SectionHead title="Users Audit" sub="Account & status change history — bans, KYC, verification, warnings, and role changes, with who did it and when"
+        action={<button onClick={load} className="p-2 rounded-xl border hover:bg-gray-50 transition" style={{ borderColor: C.g200 }}><RefreshCw size={14} style={{ color: C.g500 }} /></button>} />
+
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: C.g400 }} />
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search by username, email, or admin…"
+            className="w-full pl-9 pr-3 py-2.5 rounded-xl border text-sm focus:outline-none"
+            style={{ borderColor: C.g200 }} />
+        </div>
+        <select value={actionFilter} onChange={e => setActionFilter(e.target.value)}
+          className="px-3 py-2.5 rounded-xl border text-sm font-semibold focus:outline-none" style={{ borderColor: C.g200, color: C.g700 }}>
+          <option value="ALL">All actions</option>
+          {actionTypes.map(a => <option key={a} value={a}>{auditActionMeta(a).label}</option>)}
+        </select>
+      </div>
+
+      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
+        {loading ? <Spin /> : filtered.length === 0 ? (
+          <Empty text={entries.length === 0 ? 'No audit entries yet' : 'No entries match your search'} />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead style={{ backgroundColor: C.g50 }}>
+                <tr>
+                  {['Action', 'User', 'Performed By', 'Details', 'When'].map(h => (
+                    <th key={h} className="text-left px-4 py-3 text-xs font-black uppercase tracking-wide" style={{ color: C.g500 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(e => {
+                  const meta = auditActionMeta(e.action);
+                  const Icon = meta.icon;
+                  return (
+                    <tr key={e.id} className="border-t hover:bg-gray-50 transition" style={{ borderColor: C.g100 }}>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black"
+                          style={{ color: meta.color, backgroundColor: meta.bg }}>
+                          <Icon size={12} />{meta.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {e.target ? (
+                          <div>
+                            <p className="font-bold text-xs" style={{ color: C.g800 }}>{e.target.username}</p>
+                            <p className="text-xs truncate max-w-[140px]" style={{ color: C.g400 }}>{e.target.email}</p>
+                          </div>
+                        ) : <span className="text-xs" style={{ color: C.g400 }}>—</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        {e.admin ? (
+                          <p className="text-xs font-semibold" style={{ color: C.g700 }}>{e.admin.username}</p>
+                        ) : <span className="text-xs" style={{ color: C.g400 }}>—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-xs" style={{ color: C.g500, maxWidth: 260 }}>
+                        {auditDetailsText(e.details)}
+                      </td>
+                      <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: C.g400 }}>{fmtAge(e.created_at)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ================================================================
 // USERS — view-only
 // ================================================================
 function UsersSection() {
@@ -5391,6 +5525,7 @@ export default function TeamDashboard({ user: propUser }) {
     ]},
     { label: 'People', items: [
       { id: 'users',          label: 'Users',           icon: Users },
+      { id: 'users-audit',    label: 'Users Audit',     icon: History },
       { id: 'staff',          label: 'Staff Directory', icon: Briefcase },
     ]},
     { label: 'Tools', items: [
@@ -5580,6 +5715,7 @@ export default function TeamDashboard({ user: propUser }) {
           {section === 'top-traders'    && <TopTradersSection />}
           {section === 'vendor-deposits' && <VendorDepositsSection teamUser={teamUser} />}
           {section === 'users'          && <UsersSection />}
+          {section === 'users-audit'    && <UsersAuditSection />}
         </main>
       </div>
     </div>

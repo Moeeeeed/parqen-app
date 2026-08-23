@@ -3173,7 +3173,12 @@ export default function WalletPage({ user }) {
     if (!user) { navigate('/login'); return; }
     const init = async () => {
       setLoading(true);
-      await Promise.all([loadWallet(), loadBtcPrice(), loadUsdtWallet(), loadTradeParties()]);
+      // loadBtcPrice hits CoinGecko/Coinbase directly from the browser with no timeout —
+      // loadWallet already seeds btc_price from the backend's (cached, fast) value, so
+      // this only needs to refine it in the background, not hold up the spinner behind
+      // an external API that can be slow or rate-limited.
+      loadBtcPrice();
+      await Promise.all([loadWallet(), loadUsdtWallet(), loadTradeParties()]);
       setLoading(false);
     };
     init();

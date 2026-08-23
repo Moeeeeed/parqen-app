@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { X, Gift, Lock, CheckCircle, Zap, Bitcoin, PartyPopper } from 'lucide-react';
 import axios from 'axios';
+
+// Only interrupt the user with this on a "safe" landing page — popping up mid-flow
+// (e.g. over the Create Offer wizard) silently ate the Publish/Continue click with
+// no error shown, because the click landed on this modal's overlay instead.
+const ONBOARDING_MODAL_ALLOWED_PATHS = ['/', '/dashboard'];
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -16,6 +22,7 @@ function fmtBtc(btc) {
 }
 
 export default function WelcomeBonusModal({ user, onClose }) {
+  const location = useLocation();
   const [btcPrice, setBtcPrice] = useState(88000);
   const [step, setStep] = useState(null); // null = loading
 
@@ -39,6 +46,7 @@ export default function WelcomeBonusModal({ user, onClose }) {
 
   // Still fetching — render nothing to avoid flash
   if (step === null) return null;
+  if (!ONBOARDING_MODAL_ALLOWED_PATHS.includes(location.pathname)) return null;
 
   const oneBtc  = parseFloat((1 / btcPrice).toFixed(8));
   const twoBtc  = parseFloat((2 / btcPrice).toFixed(8));

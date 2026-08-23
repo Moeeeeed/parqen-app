@@ -5795,7 +5795,7 @@ app.post('/api/listings', verifyToken, requireNotBanned, offerCreationLimiter, a
     const listingIsGiftCardPriced = ['BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(listingUpperType);
     if (listingIsSellPriced || listingIsBuyPriced || listingIsGiftCardPriced) {
       const listingMarginMin = -10;
-      const listingMarginMax = listingIsGiftCardPriced ? 100 : 10;
+      const listingMarginMax = (listingIsGiftCardPriced || listingIsSellPriced) ? 100 : 10;
       if (isNaN(marginPct) || marginPct < listingMarginMin || marginPct > listingMarginMax) {
         return res.status(400).json({ error: `Margin must be between ${listingMarginMin > 0 ? '+' : ''}${listingMarginMin}% and +${listingMarginMax}%.` });
       }
@@ -6070,9 +6070,10 @@ function isListingMarginInBounds(listingType, margin) {
   const upperType = (listingType || '').toUpperCase();
   const isPricedType = ['SELL', 'SELL_BITCOIN', 'BUY', 'BUY_BITCOIN', 'BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(upperType);
   if (!isPricedType) return true;
+  const isSellPricedListing = ['SELL', 'SELL_BITCOIN'].includes(upperType);
   const isGiftCardPriced = ['BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(upperType);
   const marginMin = -10;
-  const marginMax = isGiftCardPriced ? 100 : 10;
+  const marginMax = (isGiftCardPriced || isSellPricedListing) ? 100 : 10;
   return marginNum >= marginMin && marginNum <= marginMax;
 }
 
@@ -6474,7 +6475,7 @@ app.put('/api/listings/:id', verifyToken, async (req, res) => {
     if (status === 'ACTIVE') {
       const effectiveMargin = (margin !== undefined && margin !== null && margin !== '') ? margin : listing.margin;
       if (!isListingMarginInBounds(listing.listing_type, effectiveMargin)) {
-        return res.status(400).json({ error: 'This offer\'s margin is outside the allowed range (-10% to +10%, or up to +100% for gift cards). Fix the margin before activating it.' });
+        return res.status(400).json({ error: 'This offer\'s margin is outside the allowed range (-10% to +10% for Buy offers, -10% to +100% for Sell offers and gift cards). Fix the margin before activating it.' });
       }
     }
     if (min_limit_usd !== undefined && parseFloat(min_limit_usd) < 10) {
@@ -6489,7 +6490,7 @@ app.put('/api/listings/:id', verifyToken, async (req, res) => {
     // leaving BUY listings free to be edited to any margin post-creation).
     if ((isSellListing || isBuyListing || isGiftCardListing) && margin !== undefined && margin !== null && margin !== '') {
       const editMarginMin = -10;
-      const editMarginMax = isGiftCardListing ? 100 : 10;
+      const editMarginMax = (isGiftCardListing || isSellListing) ? 100 : 10;
       const marginNum = parseFloat(margin);
       if (isNaN(marginNum) || marginNum < editMarginMin || marginNum > editMarginMax) {
         return res.status(400).json({ error: `Margin must be between ${editMarginMin > 0 ? '+' : ''}${editMarginMin}% and +${editMarginMax}%.` });
@@ -6900,15 +6901,15 @@ app.post('/api/offers', verifyToken, requireNotBanned, offerCreationLimiter, asy
     // was left completely unchecked. That gap is how a BUY_BTC listing with
     // margin=1000000 (and others with margin=-10000, bitcoin_price=-5000, limits=0 —
     // 13 garbage listings from one account in a 63-second window, clearly scripted)
-    // made it onto the live market. Every type shares the same -10% floor; Buy and
-    // Sell both have a +10% ceiling (only gift cards go to +100%).
+    // made it onto the live market. Every type shares the same -10% floor; BUY keeps
+    // the tighter +10% ceiling, while SELL and gift cards go up to +100%.
     const upperType = (mappedType || '').toUpperCase();
     const isSellPriced = ['SELL', 'SELL_BITCOIN'].includes(upperType);
     const isBuyPriced = ['BUY', 'BUY_BITCOIN'].includes(upperType);
     const isGiftCardPriced = ['BUY_GIFT_CARD', 'SELL_GIFT_CARD'].includes(upperType);
     if (isSellPriced || isBuyPriced || isGiftCardPriced) {
       const marginMin = -10;
-      const marginMax = isGiftCardPriced ? 100 : 10;
+      const marginMax = (isGiftCardPriced || isSellPriced) ? 100 : 10;
       const marginNum = parseFloat(margin);
       if (margin !== undefined && margin !== null && margin !== '' && (isNaN(marginNum) || marginNum < marginMin || marginNum > marginMax)) {
         return res.status(400).json({ error: `Margin must be between ${marginMin > 0 ? '+' : ''}${marginMin}% and +${marginMax}%.` });
@@ -9998,6 +9999,42 @@ async function logAdminAction(req, action, targetId, details) {
     console.error('[admin_audit_log] failed to record action:', action, e.message);
   }
 }
+
+// GET /api/admin/audit-log — account/status change history: BAN, UNBAN, KYC_APPROVE,
+// VERIFY_EMAIL, VERIFY_PHONE, WARN, UNWARN, MAKE_ADMIN, TOGGLE_AGENT, USER_UPDATE, etc.
+// admin_audit_log is RLS-locked to the service role (see database/admin_audit_log.sql) —
+// this is the only way anyone, including admins, can actually read it. Was write-only
+// until now: every action above already logged correctly, there was just no UI to see it.
+app.get('/api/admin/audit-log', verifyToken, async (req, res) => {
+  try {
+    const t = await requireTeamOrCeo(req, res); if (!t) return;
+    const { userId, action, limit } = req.query;
+    let q = supabaseAdmin.from('admin_audit_log').select('*')
+      .order('created_at', { ascending: false })
+      .limit(Math.min(parseInt(limit) || 200, 500));
+    if (userId) q = q.eq('target_id', userId);
+    if (action) q = q.eq('action', action);
+    const { data, error } = await q;
+    if (error) return res.status(400).json({ error: error.message });
+
+    const ids = [...new Set((data || []).flatMap(r => [r.admin_id, r.target_id]).filter(Boolean))];
+    let usersById = {};
+    if (ids.length) {
+      const { data: users } = await supabaseAdmin.from('users').select('id, username, email').in('id', ids);
+      usersById = Object.fromEntries((users || []).map(u => [u.id, u]));
+    }
+    const entries = (data || []).map(r => ({
+      id:         r.id,
+      action:     r.action,
+      details:    r.details,
+      ip_address: r.ip_address,
+      created_at: r.created_at,
+      admin:      usersById[r.admin_id]  || null,
+      target:     usersById[r.target_id] || null,
+    }));
+    res.json({ success: true, entries });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // GET /api/admin/stats — full platform overview
 app.get('/api/admin/stats', verifyToken, async (req, res) => {
