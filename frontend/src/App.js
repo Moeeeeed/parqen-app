@@ -68,30 +68,6 @@ if (process.env.NODE_ENV === 'production') {
   console.warn = noop;
 }
 
-// ── lazyRetry: auto-reload once if a lazy chunk fails to load ─────────────
-// When a chunk fails (e.g. stale cache after a deploy), clear browser caches
-// and retry the import once before giving up.
-function lazyRetry(importFn) {
-  return lazy(() =>
-    importFn().catch((err) => {
-      // Clear service-worker registrations so stale chunks aren't served
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then((regs) => {
-          regs.forEach((reg) => reg.unregister());
-        });
-      }
-      // Clear the Cache API as well
-      if ('caches' in window) {
-        caches.keys().then((names) => {
-          names.forEach((name) => caches.delete(name));
-        });
-      }
-      // Retry once
-      return importFn();
-    })
-  );
-}
-
 // ── Lazy-loaded pages ────────────────────────────────────────────────────────
 // A dynamic import() can fail if the tab has an older build's chunk manifest in
 // memory and the dev/build server has since redeployed — the failed fetch throws,
