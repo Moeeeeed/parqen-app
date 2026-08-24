@@ -52,6 +52,20 @@ const FEATURED = {
     btnShadow:   '0 4px 20px rgba(5,150,105,0.50)',
     pulse:       true,
   },
+  high_volume_trader: {
+    TagIcon:     TrendingUp,
+    tag:         'HIGH VOLUME TRADER OF THE WEEK',
+    ribbon:      'linear-gradient(90deg,#1E3A8A,#4338CA,#818CF8,#4338CA,#1E3A8A)',
+    border:      '#4F46E5',
+    glow:        'rgba(79,70,229,0.28)',
+    bg:          'rgba(79,70,229,0.05)',
+    bgGradient:  'linear-gradient(150deg,rgba(129,140,248,0.20) 0%,rgba(79,70,229,0.05) 42%,rgba(30,58,138,0.10) 100%)',
+    divider:     'rgba(79,70,229,0.14)',
+    labelColor:  '#3730A3',
+    btnGradient: 'linear-gradient(135deg,#1E3A8A 0%,#4F46E5 60%,#818CF8 100%)',
+    btnShadow:   '0 4px 20px rgba(79,70,229,0.50)',
+    pulse:       true,
+  },
   fast_buyer: {
     TagIcon:     Zap,
     tag:         'FAST BUYER OF THE WEEK',
@@ -1062,7 +1076,7 @@ export default function SellBitcoin({user}) {
   const _cacheAll  = () => { try { const c=JSON.parse(localStorage.getItem('praqen_market_all')||'null'); if(!c||Date.now()-c.ts>1800000||!_hasUsers(c.data)) return null; return c?.data||null; } catch { return null; } };
   const _buyNow    = () => { const a=_cacheAll(); return a?a.filter(l=>((l.listing_type==='BUY'||l.listing_type==='BUY_BITCOIN')&&(l.asset||'BTC')==='BTC')):[]; };
   const [offers,       setOffers]       = useState(()=>_buyNow());
-  const [traderOfWeek, setTraderOfWeek] = useState(null); // auto-picked winner from the backend, not hardcoded
+  const [traderOfWeek, setTraderOfWeek] = useState({}); // { "sell_bitcoin:GH": winner, ... } — one auto-picked winner per country, from the backend
   const [loading,      setLoading]      = useState(()=>_buyNow().length===0);
   const [loadError,    setLoadError]    = useState(false);
   const [retrying,     setRetrying]     = useState(false);
@@ -1209,11 +1223,12 @@ export default function SellBitcoin({user}) {
     return () => clearInterval(interval);
   },[]);
 
-  // Auto-picked "Active Trader of the Week" — backend rotates this weekly based on
-  // real trade counts, replacing what used to be a hardcoded username here.
+  // Auto-picked "High Volume Trader of the Week" — one per country, backend rotates
+  // this weekly (services/traderOfWeekService.js) among buyers paying through that
+  // country's own local payment method (e.g. MTN Momo in Ghana).
   useEffect(() => {
     axios.get(`${API_URL}/trader-of-week`)
-      .then(r => setTraderOfWeek(r.data?.winners?.sell_bitcoin || null))
+      .then(r => setTraderOfWeek(r.data?.winners || {}))
       .catch(() => {});
   }, []);
 
@@ -1381,18 +1396,31 @@ export default function SellBitcoin({user}) {
   const onlineCnt   = offers.filter(l=>(Date.now()-new Date(l.users?.last_seen_at||l.users?.last_login||0))/1000<300).length;
   const buyerCount  = new Set(offers.map(l=>l.seller_id)).size;
 
-  // Active Trader of the Week — auto-picked weekly by the backend (services/
-  // traderOfWeekService.js) from real trade counts, not a hardcoded username.
-  // Exactly one featured badge per page: use the weekly pick if their listing is
-  // still live here, otherwise fall back to today's top offer by trade count.
-  const activeTraderListingId = traderOfWeek?.listing_id || null;
-  const activeTraderIsLive = !!activeTraderListingId && offers.some(l => l.id === activeTraderListingId);
-  const rankedByTrades = [...offers]
-    .filter(l => l.id !== activeTraderListingId && getTrades(l.users) > 0)
-    .sort((a, b) => getTrades(b.users) - getTrades(a.users));
-  const fastBuyerListingId = activeTraderIsLive ? null : (rankedByTrades[0]?.id || null);
-  const featuredListingId = activeTraderIsLive ? activeTraderListingId : fastBuyerListingId;
-  const featuredBadgeType = activeTraderIsLive ? 'active_trader' : 'fast_buyer';
+  // High Volume Trader of the Week — one auto-picked winner per country (services/
+  // traderOfWeekService.js), among buyers paying through that country's own local
+  // payment method (MTN Momo in Ghana, auto-detected elsewhere). Browsing "All
+  // Countries" can show several offers badged at once, each for a different
+  // country's own winner. The same trader can never hold this AND the Buy-page
+  // badge at once — enforced server-side. Falls back to that country's top-by-trades
+  // offer only until the backend has picked a real winner for it.
+  const featuredMap = {};
+  {
+    const countriesSeen = new Set();
+    for (const l of filtered) {
+      const cc = (l.country || '').toUpperCase();
+      if (!cc || countriesSeen.has(cc)) continue;
+      const winner = traderOfWeek[`sell_bitcoin:${cc}`];
+      if (winner && filtered.some(x => x.id === winner.listing_id)) {
+        featuredMap[winner.listing_id] = 'high_volume_trader';
+        countriesSeen.add(cc);
+      } else {
+        const top = filtered
+          .filter(x => (x.country || '').toUpperCase() === cc && getTrades(x.users) > 0 && !featuredMap[x.id])
+          .sort((a, b) => getTrades(b.users) - getTrades(a.users))[0];
+        if (top) { featuredMap[top.id] = 'fast_buyer'; countriesSeen.add(cc); }
+      }
+    }
+  }
   const hasFilters  = selPayment!=='all' || sellAmt || selCountry.code!=='ALL' || selCurrency.code!=='USD' || !!traderSearch.trim();
 
   return (
@@ -1885,7 +1913,7 @@ export default function SellBitcoin({user}) {
                 <OfferCard
                   listing={l}
                   btcPriceUSD={btcPrice}
-                  featuredType={l.id === featuredListingId ? featuredBadgeType : undefined}
+                  featuredType={featuredMap[l.id] || undefined}
                   liveSeenAt={liveStatus[l.users?.id] || null}
                   onViewBuyer={()=>{
                     setModal({buyer:l.users||{}, listing:l});

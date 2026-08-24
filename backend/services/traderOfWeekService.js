@@ -1,16 +1,21 @@
 // services/traderOfWeekService.js
-// "Active Trader of the Week" — auto-picks the best-performing trader for each
-// market category and rotates the pick weekly, replacing what used to be a
-// hardcoded username in the frontend (rafi_crypto / iraqiy_xchange /
-// kingkong79-pro) that only ever changed via a code deploy.
+// Special-offer flow: two auto-picked badges per country — one on the Buy Bitcoin
+// page ("Active Trader of the Week" — the most active seller in that country) and
+// one on the Sell Bitcoin page ("High Volume Trader of the Week" — the most active
+// buyer in that country who pays through that country's own local payment method,
+// e.g. MTN Mobile Money in Ghana). Plus the existing single global Gift Card badge.
+//
+// Hard rule: no user can hold more than one special-offer badge at the same time.
+// All slots (every country's buy + sell badge, plus gift_card) are recomputed
+// together in one pass so a "usedUserIds" set can enforce that — computing slots
+// independently on staggered schedules could let the same trader win a second
+// badge in another slot before their first one expires.
 //
 // Winner = highest total_trades, tie-broken by average_rating then
-// positive_feedback, among sellers who currently have a real ACTIVE listing
-// in that category and have been seen on the platform in the last 7 days
-// (never feature someone who's gone quiet). Picked once per rotation window
-// and persisted in trader_of_week — NOT recomputed on every page load, so the
-// badge stays stable for the whole week instead of flickering to whoever is
-// momentarily ahead.
+// positive_feedback, among traders who currently have a real ACTIVE listing in
+// that slot and have been seen on the platform in the last 7 days. Picked once
+// per rotation window (7 days by default) and persisted in trader_of_week so the
+// badges stay stable all week instead of flickering to whoever is momentarily ahead.
 
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
@@ -23,93 +28,160 @@ const supabaseAdmin = createClient(
 const ROTATION_DAYS = parseInt(process.env.TRADER_OF_WEEK_ROTATION_DAYS || '7', 10);
 const ACTIVE_WITHIN_DAYS = 7; // must have been seen in the last week to qualify
 
-const CATEGORIES = {
-  buy_bitcoin:  { listingTypes: ['SELL', 'SELL_BITCOIN'], asset: 'BTC' }, // Buy Bitcoin page trades against sellers
-  sell_bitcoin: { listingTypes: ['BUY', 'BUY_BITCOIN'],   asset: 'BTC' }, // Sell Bitcoin page trades against buyers
-  gift_card:    { listingTypes: ['BUY_GIFT_CARD', 'SELL_GIFT_CARD'], asset: null },
-};
+// Sell-page badge must reward traders paying through the market's own local rail.
+// Ghana is pinned to MTN Mobile Money per product decision; every other country
+// auto-detects its own most-used payment method from active BUY listings so this
+// stays a real "auto flow" instead of needing a manual entry added per market.
+const COUNTRY_LOCAL_PAYMENT = { GH: 'mtn' };
 
-async function computeCategoryWinner(category) {
-  const { listingTypes, asset } = CATEGORIES[category];
-  let q = supabaseAdmin
+function dominantPaymentMethod(listings) {
+  const counts = {};
+  for (const l of listings) {
+    const pm = String(l.payment_method || '').toLowerCase().trim();
+    if (!pm) continue;
+    counts[pm] = (counts[pm] || 0) + 1;
+  }
+  let best = null, bestCount = 0;
+  for (const [pm, count] of Object.entries(counts)) {
+    if (count > bestCount) { best = pm; bestCount = count; }
+  }
+  return best;
+}
+
+async function fetchActiveBtcListings() {
+  const { data, error } = await supabaseAdmin
+    .from('listings')
+    .select('id, seller_id, listing_type, country, payment_method, created_at')
+    .in('listing_type', ['SELL', 'SELL_BITCOIN', 'BUY', 'BUY_BITCOIN'])
+    .eq('status', 'ACTIVE')
+    .eq('asset', 'BTC');
+  if (error) throw error;
+  return data || [];
+}
+
+async function fetchActiveGiftCardListings() {
+  const { data, error } = await supabaseAdmin
     .from('listings')
     .select('id, seller_id, listing_type, created_at')
-    .in('listing_type', listingTypes)
+    .in('listing_type', ['BUY_GIFT_CARD', 'SELL_GIFT_CARD'])
     .eq('status', 'ACTIVE');
-  if (asset) q = q.eq('asset', asset);
-  const { data: listings, error } = await q;
-  if (error || !listings || listings.length === 0) return null;
+  if (error) throw error;
+  return data || [];
+}
 
-  const sellerIds = [...new Set(listings.map(l => l.seller_id).filter(Boolean))];
-  if (sellerIds.length === 0) return null;
+/** Computes every (page, country) winner + the gift_card winner in one pass, enforcing
+ *  that no user_id is picked for more than one slot. Returns {category: winner}. */
+async function computeAllWinners() {
+  const [btcListings, giftListings] = await Promise.all([
+    fetchActiveBtcListings(),
+    fetchActiveGiftCardListings(),
+  ]);
+
+  const sellerIds = [...new Set([...btcListings, ...giftListings].map(l => l.seller_id).filter(Boolean))];
+  if (sellerIds.length === 0) return {};
 
   const { data: sellers } = await supabaseAdmin
     .from('users')
     .select('id, username, total_trades, average_rating, positive_feedback, last_seen_at, last_login, account_status')
     .in('id', sellerIds);
-  if (!sellers || sellers.length === 0) return null;
+  const sellerMap = Object.fromEntries((sellers || []).map(u => [u.id, u]));
 
   const activeCutoff = Date.now() - ACTIVE_WITHIN_DAYS * 24 * 60 * 60 * 1000;
-  const eligible = sellers.filter(u => {
-    if (u.account_status === 'banned') return false;
-    const lastSeen = u.last_seen_at || u.last_login;
-    return lastSeen && new Date(lastSeen).getTime() >= activeCutoff;
-  });
-  if (eligible.length === 0) return null;
+  const isEligible = (u) => !!u && u.account_status !== 'banned'
+    && !!(u.last_seen_at || u.last_login)
+    && new Date(u.last_seen_at || u.last_login).getTime() >= activeCutoff;
 
-  eligible.sort((a, b) => {
-    const trades = (b.total_trades || 0) - (a.total_trades || 0);
-    if (trades !== 0) return trades;
-    const rating = parseFloat(b.average_rating || 0) - parseFloat(a.average_rating || 0);
-    if (rating !== 0) return rating;
-    return (b.positive_feedback || 0) - (a.positive_feedback || 0);
-  });
+  const usedUserIds = new Set();
 
-  const winner = eligible[0];
-  // Feature that winner's most recently created ACTIVE listing in this category.
-  const winnerListings = listings.filter(l => l.seller_id === winner.id)
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  const listingId = winnerListings[0]?.id || null;
-  if (!listingId) return null;
-
-  return {
-    user_id: winner.id,
-    username: winner.username,
-    listing_id: listingId,
-    total_trades: winner.total_trades || 0,
-    average_rating: parseFloat(winner.average_rating || 0),
+  // Ranks the sellers behind a set of listings and hands the slot to the best
+  // eligible one not already holding another badge; marks them used on success.
+  const pickWinner = (candidateListings, extraFields = {}) => {
+    const candidateSellerIds = [...new Set(candidateListings.map(l => l.seller_id).filter(Boolean))];
+    const ranked = candidateSellerIds
+      .map(id => sellerMap[id])
+      .filter(u => isEligible(u) && !usedUserIds.has(u.id))
+      .sort((a, b) => {
+        const trades = (b.total_trades || 0) - (a.total_trades || 0);
+        if (trades !== 0) return trades;
+        const rating = parseFloat(b.average_rating || 0) - parseFloat(a.average_rating || 0);
+        if (rating !== 0) return rating;
+        return (b.positive_feedback || 0) - (a.positive_feedback || 0);
+      });
+    const winner = ranked[0];
+    if (!winner) return null;
+    const listing = candidateListings
+      .filter(l => l.seller_id === winner.id)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+    if (!listing) return null;
+    usedUserIds.add(winner.id);
+    return {
+      user_id: winner.id,
+      username: winner.username,
+      listing_id: listing.id,
+      total_trades: winner.total_trades || 0,
+      average_rating: parseFloat(winner.average_rating || 0),
+      ...extraFields,
+    };
   };
+
+  const results = {};
+  const countries = [...new Set(btcListings.map(l => (l.country || '').toUpperCase()).filter(Boolean))];
+
+  for (const country of countries) {
+    // Buy-page badge: Active Trader of the Week — most active seller in this country.
+    const sellListings = btcListings.filter(l =>
+      (l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN') &&
+      (l.country || '').toUpperCase() === country);
+    const buyPageWinner = pickWinner(sellListings, { country });
+    if (buyPageWinner) results[`buy_bitcoin:${country}`] = buyPageWinner;
+
+    // Sell-page badge: High Volume Trader of the Week — most active buyer in this
+    // country who pays through the country's own local payment method.
+    const buyListingsAll = btcListings.filter(l =>
+      (l.listing_type === 'BUY' || l.listing_type === 'BUY_BITCOIN') &&
+      (l.country || '').toUpperCase() === country);
+    const localMethod = COUNTRY_LOCAL_PAYMENT[country] || dominantPaymentMethod(buyListingsAll);
+    const localBuyListings = localMethod
+      ? buyListingsAll.filter(l => String(l.payment_method || '').toLowerCase().includes(localMethod))
+      : buyListingsAll;
+    const sellPageWinner = pickWinner(localBuyListings.length ? localBuyListings : buyListingsAll, {
+      country, payment_method: localMethod || null,
+    });
+    if (sellPageWinner) results[`sell_bitcoin:${country}`] = sellPageWinner;
+  }
+
+  const giftCardWinner = pickWinner(giftListings);
+  if (giftCardWinner) results.gift_card = giftCardWinner;
+
+  return results;
 }
 
-/** Runs at startup and periodically — only recomputes a category once its rotation window has passed. */
+/** Runs at startup and periodically — only recomputes once the shared rotation window has passed. */
 async function syncTraderOfWeek() {
   try {
-    const { data: existingRows } = await supabaseAdmin.from('trader_of_week').select('category, next_rotation_at');
-    const existingMap = Object.fromEntries((existingRows || []).map(r => [r.category, r]));
+    const { data: latest } = await supabaseAdmin
+      .from('trader_of_week')
+      .select('next_rotation_at')
+      .order('selected_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
     const now = Date.now();
+    const due = !latest || new Date(latest.next_rotation_at).getTime() <= now;
+    if (!due) return;
 
-    for (const category of Object.keys(CATEGORIES)) {
-      const existing = existingMap[category];
-      const due = !existing || new Date(existing.next_rotation_at).getTime() <= now;
-      if (!due) continue;
+    const winners = await computeAllWinners();
+    const nowIso = new Date().toISOString();
+    const nextRotation = new Date(now + ROTATION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    const rows = Object.entries(winners).map(([category, w]) => ({
+      category, ...w, selected_at: nowIso, next_rotation_at: nextRotation,
+    }));
 
-      const winner = await computeCategoryWinner(category);
-      if (!winner) {
-        console.log(`[traderOfWeek] No eligible winner for "${category}" — leaving previous pick in place.`);
-        continue;
-      }
+    // Full replace each rotation — slots are dynamic per-country now, so a country
+    // that no longer has active listings must not keep a stale badge forever.
+    await supabaseAdmin.from('trader_of_week').delete().neq('category', '__never_matches__');
+    if (rows.length) await supabaseAdmin.from('trader_of_week').upsert(rows, { onConflict: 'category' });
 
-      const nowIso = new Date().toISOString();
-      const nextRotation = new Date(now + ROTATION_DAYS * 24 * 60 * 60 * 1000).toISOString();
-      await supabaseAdmin.from('trader_of_week').upsert({
-        category,
-        ...winner,
-        selected_at: nowIso,
-        next_rotation_at: nextRotation,
-      }, { onConflict: 'category' });
-
-      console.log(`[traderOfWeek] ${category} → @${winner.username} (${winner.total_trades} trades) — next rotation ${nextRotation}`);
-    }
+    console.log(`[traderOfWeek] rotated ${rows.length} special-offer slot(s) — next rotation ${nextRotation}`);
   } catch (err) {
     console.error('[traderOfWeek] syncTraderOfWeek error:', err.message);
   }
@@ -121,4 +193,4 @@ async function getAllWinners() {
   return Object.fromEntries((data || []).map(r => [r.category, r]));
 }
 
-module.exports = { syncTraderOfWeek, getAllWinners, computeCategoryWinner, CATEGORIES };
+module.exports = { syncTraderOfWeek, getAllWinners, computeAllWinners };
