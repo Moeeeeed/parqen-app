@@ -1506,33 +1506,6 @@ export default function BuyUSDT({user}) {
       {/* Getting-started guide — shown to logged-in users who haven't funded their wallet yet */}
       {user && userUsdtBalance < 10 && <GettingStartedSteps userId={user.id} />}
 
-      {/* Low-balance reminder — shown to logged-in sellers whose USDT is below $10 */}
-      {user && userUsdtBalance < 10 && (
-        <div className="flex-shrink-0 px-3 pt-3">
-          <div className="max-w-7xl mx-auto rounded-2xl p-4 flex items-start gap-3"
-            style={{backgroundColor:'#FFFBEB', border:'1.5px solid #FCD34D'}}>
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{backgroundColor:'#FEF3C7'}}>
-              <Wallet size={16} style={{color:'#D97706'}}/>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-black" style={{color:'#92400E'}}>Keep your wallet funded to stay active</p>
-              <p className="text-xs mt-0.5 leading-relaxed" style={{color:'#B45309'}}>
-                Your USDT wallet must have at least <strong>$10</strong> for your sell offer to appear in the Buy USDT market.
-                Current balance: <strong>${userUsdtBalance.toFixed(2)}</strong>.
-                Top up now to activate your offer.
-              </p>
-            </div>
-            <button
-              onClick={()=>navigate('/wallet')}
-              className="flex-shrink-0 px-3 py-2 rounded-xl text-xs font-black text-white"
-              style={{backgroundColor:'#D97706'}}>
-              Top Up
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* ══ 3. FILTER BAR ══════════════════════════════════════ */}
       <div className="bg-white border-b flex-shrink-0" style={{borderColor:C.g200}}>
         <div className="max-w-7xl mx-auto px-3 py-3 space-y-2">

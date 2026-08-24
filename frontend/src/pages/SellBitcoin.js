@@ -1408,18 +1408,26 @@ export default function SellBitcoin({user}) {
   const featuredMap = {};
   {
     const countriesSeen = new Set();
+    // One badge per BUYER across the whole page, not just per country — a trader
+    // with active listings in multiple countries (e.g. KE and EU) used to top the
+    // fast_buyer fallback ranking in every one of them, getting pinned/badged more
+    // than once at the same time. Mirrors traderOfWeekService's own "no user holds
+    // two badges" rule, which only covers the real backend winner, not this
+    // client-side fallback.
+    const featuredUsers = new Set();
     for (const l of filtered) {
       const cc = (l.country || '').toUpperCase();
       if (!cc || countriesSeen.has(cc)) continue;
       const winner = traderOfWeek[`sell_bitcoin:${cc}`];
-      if (winner && filtered.some(x => x.id === winner.listing_id)) {
+      if (winner && filtered.some(x => x.id === winner.listing_id) && !featuredUsers.has(winner.user_id)) {
         featuredMap[winner.listing_id] = 'high_volume_trader';
         countriesSeen.add(cc);
+        featuredUsers.add(winner.user_id);
       } else {
         const top = filtered
-          .filter(x => (x.country || '').toUpperCase() === cc && getTrades(x.users) > 0 && !featuredMap[x.id])
+          .filter(x => (x.country || '').toUpperCase() === cc && getTrades(x.users) > 0 && !featuredMap[x.id] && !featuredUsers.has(x.seller_id))
           .sort((a, b) => getTrades(b.users) - getTrades(a.users))[0];
-        if (top) { featuredMap[top.id] = 'fast_buyer'; countriesSeen.add(cc); }
+        if (top) { featuredMap[top.id] = 'fast_buyer'; countriesSeen.add(cc); featuredUsers.add(top.seller_id); }
       }
     }
   }
