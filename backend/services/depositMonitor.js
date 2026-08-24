@@ -130,10 +130,11 @@ function depositEmailHtml(username, depositBTC, newBalance, address) {
 class DepositMonitor {
 
   constructor() {
-    this.isRunning  = false;
-    this.intervalId = null;
-    this.network    = null;
-    this.apiBase    = null;
+    this.isRunning        = false;
+    this.intervalId       = null;
+    this.network          = null;
+    this.apiBase          = null;
+    this._cycleInProgress = false;
     // Fallback APIs tried in order when primary times out
     this._apiFallbacks = [
       'https://mempool.space/api',
@@ -157,10 +158,18 @@ class DepositMonitor {
         // No HTTP response at all — timeout (including axios's own ECONNABORTED
         // client-side timeout, previously missed by an error-code allowlist here),
         // DNS failure, connection refused/reset — means we never reached this API,
-        // so always worth rotating to the next fallback. A genuine HTTP error
-        // response (4xx/5xx) means the API IS reachable but rejected the request,
-        // which trying a different API won't fix.
-        if (err.response) throw err;
+        // so always worth rotating to the next fallback.
+        // 429 also belongs here even though it IS a response: mempool.space and
+        // blockstream.info enforce independent rate limits, so a 429 from one
+        // says nothing about whether the other will accept the request. Treating
+        // it like a hard rejection (old behavior: throw immediately) meant a
+        // throttled primary API silently starved every deposit check for the
+        // rest of that poll cycle — this is what let real on-chain deposits sit
+        // uncredited for hours in production. Only a genuine non-429 4xx/5xx
+        // (bad address, malformed request) means the API IS reachable and
+        // rejected the request for a reason a different API won't fix.
+        if (err.response && err.response.status !== 429) throw err;
+        if (err.response?.status === 429) await this.sleep(1500); // brief cooldown before hitting the next API
         // rotate: put the failed API at the back so the next one is tried first
         this._apiFallbacks.push(this._apiFallbacks.shift());
       }
@@ -198,12 +207,26 @@ class DepositMonitor {
 
   // ── One full polling cycle ─────────────────────────────────────────────────
   async runFullCycle() {
+    // Guard against overlapping cycles: if a cycle is still running (typically
+    // because API rate-limiting made it take longer than POLL_INTERVAL_MS), the
+    // next setInterval tick used to start a second cycle on top of it — doubling
+    // the request rate against the same already-throttled APIs and making the
+    // rate-limiting worse each cycle. Skip and let the in-flight cycle finish.
+    if (this._cycleInProgress) {
+      console.warn('[DepositMonitor] ⚠️  Previous cycle still running — skipping this tick to avoid doubling request rate');
+      return;
+    }
+    this._cycleInProgress = true;
     const start = Date.now();
     console.log(`\n[DepositMonitor] ⏱  Cycle start ${new Date().toISOString()}`);
-    await Promise.allSettled([
-      this.checkAllUserDeposits(),
-      this.checkEscrowDeposits(),
-    ]);
+    try {
+      await Promise.allSettled([
+        this.checkAllUserDeposits(),
+        this.checkEscrowDeposits(),
+      ]);
+    } finally {
+      this._cycleInProgress = false;
+    }
     console.log(`[DepositMonitor] ✅ Cycle done in ${Date.now() - start}ms\n`);
   }
 
@@ -287,11 +310,15 @@ class DepositMonitor {
         return true;
       });
 
-      const BATCH = 5;
+      // Batch of 3 / 1.2s gap (was 5 / 1s): the tighter pacing lowers the peak
+      // burst rate against mempool.space/blockstream.info — this is what was
+      // tripping their rate limits in production. Cycle time for ~1400 addresses
+      // still comfortably fits inside the 15-minute poll interval.
+      const BATCH = 3;
       for (let i = 0; i < valid.length; i += BATCH) {
         const batch = valid.slice(i, i + BATCH);
         await Promise.allSettled(batch.map(entry => this.checkUserDeposit(entry)));
-        if (i + BATCH < valid.length) await this.sleep(1000); // 1s between batches
+        if (i + BATCH < valid.length) await this.sleep(1200);
       }
 
     } catch (err) {
