@@ -184,6 +184,13 @@ const loadAll = useCallback(async (isBackground = false) => {
   useEffect(() => { if (contextBtcUsd > 0) setBtcPrice(contextBtcUsd); }, [contextBtcUsd]);
   useEffect(() => { loadAll(); }, [loadAll]);
   useEffect(() => { setSelectedGcRegion(null); }, [id]);
+  // When a gift-card listing only offers one region, there's nothing to actually
+  // choose — requiring a manual tap before the trade box unlocks just reads as a
+  // broken "Proceed to Payment" button. Auto-select the sole option.
+  useEffect(() => {
+    const regions = Array.isArray(listing?.gift_card_currencies) ? listing.gift_card_currencies : [];
+    if (regions.length === 1 && !selectedGcRegion) setSelectedGcRegion(regions[0]);
+  }, [listing, selectedGcRegion]);
 
   // Debounce quote fetch whenever the user changes the amount
   useEffect(() => {
@@ -785,7 +792,7 @@ const loadAll = useCallback(async (isBackground = false) => {
                       return (
                         <button
                           key={rc.region}
-                          onClick={() => { setSelectedGcRegion(rc); setPayAmt(''); setTradeError(''); }}
+                          onClick={() => { setSelectedGcRegion(rc); if (rc.currency !== cur) setPayAmt(''); setTradeError(''); }}
                           style={{
                             display: 'flex', alignItems: 'center', gap: 6,
                             padding: '7px 12px', borderRadius: 10, cursor: 'pointer',
