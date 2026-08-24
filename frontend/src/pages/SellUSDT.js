@@ -477,7 +477,7 @@ function BuyerModal({buyer, listing, onClose, onTrade, usdtPriceUSD, btcPriceUSD
 
   const TABS = [
     { id:'overview', label:<span className="inline-flex items-center gap-1"><User size={12} className="inline-block"/>Profile</span> },
-    { id:'feedback', label:<span className="inline-flex items-center gap-1"><MessageCircle size={12} className="inline-block"/>Reviews ({reviewCount})</span>},
+    { id:'feedback', label:<span className="inline-flex items-center gap-1"><MessageCircle size={12} className="inline-block"/>Feedback ({reviewCount})</span>},
     { id:'rules',    label:<span className="inline-flex items-center gap-1"><ClipboardList size={12} className="inline-block"/>Rules</span> },
     { id:'offer',    label:<span className="inline-flex items-center gap-1"><BarChart3 size={12} className="inline-block"/>Offer</span> },
   ];
