@@ -601,7 +601,7 @@ export default function Profile({ userId: propUserId }) {
     { id: 'overview', label: 'Overview', icon: Users, count: null },
     { id: 'offers', label: 'Offers', icon: Tag, count: offers.length },
     { id: 'verification', label: 'Verification', icon: BadgeCheck, count: verifPct < 100 ? `${verifPct}%` : null },
-    { id: 'reputation', label: 'Reviews', icon: Star, count: reviews.length },
+    { id: 'reputation', label: 'Feedback', icon: Star, count: reviews.length },
     { id: 'badges', label: 'Badges', icon: Award, count: `${earned.length}/${BADGE_DEFS.length}` },
   ];
 
@@ -1115,9 +1115,9 @@ export default function Profile({ userId: propUserId }) {
                   )}
                 </div>
 
-                {/* Recent Reviews */}
+                {/* Recent Feedback */}
                 <div style={{ background: 'white', borderRadius: 20, padding: 22, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', border: `1.5px solid ${C.g100}` }}>
-                  <SectionHeader icon={<Star size={15} />} title="Recent Reviews" action={reviews.length > 5 ? () => setTab('reputation') : null} actionLabel="View all" />
+                  <SectionHeader icon={<Star size={15} />} title="Recent Feedback" action={reviews.length > 5 ? () => setTab('reputation') : null} actionLabel="View all" />
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     {reviews.slice(0, 5).map(r => (
                       <div key={r.id} style={{ display: 'flex', gap: 12, padding: 14, borderRadius: 14, background: C.g50, border: `1px solid ${C.g100}` }}>
@@ -1138,7 +1138,7 @@ export default function Profile({ userId: propUserId }) {
                     {reviews.length === 0 && (
                       <div style={{ textAlign: 'center', padding: '32px 0' }}>
                         <MessageCircle size={32} style={{ color: C.g300, margin: '0 auto 8px' }} />
-                        <p style={{ fontSize: 12, color: C.g400 }}>No reviews yet. Complete trades to get feedback.</p>
+                        <p style={{ fontSize: 12, color: C.g400 }}>No feedback yet. Complete trades to get feedback.</p>
                       </div>
                     )}
                   </div>
@@ -1422,7 +1422,7 @@ export default function Profile({ userId: propUserId }) {
                 {reviews.length === 0 ? (
                   <div style={{ padding: 40, textAlign: 'center' }}>
                     <MessageCircle size={32} style={{ color: C.g300, margin: '0 auto 8px' }} />
-                    <p style={{ fontSize: 12, color: C.g400 }}>No reviews yet. Complete trades to get feedback.</p>
+                    <p style={{ fontSize: 12, color: C.g400 }}>No feedback yet. Complete trades to get feedback.</p>
                   </div>
                 ) : (
                   <>

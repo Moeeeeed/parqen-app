@@ -9179,6 +9179,43 @@ app.post('/api/admin/moderator-login', verifyToken, async (req, res) => {
 // FEEDBACK / REVIEWS
 // ============================================================
 
+// Check whether the current user is allowed to leave feedback for a trade.
+// Returns { allowed: true } or { allowed: false, reason: '...' }.
+app.get('/api/trades/:id/feedback-check', verifyToken, async (req, res) => {
+  try {
+    const toUserId = req.query.toUserId;
+    if (!toUserId) return res.json({ allowed: true });
+    const { data: trade } = await supabaseAdmin.from('trades').select('id, payment_method, status').eq('id', req.params.id).single();
+    if (!trade) return res.status(404).json({ error: 'Trade not found' });
+    if (trade.status !== 'COMPLETED') return res.json({ allowed: false, reason: 'Feedback can only be submitted after a trade is completed.' });
+    const payMethod = (trade.payment_method || '').trim().toLowerCase();
+    if (!payMethod) return res.json({ allowed: true });
+    // Check if this reviewer already left feedback for this reviewee on a trade
+    // with the same payment method.
+    const { data: existing } = await supabaseAdmin
+      .from('reviews')
+      .select('id, trade_id')
+      .eq('reviewer_id', req.userId)
+      .eq('reviewee_id', toUserId)
+      .limit(50);
+    if (!existing || existing.length === 0) return res.json({ allowed: true });
+    const tradeIds = existing.map(r => r.trade_id).filter(Boolean);
+    if (tradeIds.length === 0) return res.json({ allowed: true });
+    const { data: prevTrades } = await supabaseAdmin
+      .from('trades')
+      .select('id, payment_method')
+      .in('id', tradeIds);
+    const hasDup = (prevTrades || []).some(t => (t.payment_method || '').trim().toLowerCase() === payMethod);
+    if (hasDup) {
+      return res.json({ allowed: false, reason: `You've already given feedback to this user for trades using this payment method (${trade.payment_method}). Feedback can only be given again when you trade using a different payment method.` });
+    }
+    res.json({ allowed: true });
+  } catch (err) {
+    console.error('[feedback-check]', err.message);
+    res.json({ allowed: true }); // fail open — don't block feedback on server errors
+  }
+});
+
 app.post('/api/trades/:id/feedback', verifyToken, async (req, res) => {
   try {
     const { rating, comment, toUserId } = req.body;
@@ -9188,13 +9225,34 @@ app.post('/api/trades/:id/feedback', verifyToken, async (req, res) => {
     if (!trade) return res.status(404).json({ error: 'Trade not found' });
     if (trade.status !== 'COMPLETED') return res.status(400).json({ error: 'Feedback can only be submitted after a trade is completed' });
     if (req.userId !== trade.buyer_id && req.userId !== trade.seller_id) return res.status(403).json({ error: 'Not a participant in this trade' });
-    // Feedback counts once per trading PARTNER, not per trade — otherwise the same two
-    // accounts could trade repeatedly (e.g. always picking the same payment method) and
-    // rack up unlimited positive reviews on each other, inflating total_feedback_count
-    // and the badge tier it gates (see lib/badge.js) without ever serving new customers.
-    const { data: existing } = await supabaseAdmin.from('reviews').select('id').eq('reviewer_id', req.userId).eq('reviewee_id', toUserId).maybeSingle();
-    if (existing) return res.status(400).json({ error: 'You already left feedback for this trading partner — feedback only counts once per person, no matter how many trades you do together.' });
-    const { data: review, error } = await supabaseAdmin.from('reviews').insert([{ trade_id: req.params.id, reviewer_id: req.userId, reviewee_id: toUserId, rating: parseInt(rating), comment: comment || '', created_at: new Date() }]).select();
+    // Feedback is scoped per payment method: the same two users CAN leave feedback
+    // again if their next trade uses a DIFFERENT payment method, but cannot repeat
+    // feedback on the same payment method (prevents inflating badges via repeat trades).
+    const payMethod = (trade.payment_method || '').trim().toLowerCase();
+    if (payMethod) {
+      // Check if this reviewer already left feedback for this reviewee on a trade
+    // with the same payment method (via trade → reviews join).
+      const { data: dupReview } = await supabaseAdmin
+        .from('reviews')
+        .select('id, trade_id')
+        .eq('reviewer_id', req.userId)
+        .eq('reviewee_id', toUserId)
+        .limit(50);
+      if (dupReview && dupReview.length > 0) {
+        const dupTradeIds = dupReview.map(r => r.trade_id).filter(Boolean);
+        if (dupTradeIds.length > 0) {
+          const { data: dupTrades } = await supabaseAdmin
+            .from('trades')
+            .select('id, payment_method')
+            .in('id', dupTradeIds);
+          const hasDup = (dupTrades || []).some(t => (t.payment_method || '').trim().toLowerCase() === payMethod);
+          if (hasDup) {
+            return res.status(400).json({ error: `You've already given feedback to this user for trades using this payment method. Feedback can only be given again when you trade using a different payment method.` });
+          }
+        }
+      }
+    }
+    const { data: review, error } = await supabaseAdmin.from('reviews').insert([{ trade_id: req.params.id, reviewer_id: req.userId, reviewee_id: toUserId, rating: parseInt(rating), comment: comment || '', payment_method: trade.payment_method || null, created_at: new Date() }]).select();
     if (error) return res.status(400).json({ error: error.message });
 
     // ── Atomic feedback increment via DB function ─────────────────────────────

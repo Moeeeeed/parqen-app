@@ -622,7 +622,7 @@ const loadAll = useCallback(async (isBackground = false) => {
                     <Star size={18} fill="currentColor" style={{ color: C.gold }} />
                     <div>
                       <span style={{ fontSize:18, fontWeight:900, color:'#fff', lineHeight:1 }}>{rating.toFixed(1)}</span>
-                      <span style={{ fontSize:11, color:'rgba(255,255,255,0.6)', marginLeft:4, fontWeight:600 }}>/ 5.0 · {totalFeedback} reviews</span>
+                      <span style={{ fontSize:11, color:'rgba(255,255,255,0.6)', marginLeft:4, fontWeight:600 }}>/ 5.0 · {totalFeedback} feedback</span>
                     </div>
                   </div>
                 )}

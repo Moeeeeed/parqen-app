@@ -417,9 +417,19 @@ function ProfilePopup({user, label, trade, onClose}) {
       .catch(() => {});
   }, [user?.id]);
 
+  // Reset reviews when the user prop changes (prevents stale reviews from previous user)
+  const prevUserIdRef = useRef(user?.id);
+  useEffect(() => {
+    if (prevUserIdRef.current !== user?.id) {
+      setReviews([]);
+      setRvLoad(false);
+      prevUserIdRef.current = user?.id;
+    }
+  }, [user?.id]);
+
   // Load real reviews when feedback tab is opened
   useEffect(() => {
-    if (tab !== 'feedback' || !user?.id || reviews.length) return;
+    if (tab !== 'feedback' || !user?.id) return;
     setRvLoad(true);
     axios.get(`${API_URL}/users/${user.id}/reviews`)
       .then(r => setReviews(r.data.reviews || []))
@@ -464,7 +474,7 @@ function ProfilePopup({user, label, trade, onClose}) {
 
   const TABS = [
     { id:'overview',  label:'Profile' },
-    { id:'feedback',  label:`Reviews (${reviewCount})` },
+    { id:'feedback',  label:`Feedback (${reviewCount})` },
     { id:'rules',     label:'Rules' },
     { id:'trade',     label:'Trade' },
   ];

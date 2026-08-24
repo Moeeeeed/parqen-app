@@ -4973,7 +4973,7 @@ function TopTradersSection() {
               ))}
             </div>
             <div>
-              <p className="text-xs font-black mb-2" style={{ color: C.g600 }}>Recent Reviews</p>
+              <p className="text-xs font-black mb-2" style={{ color: C.g600 }}>Recent Feedback</p>
               {reviewsLoading ? <Spin /> : userReviews.length === 0
                 ? <p className="text-xs text-center py-3" style={{ color: C.g400 }}>No reviews yet</p>
                 : userReviews.map((rv, i) => (
@@ -5291,7 +5291,7 @@ function UsersSection() {
               </div>
             )}
 
-            <p className="text-xs font-black mb-2" style={{ color: C.g600 }}>Recent Reviews</p>
+            <p className="text-xs font-black mb-2" style={{ color: C.g600 }}>Recent Feedback</p>
             {userReviews.length === 0
               ? <p className="text-xs text-center py-2" style={{ color: C.g400 }}>No reviews</p>
               : userReviews.map((rv, i) => (

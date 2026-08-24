@@ -621,9 +621,10 @@ class TradeEscrowService {
       await supabaseAdmin.from('escrow_locks')
         .update({ status: 'RELEASED', released_at: new Date().toISOString() })
         .eq('trade_id', tradeId).eq('status', 'RELEASING');
-      await supabaseAdmin.from('trades')
+      const { error: usdtTradeErr } = await supabaseAdmin.from('trades')
         .update({ status: 'COMPLETED', buyer_btc_txhash: releaseTxHash })
         .eq('id', tradeId);
+      if (usdtTradeErr) throw new Error(`Failed to mark trade as COMPLETED: ${usdtTradeErr.message}`);
 
       console.log(`[Escrow] ✅ USDT credited: ${symbol}${buyerGets.toFixed(decimals)} → receiver ${btcReceiverId.slice(0,8)}`);
 
@@ -650,15 +651,14 @@ class TradeEscrowService {
         .eq('trade_id', tradeId).eq('status', 'RELEASING');
       if (lockErr) console.error(`[Escrow] escrow_locks mark-released failed: ${lockErr.message}`);
 
-      await supabaseAdmin.from('trades')
+      const { error: tradeUpdateErr } = await supabaseAdmin.from('trades')
           .update({
             status:             'COMPLETED',
             buyer_btc_txhash:   releaseTxHash,
-            release_tx_hash:    releaseTxHash,
             completed_at:       new Date().toISOString(),
-            buyer_received_btc: buyerGets,
           })
           .eq('id', tradeId);
+      if (tradeUpdateErr) throw new Error(`Failed to mark trade as COMPLETED: ${tradeUpdateErr.message}`);
 
       console.log(`[Escrow] ✅ BTC credited: ₿${buyerGets.toFixed(8)} → receiver ${btcReceiverId.slice(0,8)}`);
     }
