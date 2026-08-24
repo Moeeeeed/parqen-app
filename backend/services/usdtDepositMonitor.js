@@ -329,6 +329,23 @@ class USDTDepositMonitor {
         return;
       }
 
+      // Re-certify the new USDT balance in balance_audit — swapService.js's
+      // _assertLedgerTrueUsdt refuses any USDT→BTC swap where wallets.balance_usdt
+      // doesn't match the last USDT-context row here. Without stamping it on every
+      // deposit too (previously only swaps and trade escrow release/refund did), a
+      // user who deposits USDT after their first trade or swap would have every
+      // subsequent swap falsely blocked as a "balance doesn't match" integrity
+      // failure. change_btc: 0 marks this as a USDT-context row, matching the
+      // convention _assertLedgerTrueUsdt filters on. Fire-and-forget like every
+      // other balance_audit write in this codebase; logged loudly on failure.
+      supabaseAdmin.from('balance_audit').insert({
+        user_id:     userId,
+        change_btc:  0,
+        new_balance: newUsdt,
+        reason:      'DEPOSIT',
+        created_at:  new Date().toISOString(),
+      }).then(null, (e) => console.error(`[USDTMonitor] ⚠️ balance_audit stamp failed after USDT deposit for ${username} — their next swap may be falsely blocked:`, e.message));
+
       // ── Step 6: Record in wallet_transactions ─────────────────────────────
       await supabaseAdmin.from('wallet_transactions').insert({
         user_id:     userId,

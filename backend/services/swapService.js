@@ -99,14 +99,21 @@ class SwapService {
   // swapped out more BTC than their last confirmed balance, during the window
   // before the corrupted balance was caught and restored.
   //
-  // No equivalent audit table exists for USDT yet, so this check only guards
-  // the BTC→USDT direction (the one actually exploited). USDT→BTC still only
-  // checks the raw wallets.balance_usdt column.
+  // change_btc != 0 restricts this to BTC-context rows only — the same table
+  // also holds USDT-context rows (change_btc: 0, e.g. ESCROW_RELEASE/REFUND on
+  // a USDT-currency trade, or SWAP_USDT) whose new_balance is a dollar figure,
+  // not BTC. Without this filter, any user whose most recent balance_audit row
+  // happened to be a USDT-context one (extremely common — most trades on this
+  // platform are USDT-based) had every BTC→USDT swap falsely refused: the raw
+  // BTC balance was compared against a leftover USDT dollar figure, which of
+  // course never matched. This was the actual cause of swaps failing for most
+  // users, not real balance drift.
   async _assertLedgerTrueBtc(userId, walletBtc) {
     const { data: lastAudit, error } = await supabaseAdmin
       .from('balance_audit')
       .select('new_balance, created_at')
       .eq('user_id', userId)
+      .neq('change_btc', 0)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -132,17 +139,21 @@ class SwapService {
   // but balance_audit already accumulates trustworthy USDT snapshots as a side
   // effect of normal operation: ESCROW_RELEASE/ESCROW_REFUND stamp the resulting
   // USDT balance with change_btc=0 for USDT-currency trades (tradeEscrowService.js),
-  // and swapBtcToUsdt/swapUsdtToBtc below stamp their own resulting USDT balance
-  // the same way. change_btc=0 is what marks a row as "this new_balance is a USDT
-  // figure, not BTC" — every BTC-context reason (INTEGRITY_SYNC, BTC-side SWAP
-  // stamps, real BTC trades) writes a genuine non-zero change_btc in practice.
+  // swapBtcToUsdt/swapUsdtToBtc below stamp their own resulting USDT balance the
+  // same way, and usdtDepositMonitor.js stamps it after every confirmed USDT
+  // deposit (reason: 'DEPOSIT') — without that last one, any deposit made after a
+  // user's first trade/swap would drift wallets.balance_usdt away from the last
+  // audited figure and falsely block every swap afterward. change_btc=0 is what
+  // marks a row as "this new_balance is a USDT figure, not BTC" — every BTC-context
+  // reason (INTEGRITY_SYNC, BTC-side SWAP/DEPOSIT stamps, real BTC trades) writes a
+  // genuine non-zero change_btc in practice.
   async _assertLedgerTrueUsdt(userId, walletUsdt) {
     const { data: lastAudit, error } = await supabaseAdmin
       .from('balance_audit')
       .select('new_balance, created_at')
       .eq('user_id', userId)
       .eq('change_btc', 0)
-      .in('reason', ['ESCROW_RELEASE', 'ESCROW_REFUND', 'SWAP_USDT'])
+      .in('reason', ['ESCROW_RELEASE', 'ESCROW_REFUND', 'SWAP_USDT', 'DEPOSIT'])
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();

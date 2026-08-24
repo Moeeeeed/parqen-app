@@ -226,10 +226,28 @@ async function syncTraderOfWeek() {
   }
 }
 
+// Volume is recomputed fresh on every read here, not trusted from the stored
+// snapshot — that snapshot is only ever written once, at rotation time (or at
+// pin time for a manually pinned row), so it would otherwise freeze at whatever
+// it was then and never reflect trades the winner completes afterward. Pinned
+// rows in particular are never touched again by the weekly rotation, so without
+// this a pinned trader's shown volume would go stale forever even as they keep
+// trading. Small row count (one winner per country per category) makes this
+// cheap enough to do on every request.
 async function getAllWinners() {
   const { data, error } = await supabaseAdmin.from('trader_of_week').select('*');
   if (error) return {};
-  return Object.fromEntries((data || []).map(r => [r.category, r]));
+  const rows = data || [];
+  const withLiveVolume = await Promise.all(rows.map(async (r) => {
+    if (!r.user_id) return r;
+    try {
+      const { volume_usd, volume_days } = await fetchWinnerVolume(r.user_id);
+      return { ...r, volume_usd, volume_days };
+    } catch {
+      return r; // fall back to the stored snapshot if the live lookup fails
+    }
+  }));
+  return Object.fromEntries(withLiveVolume.map(r => [r.category, r]));
 }
 
 module.exports = { syncTraderOfWeek, getAllWinners, computeAllWinners };

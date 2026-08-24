@@ -550,6 +550,23 @@ class DepositMonitor {
         return;
       }
 
+      // Re-certify the new BTC balance in balance_audit — swapService.js's
+      // _assertLedgerTrueBtc refuses any swap where wallets.balance_btc doesn't match
+      // the LAST row here. Without stamping it on every deposit too (previously only
+      // swaps and trade escrow release/refund did), a user who deposits BTC after their
+      // first trade or swap would have every subsequent swap falsely blocked as a
+      // "balance doesn't match" integrity failure — the deposit legitimately moved their
+      // balance away from the last-audited figure but never re-stamped it. Fire-and-forget
+      // like every other balance_audit write in this codebase; logged loudly on failure
+      // since a missed stamp here silently reintroduces that false-positive block.
+      supabaseAdmin.from('balance_audit').insert({
+        user_id:     userId,
+        change_btc:  depositBTC,
+        new_balance: newBalanceBTC,
+        reason:      'DEPOSIT',
+        created_at:  new Date().toISOString(),
+      }).then(null, (e) => console.error(`[DepositMonitor] ⚠️ balance_audit stamp failed after BTC deposit for ${username} — their next swap may be falsely blocked:`, e.message));
+
       // ── Step 5b2: Record in wallet_transactions — REQUIRED for idempotency when last_onchain_btc column is absent ──
       const { error: txInsertErr } = await supabaseAdmin
         .from('wallet_transactions')

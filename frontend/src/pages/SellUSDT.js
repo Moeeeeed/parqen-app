@@ -35,6 +35,12 @@ const C = {
   warn:'#F59E0B',
 };
 
+// Only auto-focus dropdown search inputs on devices with a real (mouse-like)
+// pointer. On touch devices, autoFocus pops the on-screen keyboard the instant
+// a dropdown opens, and the tap meant to select an option instead gets
+// consumed dismissing the keyboard — the option never registers as selected.
+const IS_FINE_POINTER = typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(pointer: fine)').matches;
+
 const CUR_SYM = {
   GHS:'₵', NGN:'₦', KES:'KSh', ZAR:'R', UGX:'USh', TZS:'TSh',
   USD:'$', GBP:'£', EUR:'€', XAF:'CFA', XOF:'CFA', RWF:'RF',
@@ -1363,7 +1369,7 @@ export default function SellUSDT({user}) {
                   <div className="p-2 border-b sticky top-0 bg-white" style={{borderColor:C.g100}}>
                     <input type="text" placeholder="Search currency…"
                       value={currencySearch} onChange={e=>setCurrencySearch(e.target.value)}
-                      autoFocus
+                      autoFocus={IS_FINE_POINTER}
                       className="w-full px-3 py-1.5 font-semibold rounded-xl border focus:outline-none"
                       style={{borderColor:C.g200,color:C.g800,fontSize:'16px'}}/>
                   </div>
@@ -1408,7 +1414,7 @@ export default function SellUSDT({user}) {
                   <div className="p-2 border-b sticky top-0 bg-white" style={{borderColor:C.g100}}>
                     <input type="text" placeholder="Search payment…"
                       value={paymentSearch} onChange={e=>setPaymentSearch(e.target.value)}
-                      autoFocus
+                      autoFocus={IS_FINE_POINTER}
                       className="w-full px-3 py-1.5 font-semibold rounded-xl border focus:outline-none"
                       style={{borderColor:C.g200,color:C.g800,fontSize:'16px'}}/>
                   </div>
@@ -1462,7 +1468,7 @@ export default function SellUSDT({user}) {
                   <div className="p-2 border-b sticky top-0 bg-white" style={{borderColor:C.g100}}>
                     <input type="text" placeholder="Search country…"
                       value={countrySearch} onChange={e=>setCountrySearch(e.target.value)}
-                      autoFocus
+                      autoFocus={IS_FINE_POINTER}
                       className="w-full px-3 py-1.5 font-semibold rounded-xl border focus:outline-none"
                       style={{borderColor:C.g200,color:C.g800,fontSize:'16px'}}/>
                   </div>

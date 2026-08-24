@@ -4786,9 +4786,15 @@ function FeedbackSection() {
                       "{rv.comment}"
                     </p>
                   )}
-                  {rv.trade_id && (
-                    <p className="text-xs mt-1.5" style={{ color: C.g400 }}>
-                      Trade #{rv.trade_id.slice(0, 8).toUpperCase()}
+                  {(rv.trade_id || rv.payment_method) && (
+                    <p className="text-xs mt-1.5 flex items-center gap-1.5 flex-wrap" style={{ color: C.g400 }}>
+                      {rv.trade_id && <span>Trade #{rv.trade_id.slice(0, 8).toUpperCase()}</span>}
+                      {rv.trade_id && rv.payment_method && <span>·</span>}
+                      {rv.payment_method && (
+                        <span className="font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: C.g100, color: C.g600 }}>
+                          {rv.payment_method}
+                        </span>
+                      )}
                     </p>
                   )}
                 </div>

@@ -98,6 +98,11 @@ const FEATURED = {
   },
 };
 
+// Only auto-focus dropdown search inputs on devices with a real (mouse-like)
+// pointer. On touch devices, autoFocus pops the on-screen keyboard the instant
+// a dropdown opens, and the tap meant to select an option instead gets
+// consumed dismissing the keyboard — the option never registers as selected.
+const IS_FINE_POINTER = typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(pointer: fine)').matches;
 
 const CUR_SYM = {
   GHS:'₵', NGN:'₦', KES:'KSh', ZAR:'R', UGX:'USh', TZS:'TSh',
@@ -1227,11 +1232,17 @@ export default function SellBitcoin({user}) {
 
   // Auto-picked "High Volume Trader of the Week" — one per country, backend rotates
   // this weekly (services/traderOfWeekService.js) among buyers paying through that
-  // country's own local payment method (e.g. MTN Momo in Ghana).
+  // country's own local payment method (e.g. MTN Momo in Ghana). Polled, not just
+  // fetched once, because the backend now recomputes each winner's trade volume
+  // live on every read — without polling here, the volume shown would only ever
+  // update on a full page reload instead of growing as they keep trading.
   useEffect(() => {
-    axios.get(`${API_URL}/trader-of-week`)
+    const loadTraderOfWeek = () => axios.get(`${API_URL}/trader-of-week`)
       .then(r => setTraderOfWeek(r.data?.winners || {}))
       .catch(() => {});
+    loadTraderOfWeek();
+    const iv = setInterval(loadTraderOfWeek, 60000);
+    return () => clearInterval(iv);
   }, []);
 
   const fetchOnlineStatus = (currentOffers) => {
@@ -1676,7 +1687,7 @@ export default function SellBitcoin({user}) {
                   <div className="p-2 border-b sticky top-0 bg-white" style={{borderColor:C.g100}}>
                     <input type="text" placeholder="Search currency…"
                       value={currencySearch} onChange={e=>setCurrencySearch(e.target.value)}
-                      autoFocus
+                      autoFocus={IS_FINE_POINTER}
                       className="w-full px-3 py-1.5 font-semibold rounded-xl border focus:outline-none"
                       style={{borderColor:C.g200,color:C.g800,fontSize:'16px'}}/>
                   </div>
@@ -1730,7 +1741,7 @@ export default function SellBitcoin({user}) {
                   <div className="p-2 border-b sticky top-0 bg-white" style={{borderColor:C.g100}}>
                     <input type="text" placeholder="Search payment…"
                       value={paymentSearch} onChange={e=>setPaymentSearch(e.target.value)}
-                      autoFocus
+                      autoFocus={IS_FINE_POINTER}
                       className="w-full px-3 py-1.5 font-semibold rounded-xl border focus:outline-none"
                       style={{borderColor:C.g200,color:C.g800,fontSize:'16px'}}/>
                   </div>
@@ -1793,7 +1804,7 @@ export default function SellBitcoin({user}) {
                   <div className="p-2 border-b sticky top-0 bg-white" style={{borderColor:C.g100}}>
                     <input type="text" placeholder="Search country…"
                       value={countrySearch} onChange={e=>setCountrySearch(e.target.value)}
-                      autoFocus
+                      autoFocus={IS_FINE_POINTER}
                       className="w-full px-3 py-1.5 font-semibold rounded-xl border focus:outline-none"
                       style={{borderColor:C.g200,color:C.g800,fontSize:'16px'}}/>
                   </div>

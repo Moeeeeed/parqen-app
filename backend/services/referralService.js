@@ -281,6 +281,19 @@ class ReferralService {
                 .update({ balance_btc: newBalance, updated_at: new Date().toISOString() })
                 .eq('user_id', userId);
 
+            // Re-certify the new BTC balance in balance_audit — swapService.js's
+            // _assertLedgerTrueBtc refuses any swap where wallets.balance_btc doesn't
+            // match the last BTC-context row here. Without stamping it after crediting
+            // referral earnings too, a user who withdraws referral earnings after their
+            // first trade or swap would have every subsequent swap falsely blocked.
+            supabaseAdmin.from('balance_audit').insert({
+                user_id:     userId,
+                change_btc:  totalEarningsBtc,
+                new_balance: newBalance,
+                reason:      'REFERRAL_WITHDRAWAL',
+                created_at:  new Date().toISOString(),
+            }).then(null, (e) => console.error(`[ReferralService] ⚠️ balance_audit stamp failed after referral withdrawal for ${userId.slice(0, 8)} — their next swap may be falsely blocked:`, e.message));
+
             // Mark earnings as withdrawn
             const ids = earnings.map(e => e.id);
             await supabaseAdmin
