@@ -8204,6 +8204,15 @@ app.post('/api/trades/:id/mark-paid', tradeLimiter, verifyToken, async (req, res
       listingCreatorId = listing?.seller_id || '';
     }
     const isGiftCardTrade = listingType.toUpperCase().includes('GIFT_CARD');
+    // Mirrors tradeEscrowService.releaseBitcoinToBuyer's isBuyGiftCard/authorizedId
+    // mapping: BUY_GIFT_CARD keeps the normal buyer/seller roles (offer creator/
+    // seller_id holds the BTC, trade opener/buyer_id brings the card and marks
+    // paid) — only SELL_GIFT_CARD flips them (offer creator/seller_id brings the
+    // card and marks paid, buyer_id's BTC is what's locked). Treating every
+    // gift-card trade as SELL_GIFT_CARD-shaped (as this used to) let a
+    // BUY_GIFT_CARD vendor — who has no card to send — self-mark "paid" while
+    // the actual card holder (buyer) was never authorized to.
+    const isSellGiftCard = listingType.toUpperCase() === 'SELL_GIFT_CARD';
 
     const isParticipant = String(trade.buyer_id) === String(req.userId) ||
       String(trade.seller_id) === String(req.userId);
@@ -8211,19 +8220,9 @@ app.post('/api/trades/:id/mark-paid', tradeLimiter, verifyToken, async (req, res
 
     console.log(`[mark-paid] trade=${req.params.id.slice(0, 8)} isGiftCard=${isGiftCardTrade} buyer=${String(trade.buyer_id).slice(0, 8)} seller=${String(trade.seller_id).slice(0, 8)} reqUser=${String(req.userId).slice(0, 8)}`);
 
-    if (isGiftCardTrade) {
-      // Gift card trade: the card SELLER marks "I sent the code"
-      if (String(trade.seller_id) !== String(req.userId)) {
-        return res.status(403).json({ error: 'Only the card seller can mark as sent' });
-      }
-    } else {
-      // Bitcoin trade (BUY page or SELL page):
-      // buyer_id is always the cash payer — the one who marks "I have paid".
-      // On BUY page: buyer_id = trade opener (brings cash).
-      // On SELL page: buyer_id = listing creator (has cash, wants BTC).
-      if (String(trade.buyer_id) !== String(req.userId)) {
-        return res.status(403).json({ error: 'Only the buyer can mark as paid' });
-      }
+    const payerId = isSellGiftCard ? trade.seller_id : trade.buyer_id;
+    if (String(payerId) !== String(req.userId)) {
+      return res.status(403).json({ error: `Only the ${isSellGiftCard ? 'card seller' : isGiftCardTrade ? 'card buyer' : 'buyer'} can mark as sent` });
     }
 
 
@@ -8242,10 +8241,9 @@ app.post('/api/trades/:id/mark-paid', tradeLimiter, verifyToken, async (req, res
     if (!data) return res.status(409).json({ error: 'Trade status changed before payment could be confirmed. Please refresh and try again.' });
     if (error) return res.status(400).json({ error: error.message });
 
-    // Notify whoever needs to act next
-    // Gift card: notify Alice (buyer) to verify the code and release BTC
-    // BTC trade: notify seller to verify fiat and release BTC
-    const notifyId = isGiftCardTrade ? trade.buyer_id : trade.seller_id;
+    // Notify whoever needs to act next — the party authorized to release, i.e.
+    // whoever DIDN'T just mark paid above (mirrors payerId/isSellGiftCard).
+    const notifyId = isSellGiftCard ? trade.buyer_id : trade.seller_id;
     const { data: actorUser } = await supabaseAdmin.from('users').select('username').eq('id', req.userId).single();
     const actorName = actorUser?.username || 'Buyer';
     const fmtN = n => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(n || 0);
@@ -8394,8 +8392,6 @@ app.post('/api/trades/:id/cancel', tradeLimiter, verifyToken, async (req, res) =
         .from('listings').select('listing_type').eq('id', trade.listing_id).single();
       listingType = listing?.listing_type || '';
     }
-    const isGiftCardTrade = listingType.toUpperCase().includes('GIFT_CARD');
-
     if (trade.status === 'DISPUTED') {
       // Only the person who OPENED the dispute can withdraw/self-cancel it — the
       // other party can't cancel their way out of a dispute filed against them.
@@ -8408,26 +8404,27 @@ app.post('/api/trades/:id/cancel', tradeLimiter, verifyToken, async (req, res) =
         // self-cancel; safest fallback is to require moderator resolution.
         return res.status(403).json({ error: 'This dispute cannot be self-cancelled — a moderator will resolve it.' });
       }
-    } else if (isGiftCardTrade) {
-      // Gift card trades lock the BTC BUYER's funds (buyer_id = the card
-      // purchaser paying in BTC), not the seller's — see /api/trades and
-      // tradeEscrowService.releaseBitcoinToBuyer. So here it's the escrow-
-      // holding BUYER who must not be able to cancel on demand (they could
-      // pocket a gift card code sent moments later and still reclaim their
-      // BTC). The SELLER — the one bringing the gift card, with nothing
-      // locked in escrow — can cancel freely; the buyer must dispute instead.
-      if (!isSeller) {
-        return res.status(403).json({ error: 'Only the gift card seller can cancel this trade — open a dispute instead' });
-      }
     } else {
-      // Not yet disputed: only the BUYER can unilaterally cancel. Sellers hold
-      // the escrowed BTC — letting a seller cancel on demand (even before payment)
-      // gives them an easy way to pocket a payment the buyer sends moments later
-      // and still reclaim the BTC, or simply back a buyer into a corner. A seller
-      // who wants out of a trade must open a dispute instead, so a moderator can
-      // review it rather than the seller unilaterally deciding.
-      if (!isBuyer) {
-        return res.status(403).json({ error: 'Only the buyer can cancel this trade — open a dispute instead' });
+      // Whichever side's BTC is actually locked in escrow must not be able to
+      // cancel on demand — they could pocket a payment (or a gift card code)
+      // sent moments later and still reclaim their BTC. That side must open a
+      // dispute instead, so a moderator reviews it rather than them unilaterally
+      // backing out.
+      //
+      // This must mirror POST /api/trades' buyer/seller → btcProviderId mapping
+      // exactly: the offer CREATOR (seller_id) holds the escrowed BTC for every
+      // listing type — SELL, SELL_BITCOIN, BUY_GIFT_CARD (vendor has BTC, wants
+      // a card), and the BUY/BUY_BITCOIN fallback — EXCEPT SELL_GIFT_CARD, where
+      // the creator brings the gift card instead and the trade OPENER (buyer_id)
+      // is the one whose BTC locks. Treating every gift-card trade the same
+      // (as this used to) let a BUY_GIFT_CARD vendor — the actual escrow holder —
+      // cancel freely while the card-bringing buyer, holding nothing in escrow,
+      // was stuck dispute-only.
+      const btcProviderIsBuyer = listingType.toUpperCase() === 'SELL_GIFT_CARD';
+      const canCancel = btcProviderIsBuyer ? isSeller : isBuyer;
+      if (!canCancel) {
+        const allowedRole = btcProviderIsBuyer ? 'seller' : 'buyer';
+        return res.status(403).json({ error: `Only the ${allowedRole} can cancel this trade — open a dispute instead` });
       }
     }
 

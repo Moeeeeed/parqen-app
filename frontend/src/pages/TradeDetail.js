@@ -1231,13 +1231,15 @@ export default function TradeDetail({user}) {
         {},
         {headers:authH()});
       setPaidAt(Date.now()); // Record the paid timestamp shown in the system message
-      toast.success(isGiftCardTrade ? 'Code sent! Waiting for buyer to verify.' : 'Payment confirmed!');
+      toast.success(isGiftCardTrade ? `Code sent! Waiting for ${isSellGiftCard ? 'buyer' : 'seller'} to verify.` : 'Payment confirmed!');
       // Post this as a real system message in the chat (matches the "Trade
       // Complete"/"Trade Cancelled" system messages below) instead of only a
       // floating banner outside the message flow — the isPmt card renderer
       // in the message list picks this up from the "confirmed payment" text.
       await postSys(isGiftCardTrade
-        ? `Seller confirmed sending the gift card code. Buyer: please verify the code, then release Bitcoin.`
+        ? (isSellGiftCard
+          ? `Seller confirmed sending the gift card code. Buyer: please verify the code, then release Bitcoin.`
+          : `Buyer confirmed sending the gift card code. Seller: please verify the code, then release Bitcoin.`)
         : `Buyer confirmed payment via ${payMethod}. Seller: please check your account now.`);
       await loadTrade();
     }catch(e){
@@ -1440,6 +1442,15 @@ export default function TradeDetail({user}) {
     (gcBrand && !BTCBrands.includes(gcBrand)) ||
     trade?.listing?.listing_type?.includes('GIFT_CARD')
   );
+  // BUY_GIFT_CARD keeps the normal buyer/seller ↔ BTC-holder mapping (offer
+  // creator/seller_id holds the escrowed BTC, trade opener/buyer_id brings the
+  // card) — only SELL_GIFT_CARD flips it (creator brings the card, opener's BTC
+  // locks). Must mirror the backend's tradeEscrowService.releaseBitcoinToBuyer
+  // isBuyGiftCard check and the /mark-paid, /cancel role checks — treating every
+  // gift-card trade as SELL_GIFT_CARD-shaped (as this used to) hid Release from
+  // the actual BUY_GIFT_CARD escrow holder (seller) and offered it to the wrong
+  // party, and let that same wrong party cancel unilaterally too.
+  const isSellGiftCard = (trade?.listing?.listing_type || '').toUpperCase() === 'SELL_GIFT_CARD';
   const isSellFlow = isSeller && !isGiftCardTrade;
   const T = isSellFlow ? {
     primary: '#D97706', dark: '#B45309',
@@ -1449,11 +1460,11 @@ export default function TradeDetail({user}) {
     grad: `linear-gradient(135deg, ${C.forest}, ${C.green})`,
   };
 
-  // Gift card trade: card SELLER (the one bringing the card) marks "sent code";
-  //                  BTC BUYER (the one paying in BTC) verifies & releases BTC.
-  // BTC trade:       BUYER sends payment, SELLER confirms & releases BTC.
-  const showMarkPaid  = isGiftCardTrade ? (isSeller&&isEscrow&&isActive)  : (isBuyer&&isEscrow&&isActive);
-  const showRelease   = isGiftCardTrade ? (isBuyer&&isPaid&&isActive)   : (isSeller&&isPaid&&isActive);
+  // Whoever brings the non-BTC value (fiat, or the gift card on a BUY_GIFT_CARD
+  // listing) marks "sent"; whoever holds the escrowed BTC verifies & releases.
+  // Only SELL_GIFT_CARD swaps which of buyer/seller that is — see isSellGiftCard.
+  const showMarkPaid  = (isSellGiftCard ? isSeller : isBuyer) && isEscrow && isActive;
+  const showRelease   = (isSellGiftCard ? isBuyer : isSeller) && isPaid   && isActive;
   // Dispute is only available AFTER payment has been confirmed as sent.
   // Before that, there's nothing to dispute — the buyer hasn't even indicated
   // they've sent payment yet.
@@ -1463,15 +1474,12 @@ export default function TradeDetail({user}) {
   // The backend enforces the actual permission rules — this only controls whether
   // the button renders, matching what the server will accept.
   // While DISPUTED: ONLY the person who opened the dispute can cancel.
-  // BTC trades:       only the BUYER can cancel (the seller holds escrowed BTC and
-  //                    must dispute instead — see /api/trades/:id/cancel).
-  // Gift card trades: escrow holds the BTC BUYER's funds instead, so it's the
-  //                    SELLER (the one bringing the card, nothing locked up) who
-  //                    can cancel; the buyer must dispute instead.
+  // Otherwise: whichever side holds the escrowed BTC must not be able to cancel
+  // on demand (see /api/trades/:id/cancel) — only the non-escrow side can.
   const showCancelBtn = isActive && (
     isDisputed
       ? !!trade?.disputed_by && String(trade.disputed_by) === String(user?.id)
-      : isGiftCardTrade ? isSeller : isBuyer
+      : (isSellGiftCard ? isSeller : isBuyer)
   );
 
   // Read receipts: timestamp of the last message the counterparty sent
@@ -1498,12 +1506,17 @@ export default function TradeDetail({user}) {
             <div className="bg-white rounded-2xl border shadow-sm p-4" style={{borderColor:C.g200}}>
               <p className="text-xs font-black uppercase tracking-wider mb-3 flex items-center gap-1" style={{color:C.g400}}><FileText size={13}/> Trade Progress</p>
               <div className="space-y-2.5">
-                {(isGiftCardTrade ? [
-                  {label:'Trade opened — Alice\'s BTC locked in escrow',  done:true},
+                {(isGiftCardTrade ? (isSellGiftCard ? [
+                  {label:'Trade opened — Buyer\'s BTC locked in escrow',  done:true},
                   {label:'Card seller sends gift card code to buyer',      done:isPaid||isCompleted},
                   {label:'Buyer verifies the code is valid',              done:isCompleted},
                   {label:'Buyer releases BTC to card seller (0.5% fee)',  done:isCompleted},
                 ] : [
+                  {label:'Trade opened — Seller\'s BTC locked in escrow', done:true},
+                  {label:'Card buyer sends gift card code to seller',      done:isPaid||isCompleted},
+                  {label:'Seller verifies the code is valid',             done:isCompleted},
+                  {label:'Seller releases BTC to card buyer (0.5% fee)',  done:isCompleted},
+                ]) : [
                   {label:'Trade opened — BTC locked in escrow',           done:true},
                   {label:`Buyer sends payment via ${payMethod}`,          done:isPaid||isCompleted},
                   {label:'Seller confirms payment received',              done:isPaid||isCompleted},
@@ -1530,9 +1543,9 @@ export default function TradeDetail({user}) {
                 <div className="p-3 rounded-xl text-xs font-semibold border"
                   style={{backgroundColor:'#FFFBEB',borderColor:'#FDE68A',color:'#92400E'}}>
                   {isGiftCardTrade
-                    ? isSeller
-                      ? <><Gift size={14} style={{flexShrink:0}}/> Your turn: Send your gift card code to the buyer in the chat, then click "I SENT THE CODE".</>
-                      : <><Clock size={14} style={{flexShrink:0}}/> Waiting for the seller to send you the gift card code&hellip;</>
+                    ? (isSellGiftCard ? isSeller : isBuyer)
+                      ? <><Gift size={14} style={{flexShrink:0}}/> Your turn: Send your gift card code to the {isSellGiftCard ? 'buyer' : 'seller'} in the chat, then click "I SENT THE CODE".</>
+                      : <><Clock size={14} style={{flexShrink:0}}/> Waiting for the {isSellGiftCard ? 'seller' : 'buyer'} to send you the gift card code&hellip;</>
                     : isBuyer
                       ? <><CreditCard size={14} style={{flexShrink:0}}/> Your turn: Send {payMethod} payment now, then click "I HAVE PAID" to notify the seller.</>
                       : <><Clock size={14} style={{flexShrink:0}}/> Waiting for the buyer to send payment&hellip;</>}
@@ -1541,9 +1554,9 @@ export default function TradeDetail({user}) {
               {isActive&&isPaid&&isGiftCardTrade&&(
                 <div className="p-3 rounded-xl text-xs font-semibold border"
                   style={{backgroundColor:'#F0FDF4',borderColor:'#86EFAC',color:'#166534'}}>
-                  {isBuyer
+                  {(isSellGiftCard ? isBuyer : isSeller)
                     ? <><CheckCircle size={14} style={{flexShrink:0}}/> Gift card code received! Test it — if it works, click RELEASE BITCOIN.</>
-                    : <><Clock size={14} style={{flexShrink:0}}/> Code sent! Buyer is verifying your gift card. Bitcoin releases once they confirm.</>}
+                    : <><Clock size={14} style={{flexShrink:0}}/> Code sent! {isSellGiftCard ? 'Buyer' : 'Seller'} is verifying your gift card. Bitcoin releases once they confirm.</>}
                 </div>
               )}
 
@@ -1848,14 +1861,12 @@ export default function TradeDetail({user}) {
               <SafetyBanner user={cp} variant="chat" className="flex-shrink-0" />
 
               {/* ── Trade Summary Banner — pinned above the messages, never scrolls away ──
-                   Gift card trades flip who's "buying"/"selling" BTC: the card bringer
-                   (seller_id) is spending the card to ACQUIRE BTC — they're buying it (green).
-                   The BTC holder (buyer_id) is giving up BTC to get the card — selling (red).
-                   Same flag drives both the banner color and its text so they can never
-                   disagree with each other. */}
+                   Whoever holds the escrowed BTC (see isSellGiftCard) is selling it (red);
+                   whoever brings the non-BTC value is acquiring it (green). Same flag drives
+                   both the banner color and its text so they can never disagree. */}
               {(() => {
-                const isBuyingBtc = isGiftCardTrade ? isSeller : isBuyer;
-                const isSellingBtc = isGiftCardTrade ? isBuyer : isSeller;
+                const isBuyingBtc = isSellGiftCard ? isSeller : isBuyer;
+                const isSellingBtc = isSellGiftCard ? isBuyer : isSeller;
                 const bannerText = isBuyingBtc
                   ? `YOU ARE BUYING ${fmtBtc(btcReceived)} BTC FOR ${userPays.toFixed(2)} (${cur}) WITH ${payMethod}`
                   : isSellingBtc
@@ -1892,10 +1903,8 @@ export default function TradeDetail({user}) {
                   const openedRaw = trade.created_at;
                   const openedDate = openedRaw ? new Date(/[Z+]/.test(openedRaw)?openedRaw:openedRaw+'Z') : new Date();
                   const openedLabel = `${String(openedDate.getDate()).padStart(2,'0')}/${String(openedDate.getMonth()+1).padStart(2,'0')}/${openedDate.getFullYear()} ${String(openedDate.getHours()).padStart(2,'0')}:${String(openedDate.getMinutes()).padStart(2,'0')}`;
-                  // Gift card trades flip buying/selling: the card bringer (seller_id)
-                  // is acquiring BTC with the card, the BTC holder (buyer_id) is giving
-                  // up BTC for the card — see the Trade Summary Banner above.
-                  const sysIsBuyingBtc = isGiftCardTrade ? isSeller : isBuyer;
+                  // See the Trade Summary Banner above — same isSellGiftCard flag.
+                  const sysIsBuyingBtc = isSellGiftCard ? isSeller : isBuyer;
                   const sysText = sysIsBuyingBtc
                     ? `You are buying ${fmtBtc(btcReceived)} BTC (${sym}${fmt(btcValueInLocal,2)} ${cur}) for ${sym}${fmt(userPays,2)} ${cur} via ${payMethod}. It is now safe for you to pay. You will have ${timeLimit} minutes to make your payment and click on the "PAID" button before the trade expires.`
                     : `You are selling ${fmtBtc(btcReceived)} BTC (${sym}${fmt(btcValueInLocal,2)} ${cur}) for ${sym}${fmt(userPays,2)} ${cur} via ${payMethod}. Wait for the buyer to send payment via ${payMethod}, then confirm it before releasing the Bitcoin. The buyer has ${timeLimit} minutes to pay before the trade expires.`;
@@ -1958,9 +1967,9 @@ export default function TradeDetail({user}) {
                           <p className="text-sm font-black mb-1.5" style={{color:'#15803D'}}>System message</p>
                           <p className="text-sm leading-relaxed font-semibold" style={{color:'#166534'}}>
                             {isGiftCardTrade
-                              ? (isSeller
-                                ? 'Your gift card code has been sent. The buyer is verifying it now. Once they confirm, Bitcoin will be released to you automatically.'
-                                : <>The seller has sent a gift card code. Verify the code — if valid, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Code not working? Open a dispute so a moderator can help.</>)
+                              ? ((isSellGiftCard ? isSeller : isBuyer)
+                                ? 'Your gift card code has been sent. The other party is verifying it now. Once they confirm, Bitcoin will be released to you automatically.'
+                                : <>A gift card code has been sent. Verify the code — if valid, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Code not working? Open a dispute so a moderator can help.</>)
                               : (isBuyer
                                 ? 'Partner is now verifying your payment. Once partner confirms the payment, funds will be sent to you.'
                                 : <>Buyer confirmed payment via {payMethod}. Check your account — if received, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Payment not received? Open a dispute so a moderator can help.</>)}
@@ -2233,7 +2242,7 @@ export default function TradeDetail({user}) {
                       <p className="text-white font-black text-sm"><PartyPopper size={20} style={{display:'inline'}}/> Congratulations!</p>
                       <p className="text-xs font-bold mt-0.5 mb-2" style={{color:'rgba(255,255,255,0.8)'}}>
                         {isGiftCardTrade
-                          ? `You just ${isSeller?'sold your gift card':'bought a gift card'} successfully!`
+                          ? `You just ${(isSellGiftCard?isSeller:isBuyer)?'sold your gift card':'bought a gift card'} successfully!`
                           : `You just ${isBuyer?'bought':'sold'} Bitcoin successfully!`}
                       </p>
                       <p className="text-xs mb-3 leading-snug" style={{color:'rgba(255,255,255,0.7)'}}>
@@ -2302,9 +2311,9 @@ export default function TradeDetail({user}) {
                       <p className="text-sm font-black mb-1.5" style={{color:'#1D4ED8'}}>System message</p>
                       <p className="text-sm leading-relaxed font-semibold" style={{color:'#1E40AF'}}>
                         {isGiftCardTrade
-                          ? (isSeller
-                            ? 'Your gift card code has been sent. The buyer is now verifying it. Once they confirm the code is valid, Bitcoin will be released to you automatically.'
-                            : <>The seller has sent a gift card code. Please verify the code — if valid, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Code not working? Open a dispute so a moderator can help.</>)
+                          ? ((isSellGiftCard ? isSeller : isBuyer)
+                            ? 'Your gift card code has been sent. The other party is now verifying it. Once they confirm the code is valid, Bitcoin will be released to you automatically.'
+                            : <>A gift card code has been sent. Please verify the code — if valid, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Code not working? Open a dispute so a moderator can help.</>)
                           : (isBuyer
                             ? 'Your payment has been sent successfully. The seller has been notified and will check their account now. Once they confirm receipt, your Bitcoin will be released to you automatically.'
                             : <>The buyer has confirmed payment. Please check your {payMethod} account right now. Check your account — if payment received, tap <strong>RELEASE BITCOIN</strong> to complete the trade. Payment not received? Open a dispute so a moderator can help.</>)}
@@ -2493,9 +2502,9 @@ export default function TradeDetail({user}) {
           iconBg={C.gold}
           title={isGiftCardTrade ? 'Confirm Gift Card Sent?' : 'Confirm Payment Sent?'}
           lines={isGiftCardTrade ? [
-            {icon:<Gift size={16}/>, text:'You are confirming you have sent the gift card code to the seller in the chat.'},
+            {icon:<Gift size={16}/>, text:`You are confirming you have sent the gift card code to the ${isSellGiftCard?'buyer':'seller'} in the chat.`},
             {icon:<AlertTriangle size={16} style={{color:C.warn}}/>, text:'Only confirm if you have already shared the code. This cannot be undone.'},
-            {icon:<Lock size={16}/>, text:'The seller will verify the code before Bitcoin is released.'},
+            {icon:<Lock size={16}/>, text:`The ${isSellGiftCard?'buyer':'seller'} will verify the code before Bitcoin is released.`},
           ] : [
             {icon:<CreditCard size={16}/>, text:`You are confirming you have sent the full payment via ${payMethod}.`},
             {icon:<AlertTriangle size={16} style={{color:C.warn}}/>, text:'Only confirm if you have already completed the transfer. This cannot be undone.'},
