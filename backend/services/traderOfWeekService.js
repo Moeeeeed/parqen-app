@@ -70,12 +70,18 @@ async function fetchActiveGiftCardListings() {
 }
 
 /** Computes every (page, country) winner + the gift_card winner in one pass, enforcing
- *  that no user_id is picked for more than one slot. Returns {category: winner}. */
+ *  that no user_id is picked for more than one slot. Skips any category that's
+ *  currently pinned (a manual admin override) and keeps that user reserved so
+ *  they can't also win a different slot. Returns {category: winner}. */
 async function computeAllWinners() {
-  const [btcListings, giftListings] = await Promise.all([
+  const [btcListings, giftListings, { data: pinnedRows }] = await Promise.all([
     fetchActiveBtcListings(),
     fetchActiveGiftCardListings(),
+    supabaseAdmin.from('trader_of_week').select('category, user_id').eq('pinned', true),
   ]);
+
+  const pinnedCategories = new Set((pinnedRows || []).map(r => r.category));
+  const usedUserIds = new Set((pinnedRows || []).map(r => r.user_id).filter(Boolean));
 
   const sellerIds = [...new Set([...btcListings, ...giftListings].map(l => l.seller_id).filter(Boolean))];
   if (sellerIds.length === 0) return {};
@@ -90,8 +96,6 @@ async function computeAllWinners() {
   const isEligible = (u) => !!u && u.account_status !== 'banned'
     && !!(u.last_seen_at || u.last_login)
     && new Date(u.last_seen_at || u.last_login).getTime() >= activeCutoff;
-
-  const usedUserIds = new Set();
 
   // Ranks the sellers behind a set of listings and hands the slot to the best
   // eligible one not already holding another badge; marks them used on success.
@@ -129,29 +133,35 @@ async function computeAllWinners() {
 
   for (const country of countries) {
     // Buy-page badge: Active Trader of the Week — most active seller in this country.
-    const sellListings = btcListings.filter(l =>
-      (l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN') &&
-      (l.country || '').toUpperCase() === country);
-    const buyPageWinner = pickWinner(sellListings, { country });
-    if (buyPageWinner) results[`buy_bitcoin:${country}`] = buyPageWinner;
+    if (!pinnedCategories.has(`buy_bitcoin:${country}`)) {
+      const sellListings = btcListings.filter(l =>
+        (l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN') &&
+        (l.country || '').toUpperCase() === country);
+      const buyPageWinner = pickWinner(sellListings, { country });
+      if (buyPageWinner) results[`buy_bitcoin:${country}`] = buyPageWinner;
+    }
 
     // Sell-page badge: High Volume Trader of the Week — most active buyer in this
     // country who pays through the country's own local payment method.
-    const buyListingsAll = btcListings.filter(l =>
-      (l.listing_type === 'BUY' || l.listing_type === 'BUY_BITCOIN') &&
-      (l.country || '').toUpperCase() === country);
-    const localMethod = COUNTRY_LOCAL_PAYMENT[country] || dominantPaymentMethod(buyListingsAll);
-    const localBuyListings = localMethod
-      ? buyListingsAll.filter(l => String(l.payment_method || '').toLowerCase().includes(localMethod))
-      : buyListingsAll;
-    const sellPageWinner = pickWinner(localBuyListings.length ? localBuyListings : buyListingsAll, {
-      country, payment_method: localMethod || null,
-    });
-    if (sellPageWinner) results[`sell_bitcoin:${country}`] = sellPageWinner;
+    if (!pinnedCategories.has(`sell_bitcoin:${country}`)) {
+      const buyListingsAll = btcListings.filter(l =>
+        (l.listing_type === 'BUY' || l.listing_type === 'BUY_BITCOIN') &&
+        (l.country || '').toUpperCase() === country);
+      const localMethod = COUNTRY_LOCAL_PAYMENT[country] || dominantPaymentMethod(buyListingsAll);
+      const localBuyListings = localMethod
+        ? buyListingsAll.filter(l => String(l.payment_method || '').toLowerCase().includes(localMethod))
+        : buyListingsAll;
+      const sellPageWinner = pickWinner(localBuyListings.length ? localBuyListings : buyListingsAll, {
+        country, payment_method: localMethod || null,
+      });
+      if (sellPageWinner) results[`sell_bitcoin:${country}`] = sellPageWinner;
+    }
   }
 
-  const giftCardWinner = pickWinner(giftListings);
-  if (giftCardWinner) results.gift_card = giftCardWinner;
+  if (!pinnedCategories.has('gift_card')) {
+    const giftCardWinner = pickWinner(giftListings);
+    if (giftCardWinner) results.gift_card = giftCardWinner;
+  }
 
   return results;
 }
@@ -178,7 +188,9 @@ async function syncTraderOfWeek() {
 
     // Full replace each rotation — slots are dynamic per-country now, so a country
     // that no longer has active listings must not keep a stale badge forever.
-    await supabaseAdmin.from('trader_of_week').delete().neq('category', '__never_matches__');
+    // Pinned rows (manual admin override) are left untouched — computeAllWinners()
+    // already excluded their categories, so nothing here would overwrite them anyway.
+    await supabaseAdmin.from('trader_of_week').delete().neq('category', '__never_matches__').eq('pinned', false);
     if (rows.length) await supabaseAdmin.from('trader_of_week').upsert(rows, { onConflict: 'category' });
 
     console.log(`[traderOfWeek] rotated ${rows.length} special-offer slot(s) — next rotation ${nextRotation}`);

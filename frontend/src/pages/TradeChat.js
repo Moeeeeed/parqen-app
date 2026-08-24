@@ -26,6 +26,7 @@ export default function TradeChat({ user }) {
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef(null);
+  const prevMsgCount = useRef(0);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -47,8 +48,14 @@ export default function TradeChat({ user }) {
     return () => clearInterval(interval);
   }, [id]);
 
+  // loadMessages() polls every 2s and always returns a fresh array, so scrolling on
+  // every [messages] change would yank the view (and your typing) back to the bottom
+  // even when nothing new arrived. Only auto-scroll when the message count grows.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messages.length > prevMsgCount.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+    prevMsgCount.current = messages.length;
   }, [messages]);
 
   // Cleanup object URLs when previewUrls change (not just on unmount)

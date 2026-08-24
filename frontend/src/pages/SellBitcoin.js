@@ -22,6 +22,8 @@ import { BadgeChip, BADGE_COLORS } from '../lib/badge';
 import ActiveTradeCard from '../components/ActiveTradeCard';
 import PRQFooter from '../components/PRQFooter';
 import GettingStartedSteps from '../components/GettingStartedSteps';
+import PinnedOfferBanner from '../components/PinnedOfferBanner';
+import useStableList from '../hooks/useStableList';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -1421,6 +1423,46 @@ export default function SellBitcoin({user}) {
       }
     }
   }
+  // Live Pinned Offer banner — the real backend-picked winners only (not the
+  // client-side fast_buyer fallback), pulled from the FULL offer list so the
+  // banner still shows a winner even while the visible grid is filtered down.
+  const pinnedSlides = [];
+  {
+    const seenCountries = new Set();
+    for (const l of offers) {
+      const cc = (l.country || '').toUpperCase();
+      if (!cc || seenCountries.has(cc)) continue;
+      const winner = traderOfWeek[`sell_bitcoin:${cc}`];
+      if (!winner || !offers.some(x => x.id === winner.listing_id)) continue;
+      seenCountries.add(cc);
+      const listing = offers.find(x => x.id === winner.listing_id);
+      const u = getUser(listing.users);
+      const cur = listing.currency || 'GHS';
+      const sym = listing.currency_symbol || CUR_SYM[cur] || '₵';
+      const usdRate = USD_RATES[cur] || 1;
+      const rateLocal = getRateLocal(listing, btcPrice, usdRate);
+      pinnedSlides.push({
+        id: listing.id,
+        featured: FEATURED.high_volume_trader,
+        avatar: <Avatar user={u} size={40} radius="rounded-xl" />,
+        badgeChip: <BadgeChip user={u} size="xs" />,
+        username: getDisplayName(u),
+        verified: isVerified(u),
+        trades: getTrades(u),
+        positive: parseInt(u.positive_feedback || 0),
+        negative: parseInt(u.negative_feedback || 0),
+        rateLabel: `${sym}${fmt(rateLocal)} ${cur}`,
+        actionLabel: 'View Offer',
+        onClick: () => setModal({ buyer: u, listing }),
+      });
+    }
+  }
+
+  // A pinned listing can drop out of `offers` for one poll cycle (auto-pause while
+  // the seller's briefly offline, a refresh landing mid-flight) without the pin
+  // itself having actually changed — smooth that over so the banner doesn't blink.
+  const stablePinnedSlides = useStableList(pinnedSlides);
+
   const hasFilters  = selPayment!=='all' || sellAmt || selCountry.code!=='ALL' || selCurrency.code!=='USD' || !!traderSearch.trim();
 
   return (
@@ -1546,8 +1588,12 @@ export default function SellBitcoin({user}) {
         </div>
       </div>
 
-      {/* Getting-started guide — shown to logged-in users who haven't funded their wallet yet */}
-      {user && userBtcBalance * btcPrice < 10 && <GettingStartedSteps userId={user.id} />}
+      {/* Live Pinned Offer banner takes this slot when there's a real weekly winner
+          to show; otherwise the getting-started guide keeps helping new/unfunded
+          users — the two never render at once, so the box stays a single fixed slot. */}
+      {stablePinnedSlides.length > 0
+        ? <PinnedOfferBanner slides={stablePinnedSlides} dismissKey={`sell_${user?.id || 'guest'}`} />
+        : (user && userBtcBalance * btcPrice < 10 && <GettingStartedSteps userId={user.id} />)}
 
       {/* ══ 3. FILTER BAR ══════════════════════════════════════ */}
       <div className="bg-white border-b flex-shrink-0" style={{borderColor:C.g200}}>

@@ -42,6 +42,7 @@ class RealtimeDepositService {
     this.isRunning      = false;
     this.pingTimer      = null;
     this.pendingTxs     = new Set();  // "txid:userId" — prevents duplicate pending alerts
+    this.confirmedTxs   = new Set();  // "txid:userId" — prevents the same confirmed tx re-triggering a credit check
   }
 
   // ── Public: start the service ─────────────────────────────────────────────
@@ -198,6 +199,20 @@ class RealtimeDepositService {
 
       if (isConfirmed) {
         // ── CONFIRMED: credit balance immediately ─────────────────────────
+        // mempool.space can and does deliver the SAME confirmed tx twice in one
+        // session — once via multi-address-transactions.confirmed, again via
+        // block-transactions.added for the same block — moments apart. That
+        // double-triggered checkAddressNow() with duplicate DEPOSIT log rows
+        // (hidil55555, twice: 2026-08-23 and 2026-08-24 — depositMonitor's own
+        // balance-credit guard held both times, but the log was never deduped
+        // at the source). Dedupe by txid+userId here, same pattern already used
+        // for the unconfirmed alert below, so a repeat delivery never reaches
+        // checkAddressNow at all.
+        const confirmedKey = `${txid}:${userId}`;
+        if (this.confirmedTxs.has(confirmedKey)) continue;
+        this.confirmedTxs.add(confirmedKey);
+        setTimeout(() => this.confirmedTxs.delete(confirmedKey), PENDING_TTL_MS);
+
         console.log(`\n⚡ [RealtimeDeposit] CONFIRMED ${amountBTC} BTC for user ${userId.slice(0, 8)}`);
         console.log(`   Address: ${addr.slice(0, 16)}… | TxID: ${txid.slice(0, 12)}…`);
 

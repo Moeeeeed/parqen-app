@@ -37,6 +37,26 @@ const badgeColor = b => {
   const m = { DIAMOND:{c:'#06B6D4',bg:'#ECFEFF'}, GOLD:{c:'#D97706',bg:'#FFFBEB'}, SILVER:{c:'#6B7280',bg:'#F9FAFB'}, BRONZE:{c:'#92400E',bg:'#FEF3C7'}, BEGINNER:{c:'#6B7280',bg:'#F3F4F6'} };
   return m[b] || m.BEGINNER;
 };
+// Chat messages can carry images (base64 data URIs, single or as a JSON { caption, images }
+// / legacy array payload) the same way TradeChat.js's buyer/seller composer sends them —
+// the moderator's chat feed must decode the same shapes or evidence photos sent inline
+// silently vanish from their view of the conversation.
+const getChatImageSrcs = (text) => {
+  if (!text) return [];
+  if (text.startsWith('{') || text.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && Array.isArray(parsed.images)) return parsed.images.filter(s => typeof s === 'string' && s.startsWith('data:image/'));
+      if (Array.isArray(parsed)) return parsed.filter(s => typeof s === 'string' && s.startsWith('data:image/'));
+    } catch { /* not JSON */ }
+  }
+  if (typeof text === 'string' && text.startsWith('data:image/')) return [text];
+  return [];
+};
+const getChatCaption = (text) => {
+  if (!text || (!text.startsWith('{') && !text.startsWith('['))) return '';
+  try { const parsed = JSON.parse(text); return (parsed && parsed.caption) || ''; } catch { return ''; }
+};
 
 // ================================================================
 // LOGIN
@@ -573,6 +593,7 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
   const [overrideReason, setOverrideReason] = useState('');
   const [submittingOverride, setSubmittingOverride] = useState(false);
   const chatEnd = useRef(null);
+  const prevMsgCount = useRef(0);
 
   const authH = () => { const t = localStorage.getItem('token'); return t ? { Authorization:`Bearer ${t}` } : {}; };
 
@@ -614,7 +635,15 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
     return () => clearInterval(iv);
   }, [dispute.trade_id]);
 
-  useEffect(() => { chatEnd.current?.scrollIntoView({ behavior:'smooth' }); }, [chatMessages]);
+  // loadChat() polls every 5s and always returns a fresh array, so scrolling on every
+  // [chatMessages] change would yank the moderator back to the bottom mid-read even
+  // when nothing new arrived. Only auto-scroll when the message count actually grows.
+  useEffect(() => {
+    if (chatMessages.length > prevMsgCount.current) {
+      chatEnd.current?.scrollIntoView({ behavior:'smooth' });
+    }
+    prevMsgCount.current = chatMessages.length;
+  }, [chatMessages]);
 
   const joinChat = async () => {
     try { await axios.post(`${API_URL}/trades/${dispute.trade_id}/moderator-join`, {}, { headers:authH() }); } catch {}
@@ -749,8 +778,10 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
             ))}
           </div>
 
-          {/* Tab body */}
-          <div className="flex-1 overflow-y-auto p-6">
+          {/* Tab body — the Chat tab owns its own internal scroll region (so the message
+              list stays put while the header/tabs/input stay pinned); every other tab
+              scrolls this whole container the old way. */}
+          <div className={`flex-1 min-h-0 p-6 flex flex-col ${activeTab === 'chat' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
 
             {/* ── DETAILS ── */}
             {activeTab === 'details' && (
@@ -900,9 +931,9 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
 
             {/* ── CHAT ── */}
             {(activeTab === 'chat' || activeTab === 'resolve') && activeTab === 'chat' && (
-              <div className="flex flex-col" style={{ height: 500 }}>
+              <div className="flex flex-col flex-1 min-h-0">
                 {!readOnly && !modJoined && (
-                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-5 mb-4 text-center">
+                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-5 mb-4 text-center flex-shrink-0">
                     <Shield size={32} className="mx-auto mb-2 text-purple-600" />
                     <p className="font-black text-purple-800 mb-3">Your messages will appear with a special MODERATOR badge visible to both parties</p>
                     <button onClick={joinChat} className="px-6 py-2.5 rounded-xl text-white font-black text-sm inline-flex items-center gap-1.5" style={{ backgroundColor:P.purple }}>
@@ -911,7 +942,7 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                   </div>
                 )}
                 {(readOnly || modJoined) && (
-                  <div className="flex items-center gap-2 px-4 py-2 rounded-xl mb-3 border" style={{ backgroundColor:'#faf5ff', borderColor:'#c4b5fd' }}>
+                  <div className="flex items-center gap-2 px-4 py-2 rounded-xl mb-3 border flex-shrink-0" style={{ backgroundColor:'#faf5ff', borderColor:'#c4b5fd' }}>
                     <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor:P.purple }} />
                     <p className="text-sm font-bold" style={{ color:P.purpleDark }}>
                       {readOnly ? 'Viewing resolved dispute chat — read only' : `You are live in this chat as MODERATOR · ${modName}`}
@@ -930,6 +961,8 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                     const isBuyer = m.sender_id === dispute.buyer?.id;
                     const text = (m.message_text||m.message||'').replace(/^\[MODERATOR\]\s*/,'');
                     const timeStr = new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+                    const imgSrcs = getChatImageSrcs(text);
+                    const imgCaption = getChatCaption(text);
 
                     // System message (dispute opened, moderator joined, etc.)
                     if (isSys) {
@@ -1003,10 +1036,30 @@ function DisputeModal({ dispute, modName, currentUserId, isAdmin, onClose, onRes
                               style={{ backgroundColor: isBuyer ? P.primary : P.info }}>{(isBuyer ? dispute.buyer?.username : dispute.seller?.username || '?')[0]?.toUpperCase()}</div>
                             <span className="text-xs font-black inline-flex items-center gap-1.5" style={{ color: isBuyer ? P.primary : P.info }}>{isBuyer ? <><User size={11} className="inline-block" /> Buyer</> : <><ShoppingBag size={11} className="inline-block" /> Seller</>} · {isBuyer ? dispute.buyer?.username : dispute.seller?.username}</span>
                           </div>
-                          <div className="px-4 py-3">
-                            <p className="text-sm font-medium text-slate-800 break-words">{text}</p>
-                            <p className="text-xs text-gray-400 mt-1 text-right">{timeStr}</p>
-                          </div>
+                          {imgSrcs.length > 0 ? (
+                            <div>
+                              <div className={`grid gap-0.5 ${imgSrcs.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                                {imgSrcs.map((src, si) => (
+                                  <button key={si} type="button" onClick={() => setZoomImg(src)}
+                                    className="block cursor-pointer hover:opacity-90 transition">
+                                    <img src={src} alt={`Attachment ${si + 1}`} className="w-full h-32 object-cover" />
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="px-4 py-3">
+                                {imgCaption && <p className="text-sm font-medium text-slate-800 break-words mb-1">{imgCaption}</p>}
+                                <p className="text-xs text-gray-400 flex items-center gap-1 justify-between">
+                                  <span className="inline-flex items-center gap-1"><Paperclip size={11} className="inline-block" /> {imgSrcs.length > 1 ? `${imgSrcs.length} images` : 'Image attached'}</span>
+                                  {timeStr}
+                                </p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="px-4 py-3">
+                              <p className="text-sm font-medium text-slate-800 break-words">{text}</p>
+                              <p className="text-xs text-gray-400 mt-1 text-right">{timeStr}</p>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
