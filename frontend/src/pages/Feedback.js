@@ -22,6 +22,7 @@ export default function Feedback({ user }) {
   const [trade, setTrade] = useState(null);
   const [receiver, setReceiver] = useState(null);
   const [existingFeedback, setExistingFeedback] = useState(null);
+  const [feedbackBlocked, setFeedbackBlocked] = useState(null); // { reason: string } if blocked
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -42,16 +43,27 @@ export default function Feedback({ user }) {
       const userRes = await axios.get(`${API_URL}/users/${userId}`);
       setReceiver(userRes.data.user);
 
-      // Check if feedback already exists
+      // Check if feedback already exists for this specific trade
       try {
         const feedbackRes = await axios.get(`${API_URL}/users/${userId}/reviews`);
         const existing = feedbackRes.data.reviews?.find(r => r.trade_id === tradeId);
         if (existing) {
           setExistingFeedback(existing);
+          return; // already submitted, no need to check further
         }
       } catch (err) {
         // No feedback exists yet
-        console.log('No existing feedback');
+      }
+      // Check if feedback is blocked due to same payment method
+      try {
+        const checkRes = await axios.get(`${API_URL}/trades/${tradeId}/feedback-check`, {
+          params: { toUserId: userId },
+        });
+        if (!checkRes.data.allowed) {
+          setFeedbackBlocked({ reason: checkRes.data.reason });
+        }
+      } catch (err) {
+        // Fail open — don't block feedback if check fails
       }
     } catch (error) {
       console.error('Error loading data:', error);
@@ -115,6 +127,30 @@ export default function Feedback({ user }) {
                 : <span className="flex items-center gap-2 text-rose-600 font-black text-sm"><ThumbsDown size={20} className="fill-rose-500"/>Negative</span>}
             </div>
             <p className="text-gray-700">{existingFeedback.comment}</p>
+          </div>
+          <button
+            onClick={() => navigate('/my-trades')}
+            className="px-6 py-2 rounded-lg text-white font-semibold"
+            style={{ backgroundColor: PRAQEN.primary }}
+          >
+            Back to My Trades
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (feedbackBlocked) {
+    return (
+      <div className="min-h-screen py-12 px-4" style={{ backgroundColor: PRAQEN.lightBg }}>
+        <div className="max-w-md mx-auto bg-white rounded-2xl shadow-lg p-8 text-center">
+          <AlertCircle size={64} className="mx-auto mb-4" style={{ color: '#F59E0B' }} />
+          <h2 className="text-2xl font-bold mb-2" style={{ color: PRAQEN.primary }}>Feedback Not Available</h2>
+          <p className="text-gray-600 mb-4">{feedbackBlocked.reason}</p>
+          <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg mb-4 text-left">
+            <p className="text-sm text-amber-800">
+              You can leave feedback for this user again when your next trade uses a <strong>different payment method</strong>.
+            </p>
           </div>
           <button
             onClick={() => navigate('/my-trades')}

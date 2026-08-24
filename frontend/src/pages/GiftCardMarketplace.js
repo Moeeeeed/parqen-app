@@ -749,7 +749,7 @@ function SellerModal({ seller, listing, onClose, onTrade, btcPriceUSD }) {
 
   const TABS = [
     { id: 'overview', label: '👤 Profile' },
-    { id: 'feedback', label: `💬 Reviews (${reviewCount})` },
+    { id: 'feedback', label: `💬 Feedback (${reviewCount})` },
     { id: 'rules', label: '📋 Rules' },
     { id: 'offer', label: '📊 Offer' },
   ];

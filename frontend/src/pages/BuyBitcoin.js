@@ -632,7 +632,7 @@ function ProfileModal({seller, listing, onClose, onTrade, btcPriceUSD}) {
 
   const TABS = [
     { id:'overview',  label:<span className="inline-flex items-center gap-1"><User size={12}/> Profile</span>    },
-    { id:'feedback',  label:<span className="inline-flex items-center gap-1"><MessageSquare size={12}/> Reviews ({reviewCount})</span>},
+    { id:'feedback',  label:<span className="inline-flex items-center gap-1"><MessageSquare size={12}/> Feedback ({reviewCount})</span>},
     { id:'rules',     label:<span className="inline-flex items-center gap-1"><Shield size={12}/> Rules</span>      },
     { id:'offer',     label:<span className="inline-flex items-center gap-1"><BarChart2 size={12}/> Offer</span>      },
   ];
