@@ -229,6 +229,7 @@ function AgentDashboardInner({ user }) {
 
   // Ticket queue
   const [tickets, setTickets] = useState([]);
+  const [stats, setStats] = useState({ total: 0, open: 0, active: 0, resolved: 0, closed: 0 });
   const [queueLoading, setQueueLoading] = useState(true);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -263,6 +264,7 @@ function AgentDashboardInner({ user }) {
     try {
       const { data } = await axios.get(`${API_URL}/agent/dashboard`, { headers: authH() });
       setTickets(data.tickets || []);
+      if (data.stats) setStats(data.stats);
       setAccessDenied(null);
     } catch (e) {
       if (e.response?.status === 403) {
@@ -325,15 +327,19 @@ function AgentDashboardInner({ user }) {
     setUserTyping(false);
 
     try {
-      // Auto-accept/claim the ticket if unassigned
-      if (!ticket.assigned_agent_id) {
+      // Auto-accept/claim the ticket if unassigned — but only for a live ticket.
+      // Resolved/closed tickets are now visible for history (see loadQueue),
+      // so this must not fire when an agent is just reviewing a past ticket —
+      // it would otherwise reopen it, reassign it, and re-send the "Hi, I'm
+      // helping you today" intro message to a customer whose issue is done.
+      if (!ticket.assigned_agent_id && ['open', 'active', 'pending'].includes(ticket.status)) {
         await axios.post(`${API_URL}/agent/tickets/${ticket.id}/accept`, {}, { headers: authH() });
       }
 
       // Load messages
       const { data } = await axios.get(`${API_URL}/agent/tickets/${ticket.id}/messages`, { headers: authH() });
       setMessages(data.messages || []);
-      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
     } catch (e) {
       toast.error('Failed to load chat');
     }
@@ -377,8 +383,12 @@ function AgentDashboardInner({ user }) {
   }, [selectedTicket, user?.id]);
 
   // ── Scroll to bottom on new messages ───────────────────────────────────
+  // block: 'nearest' confines this to the chat panel's own scroll container —
+  // without it, scrollIntoView walks every scrollable ancestor including the
+  // page itself, so the 3s message poll would yank the whole page's scroll
+  // position back here on every tick.
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [messages, userTyping]);
 
   // ── Send reply ─────────────────────────────────────────────────────────
@@ -392,7 +402,7 @@ function AgentDashboardInner({ user }) {
       const { data } = await axios.post(`${API_URL}/agent/tickets/${selectedTicket.id}/reply`, { message: msgText }, { headers: authH() });
       setMessages(prev => [...prev, data.message]);
       setTickets(prev => prev.map(t => t.id === selectedTicket.id ? { ...t, status: 'active', updated_at: new Date().toISOString() } : t));
-      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
     } catch (e) {
       setReply(msgText);
       toast.error(e.response?.data?.error || 'Failed to send');
@@ -450,6 +460,7 @@ function AgentDashboardInner({ user }) {
     all: tickets.length,
     open: tickets.filter(t => t.status === 'open').length,
     active: tickets.filter(t => t.status === 'active').length,
+    resolved: tickets.filter(t => t.status === 'resolved').length,
   };
 
   return (
@@ -531,6 +542,23 @@ function AgentDashboardInner({ user }) {
         </div>
       )}
 
+      {/* ── Stats strip ──────────────────────────────────────────────────── */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: 'Total', value: stats.total, color: C.g800 },
+            { label: 'Open', value: stats.open, color: '#2563EB' },
+            { label: 'Active', value: stats.active, color: C.forest },
+            { label: 'Resolved', value: stats.resolved, color: '#16A34A' },
+          ].map(s => (
+            <div key={s.label} className="bg-white rounded-2xl border px-4 py-3" style={{ borderColor: C.g200 }}>
+              <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: C.g400 }}>{s.label}</p>
+              <p className="text-2xl font-black mt-0.5" style={{ color: s.color }}>{s.value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* ── Main Layout ─────────────────────────────────────────────────── */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
         <div className="flex flex-col lg:flex-row gap-4" style={{ minHeight: 'calc(100vh - 120px)' }}>
@@ -550,14 +578,15 @@ function AgentDashboardInner({ user }) {
             </div>
 
             {/* Status filter tabs */}
-            <div className="flex gap-1.5 mb-2">
+            <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1">
               {[
                 { id: 'all', label: `All (${counts.all})` },
                 { id: 'open', label: `Open (${counts.open})` },
                 { id: 'active', label: `Active (${counts.active})` },
+                { id: 'resolved', label: `Resolved (${counts.resolved})` },
               ].map(f => (
                 <button key={f.id} onClick={() => setStatusFilter(f.id)}
-                  className="px-3 py-1.5 rounded-xl text-[11px] font-bold transition"
+                  className="px-3 py-1.5 rounded-xl text-[11px] font-bold transition flex-shrink-0"
                   style={{
                     backgroundColor: statusFilter === f.id ? C.forest : 'white',
                     color: statusFilter === f.id ? '#fff' : C.g500,
@@ -636,7 +665,12 @@ function AgentDashboardInner({ user }) {
                           <p className="text-[11px] font-bold truncate mt-0.5" style={{ color: C.g600 }}>
                             {t.subject}
                           </p>
-                          <div className="flex items-center gap-1.5 mt-1">
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            {t.category && (
+                              <span className="text-[9px] font-bold px-1.5 py-0 rounded" style={{ backgroundColor: '#F1F5F9', color: C.g600 }}>
+                                {t.category.charAt(0).toUpperCase() + t.category.slice(1)}
+                              </span>
+                            )}
                             {t.department && t.department !== 'general' && (
                               <span className="text-[9px] font-bold px-1.5 py-0 rounded" style={{ backgroundColor: '#EFF6FF', color: '#2563EB' }}>
                                 {t.department.charAt(0).toUpperCase() + t.department.slice(1)}
@@ -734,9 +768,20 @@ function AgentDashboardInner({ user }) {
                       <p className="text-[10px] truncate" style={{ color: C.g400 }}>
                         {selectedTicket.subject} · Ticket #{selectedTicket.id?.slice(0, 8).toUpperCase()}
                       </p>
+                      {(selectedTicket.user_email || selectedTicket.user_phone || selectedTicket.user_country) && (
+                        <p className="text-[9px] truncate" style={{ color: C.g300 }}>
+                          {[selectedTicket.user_email, selectedTicket.user_phone, selectedTicket.user_country].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {/* Category badge */}
+                    {selectedTicket.category && (
+                      <span className="text-[10px] font-bold px-2 py-1 rounded-lg" style={{ backgroundColor: '#F1F5F9', color: C.g600 }}>
+                        {selectedTicket.category.charAt(0).toUpperCase() + selectedTicket.category.slice(1)}
+                      </span>
+                    )}
                     {/* Department badge */}
                     {selectedTicket.department && selectedTicket.department !== 'general' && (
                       <span className="text-[10px] font-bold px-2 py-1 rounded-lg" style={{ backgroundColor: '#EFF6FF', color: '#2563EB' }}>

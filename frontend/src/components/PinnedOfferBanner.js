@@ -90,6 +90,11 @@ export default function PinnedOfferBanner({ slides, dismissKey }) {
                         <Repeat2 size={10} strokeWidth={2.5} style={{ color: C.g400 }} />{s.trades ?? 0} trades
                       </span>
                     </div>
+                    {s.volumeLabel && (
+                      <div className="mt-0.5 font-black truncate" style={{ color: sft.labelColor, fontSize: 11 }}>
+                        Volume: {s.volumeLabel}
+                      </div>
+                    )}
                   </div>
                 </div>
 

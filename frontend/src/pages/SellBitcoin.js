@@ -1449,6 +1449,12 @@ export default function SellBitcoin({user}) {
       const sym = listing.currency_symbol || CUR_SYM[cur] || '₵';
       const usdRate = USD_RATES[cur] || 1;
       const rateLocal = getRateLocal(listing, btcPrice, usdRate);
+      // Real completed-trade volume for this winner (backend/services/traderOfWeekService.js),
+      // converted to the listing's local currency. Only shown once the backend has
+      // actually populated it — older/unmigrated rows just omit the line.
+      const volumeLabel = winner.volume_usd > 0
+        ? `${sym}${fmt(winner.volume_usd * usdRate)} ${cur} · ${winner.volume_days} day${winner.volume_days === 1 ? '' : 's'}`
+        : null;
       pinnedSlides.push({
         id: listing.id,
         featured: FEATURED.high_volume_trader,
@@ -1460,6 +1466,7 @@ export default function SellBitcoin({user}) {
         positive: parseInt(u.positive_feedback || 0),
         negative: parseInt(u.negative_feedback || 0),
         rateLabel: `${sym}${fmt(rateLocal)} ${cur}`,
+        volumeLabel,
         actionLabel: 'View Offer',
         onClick: () => setModal({ buyer: u, listing }),
       });

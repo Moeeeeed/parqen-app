@@ -28,6 +28,30 @@ const supabaseAdmin = createClient(
 const ROTATION_DAYS = parseInt(process.env.TRADER_OF_WEEK_ROTATION_DAYS || '7', 10);
 const ACTIVE_WITHIN_DAYS = 7; // must have been seen in the last week to qualify
 
+/** Real completed-trade volume for a winner, summed over the trailing rotation
+ *  window. volume_days reflects how many days that volume actually spans (their
+ *  first completed trade in the window to now) instead of always claiming the
+ *  full window, so a trader who only started trading 2 days ago shows "2 days"
+ *  rather than an inflated "7 days". */
+async function fetchWinnerVolume(userId) {
+  const windowStart = new Date(Date.now() - ROTATION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabaseAdmin
+    .from('trades')
+    .select('amount_usd, completed_at')
+    .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
+    .eq('status', 'COMPLETED')
+    .gte('completed_at', windowStart);
+  if (error || !data || data.length === 0) return { volume_usd: 0, volume_days: 0 };
+
+  const volumeUsd = data.reduce((sum, t) => sum + parseFloat(t.amount_usd || 0), 0);
+  const earliest = data.reduce((min, t) => {
+    const ts = new Date(t.completed_at).getTime();
+    return ts < min ? ts : min;
+  }, Date.now());
+  const spanDays = Math.max(1, Math.min(ROTATION_DAYS, Math.ceil((Date.now() - earliest) / (24 * 60 * 60 * 1000))));
+  return { volume_usd: volumeUsd, volume_days: spanDays };
+}
+
 // Sell-page badge must reward traders paying through the market's own local rail.
 // Ghana is pinned to MTN Mobile Money per product decision; every other country
 // auto-detects its own most-used payment method from active BUY listings so this
@@ -99,7 +123,7 @@ async function computeAllWinners() {
 
   // Ranks the sellers behind a set of listings and hands the slot to the best
   // eligible one not already holding another badge; marks them used on success.
-  const pickWinner = (candidateListings, extraFields = {}) => {
+  const pickWinner = async (candidateListings, extraFields = {}) => {
     const candidateSellerIds = [...new Set(candidateListings.map(l => l.seller_id).filter(Boolean))];
     const ranked = candidateSellerIds
       .map(id => sellerMap[id])
@@ -118,12 +142,15 @@ async function computeAllWinners() {
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
     if (!listing) return null;
     usedUserIds.add(winner.id);
+    const { volume_usd, volume_days } = await fetchWinnerVolume(winner.id);
     return {
       user_id: winner.id,
       username: winner.username,
       listing_id: listing.id,
       total_trades: winner.total_trades || 0,
       average_rating: parseFloat(winner.average_rating || 0),
+      volume_usd,
+      volume_days,
       ...extraFields,
     };
   };
@@ -137,7 +164,7 @@ async function computeAllWinners() {
       const sellListings = btcListings.filter(l =>
         (l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN') &&
         (l.country || '').toUpperCase() === country);
-      const buyPageWinner = pickWinner(sellListings, { country });
+      const buyPageWinner = await pickWinner(sellListings, { country });
       if (buyPageWinner) results[`buy_bitcoin:${country}`] = buyPageWinner;
     }
 
@@ -151,7 +178,7 @@ async function computeAllWinners() {
       const localBuyListings = localMethod
         ? buyListingsAll.filter(l => String(l.payment_method || '').toLowerCase().includes(localMethod))
         : buyListingsAll;
-      const sellPageWinner = pickWinner(localBuyListings.length ? localBuyListings : buyListingsAll, {
+      const sellPageWinner = await pickWinner(localBuyListings.length ? localBuyListings : buyListingsAll, {
         country, payment_method: localMethod || null,
       });
       if (sellPageWinner) results[`sell_bitcoin:${country}`] = sellPageWinner;
@@ -159,7 +186,7 @@ async function computeAllWinners() {
   }
 
   if (!pinnedCategories.has('gift_card')) {
-    const giftCardWinner = pickWinner(giftListings);
+    const giftCardWinner = await pickWinner(giftListings);
     if (giftCardWinner) results.gift_card = giftCardWinner;
   }
 

@@ -10125,14 +10125,16 @@ app.get('/api/admin/users', verifyToken, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/admin/users/:id/detail — one-click lookup for the Team Portal's Users tab.
-// Read-only, team-accessible (requireAdmin — is_admin/is_moderator, not CEO-only). Shows
-// enough to know who they're talking to: join date, KYC status, real trade volume/count,
-// live active/pending trades, and feedback — recomputed fresh from trades/reviews the same
-// way GET /api/users/:userId already does (users.total_trades/positive_feedback/
-// negative_feedback are denormalized counters that can lag, so trust a fresh count/sum
-// instead of the cached column). Deliberately does NOT include wallet balance, withdrawal
-// history, or funding-source detail — that's the separate CEO-only audit on ceo-withdrawals.
+// GET /api/admin/users/:id/detail — one-click lookup for the Team Portal's Users tab
+// (also read by the Admin Panel's Users tab alongside /wallet-detail below). Read-only,
+// team-accessible (requireAdmin — is_admin/is_moderator, not CEO-only). Shows enough to
+// know who they're talking to: join date, KYC status, real trade volume/count, live
+// active/pending trades, their currently active offers/listings, and feedback —
+// recomputed fresh from trades/reviews the same way GET /api/users/:userId already does
+// (users.total_trades/positive_feedback/negative_feedback are denormalized counters that
+// can lag, so trust a fresh count/sum instead of the cached column). Deliberately does
+// NOT include wallet balance, withdrawal history, or funding-source detail — that's the
+// separate CEO-only audit on ceo-withdrawals (or /wallet-detail below for full admins).
 app.get('/api/admin/users/:id/detail', verifyToken, async (req, res) => {
   try {
     const admin = await requireAdmin(req, res); if (!admin) return;
@@ -10147,13 +10149,17 @@ app.get('/api/admin/users/:id/detail', verifyToken, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const OPEN_TRADE_STATUSES = ['CREATED', 'FUNDS_LOCKED', 'PAYMENT_SENT', 'DISPUTED'];
-    const [completedR, activeR, reviewsR] = await Promise.all([
+    const [completedR, activeR, reviewsR, listingsR] = await Promise.all([
       supabaseAdmin.from('trades').select('amount_usd', { count: 'exact' })
         .or(`buyer_id.eq.${id},seller_id.eq.${id}`).eq('status', 'COMPLETED').limit(2000),
       supabaseAdmin.from('trades').select('id, status, trade_type, amount_usd, buyer_id, seller_id, gift_card_brand, payment_method, created_at')
         .or(`buyer_id.eq.${id},seller_id.eq.${id}`).in('status', OPEN_TRADE_STATUSES)
         .order('created_at', { ascending: false }).limit(20),
       supabaseAdmin.from('reviews').select('rating').eq('reviewee_id', id).limit(2000),
+      // What they're offering right now — the "type of trade and offer" a support
+      // agent needs alongside KYC/trade history to actually understand this user.
+      supabaseAdmin.from('listings').select('id, listing_type, asset, status, country, payment_method, gift_card_brand, rate, created_at')
+        .eq('seller_id', id).eq('status', 'ACTIVE').order('created_at', { ascending: false }).limit(20),
     ]);
 
     const completedRows = completedR.data || [];
@@ -10165,6 +10171,7 @@ app.get('/api/admin/users/:id/detail', verifyToken, async (req, res) => {
     const realNegative = Math.max(reviewRows.filter(r => r.rating <= 2).length, user.negative_feedback || 0);
 
     const activeTrades = (activeR.data || []).map(t => ({ ...t, role: t.buyer_id === id ? 'buyer' : 'seller' }));
+    const activeListings = listingsR.data || [];
 
     res.json({
       success: true,
@@ -10173,6 +10180,8 @@ app.get('/api/admin/users/:id/detail', verifyToken, async (req, res) => {
       tradeVolumeCapped: completedRows.length >= 2000,
       activeTradeCount: activeTrades.length,
       activeTrades,
+      activeListingCount: activeListings.length,
+      activeListings,
     });
   } catch (error) {
     console.error('[GET /api/admin/users/:id/detail]', error.message);
@@ -11641,7 +11650,7 @@ app.post('/api/support/tickets/:id/messages', verifyToken, async (req, res) => {
 // GET /api/admin/support/tickets — admin lists all tickets
 app.get('/api/admin/support/tickets', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireAdminOrCeo(req, res); if (!admin) return;
     const { status = '', page = 1, limit = 100 } = req.query;
     const offset = (page - 1) * limit;
     let query = supabaseAdmin.from('support_tickets')
@@ -11670,7 +11679,7 @@ app.get('/api/admin/support/tickets', verifyToken, async (req, res) => {
 // GET /api/admin/support/tickets/:id/messages — admin reads thread
 app.get('/api/admin/support/tickets/:id/messages', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireAdminOrCeo(req, res); if (!admin) return;
     const { data: ticket } = await supabaseAdmin.from('support_tickets')
       .select('*, users!support_tickets_user_id_fkey(id, username, full_name, email, avatar_url, phone_number, country, created_at)')
       .eq('id', req.params.id).single();
@@ -11695,7 +11704,7 @@ app.get('/api/admin/support/tickets/:id/messages', verifyToken, async (req, res)
 // POST /api/admin/support/tickets/:id/reply — admin sends reply
 app.post('/api/admin/support/tickets/:id/reply', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireAdminOrCeo(req, res); if (!admin) return;
     const { message } = req.body;
     if (!message?.trim()) return res.status(400).json({ error: 'Reply is required' });
     const { data: ticket } = await supabaseAdmin.from('support_tickets').select('user_id, subject').eq('id', req.params.id).single();
@@ -11718,7 +11727,7 @@ app.post('/api/admin/support/tickets/:id/reply', verifyToken, async (req, res) =
 // PATCH /api/admin/support/tickets/:id/status — admin updates status
 app.patch('/api/admin/support/tickets/:id/status', verifyToken, async (req, res) => {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await requireAdminOrCeo(req, res); if (!admin) return;
     const { status } = req.body;
     if (!['open', 'active', 'resolved', 'closed'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
     const { error } = await supabaseAdmin.from('support_tickets').update({ status, updated_at: new Date() }).eq('id', req.params.id);
@@ -12050,54 +12059,42 @@ app.get('/api/agent/dashboard', verifyToken, async (req, res) => {
   try {
     if (!(await isAgent(req.userId))) return res.status(403).json({ error: 'Agent access required' });
 
-    // Get tickets that are: (a) assigned to this agent, OR (b) unassigned and open/active
-    let assigned = [];
-    let unassigned = [];
-    try {
-      const res1 = await supabaseAdmin
-        .from('support_tickets')
-        .select('*, users!support_tickets_user_id_fkey(id, username, full_name, avatar_url)')
-        .eq('assigned_agent_id', req.userId)
-        .in('status', ['open', 'active', 'pending'])
-        .order('updated_at', { ascending: false });
-      assigned = res1.data || [];
-    } catch {
-      // assigned_agent_id column may not exist — get all open/active tickets instead
-      const res1 = await supabaseAdmin
-        .from('support_tickets')
-        .select('*, users!support_tickets_user_id_fkey(id, username, full_name, avatar_url)')
-        .in('status', ['open', 'active', 'pending'])
-        .order('updated_at', { ascending: false });
-      assigned = res1.data || [];
-    }
-    try {
-      const res2 = await supabaseAdmin
-        .from('support_tickets')
-        .select('*, users!support_tickets_user_id_fkey(id, username, full_name, avatar_url)')
-        .is('assigned_agent_id', null)
-        .in('status', ['open', 'active'])
-        .order('created_at', { ascending: false });
-      unassigned = res2.data || [];
-    } catch {
-      // assigned_agent_id column may not exist — skip unassigned filter
-    }
+    // Full queue: every ticket regardless of status, so agents have the same
+    // visibility as the admin Support Tickets panel (including resolved/closed
+    // history for a customer), not just the live open/active/pending subset.
+    // capped at 500 (well above current volume) to bound the query; exact
+    // counts below come from separate head:true queries so the stat cards stay
+    // accurate even if the raw list is ever capped.
+    const { data, error } = await supabaseAdmin
+      .from('support_tickets')
+      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, avatar_url, email, phone_number, country)')
+      .order('updated_at', { ascending: false })
+      .limit(500);
+    if (error) return res.status(400).json({ error: error.message });
 
-    // Merge: assigned first, then unassigned (deduplicate)
-    const seen = new Set();
-    const tickets = [];
-    for (const t of [...(assigned || []), ...(unassigned || [])]) {
-      if (!seen.has(t.id)) {
-        seen.add(t.id);
-        tickets.push({
-          ...t,
-          username: t.users?.username,
-          full_name: t.users?.full_name,
-          avatar_url: t.users?.avatar_url,
-        });
-      }
-    }
+    const tickets = (data || []).map(t => ({
+      ...t,
+      username: t.users?.username,
+      full_name: t.users?.full_name,
+      avatar_url: t.users?.avatar_url,
+      user_email: t.users?.email,
+      user_phone: t.users?.phone_number,
+      user_country: t.users?.country,
+    }));
 
-    res.json({ tickets });
+    const countByStatus = async (status) => {
+      const { count } = await supabaseAdmin.from('support_tickets').select('id', { count: 'exact', head: true }).eq('status', status);
+      return count || 0;
+    };
+    const [total, open, active, resolved, closed] = await Promise.all([
+      supabaseAdmin.from('support_tickets').select('id', { count: 'exact', head: true }).then(r => r.count || 0),
+      countByStatus('open'),
+      countByStatus('active'),
+      countByStatus('resolved'),
+      countByStatus('closed'),
+    ]);
+
+    res.json({ tickets, stats: { total, open, active, resolved, closed } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -1754,18 +1754,6 @@ function UsdtWithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoF
             </button>
           </div>
 
-          {/* ── USDT external-send delay banner — matches backend USDT_SENDS_DISABLED
-              kill-switch (POST /api/wallet/usdt/send returns 503 while this is on).
-              Shown regardless of KYC step so it's the first thing anyone sees before
-              they invest time filling out the form. ── */}
-          <div className="flex items-start gap-2.5 p-3 rounded-2xl"
-            style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
-            <AlertTriangle size={16} style={{ color: '#B45309', flexShrink: 0, marginTop: 1 }} />
-            <p className="text-xs font-semibold leading-snug" style={{ color: '#78350F' }}>
-              We're experiencing send-out delays with USDT. Please kindly use BTC for now, or contact support.
-            </p>
-          </div>
-
           {/* ── Locked: USDT sends paused, don't let anyone fill out a form that
               can only fail at submission — send them to BTC instead. ── */}
           {sendLocked ? (

@@ -3654,7 +3654,11 @@ function SupportChatSection({ teamUser }) {
     return () => clearInterval(iv);
   }, [selected, loadChat]);
 
-  useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  // block: 'nearest' keeps this scroll inside the chat panel's own scroll
+  // container instead of walking every scrollable ancestor up to the page —
+  // without it, the background message poll here yanks the whole dashboard's
+  // scroll position back to this section on every tick.
+  useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [messages]);
 
   const openTrade = (t) => { setSelected(t); setJoined(false); setMessages([]); };
 
@@ -3901,6 +3905,7 @@ function LiveAIChatSection() {
   const [sending, setSending]   = useState(false);
   const [statusFilter, setStat] = useState('');
   const [searchQ, setSearchQ]   = useState('');
+  const [avatarBroken, setAvatarBroken] = useState(false);
   const chatEndRef              = useRef(null);
 
   const TICKET_STATUSES = {
@@ -3934,16 +3939,40 @@ function LiveAIChatSection() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Auto-refresh the ticket list so new/updated tickets show up without a
+  // manual click — the table previously only ever loaded once per filter change.
+  useEffect(() => {
+    const iv = setInterval(load, 15000);
+    return () => clearInterval(iv);
+  }, [load]);
+
+  const loadMessages = useCallback(async (ticketId) => {
+    if (!ticketId) return;
+    try {
+      const r = await axios.get(`${API_URL}/admin/support/tickets/${ticketId}/messages`, { headers: authH() });
+      setMessages(r.data.messages || []);
+    } catch { /* keep whatever's on screen — a transient poll failure shouldn't clear the chat */ }
+  }, []);
+
   const openTicket = async (ticket) => {
     setSelected(ticket);
     setReply('');
     setMessages([]);
+    setAvatarBroken(false);
     try {
-      const r = await axios.get(`${API_URL}/admin/support/tickets/${ticket.id}/messages`, { headers: authH() });
-      setMessages(r.data.messages || []);
-      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      await loadMessages(ticket.id);
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
     } catch { toast.error('Failed to load messages'); }
   };
+
+  // Live poll while a ticket is open — this was the actual "chat not showing"
+  // bug: a user's new message never appeared unless the agent closed and
+  // reopened the ticket, since nothing here ever refetched after the initial load.
+  useEffect(() => {
+    if (!selected) return;
+    const iv = setInterval(() => loadMessages(selected.id), 4000);
+    return () => clearInterval(iv);
+  }, [selected, loadMessages]);
 
   const sendReply = async () => {
     if (!reply.trim() || !selected || sending) return;
@@ -3954,7 +3983,7 @@ function LiveAIChatSection() {
       setReply('');
       setTickets(prev => prev.map(t => t.id === selected.id ? { ...t, status: 'active', updated_at: new Date().toISOString() } : t));
       setSelected(prev => prev ? { ...prev, status: 'active' } : prev);
-      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
       toast.success('Reply sent');
     } catch (e) { toast.error(e.response?.data?.error || 'Failed to send'); }
     finally { setSending(false); }
@@ -4092,8 +4121,9 @@ function LiveAIChatSection() {
               <div className="flex items-center gap-3 px-5 py-3 border-b" style={{ borderColor: C.g100, backgroundColor: '#F0FDF4' }}>
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 font-black text-sm"
                   style={{ backgroundColor: C.forest, color: '#fff' }}>
-                  {selected.avatar_url
-                    ? <img src={selected.avatar_url} alt="" className="w-full h-full rounded-xl object-cover" />
+                  {selected.avatar_url && !avatarBroken
+                    ? <img src={selected.avatar_url} alt="" className="w-full h-full rounded-xl object-cover"
+                        onError={() => setAvatarBroken(true)} />
                     : (selected.username || 'U')[0].toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -4422,7 +4452,11 @@ function DisputesSection({ teamUser }) {
     const iv = setInterval(() => loadChat(active.trade_id), 5000);
     return () => clearInterval(iv);
   }, [active, loadChat]);
-  useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  // block: 'nearest' keeps this scroll inside the chat panel's own scroll
+  // container instead of walking every scrollable ancestor up to the page —
+  // without it, the background message poll here yanks the whole dashboard's
+  // scroll position back to this section on every tick.
+  useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [messages]);
 
   const openDispute = (d) => { setActive(d); setJoined(false); setNotes(''); setDetailTab('details'); setMessages([]); };
 
@@ -5285,6 +5319,26 @@ function UsersSection() {
                     <div key={t.id} className="flex items-center justify-between px-2 py-1.5 rounded-lg text-xs" style={{ backgroundColor: '#FFFBEB' }}>
                       <span className="font-bold" style={{ color: '#92400E' }}>{t.role === 'buyer' ? 'Buying' : 'Selling'} · {t.status}</span>
                       <span className="font-black" style={{ color: C.g700 }}>${fmt(t.amount_usd, 0)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* What they're offering right now — asset, buy/sell direction, payment
+                method or gift card brand — so an agent knows what kind of trade this
+                user is actually running before replying to their ticket. */}
+            {detail?.activeListings?.length > 0 && (
+              <div className="mb-3">
+                <p className="text-xs font-black mb-1.5" style={{ color: C.g600 }}>Active Offers ({detail.activeListingCount})</p>
+                <div className="space-y-1">
+                  {detail.activeListings.map(l => (
+                    <div key={l.id} className="flex items-center justify-between px-2 py-1.5 rounded-lg text-xs" style={{ backgroundColor: '#F0FDF4' }}>
+                      <span className="font-bold" style={{ color: '#166534' }}>
+                        {(l.listing_type || '').includes('SELL') ? 'Selling' : 'Buying'} {l.asset || 'BTC'}
+                        {l.gift_card_brand ? ` · ${l.gift_card_brand}` : l.payment_method ? ` · ${l.payment_method}` : ''}
+                      </span>
+                      <span className="font-black" style={{ color: C.g700 }}>{l.country || '—'}</span>
                     </div>
                   ))}
                 </div>

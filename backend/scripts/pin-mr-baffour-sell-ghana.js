@@ -31,6 +31,27 @@ async function run() {
     throw new Error('MR_BAFFOUR listing check failed: ' + JSON.stringify({ lErr, listing }));
   }
 
+  // Real completed-trade volume for the banner's "₵870,331 GHS · 7 days" style
+  // line — summed over the trailing 7-day window, with volume_days reflecting
+  // how many of those days he actually traded in (not a hardcoded "7 days").
+  const windowStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: recentTrades, error: tErr } = await supabase
+    .from('trades')
+    .select('amount_usd, completed_at')
+    .or(`buyer_id.eq.${MR_BAFFOUR_ID},seller_id.eq.${MR_BAFFOUR_ID}`)
+    .eq('status', 'COMPLETED')
+    .gte('completed_at', windowStart);
+  if (tErr) throw new Error('MR_BAFFOUR volume lookup failed: ' + tErr.message);
+
+  const volumeUsd = (recentTrades || []).reduce((sum, t) => sum + parseFloat(t.amount_usd || 0), 0);
+  const earliest = (recentTrades || []).reduce((min, t) => {
+    const ts = new Date(t.completed_at).getTime();
+    return ts < min ? ts : min;
+  }, Date.now());
+  const volumeDays = recentTrades && recentTrades.length
+    ? Math.max(1, Math.min(7, Math.ceil((Date.now() - earliest) / (24 * 60 * 60 * 1000))))
+    : 0;
+
   const nowIso = new Date().toISOString();
   const nextRotation = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const base = {
@@ -39,6 +60,8 @@ async function run() {
     listing_id: listing.id,
     total_trades: user.total_trades || 0,
     average_rating: parseFloat(user.average_rating || 0),
+    volume_usd: volumeUsd,
+    volume_days: volumeDays,
     selected_at: nowIso,
     next_rotation_at: nextRotation,
   };

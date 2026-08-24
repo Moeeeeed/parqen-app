@@ -13,7 +13,7 @@ import {
   Bitcoin, Fuel, Wallet, ArrowUpRight, ArrowDownRight, RefreshCw, LogOut, ShieldCheck,
   Shield, Repeat, Clock, CheckCircle, XCircle, Landmark, TrendingUp, TrendingDown, Users, ExternalLink,
   Activity, AlertCircle, MessageSquare, Search, X, Send, AlertTriangle, Paperclip,
-  MessageCircle, Gift, CreditCard, Lock, Unlock, UserCheck, UserX,
+  MessageCircle, Gift, CreditCard, Lock, Unlock, UserCheck, UserX, Circle, Mail, Phone, Globe,
 } from 'lucide-react';
 
 const API_URL     = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -1114,6 +1114,339 @@ function SecurityAlertsModal({ ceoUser, onClose, onActed }) {
   );
 }
 
+// ─── Support Tickets — view & reply to user support ticket conversations. Ported from
+// TeamDashboard.js's LiveAIChatSection (same feature, same backend endpoints — those
+// endpoints were widened server-side from requireAdmin to requireAdminOrCeo so this
+// page can call them, see server.js) with the same two fixes applied there: messages
+// now poll live while a ticket is open (previously only loaded once, so a user's new
+// reply never appeared until the ticket was closed and reopened), and a broken/dead
+// avatar_url now falls back to the username initial instead of a broken-image icon.
+function SupportTicketsSection() {
+  const [tickets, setTickets]   = useState([]);
+  const [total, setTotal]       = useState(0);
+  const [loading, setLoading]   = useState(true);
+  const [selected, setSelected] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [reply, setReply]       = useState('');
+  const [sending, setSending]   = useState(false);
+  const [statusFilter, setStat] = useState('');
+  const [searchQ, setSearchQ]   = useState('');
+  const [avatarBroken, setAvatarBroken] = useState(false);
+  const chatEndRef              = useRef(null);
+
+  const TICKET_STATUSES = {
+    open:     { label: 'Open',     color: '#3B82F6', bg: '#EFF6FF', dot: <Circle size={10} fill="#3B82F6" strokeWidth={0} className="inline-block" /> },
+    active:   { label: 'Active',   color: '#166534', bg: '#F0FDF4', dot: <Circle size={10} fill="#10B981" strokeWidth={0} className="inline-block" /> },
+    resolved: { label: 'Resolved', color: '#6D28D9', bg: '#F5F3FF', dot: <CheckCircle size={10} className="inline-block" style={{ color: '#6D28D9' }} /> },
+    closed:   { label: 'Closed',   color: '#6B7280', bg: '#F9FAFB', dot: <Lock size={10} className="inline-block" style={{ color: '#6B7280' }} /> },
+  };
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await axios.get(`${API_URL}/admin/support/tickets`, {
+        headers: authH(),
+        params: { status: statusFilter, limit: 100 },
+      });
+      let list = r.data.tickets || [];
+      if (searchQ.trim()) {
+        const q = searchQ.trim().toLowerCase();
+        list = list.filter(t =>
+          t.username?.toLowerCase().includes(q) ||
+          t.subject?.toLowerCase().includes(q) ||
+          t.category?.toLowerCase().includes(q)
+        );
+      }
+      setTickets(list);
+      setTotal(r.data.total || 0);
+    } catch { toast.error('Failed to load chats'); }
+    finally { setLoading(false); }
+  }, [statusFilter, searchQ]);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const iv = setInterval(load, 15000);
+    return () => clearInterval(iv);
+  }, [load]);
+
+  const loadMessages = useCallback(async (ticketId) => {
+    if (!ticketId) return;
+    try {
+      const r = await axios.get(`${API_URL}/admin/support/tickets/${ticketId}/messages`, { headers: authH() });
+      setMessages(r.data.messages || []);
+    } catch { /* keep whatever's on screen — a transient poll failure shouldn't clear the chat */ }
+  }, []);
+
+  const openTicket = async (ticket) => {
+    setSelected(ticket);
+    setReply('');
+    setMessages([]);
+    setAvatarBroken(false);
+    try {
+      await loadMessages(ticket.id);
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
+    } catch { toast.error('Failed to load messages'); }
+  };
+
+  useEffect(() => {
+    if (!selected) return;
+    const iv = setInterval(() => loadMessages(selected.id), 4000);
+    return () => clearInterval(iv);
+  }, [selected, loadMessages]);
+
+  const sendReply = async () => {
+    if (!reply.trim() || !selected || sending) return;
+    setSending(true);
+    try {
+      const r = await axios.post(`${API_URL}/admin/support/tickets/${selected.id}/reply`, { message: reply.trim() }, { headers: authH() });
+      setMessages(prev => [...prev, r.data.message]);
+      setReply('');
+      setTickets(prev => prev.map(t => t.id === selected.id ? { ...t, status: 'active', updated_at: new Date().toISOString() } : t));
+      setSelected(prev => prev ? { ...prev, status: 'active' } : prev);
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+      toast.success('Reply sent');
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed to send'); }
+    finally { setSending(false); }
+  };
+
+  const updateStatus = async (id, status) => {
+    try {
+      await axios.patch(`${API_URL}/admin/support/tickets/${id}/status`, { status }, { headers: authH() });
+      setTickets(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+      if (selected?.id === id) setSelected(prev => prev ? { ...prev, status } : prev);
+      toast.success('Status updated');
+    } catch { toast.error('Failed to update status'); }
+  };
+
+  const counts = {
+    open:     tickets.filter(t => t.status === 'open').length,
+    active:   tickets.filter(t => t.status === 'active').length,
+    resolved: tickets.filter(t => t.status === 'resolved').length,
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-black uppercase tracking-wide" style={{ color: C.g500 }}>Support Tickets ({total})</h2>
+        <button onClick={load} className="p-2 rounded-xl border hover:bg-gray-50 transition" style={{ borderColor: C.g200 }}>
+          <RefreshCw size={14} style={{ color: C.g500 }} />
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        {/* Stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: 'Total',    value: total,           color: C.forest,  bg: '#F0FDF4' },
+            { label: 'Open',     value: counts.open,     color: '#3B82F6', bg: '#EFF6FF' },
+            { label: 'Active',   value: counts.active,   color: '#166534', bg: '#F0FDF4' },
+            { label: 'Resolved', value: counts.resolved, color: '#6D28D9', bg: '#F5F3FF' },
+          ].map(s => (
+            <div key={s.label} className="bg-white rounded-2xl border p-4 text-center" style={{ borderColor: C.g200 }}>
+              <p className="text-2xl font-black" style={{ color: s.color }}>{s.value}</p>
+              <p className="text-xs font-bold mt-1" style={{ color: C.g600 }}>{s.label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Search + Filter */}
+        <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
+          <div className="flex items-center gap-2 px-4 py-3 border-b flex-wrap" style={{ borderColor: C.g100 }}>
+            <div className="flex items-center gap-2 flex-1 min-w-[180px]">
+              <Search size={13} style={{ color: C.g400 }} />
+              <input value={searchQ} onChange={e => setSearchQ(e.target.value)}
+                placeholder="Search by username, subject…"
+                className="flex-1 text-xs outline-none" style={{ color: C.g700 }} />
+              {searchQ && <button onClick={() => setSearchQ('')}><X size={12} style={{ color: C.g400 }} /></button>}
+            </div>
+            <div className="flex items-center gap-1 flex-wrap">
+              {['', 'open', 'active', 'resolved', 'closed'].map(s => (
+                <button key={s} onClick={() => setStat(s)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-black transition"
+                  style={{ backgroundColor: statusFilter === s ? C.forest : C.g100, color: statusFilter === s ? '#fff' : C.g600 }}>
+                  {s === '' ? 'All' : <span className="inline-flex items-center gap-1">{TICKET_STATUSES[s]?.dot} {TICKET_STATUSES[s]?.label}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <RefreshCw size={20} className="animate-spin" style={{ color: C.g400 }} />
+            </div>
+          ) : tickets.length === 0 ? (
+            <div className="py-16 text-center">
+              <MessageCircle size={36} className="mx-auto mb-2" style={{ color: C.g200 }} />
+              <p className="text-sm font-semibold" style={{ color: C.g400 }}>No chats found</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ backgroundColor: C.g50 }}>
+                    {['User', 'Subject', 'Category', 'Status', 'Last Update', 'Action'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-black" style={{ color: C.g600 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {tickets.map(t => {
+                    const st = TICKET_STATUSES[t.status] || TICKET_STATUSES.open;
+                    return (
+                      <tr key={t.id} className="border-t hover:bg-gray-50 cursor-pointer transition"
+                        style={{ borderColor: C.g100 }} onClick={() => openTicket(t)}>
+                        <td className="px-4 py-3">
+                          <p className="text-xs font-black" style={{ color: C.g800 }}>{t.username || 'Unknown'}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="text-xs font-semibold max-w-[200px] truncate" style={{ color: C.g700 }}>{t.subject}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs capitalize font-bold" style={{ color: C.g500 }}>{t.category || 'general'}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs px-2 py-1 rounded-full font-black" style={{ backgroundColor: st.bg, color: st.color }}>
+                            {st.dot} {st.label}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs" style={{ color: C.g400 }}>{fmtAge(t.updated_at)}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <button onClick={e => { e.stopPropagation(); openTicket(t); }}
+                            className="text-xs px-3 py-1.5 rounded-lg font-black transition hover:opacity-80"
+                            style={{ backgroundColor: '#EFF6FF', color: '#3B82F6' }}>
+                            View Chat
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Chat Modal */}
+        {selected && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}>
+            <div className="bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col w-full" style={{ maxWidth: 560, height: '85vh' }}>
+              {/* Modal header */}
+              <div className="flex-shrink-0 border-b" style={{ borderColor: C.g100 }}>
+                {/* User info bar */}
+                <div className="flex items-center gap-3 px-5 py-3 border-b" style={{ borderColor: C.g100, backgroundColor: '#F0FDF4' }}>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 font-black text-sm"
+                    style={{ backgroundColor: C.forest, color: '#fff' }}>
+                    {selected.avatar_url && !avatarBroken
+                      ? <img src={selected.avatar_url} alt="" className="w-full h-full rounded-xl object-cover"
+                          onError={() => setAvatarBroken(true)} />
+                      : (selected.username || 'U')[0].toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-black text-sm leading-none" style={{ color: C.g800 }}>
+                      {selected.full_name || selected.username}
+                      <span className="font-normal text-xs ml-1.5" style={{ color: C.g500 }}>@{selected.username}</span>
+                    </p>
+                    <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                      {selected.user_email && <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: C.g500 }}><Mail size={11} className="inline-block" /> {selected.user_email}</span>}
+                      {selected.user_phone && <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: C.g500 }}><Phone size={11} className="inline-block" /> {selected.user_phone}</span>}
+                      {selected.user_country && <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: C.g500 }}><Globe size={11} className="inline-block" /> {selected.user_country}</span>}
+                      {selected.user_joined && <span className="text-[11px]" style={{ color: C.g400 }}>Joined {new Date(selected.user_joined).toLocaleDateString()}</span>}
+                    </div>
+                  </div>
+                </div>
+                {/* Ticket title + controls */}
+                <div className="flex items-start justify-between px-5 py-3">
+                  <div className="flex-1 min-w-0 pr-4">
+                    <p className="font-black text-sm leading-snug" style={{ color: C.g800 }}>{selected.subject}</p>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span className="text-xs font-black px-2 py-0.5 rounded-full"
+                        style={{ backgroundColor: (TICKET_STATUSES[selected.status] || TICKET_STATUSES.open).bg, color: (TICKET_STATUSES[selected.status] || TICKET_STATUSES.open).color }}>
+                        {(TICKET_STATUSES[selected.status] || TICKET_STATUSES.open).dot} {(TICKET_STATUSES[selected.status] || TICKET_STATUSES.open).label}
+                      </span>
+                      <span className="text-xs capitalize px-2 py-0.5 rounded-full" style={{ backgroundColor: C.g100, color: C.g600 }}>{selected.category}</span>
+                      <span className="text-xs" style={{ color: C.g400 }}>{fmtAge(selected.updated_at)}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <select value={selected.status} onChange={e => updateStatus(selected.id, e.target.value)}
+                      className="text-xs border rounded-lg px-2 py-1 outline-none"
+                      style={{ borderColor: C.g200, color: C.g700, backgroundColor: '#fff' }}>
+                      <option value="open">Open</option>
+                      <option value="active">Active</option>
+                      <option value="resolved">Resolved</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                    <button onClick={() => { setSelected(null); setMessages([]); }}
+                      className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 transition">
+                      <X size={16} style={{ color: C.g500 }} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                {messages.length === 0 ? (
+                  <div className="flex items-center justify-center py-12">
+                    <p className="text-sm" style={{ color: C.g400 }}>No messages yet.</p>
+                  </div>
+                ) : messages.map(m => (
+                  <div key={m.id} className={`flex ${m.is_admin ? 'justify-end' : 'justify-start'}`}>
+                    {!m.is_admin && (
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mr-2 self-end" style={{ backgroundColor: C.g200 }}>
+                        <span className="text-xs font-black" style={{ color: C.g600 }}>{(selected.username || 'U')[0].toUpperCase()}</span>
+                      </div>
+                    )}
+                    <div className="max-w-[75%]">
+                      {!m.is_admin && <p className="text-xs font-black mb-1 ml-1" style={{ color: C.g500 }}>{selected.username}</p>}
+                      <div className="px-4 py-2.5 text-sm leading-relaxed"
+                        style={{
+                          backgroundColor: m.is_admin ? C.forest : C.g100,
+                          color: m.is_admin ? '#fff' : C.g700,
+                          borderRadius: m.is_admin ? '16px 4px 16px 16px' : '4px 16px 16px 16px',
+                        }}>
+                        {m.message}
+                      </div>
+                      <p className="text-xs mt-1 px-1" style={{ color: C.g400, textAlign: m.is_admin ? 'right' : 'left' }}>{fmtAge(m.created_at)}</p>
+                    </div>
+                    {m.is_admin && (
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ml-2 self-end" style={{ backgroundColor: C.forest }}>
+                        <span className="text-xs font-black text-white" style={{ fontFamily: 'Georgia,serif' }}>P</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Reply input */}
+              <div className="flex-shrink-0 flex gap-3 p-4 border-t" style={{ borderColor: C.g100 }}>
+                <textarea
+                  value={reply}
+                  onChange={e => setReply(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendReply())}
+                  rows={2}
+                  placeholder="Type your reply… (Enter to send, Shift+Enter for new line)"
+                  className="flex-1 border rounded-xl px-4 py-3 text-sm outline-none resize-none transition"
+                  style={{ borderColor: C.g200, color: C.g800 }}
+                />
+                <button onClick={sendReply} disabled={sending || !reply.trim()}
+                  className="w-12 h-12 self-end rounded-xl flex items-center justify-center transition hover:opacity-80"
+                  style={{ backgroundColor: reply.trim() ? C.forest : C.g100, color: reply.trim() ? '#fff' : C.g400 }}>
+                  {sending ? <RefreshCw size={16} className="animate-spin" /> : <Send size={16} />}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Support Chat — join any live trade as PRAQEN Support and chat in real time. Ported
 // from TeamDashboard.js's SupportChatSection (same feature, same backend endpoints — just
 // widened server-side to also accept is_ceo, see requireAdminOrCeo / moderator-join /
@@ -1174,7 +1507,12 @@ function SupportChatSection({ ceoUser }) {
     return () => clearInterval(iv);
   }, [selected, loadChat]);
 
-  useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  // block: 'nearest' keeps this scroll inside the chat panel's own scroll
+  // container — without it, scrollIntoView walks every scrollable ancestor
+  // including the page itself, so the 4s message poll was yanking the whole
+  // CEO dashboard's scroll position back to this section on every tick,
+  // even while a trade wasn't visibly open on screen.
+  useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [messages]);
 
   const openTrade = (t) => { setSelected(t); setJoined(false); setMessages([]); setImages([]); };
 
@@ -1824,6 +2162,8 @@ export default function CeoDashboard({ user: appUser }) {
                 </div>
               </div>
             )}
+
+            <SupportTicketsSection />
 
             <SupportChatSection ceoUser={ceoUser} />
           </>

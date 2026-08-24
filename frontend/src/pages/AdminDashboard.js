@@ -12,7 +12,7 @@ import {
   Mail, Phone, UserPlus, MessageSquare, MessageCircle, Maximize2,
   ChevronUp, Lightbulb, Send, ExternalLink, Shield, History,
 } from 'lucide-react';
-import { Image, MapPin, CreditCard, User, Globe, ShoppingCart, Scale, Wrench, Upload, Landmark, Banknote, ClipboardList, Repeat, Moon, EyeOff, Pin, Sparkles, BarChart2, Inbox, Bug, Zap } from 'lucide-react';
+import { Image, MapPin, CreditCard, User, Globe, ShoppingCart, Scale, Wrench, Upload, Landmark, Banknote, ClipboardList, Repeat, Moon, EyeOff, Pin, Sparkles, BarChart2, Inbox, Bug, Zap, Layers } from 'lucide-react';
 
 // ─── Suggestion constants (shared with SuggestionsPanel) ─────
 const SUGGESTION_CATS = [
@@ -764,6 +764,29 @@ function UsersSection() {
                     <div key={l} className="flex items-center justify-between text-xs">
                       <span style={{ color: C.g500 }}>{l}</span>
                       <span className="font-bold" style={{ color: C.g700 }}>{v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── What they're offering right now — asset, buy/sell direction, payment
+                method or gift card brand — same activeListings the Team Portal's Users
+                tab shows, so an admin knows what kind of trade this user is actually
+                running before acting on their account. ── */}
+            {userDetail?.activeListings?.length > 0 && (
+              <div className="mb-4 pb-3 border-b" style={{ borderColor: C.g100 }}>
+                <p className="text-xs font-black uppercase tracking-wider inline-flex items-center gap-1 mb-1.5" style={{ color: C.g400 }}>
+                  <Layers size={13} /> Active Offers ({userDetail.activeListingCount})
+                </p>
+                <div className="space-y-1">
+                  {userDetail.activeListings.map(l => (
+                    <div key={l.id} className="flex items-center justify-between px-2 py-1.5 rounded-lg text-xs" style={{ backgroundColor: '#F0FDF4' }}>
+                      <span className="font-bold" style={{ color: '#166534' }}>
+                        {(l.listing_type || '').includes('SELL') ? 'Selling' : 'Buying'} {l.asset || 'BTC'}
+                        {l.gift_card_brand ? ` · ${l.gift_card_brand}` : l.payment_method ? ` · ${l.payment_method}` : ''}
+                      </span>
+                      <span className="font-black" style={{ color: C.g700 }}>{l.country || '—'}</span>
                     </div>
                   ))}
                 </div>
