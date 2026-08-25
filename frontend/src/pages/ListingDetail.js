@@ -314,9 +314,9 @@ const loadAll = useCallback(async (isBackground = false) => {
 
   const btcGross    = payAmtNum > 0 && activeRate > 0 ? payAmtNum / activeRate : 0;
   // Preview only — matches the real fee tradeEscrowService applies at release
-  // (1% on Buy/Sell, 2% on gift cards). This used to be a flat 0.995 regardless
+  // (2% on Buy/Sell, 3% on gift cards). This used to be a flat 0.995 regardless
   // of trade type, which under-stated the fee shown to buyers.
-  const previewFeeRate = isGiftCard ? 0.02 : 0.01;
+  const previewFeeRate = isGiftCard ? 0.03 : 0.02;
   const btcAfterFee = btcGross * (1 - previewFeeRate);
 
   // CORRECT fiat equivalent calculation: localAmount / (1 + margin/100)

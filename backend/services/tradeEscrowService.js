@@ -17,7 +17,7 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
 
-const FEE_RATE            = 0.01;
+const FEE_RATE            = 0.02;
 const COMPANY_WALLET_ID   = '14762cd0-d3b2-474f-acab-fe0071961e9a';
 const COMPANY_BTC_ADDRESS = 'bc1qd8z3zdn2e3eul6y8nmcyjvgle3yzv8ttvsjp49';
 
@@ -25,19 +25,43 @@ const COMPANY_BTC_ADDRESS = 'bc1qd8z3zdn2e3eul6y8nmcyjvgle3yzv8ttvsjp49';
 // tables (user_balances, user_wallets — both BTC-only, neither has a USDT
 // column) are still read elsewhere in the app (profile endpoint, sell-offer
 // auto-pause). Trade release and cancel/refund only ever wrote to `wallets`,
-// so those two tables silently drifted stale after every single completed or
-// cancelled trade. Best-effort, non-fatal — a hiccup here must never block
-// the real fund movement in `wallets`, which has already succeeded by the
-// time this is called.
+// so those two tables could drift stale after a completed or cancelled trade.
+// A hiccup here must never block the real fund movement in `wallets`, which
+// has already succeeded by the time this is called — but a hiccup must also
+// never disappear silently. 2026-08-25: this used to be pure fire-and-forget
+// with a try/catch that couldn't actually catch most failures (a Supabase
+// `.update()` resolves with `{error}` on a DB-level failure — it doesn't
+// throw — so the try/catch here was mostly dead code). Now every call site
+// awaits this, both table results are checked explicitly, and any failure is
+// written to reconciliation_flags — visible to the Phase 6 reconciliation
+// process and retryable by an admin, instead of only ever reaching a log line.
 async function syncSecondaryBtcBalance(userId, newBtcBalance) {
-  try {
-    await Promise.all([
-      supabaseAdmin.from('user_balances').update({ balance_btc: newBtcBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
-      supabaseAdmin.from('user_wallets').update({ balance_btc: newBtcBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
-    ]);
-  } catch (e) {
-    console.error('[Escrow] syncSecondaryBtcBalance failed (non-fatal):', e.message);
-  }
+  const nowIso = new Date().toISOString();
+  const [ub, uw] = await Promise.allSettled([
+    supabaseAdmin.from('user_balances').update({ balance_btc: newBtcBalance, updated_at: nowIso }).eq('user_id', userId),
+    supabaseAdmin.from('user_wallets').update({ balance_btc: newBtcBalance, updated_at: nowIso }).eq('user_id', userId),
+  ]);
+
+  const failures = [];
+  if (ub.status === 'rejected' || ub.value?.error) failures.push({ table: 'user_balances', error: ub.status === 'rejected' ? ub.reason?.message : ub.value.error.message });
+  if (uw.status === 'rejected' || uw.value?.error) failures.push({ table: 'user_wallets', error: uw.status === 'rejected' ? uw.reason?.message : uw.value.error.message });
+
+  if (failures.length === 0) return;
+
+  console.error(`[Escrow] syncSecondaryBtcBalance: mirror sync failed for user ${userId.slice(0, 8)} — flagging for reconciliation:`, failures);
+  await supabaseAdmin.from('reconciliation_flags').insert({
+    user_id:              userId,
+    currency:             'BTC',
+    source_table:         failures.map(f => f.table).join(','),
+    authoritative_value:  newBtcBalance,
+    mirror_value:         null,
+    diff:                 null,
+    reason:               'SYNC_FAILURE',
+    status:               'RECONCILIATION_REQUIRED',
+    detail:               { failures },
+  }).then(({ error }) => {
+    if (error) console.error(`🚨 [Escrow] ALSO failed to record reconciliation_flags for user ${userId.slice(0, 8)} — this drift is now untracked anywhere but the log line above:`, error.message);
+  });
 }
 
 // After every trade / withdrawal: sync SELL listings to the seller's current balance.
@@ -234,7 +258,7 @@ class TradeEscrowService {
     const feeAmount     = parseFloat((parsedAmount * this.feeRate).toFixed(isUsdt ? 6 : 8));
 
     console.log(`   Escrow address: ${escrowAddress}`);
-    console.log(`   Fee (1%):       ${feeAmount} ${currency}`);
+    console.log(`   Fee (${(this.feeRate * 100).toFixed(0)}%):       ${feeAmount} ${currency}`);
 
     // ── 3. Deduct from available, add to locked ────────────────────────────
     const newAvailable = parseFloat((currentBalance - parsedAmount).toFixed(isUsdt ? 6 : 8));
@@ -528,9 +552,18 @@ class TradeEscrowService {
     const amount      = isUsdt
       ? parseFloat(tradeData.amount_usdt || tradeData.escrow_amount || 0)
       : parseFloat(tradeData.amount_btc);
-    const feeRate     = isGiftCardTrade ? 0.02 : 0.01;
+    const feeRate     = isGiftCardTrade ? 0.03 : 0.02;
     const buyerGets   = parseFloat((amount * (1 - feeRate)).toFixed(isUsdt ? 6 : 8));
     const platformFee = parseFloat((amount * feeRate).toFixed(isUsdt ? 6 : 8));
+
+    // Mandatory fee sanity check — fail before touching any balance rather than
+    // silently release funds with a missing/malformed company fee (e.g. NaN
+    // propagating from a corrupt `amount`, or a future edit changing feeRate
+    // to something outside the two approved rates).
+    const expectedFeeRate = isGiftCardTrade ? 0.03 : 0.02;
+    if (!Number.isFinite(platformFee) || platformFee < 0 || feeRate !== expectedFeeRate) {
+      throw new Error(`Fee validation failed before release — trade ${tradeId.slice(0, 8)}: platformFee=${platformFee}, feeRate=${feeRate}, expected=${expectedFeeRate}. Release blocked.`);
+    }
 
     console.log(`💰 Releasing ${buyerGets} ${tradeCurrency} → receiver: ${btcReceiverId.slice(0, 8)}`);
 
@@ -611,11 +644,20 @@ class TradeEscrowService {
         .eq('user_id', btcReceiverId);
       if (creditErr) throw new Error(`USDT receiver credit failed: ${creditErr.message}`);
 
-      // Fee to company wallet
+      // Fee to company wallet — checked (previously unchecked: a silent failure
+      // here used to let the trade proceed to COMPLETED with no company fee
+      // collected and no record of the failure anywhere).
       const newCompanyUsdt = parseFloat((companyBalanceBefore + platformFee).toFixed(decimals));
-      await supabaseAdmin.from('wallets')
+      const { error: usdtFeeErr } = await supabaseAdmin.from('wallets')
         .update({ [balField]: newCompanyUsdt, updated_at: new Date().toISOString() })
         .eq('user_id', COMPANY_WALLET_ID);
+      if (usdtFeeErr) {
+        console.error(`🚨 [Escrow] USDT FEE COLLECTION FAILED — $${platformFee.toFixed(6)} NOT COLLECTED — trade left un-completed for manual reconciliation:`, usdtFeeErr.message);
+        await supabaseAdmin.from('trades')
+          .update({ fee_status: 'FAILED', platform_fee_usdt: platformFee })
+          .eq('id', tradeId).then(null, () => {});
+        throw new Error(`USDT company fee credit failed: ${usdtFeeErr.message}`);
+      }
 
       // Mark escrow released + trade completed
       await supabaseAdmin.from('escrow_locks')
@@ -643,7 +685,7 @@ class TradeEscrowService {
         .update({ balance_btc: newReceiverBalance, updated_at: new Date().toISOString() })
         .eq('user_id', btcReceiverId);
       if (creditErr) throw new Error(`BTC receiver credit failed: ${creditErr.message}`);
-      syncSecondaryBtcBalance(btcReceiverId, newReceiverBalance);
+      await syncSecondaryBtcBalance(btcReceiverId, newReceiverBalance);
 
       const { error: lockErr } = await supabaseAdmin
         .from('escrow_locks')
@@ -651,15 +693,10 @@ class TradeEscrowService {
         .eq('trade_id', tradeId).eq('status', 'RELEASING');
       if (lockErr) console.error(`[Escrow] escrow_locks mark-released failed: ${lockErr.message}`);
 
-      const { error: tradeUpdateErr } = await supabaseAdmin.from('trades')
-          .update({
-            status:             'COMPLETED',
-            buyer_btc_txhash:   releaseTxHash,
-            completed_at:       new Date().toISOString(),
-          })
-          .eq('id', tradeId);
-      if (tradeUpdateErr) throw new Error(`Failed to mark trade as COMPLETED: ${tradeUpdateErr.message}`);
-
+      // Trade is deliberately NOT marked COMPLETED here — the mandatory platform
+      // fee must be collected first (see the fee-collection block below, which
+      // now marks COMPLETED itself once the fee is actually confirmed). This
+      // guarantees a trade can never show COMPLETED with an uncollected fee.
       console.log(`[Escrow] ✅ BTC credited: ₿${buyerGets.toFixed(8)} → receiver ${btcReceiverId.slice(0,8)}`);
     }
 
@@ -719,17 +756,31 @@ class TradeEscrowService {
             collected_at: new Date().toISOString(),
         }, { onConflict: 'trade_id', ignoreDuplicates: true }).then(() => {}).catch(() => {});
 
-        await supabaseAdmin.from('trades')
-            .update({ fee_status: 'COLLECTED', fee_collected_at: new Date().toISOString(), platform_fee_btc: platformFee })
+        // Fee confirmed — NOW it's safe to mark the trade COMPLETED (mandatory-fee
+        // guarantee: this is the only place BTC trades transition to COMPLETED).
+        const { error: completeErr } = await supabaseAdmin.from('trades')
+            .update({
+              status: 'COMPLETED', buyer_btc_txhash: releaseTxHash, completed_at: new Date().toISOString(),
+              fee_status: 'COLLECTED', fee_collected_at: new Date().toISOString(), platform_fee_btc: platformFee,
+            })
             .eq('id', tradeId);
+        if (completeErr) throw new Error(`Failed to mark trade as COMPLETED: ${completeErr.message}`);
 
         console.log(`✅ Fee CONFIRMED: ₿${platformFee.toFixed(8)} (${(feeRate * 100)}%) from trade ${tradeId.slice(0, 8).toUpperCase()}`);
 
       } catch (feeErr) {
-          console.error(`🚨 [Escrow] FEE COLLECTION FAILED — ₿${platformFee.toFixed(8)} NOT COLLECTED:`, feeErr.message);
+          // Receiver already has their BTC and escrow is already RELEASED (both
+          // happened above, unconditionally) — that is not reversed here. What
+          // MUST NOT happen is the trade silently showing COMPLETED with the
+          // company fee never collected, so we deliberately leave `status` at
+          // its pre-release value (fee_status: FAILED marks it for admin
+          // reconciliation) and re-throw so the caller sees this as a real error
+          // rather than a false "success".
+          console.error(`🚨 [Escrow] FEE COLLECTION FAILED — ₿${platformFee.toFixed(8)} NOT COLLECTED — trade left un-completed for manual reconciliation:`, feeErr.message);
           await supabaseAdmin.from('trades')
               .update({ fee_status: 'FAILED', platform_fee_btc: platformFee })
               .eq('id', tradeId).then(null, () => {});
+          throw feeErr;
       }
     } else {
       // USDT fee audit trail
@@ -983,7 +1034,7 @@ class TradeEscrowService {
             .eq('user_id', btcProviderId);
           if (manualErr) throw new Error(`Manual refund failed: ${manualErr.message}`);
           console.log(`[cancelTrade] ✅ Manual BTC refund: ₿${manualAvail.toFixed(8)} → provider ${btcProviderId.slice(0,8)}`);
-          syncSecondaryBtcBalance(btcProviderId, manualAvail);
+          await syncSecondaryBtcBalance(btcProviderId, manualAvail);
 
         } else {
           const { data: providerAfter } = await supabaseAdmin
@@ -1000,14 +1051,14 @@ class TradeEscrowService {
               .eq('user_id', btcProviderId);
             if (fixErr) throw new Error(`Balance correction failed: ${fixErr.message}`);
             console.log(`[cancelTrade] ✅ BTC balance corrected: ₿${correctedBalance.toFixed(8)} → provider ${btcProviderId.slice(0,8)}`);
-            syncSecondaryBtcBalance(btcProviderId, correctedBalance);
+            await syncSecondaryBtcBalance(btcProviderId, correctedBalance);
           } else {
             const syncedLocked = parseFloat(Math.max(0, parseFloat(providerAfter?.locked_balance_btc || 0) - refundAmount).toFixed(8));
             await supabaseAdmin.from('wallets')
               .update({ locked_balance_btc: syncedLocked, updated_at: new Date().toISOString() })
               .eq('user_id', btcProviderId);
             console.log(`[cancelTrade] ✅ BTC RPC credited: ₿${rpcCredited.toFixed(8)} → provider ${btcProviderId.slice(0,8)}`);
-            syncSecondaryBtcBalance(btcProviderId, balanceAfter);
+            await syncSecondaryBtcBalance(btcProviderId, balanceAfter);
           }
         }
       }
@@ -1334,7 +1385,7 @@ class TradeEscrowService {
       throw new Error('Balance changed while placing the hold — please retry.');
     }
 
-    syncSecondaryBtcBalance(userId, newAvailable);
+    await syncSecondaryBtcBalance(userId, newAvailable);
 
     await supabaseAdmin.from('balance_audit').insert({
       user_id:     userId,
@@ -1391,7 +1442,7 @@ class TradeEscrowService {
       throw new Error('Balance changed while resolving the hold — please retry.');
     }
 
-    syncSecondaryBtcBalance(userId, newAvailable);
+    await syncSecondaryBtcBalance(userId, newAvailable);
 
     await supabaseAdmin.from('balance_audit').insert({
       user_id:     userId,

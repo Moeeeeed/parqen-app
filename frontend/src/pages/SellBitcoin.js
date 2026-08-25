@@ -23,6 +23,7 @@ import ActiveTradeCard from '../components/ActiveTradeCard';
 import PRQFooter from '../components/PRQFooter';
 import GettingStartedSteps from '../components/GettingStartedSteps';
 import PinnedOfferBanner from '../components/PinnedOfferBanner';
+import WeeklyStarsSection from '../components/WeeklyStarsSection';
 import useStableList from '../hooks/useStableList';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -1614,12 +1615,10 @@ export default function SellBitcoin({user}) {
         </div>
       </div>
 
-      {/* Live Pinned Offer banner takes this slot when there's a real weekly winner
-          to show; otherwise the getting-started guide keeps helping new/unfunded
-          users — the two never render at once, so the box stays a single fixed slot. */}
-      {stablePinnedSlides.length > 0
-        ? <PinnedOfferBanner slides={stablePinnedSlides} dismissKey={`sell_${user?.id || 'guest'}`} />
-        : (user && userBtcBalance * btcPrice < 10 && <GettingStartedSteps userId={user.id} />)}
+      {/* PRAQEN Weekly Stars — admin-selected recognition (replaces the old
+          per-country auto-picked pinned-offer banner). */}
+      <WeeklyStarsSection />
+      {user && userBtcBalance * btcPrice < 10 && <GettingStartedSteps userId={user.id} />}
 
       {/* ══ 3. FILTER BAR ══════════════════════════════════════ */}
       <div className="bg-white border-b flex-shrink-0" style={{borderColor:C.g200}}>

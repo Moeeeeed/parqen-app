@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { copyToClipboard } from '../utils/clipboard';
+import AdminTraderRecognition from '../components/AdminTraderRecognition';
 import {
   LayoutDashboard, Users, ArrowLeftRight, ArrowUpRight, AlertTriangle,
   ShieldCheck, DollarSign, List, Megaphone, LogOut,
@@ -262,10 +263,23 @@ function SectionHead({ title, sub, action }) {
 // LOGIN SCREEN
 // ================================================================
 function AdminLogin({ onAuth }) {
+  const [step, setStep]         = useState('credentials'); // 'credentials' | 'otp'
   const [email, setEmail]       = useState(ADMIN_EMAIL);
   const [password, setPassword] = useState('');
+  const [otp, setOtp]           = useState('');
+  const [pendingEmail, setPendingEmail] = useState('');
   const [loading, setLoading]   = useState(false);
   const [err, setErr]           = useState('');
+
+  const finishLogin = (token, user) => {
+    if (!token) throw new Error('No token returned');
+    if (user?.email !== ADMIN_EMAIL && !user?.is_admin) {
+      throw new Error('This account does not have admin access');
+    }
+    localStorage.setItem('adminToken', token);
+    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    onAuth(user, token);
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -273,16 +287,43 @@ function AdminLogin({ onAuth }) {
     setLoading(true);
     try {
       const r = await axios.post(`${API_URL}/auth/login`, { email, password });
-      const { token, user } = r.data;
-      if (!token) throw new Error('No token returned');
-      if (user?.email !== ADMIN_EMAIL && !user?.is_admin) {
-        throw new Error('This account does not have admin access');
+      if (r.data.requiresOtp) {
+        setPendingEmail(r.data.email || email);
+        setOtp('');
+        setStep('otp');
+      } else {
+        finishLogin(r.data.token, r.data.user);
       }
-      localStorage.setItem('adminToken', token);
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      onAuth(user, token);
     } catch (e) {
       setErr(e.response?.data?.error || e.message || 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyOtp = async (e) => {
+    e.preventDefault();
+    setErr('');
+    setLoading(true);
+    try {
+      const r = await axios.post(`${API_URL}/auth/verify-login-otp`, { email: pendingEmail, code: otp });
+      finishLogin(r.data.token, r.data.user);
+    } catch (e) {
+      setErr(e.response?.data?.error || e.message || 'Invalid code. Please try again.');
+      setOtp('');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendOtp = async () => {
+    setErr('');
+    setLoading(true);
+    try {
+      const r = await axios.post(`${API_URL}/auth/login`, { email: pendingEmail, password });
+      if (r.data.requiresOtp) setErr('A new code has been sent.');
+    } catch (e) {
+      setErr(e.response?.data?.error || 'Could not resend code.');
     } finally {
       setLoading(false);
     }
@@ -300,39 +341,68 @@ function AdminLogin({ onAuth }) {
           <p className="text-white/50 text-sm mt-1 font-semibold tracking-widest uppercase">Admin Panel</p>
         </div>
 
-        <form onSubmit={submit} className="bg-white rounded-3xl p-8 shadow-2xl">
-          <h2 className="text-xl font-black mb-1" style={{ color: C.g800 }}>Admin Login</h2>
-          <p className="text-sm mb-6" style={{ color: C.g400 }}>Sign in with your administrator account</p>
+        {step === 'credentials' ? (
+          <form onSubmit={submit} className="bg-white rounded-3xl p-8 shadow-2xl">
+            <h2 className="text-xl font-black mb-1" style={{ color: C.g800 }}>Admin Login</h2>
+            <p className="text-sm mb-6" style={{ color: C.g400 }}>Sign in with your administrator account</p>
 
-          {err && (
-            <div className="flex items-center gap-2 mb-4 px-3 py-2.5 rounded-xl text-sm" style={{ backgroundColor:'#FEF2F2', border:'1px solid #FCA5A5', color:'#991B1B' }}>
-              <XCircle size={14} /> {err}
-            </div>
-          )}
+            {err && (
+              <div className="flex items-center gap-2 mb-4 px-3 py-2.5 rounded-xl text-sm" style={{ backgroundColor:'#FEF2F2', border:'1px solid #FCA5A5', color:'#991B1B' }}>
+                <XCircle size={14} /> {err}
+              </div>
+            )}
 
-          <div className="space-y-4">
-            <div>
-              <label className="text-xs font-bold block mb-1.5" style={{ color: C.g600 }}>Email Address</label>
-              <input value={email} onChange={e => setEmail(e.target.value)} type="email" required
-                className="w-full px-4 py-3 rounded-xl border text-sm font-semibold outline-none focus:ring-2"
-                style={{ borderColor: C.g200, color: C.g800 }}
-                placeholder="admin@praqen.com" />
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold block mb-1.5" style={{ color: C.g600 }}>Email Address</label>
+                <input value={email} onChange={e => setEmail(e.target.value)} type="email" required
+                  className="w-full px-4 py-3 rounded-xl border text-sm font-semibold outline-none focus:ring-2"
+                  style={{ borderColor: C.g200, color: C.g800 }}
+                  placeholder="admin@praqen.com" />
+              </div>
+              <div>
+                <label className="text-xs font-bold block mb-1.5" style={{ color: C.g600 }}>Password</label>
+                <input value={password} onChange={e => setPassword(e.target.value)} type="password" required
+                  className="w-full px-4 py-3 rounded-xl border text-sm font-semibold outline-none focus:ring-2"
+                  style={{ borderColor: C.g200, color: C.g800 }}
+                  placeholder="••••••••" />
+              </div>
             </div>
-            <div>
-              <label className="text-xs font-bold block mb-1.5" style={{ color: C.g600 }}>Password</label>
-              <input value={password} onChange={e => setPassword(e.target.value)} type="password" required
-                className="w-full px-4 py-3 rounded-xl border text-sm font-semibold outline-none focus:ring-2"
-                style={{ borderColor: C.g200, color: C.g800 }}
-                placeholder="••••••••" />
-            </div>
-          </div>
 
-          <button type="submit" disabled={loading}
-            className="w-full mt-6 py-3.5 rounded-xl text-sm font-black flex items-center justify-center gap-2 transition"
-            style={{ backgroundColor: loading ? C.g200 : C.forest, color: loading ? C.g400 : '#fff' }}>
-            {loading ? <><RefreshCw size={14} className="animate-spin" /> Signing in…</> : <><Lock size={14} /> Sign in to Admin Panel</>}
-          </button>
-        </form>
+            <button type="submit" disabled={loading}
+              className="w-full mt-6 py-3.5 rounded-xl text-sm font-black flex items-center justify-center gap-2 transition"
+              style={{ backgroundColor: loading ? C.g200 : C.forest, color: loading ? C.g400 : '#fff' }}>
+              {loading ? <><RefreshCw size={14} className="animate-spin" /> Signing in…</> : <><Lock size={14} /> Sign in to Admin Panel</>}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={verifyOtp} className="bg-white rounded-3xl p-8 shadow-2xl">
+            <h2 className="text-xl font-black mb-1" style={{ color: C.g800 }}>Check Your Email</h2>
+            <p className="text-sm mb-6" style={{ color: C.g400 }}>Enter the 6-digit code sent to <strong>{pendingEmail}</strong></p>
+
+            {err && (
+              <div className="flex items-center gap-2 mb-4 px-3 py-2.5 rounded-xl text-sm" style={{ backgroundColor:'#FEF2F2', border:'1px solid #FCA5A5', color:'#991B1B' }}>
+                <XCircle size={14} /> {err}
+              </div>
+            )}
+
+            <input type="text" inputMode="numeric" maxLength={6} value={otp} autoFocus
+              onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
+              placeholder="••••••"
+              className="w-full px-4 py-3 rounded-xl border text-center text-2xl tracking-[0.5em] font-black outline-none focus:ring-2"
+              style={{ borderColor: C.g200, color: C.g800 }} />
+
+            <button type="submit" disabled={otp.length !== 6 || loading}
+              className="w-full mt-6 py-3.5 rounded-xl text-sm font-black flex items-center justify-center gap-2 transition"
+              style={{ backgroundColor: loading ? C.g200 : C.forest, color: loading ? C.g400 : '#fff' }}>
+              {loading ? <><RefreshCw size={14} className="animate-spin" /> Verifying…</> : <><Lock size={14} /> Enter Admin Panel</>}
+            </button>
+            <div className="flex items-center justify-between text-xs font-bold mt-4">
+              <button type="button" onClick={() => { setStep('credentials'); setErr(''); }} style={{ color: C.g400 }}>← Back</button>
+              <button type="button" onClick={resendOtp} style={{ color: C.forest }}>Resend code</button>
+            </div>
+          </form>
+        )}
 
         <p className="text-center mt-6 text-white/30 text-xs">PRAQEN Admin • Restricted Access</p>
       </div>
@@ -5011,6 +5081,7 @@ const NAV = [
   { id:'reports',      label:'Reports',       icon:Star            },
   { id:'activity',     label:'Activity Log',  icon:Activity        },
   { id:'broadcast',    label:'Broadcast',     icon:Megaphone       },
+  { id:'weekly-stars', label:'Weekly Stars',  icon:Star            },
 ];
 
 export default function AdminDashboard({ user: appUser, onLogin }) {
@@ -5074,6 +5145,7 @@ export default function AdminDashboard({ user: appUser, onLogin }) {
     reports:     <ReportsSection />,
     activity:    <ActivitySection />,
     broadcast:   <BroadcastSection />,
+    'weekly-stars': <AdminTraderRecognition />,
   };
 
   return (

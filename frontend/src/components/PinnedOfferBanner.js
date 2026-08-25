@@ -10,7 +10,7 @@ const AUTO_ADVANCE_MS = 5000;
 // slides: [{ id, featured (a FEATURED[type] style object — TagIcon/tag/ribbon/
 //   border/btnGradient), avatar (node), badgeChip (node), username, verified,
 //   countryCode, trades, positive, negative, rateLabel, actionLabel, onClick }]
-export default function PinnedOfferBanner({ slides, dismissKey }) {
+export default function PinnedOfferBanner({ slides, dismissKey, intervalMs = AUTO_ADVANCE_MS, title = 'Live Pinned Offers' }) {
   const [dismissed, setDismissed] = useState(false);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -23,9 +23,12 @@ export default function PinnedOfferBanner({ slides, dismissKey }) {
 
   useEffect(() => {
     if (count <= 1 || paused) return;
-    timerRef.current = setInterval(() => setIndex(i => (i + 1) % count), AUTO_ADVANCE_MS);
+    // Manual prev/next/dot clicks call setIndex directly (see below), which
+    // resets this effect via the `count`/`paused` deps — so the auto-advance
+    // interval never blocks or delays a manual navigation.
+    timerRef.current = setInterval(() => setIndex(i => (i + 1) % count), intervalMs);
     return () => clearInterval(timerRef.current);
-  }, [count, paused]);
+  }, [count, paused, intervalMs]);
 
   const key = dismissKey ? `prq_pinned_offer_dismissed_${dismissKey}` : null;
   if (dismissed || (key && typeof window !== 'undefined' && localStorage.getItem(key)) || count === 0) return null;
@@ -53,7 +56,7 @@ export default function PinnedOfferBanner({ slides, dismissKey }) {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-60" />
               <span className="relative inline-flex rounded-full w-2 h-2 bg-white" />
             </span>
-            Live Pinned Offer{count > 1 ? `s · ${safeIndex + 1}/${count}` : ''}
+            {title}{count > 1 ? ` · ${safeIndex + 1}/${count}` : ''}
           </span>
           <button onClick={handleDismiss} className="flex-shrink-0 opacity-70 hover:opacity-100" title="Dismiss">
             <X size={14} color="#fff" />

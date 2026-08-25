@@ -1,0 +1,836 @@
+{
+  "generated_at": "2026-08-25T19:33:47.271Z",
+  "method": "DB-only (no on-chain calls) — see Phase 8 of BALANCE_MISMATCH_INVESTIGATION.md",
+  "users_checked": 1473,
+  "btc_mismatches": 17,
+  "usdt_mismatches": 4,
+  "total_btc_discrepancy": 0.06199882,
+  "total_usdt_discrepancy": 800,
+  "negative_or_out_of_range": [],
+  "mirror_drift": [
+    {
+      "user_id": "4dda3151-e7fc-4eac-8a06-90f2eb163482",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00419647,
+      "mirror_balance_btc": 0.00527543,
+      "diff": 0.00107896
+    },
+    {
+      "user_id": "e525f060-7c37-4b7c-92ed-05bb2c200ae5",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00054467,
+      "mirror_balance_btc": 0.00002369,
+      "diff": 0.00052098
+    },
+    {
+      "user_id": "e8d3d037-554b-4b09-b8f7-373f03de10de",
+      "source": "user_balances",
+      "wallets_balance_btc": 0.00607888,
+      "mirror_balance_btc": 0.01005399,
+      "diff": 0.00397511
+    },
+    {
+      "user_id": "e8d3d037-554b-4b09-b8f7-373f03de10de",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00607888,
+      "mirror_balance_btc": 0.01005399,
+      "diff": 0.00397511
+    },
+    {
+      "user_id": "98aa5609-08a9-4c81-892a-c0c85f22a42b",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00014445,
+      "mirror_balance_btc": 0.00492292,
+      "diff": 0.00477847
+    },
+    {
+      "user_id": "14762cd0-d3b2-474f-acab-fe0071961e9a",
+      "source": "user_balances",
+      "wallets_balance_btc": 0.00683311,
+      "mirror_balance_btc": 0.00000458,
+      "diff": 0.00682853
+    },
+    {
+      "user_id": "14762cd0-d3b2-474f-acab-fe0071961e9a",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00683311,
+      "mirror_balance_btc": 0.00000458,
+      "diff": 0.00682853
+    },
+    {
+      "user_id": "1e9c7a7b-1dbf-4078-9429-1a0118cdcd46",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00115214,
+      "diff": 0.00115214
+    },
+    {
+      "user_id": "65830906-297b-4eb5-8c60-ed0e9a4aac82",
+      "source": "user_balances",
+      "wallets_balance_btc": 0.00177033,
+      "mirror_balance_btc": 0.00284666,
+      "diff": 0.00107633
+    },
+    {
+      "user_id": "65830906-297b-4eb5-8c60-ed0e9a4aac82",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00177033,
+      "mirror_balance_btc": 0.00284666,
+      "diff": 0.00107633
+    },
+    {
+      "user_id": "22756fe7-83ac-4c6a-890f-eb360cf6a96d",
+      "source": "user_wallets",
+      "wallets_balance_btc": 6.7e-7,
+      "mirror_balance_btc": 0.00117513,
+      "diff": 0.00117446
+    },
+    {
+      "user_id": "167f5fad-8c14-4f9d-ad66-3812e2353f64",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00014306,
+      "mirror_balance_btc": 0.01370675,
+      "diff": 0.01356369
+    },
+    {
+      "user_id": "6bb2ef92-74c6-46db-b707-9b70bf32d3d1",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00095734,
+      "diff": 0.00095734
+    },
+    {
+      "user_id": "7d64072c-8b8e-4903-9b0a-8af3bdac59b2",
+      "source": "user_wallets",
+      "wallets_balance_btc": 3e-8,
+      "mirror_balance_btc": 0.0002196,
+      "diff": 0.00021957
+    },
+    {
+      "user_id": "0ed70b14-65cd-4714-8e57-0c0102e741ec",
+      "source": "user_wallets",
+      "wallets_balance_btc": 8.8e-7,
+      "mirror_balance_btc": 0.00098537,
+      "diff": 0.00098449
+    },
+    {
+      "user_id": "d020a6cf-c33c-436c-bc3c-eaaf6ca77f96",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00000114,
+      "mirror_balance_btc": 0.00164972,
+      "diff": 0.00164858
+    },
+    {
+      "user_id": "2b3a71c9-6925-4411-a8f6-613eb57abe8d",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00000512,
+      "mirror_balance_btc": 0.00022563,
+      "diff": 0.00022051
+    },
+    {
+      "user_id": "169bf33c-8a8c-45ca-a43b-62cd2782e09d",
+      "source": "user_balances",
+      "wallets_balance_btc": 7.6e-7,
+      "mirror_balance_btc": 0.00057293,
+      "diff": 0.00057217
+    },
+    {
+      "user_id": "169bf33c-8a8c-45ca-a43b-62cd2782e09d",
+      "source": "user_wallets",
+      "wallets_balance_btc": 7.6e-7,
+      "mirror_balance_btc": 0.00057293,
+      "diff": 0.00057217
+    },
+    {
+      "user_id": "ab71df1b-176a-4af5-bd21-fd2946bfeed8",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00019802,
+      "diff": 0.00019802
+    },
+    {
+      "user_id": "ac62848f-6427-4ca2-ad72-a7a4bd3dd475",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00117491,
+      "diff": 0.00117491
+    },
+    {
+      "user_id": "6c238a2a-e908-464d-a9a3-c92b11498ade",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00024302,
+      "mirror_balance_btc": 0.00048588,
+      "diff": 0.00024286
+    },
+    {
+      "user_id": "8869b588-0c30-4256-a870-90767a8c683b",
+      "source": "user_balances",
+      "wallets_balance_btc": 3.8e-7,
+      "mirror_balance_btc": 0.00053918,
+      "diff": 0.0005388
+    },
+    {
+      "user_id": "8869b588-0c30-4256-a870-90767a8c683b",
+      "source": "user_wallets",
+      "wallets_balance_btc": 3.8e-7,
+      "mirror_balance_btc": 0.00053918,
+      "diff": 0.0005388
+    },
+    {
+      "user_id": "bd897af9-6127-412c-9264-f1d0fdf6e241",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00069193,
+      "diff": 0.00069193
+    },
+    {
+      "user_id": "0121fb9c-6062-451c-bd6e-4012da23b2b2",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00054228,
+      "diff": 0.00054228
+    },
+    {
+      "user_id": "5c0eb1cc-715c-4366-afdb-34ae88205821",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00035327,
+      "mirror_balance_btc": 0.00047982,
+      "diff": 0.00012655
+    },
+    {
+      "user_id": "54e8c750-84b8-4835-90fe-954f60d79038",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00034731,
+      "diff": 0.00034731
+    },
+    {
+      "user_id": "9b79803b-fd2d-4666-bb70-83fc6dd9e6e6",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00115488,
+      "diff": 0.00115488
+    },
+    {
+      "user_id": "6cec7fc5-5d98-4158-9a31-af2a3f8fd774",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00012998,
+      "mirror_balance_btc": 0,
+      "diff": 0.00012998
+    },
+    {
+      "user_id": "2569b808-04dc-48af-8288-698c66e7a4e3",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00000585,
+      "mirror_balance_btc": 0,
+      "diff": 0.00000585
+    },
+    {
+      "user_id": "688be226-244a-4a43-a6a1-caf7c5df543b",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.0006635,
+      "diff": 0.0006635
+    },
+    {
+      "user_id": "70911b12-9b78-49a7-b556-58382a3f653b",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00368042,
+      "diff": 0.00368042
+    },
+    {
+      "user_id": "f7126614-54f4-4487-bab1-4cde4b2b885d",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00004346,
+      "mirror_balance_btc": 0.00254785,
+      "diff": 0.00250439
+    },
+    {
+      "user_id": "f2802e50-eca8-4587-a0cd-bde32c0f0eee",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00002645,
+      "mirror_balance_btc": 0.00110591,
+      "diff": 0.00107946
+    },
+    {
+      "user_id": "3c4f8383-85b4-4099-9bae-c67ed9345cd9",
+      "source": "user_balances",
+      "wallets_balance_btc": 0.00631966,
+      "mirror_balance_btc": 0.00642449,
+      "diff": 0.00010483
+    },
+    {
+      "user_id": "3c4f8383-85b4-4099-9bae-c67ed9345cd9",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00631966,
+      "mirror_balance_btc": 0.00642449,
+      "diff": 0.00010483
+    },
+    {
+      "user_id": "2af3a00b-d3a7-41f3-b9a5-f7dc601bdd39",
+      "source": "user_balances",
+      "wallets_balance_btc": 0.00091636,
+      "mirror_balance_btc": 0.00103631,
+      "diff": 0.00011995
+    },
+    {
+      "user_id": "2af3a00b-d3a7-41f3-b9a5-f7dc601bdd39",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00091636,
+      "mirror_balance_btc": 0.00103631,
+      "diff": 0.00011995
+    },
+    {
+      "user_id": "d30a80c2-304c-4ba6-88c3-1cb115bd6c36",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00000931,
+      "mirror_balance_btc": 0.00129061,
+      "diff": 0.0012813
+    },
+    {
+      "user_id": "834d1825-56b6-4e10-acd0-d2c26a620b58",
+      "source": "user_balances",
+      "wallets_balance_btc": 0.00123386,
+      "mirror_balance_btc": 0.0008036,
+      "diff": 0.00043026
+    },
+    {
+      "user_id": "834d1825-56b6-4e10-acd0-d2c26a620b58",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00123386,
+      "mirror_balance_btc": 0.0008036,
+      "diff": 0.00043026
+    },
+    {
+      "user_id": "89fa362c-558f-4d22-8f01-f6b31f24639c",
+      "source": "user_balances",
+      "wallets_balance_btc": 0.00000104,
+      "mirror_balance_btc": 0.00827799,
+      "diff": 0.00827695
+    },
+    {
+      "user_id": "89fa362c-558f-4d22-8f01-f6b31f24639c",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00000104,
+      "mirror_balance_btc": 0.00827799,
+      "diff": 0.00827695
+    },
+    {
+      "user_id": "d73761ad-9477-4f8f-aa1e-f925987d1f0d",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.0002047,
+      "mirror_balance_btc": 0,
+      "diff": 0.0002047
+    },
+    {
+      "user_id": "19635905-aaa2-464b-8570-bb55404d524a",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00061806,
+      "mirror_balance_btc": 0,
+      "diff": 0.00061806
+    },
+    {
+      "user_id": "4e96b9ed-d708-4513-8af2-1fdb74d23579",
+      "source": "user_balances",
+      "wallets_balance_btc": 0.00000385,
+      "mirror_balance_btc": 0.00427472,
+      "diff": 0.00427087
+    },
+    {
+      "user_id": "4e96b9ed-d708-4513-8af2-1fdb74d23579",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00000385,
+      "mirror_balance_btc": 0.00427472,
+      "diff": 0.00427087
+    },
+    {
+      "user_id": "72547477-0929-452c-8d39-2b3832d5d989",
+      "source": "user_wallets",
+      "wallets_balance_btc": 7e-8,
+      "mirror_balance_btc": 0.00032482,
+      "diff": 0.00032475
+    },
+    {
+      "user_id": "18d8a621-9e3a-4240-bb68-da9fff3d1707",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00648253,
+      "mirror_balance_btc": 0,
+      "diff": 0.00648253
+    },
+    {
+      "user_id": "80b750b8-b2a2-4c4d-bc98-0f87923ee902",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00001311,
+      "mirror_balance_btc": 0.00025132,
+      "diff": 0.00023821
+    },
+    {
+      "user_id": "266e1a48-8ff6-4887-868d-5289c583e37b",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00113269,
+      "diff": 0.00113269
+    },
+    {
+      "user_id": "06a08454-26ed-4dfc-860e-b019cf28566a",
+      "source": "user_balances",
+      "wallets_balance_btc": 0.00486169,
+      "mirror_balance_btc": 0.00859816,
+      "diff": 0.00373647
+    },
+    {
+      "user_id": "06a08454-26ed-4dfc-860e-b019cf28566a",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00486169,
+      "mirror_balance_btc": 0.00859816,
+      "diff": 0.00373647
+    },
+    {
+      "user_id": "833a31cc-7d19-44ea-aca7-a8e8bc147425",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00004374,
+      "mirror_balance_btc": 0.00039811,
+      "diff": 0.00035437
+    },
+    {
+      "user_id": "bb330031-f74d-46b4-8366-e0d0096d4de6",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00000818,
+      "mirror_balance_btc": 0.00181014,
+      "diff": 0.00180196
+    },
+    {
+      "user_id": "0ae63cd7-dcf7-4866-bd33-12a9a1f67556",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00058889,
+      "diff": 0.00058889
+    },
+    {
+      "user_id": "c750972f-87da-4dee-b8f0-6d68081397e9",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00075672,
+      "mirror_balance_btc": 0,
+      "diff": 0.00075672
+    },
+    {
+      "user_id": "951a73f5-530e-463c-99d3-4608b5ee3330",
+      "source": "user_balances",
+      "wallets_balance_btc": 0.00512719,
+      "mirror_balance_btc": 0.00523242,
+      "diff": 0.00010523
+    },
+    {
+      "user_id": "951a73f5-530e-463c-99d3-4608b5ee3330",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00512719,
+      "mirror_balance_btc": 0.00523242,
+      "diff": 0.00010523
+    },
+    {
+      "user_id": "579618af-d8cc-4152-9999-efef89eaa8a0",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00025147,
+      "mirror_balance_btc": 0.00037677,
+      "diff": 0.0001253
+    },
+    {
+      "user_id": "f56e3bfa-630f-4370-8733-2e84449d6be2",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00066111,
+      "diff": 0.00066111
+    },
+    {
+      "user_id": "4946e386-c63e-4f57-ab06-4ade6e79ece0",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00000523,
+      "mirror_balance_btc": 0.00129878,
+      "diff": 0.00129355
+    },
+    {
+      "user_id": "4b48f3a0-187e-43fe-a9d0-3c6add8c59f5",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00012638,
+      "diff": 0.00012638
+    },
+    {
+      "user_id": "de7d700c-66a8-4c11-b874-bee10eeba3b2",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00001387,
+      "mirror_balance_btc": 0.00139663,
+      "diff": 0.00138276
+    },
+    {
+      "user_id": "e74f2d87-8f57-4dc6-bdc3-5cfc19ff67b6",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.0005513,
+      "diff": 0.0005513
+    },
+    {
+      "user_id": "139be266-6a9f-48f1-a51e-9f3b1cf11af2",
+      "source": "user_balances",
+      "wallets_balance_btc": 0.00000343,
+      "mirror_balance_btc": 0.00021829,
+      "diff": 0.00021486
+    },
+    {
+      "user_id": "139be266-6a9f-48f1-a51e-9f3b1cf11af2",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00000343,
+      "mirror_balance_btc": 0.00021829,
+      "diff": 0.00021486
+    },
+    {
+      "user_id": "cf807625-e8c5-4825-a533-f93971912453",
+      "source": "user_balances",
+      "wallets_balance_btc": 0.20221505,
+      "mirror_balance_btc": 0.23041255,
+      "diff": 0.0281975
+    },
+    {
+      "user_id": "cf807625-e8c5-4825-a533-f93971912453",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.20221505,
+      "mirror_balance_btc": 0.23041255,
+      "diff": 0.0281975
+    },
+    {
+      "user_id": "e17e1ead-2620-4ce3-9846-4270fd412fe0",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00033984,
+      "diff": 0.00033984
+    },
+    {
+      "user_id": "f7091160-5254-456d-b9cf-e9a7f8f2296d",
+      "source": "user_balances",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.0000791,
+      "diff": 0.0000791
+    },
+    {
+      "user_id": "f7091160-5254-456d-b9cf-e9a7f8f2296d",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.0000791,
+      "diff": 0.0000791
+    },
+    {
+      "user_id": "695d7e05-999f-4264-9952-5ae6730de32a",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00594099,
+      "mirror_balance_btc": 0.00826645,
+      "diff": 0.00232546
+    },
+    {
+      "user_id": "8bb53431-7a02-40f2-a74d-26fa10b06a11",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00127622,
+      "diff": 0.00127622
+    },
+    {
+      "user_id": "cb9e02d4-0adb-44b7-b6ea-cd97d674bf0a",
+      "source": "user_wallets",
+      "wallets_balance_btc": 2.6e-7,
+      "mirror_balance_btc": 0.02692882,
+      "diff": 0.02692856
+    },
+    {
+      "user_id": "a1a39e28-cd97-4e2a-b6a3-1ec5175fc332",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00646871,
+      "mirror_balance_btc": 0.00772158,
+      "diff": 0.00125287
+    },
+    {
+      "user_id": "19563f83-e4dd-468e-8bfe-47220cc23bb0",
+      "source": "user_balances",
+      "wallets_balance_btc": 0.00537111,
+      "mirror_balance_btc": 0.0086881,
+      "diff": 0.00331699
+    },
+    {
+      "user_id": "19563f83-e4dd-468e-8bfe-47220cc23bb0",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00537111,
+      "mirror_balance_btc": 0.0086881,
+      "diff": 0.00331699
+    },
+    {
+      "user_id": "da5d1c27-c714-4eff-8d0f-7a729144c0b5",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.0034869,
+      "mirror_balance_btc": 0.00419775,
+      "diff": 0.00071085
+    },
+    {
+      "user_id": "00b0a551-888d-4b97-8f19-fc6c4bc5d3cc",
+      "source": "user_wallets",
+      "wallets_balance_btc": 8.8e-7,
+      "mirror_balance_btc": 0.00038707,
+      "diff": 0.00038619
+    },
+    {
+      "user_id": "79317fa7-f80f-4d66-88c3-1e347c580ae4",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00076679,
+      "diff": 0.00076679
+    },
+    {
+      "user_id": "8752a45b-589d-4481-9145-a38082765460",
+      "source": "user_balances",
+      "wallets_balance_btc": 0.00015873,
+      "mirror_balance_btc": 0.0003136,
+      "diff": 0.00015487
+    },
+    {
+      "user_id": "8752a45b-589d-4481-9145-a38082765460",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00015873,
+      "mirror_balance_btc": 0.0003136,
+      "diff": 0.00015487
+    },
+    {
+      "user_id": "3a231695-420c-4cc7-898d-865c8b6f06ca",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00024551,
+      "diff": 0.00024551
+    },
+    {
+      "user_id": "55db724c-0aa5-4c1c-985e-c393cf601c31",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00080948,
+      "diff": 0.00080948
+    },
+    {
+      "user_id": "5a372341-0e7c-45a6-a3c0-a5cddf156456",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00050865,
+      "mirror_balance_btc": 0.0006662,
+      "diff": 0.00015755
+    },
+    {
+      "user_id": "49c4a668-9296-4201-8a8d-e38cc2bc8953",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00096079,
+      "diff": 0.00096079
+    },
+    {
+      "user_id": "39bd6071-daf1-435f-9a3d-cc3143b4dc6b",
+      "source": "user_wallets",
+      "wallets_balance_btc": 1.5e-7,
+      "mirror_balance_btc": 0.0033011,
+      "diff": 0.00330095
+    },
+    {
+      "user_id": "a76658d4-ddef-41a4-8812-0136e1c10c55",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00057466,
+      "diff": 0.00057466
+    },
+    {
+      "user_id": "92c91c0e-b993-4530-b72f-5889cc30b000",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00027921,
+      "mirror_balance_btc": 0,
+      "diff": 0.00027921
+    },
+    {
+      "user_id": "cb69d316-bb63-4db3-94d1-62a8c24df848",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00000126,
+      "mirror_balance_btc": 0.00339535,
+      "diff": 0.00339409
+    },
+    {
+      "user_id": "18137100-0ca3-412d-a5bb-7adcec0f0b1b",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00059509,
+      "diff": 0.00059509
+    },
+    {
+      "user_id": "613f415d-4dec-4bef-a1cb-ad3f2b9da9db",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00016563,
+      "mirror_balance_btc": 0,
+      "diff": 0.00016563
+    },
+    {
+      "user_id": "461802f0-5d56-41b4-b144-a8467870b8c9",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00147931,
+      "mirror_balance_btc": 0,
+      "diff": 0.00147931
+    },
+    {
+      "user_id": "5ca44a10-df4f-4fbb-bfd2-5a8280cfa41c",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00012442,
+      "diff": 0.00012442
+    },
+    {
+      "user_id": "3f821051-db45-49e5-ab39-ab14a6e1b0eb",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.006292,
+      "diff": 0.006292
+    },
+    {
+      "user_id": "a0959b42-28e7-4cbe-97f8-1cf227faa39c",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00015546,
+      "mirror_balance_btc": 0,
+      "diff": 0.00015546
+    },
+    {
+      "user_id": "9cb3fdb0-a03c-40c0-a34b-62d9527a6d42",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00056351,
+      "diff": 0.00056351
+    },
+    {
+      "user_id": "1885c0ca-59de-4473-a6d0-800f2d2c62a8",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00028213,
+      "diff": 0.00028213
+    },
+    {
+      "user_id": "73e9742c-5671-41b6-8364-18955943e54f",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00633738,
+      "diff": 0.00633738
+    },
+    {
+      "user_id": "e14a1b44-d5bc-44f3-ac4e-1be516311a83",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0.00026083,
+      "mirror_balance_btc": 0.00040037,
+      "diff": 0.00013954
+    },
+    {
+      "user_id": "085bed69-b5ec-4ea4-ae4b-06c4f85ace93",
+      "source": "user_wallets",
+      "wallets_balance_btc": 0,
+      "mirror_balance_btc": 0.00099487,
+      "diff": 0.00099487
+    }
+  ],
+  "escrow_lock_mismatch": [
+    {
+      "user_id": "3c4f8383-85b4-4099-9bae-c67ed9345cd9",
+      "currency": "BTC",
+      "wallets_locked": 0.0006635,
+      "escrow_locks_sum": 0,
+      "diff": 0.0006635
+    },
+    {
+      "user_id": "3c4f8383-85b4-4099-9bae-c67ed9345cd9",
+      "currency": "USDT",
+      "wallets_locked": 200,
+      "escrow_locks_sum": 0,
+      "diff": 200
+    },
+    {
+      "user_id": "f7091160-5254-456d-b9cf-e9a7f8f2296d",
+      "currency": "USDT",
+      "wallets_locked": 200,
+      "escrow_locks_sum": 0,
+      "diff": 200
+    },
+    {
+      "user_id": "695d7e05-999f-4264-9952-5ae6730de32a",
+      "currency": "USDT",
+      "wallets_locked": 200,
+      "escrow_locks_sum": 0,
+      "diff": 200
+    },
+    {
+      "user_id": "19563f83-e4dd-468e-8bfe-47220cc23bb0",
+      "currency": "USDT",
+      "wallets_locked": 200,
+      "escrow_locks_sum": 0,
+      "diff": 200
+    }
+  ],
+  "fee_reconciliation": {
+    "completed_trades": 5245,
+    "fees_charged_btc_from_trades": 0.76299397,
+    "fees_charged_usdt_from_trades": 0.760008,
+    "profits_recorded_btc_in_company_profits": 0.00010262,
+    "profits_recorded_usdt_in_company_profits": 0,
+    "btc_gap": 0.76289135,
+    "usdt_gap": 0.760008,
+    "completed_trades_with_fee_status_not_collected": 9,
+    "fee_status_not_collected_sample": [
+      {
+        "id": "20f57f07-9ab2-4f34-95e1-cfe690eabf44",
+        "fee_status": "PENDING",
+        "platform_fee_btc": 8.8e-7,
+        "platform_fee_usdt": null
+      },
+      {
+        "id": "cd49066c-cb1c-446c-9581-1bcace70cb02",
+        "fee_status": "PENDING",
+        "platform_fee_btc": 0.00000204,
+        "platform_fee_usdt": null
+      },
+      {
+        "id": "e2c36f76-1425-4cc3-bef7-cc62ccae1737",
+        "fee_status": "PENDING",
+        "platform_fee_btc": 0.00001312,
+        "platform_fee_usdt": null
+      },
+      {
+        "id": "61f95055-c03e-4000-a976-1d2d2a2fb01d",
+        "fee_status": "PENDING",
+        "platform_fee_btc": 0.00000795,
+        "platform_fee_usdt": null
+      },
+      {
+        "id": "bf2b38e5-039a-451c-9e92-b9851a2f7a82",
+        "fee_status": "PENDING",
+        "platform_fee_btc": 0.00000796,
+        "platform_fee_usdt": null
+      },
+      {
+        "id": "8f74b016-5bd5-4138-8c32-e10ef862c32a",
+        "fee_status": "PENDING",
+        "platform_fee_btc": 0.00000795,
+        "platform_fee_usdt": null
+      },
+      {
+        "id": "28b925fb-b5c6-4469-a4ec-41d0f5b007d4",
+        "fee_status": "PENDING",
+        "platform_fee_btc": 0.00002166,
+        "platform_fee_usdt": null
+      },
+      {
+        "id": "4431f25e-79ac-4c1c-8887-f2fe87f1f537",
+        "fee_status": "PENDING",
+        "platform_fee_btc": 0.00000205,
+        "platform_fee_usdt": null
+      },
+      {
+        "id": "87f853a7-d945-44d1-828c-4666aa1dd250",
+        "fee_status": "PENDING",
+        "platform_fee_btc": 0.0000134,
+        "platform_fee_usdt": null
+      }
+    ]
+  }
+}

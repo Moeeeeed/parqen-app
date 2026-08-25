@@ -26,6 +26,10 @@ async function main() {
   console.log(`Fee wallet  (praqen_company_fee_wallet): ${btcFeeAddr}`);
   console.log(`  confirmed: ${btcFee.confirmed_btc} BTC | unconfirmed: ${btcFee.unconfirmed_btc} BTC | source: ${btcFee.source || btcFee.error}`);
 
+  const btcReserve = await hdWallet.getReserveWalletBalance();
+  console.log(`Reserve wallet (praqen_company_reserve_wallet): ${btcReserve.address}`);
+  console.log(`  confirmed: ${btcReserve.confirmed_btc} BTC | unconfirmed: ${btcReserve.unconfirmed_btc} BTC | source: ${btcReserve.source || btcReserve.error}`);
+
   console.log('\n=== USDT (TRC-20) ===');
   const tronHotAddr = tronWallet.generateAddress(HOT_ID).address;
   const tronComAddr = tronWallet.generateAddress(COMPANY_ID).address;

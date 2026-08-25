@@ -392,206 +392,51 @@ class DepositMonitor {
       console.log(`   Address        : ${address}`);
       console.log(`   Blockchain now : ${blockchainBTC} BTC | Last on-chain: ${lastOnchainBTC} BTC`);
 
-      // ── Step 4: Fetch current balance from wallets (single source of truth) ─
-      const { data: walRow } = await supabaseAdmin
-        .from('wallets')
-        .select('balance_btc')
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      // ── Step 4b: Fetch BTC/USD price ──────────────────────────────────────
-      let btcUsd = 0;
+      // ── Step 4-5: Atomic deposit credit (ledger idempotency key + checkpoint
+      // advance + balance credit + balance_audit stamp, all in ONE Postgres
+      // transaction — see database/2026-08-25_balance_integrity_fix.sql,
+      // function praqen_credit_deposit). This replaces the old three-part
+      // orchestration (deposit_tracking insert -> last_onchain_btc CAS claim
+      // -> wallets CAS credit) that left a real gap: a hard process crash
+      // between the claim and the credit advanced the checkpoint with no
+      // credit applied, and nothing reverted it. A single atomic RPC call
+      // cannot land in that half-done state — it either fully commits or
+      // fully rolls back, checkpoint included.
+      //
+      // The on-chain balance value is the natural idempotency key here (no
+      // per-tx hash is available from the balance-delta detection method
+      // this monitor uses) — each distinct on-chain balance can only be
+      // reached, and credited, once on the way up.
+      const idempotencyKey = `BTC:${userId}:${blockchainBTC.toFixed(8)}`;
+      let newBalanceBTC;
       try {
-        const pr = await axios.get(
-          'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd',
-          { timeout: 5000 }
-        );
-        btcUsd = parseFloat(pr.data?.bitcoin?.usd || 0);
-      } catch {
-        try {
-          const pr2 = await axios.get('https://api.coinbase.com/v2/prices/BTC-USD/spot', { timeout: 5000 });
-          btcUsd = parseFloat(pr2.data?.data?.amount || 0);
-        } catch { /* price fetch failed — balance_usd will be 0 for this deposit */ }
-      }
-
-      const depositUsd        = btcUsd > 0 ? parseFloat((depositBTC * btcUsd).toFixed(2)) : 0;
-      const currentBalanceBTC = parseFloat(walRow?.balance_btc || 0);
-      const newBalanceBTC     = parseFloat((currentBalanceBTC + depositBTC).toFixed(8));
-
-      // ── Step 4c: Primary idempotency gate — deposit_tracking table ──────────
-      // Deposits here are detected by balance delta, not a specific on-chain tx
-      // hash (this insert below has no tx_hash to key on), so the on-chain
-      // balance value itself is the natural unique key — each distinct balance
-      // can only be reached once on the way up. A UNIQUE constraint on
-      // (user_id, currency, onchain_balance) rejects a second concurrent
-      // attempt to process the same on-chain state atomically, at the database
-      // level, before either caller touches a wallet balance — this is the
-      // primary guard; the last_onchain_btc claim and the optimistic lock on
-      // the balance credit below are defense-in-depth behind it.
-      // Table may not exist yet if database/deposit_tracking.sql hasn't been
-      // run — fall back to those other guards rather than blocking deposits.
-      const { error: trackErr } = await supabaseAdmin.from('deposit_tracking').insert({
-        user_id:         userId,
-        currency:        'BTC',
-        onchain_balance: blockchainBTC,
-        amount_credited: depositBTC,
-      });
-      if (trackErr) {
-        if (/duplicate|unique/i.test(trackErr.message || '')) {
-          console.log(`[DepositMonitor] deposit_tracking: this on-chain balance for ${username} was already processed — skipping duplicate credit`);
+        const { data: rpcBalance, error: creditErr } = await supabaseAdmin.rpc('praqen_credit_deposit', {
+          p_user_id:         userId,
+          p_currency:        'BTC',
+          p_amount:          depositBTC,
+          p_onchain_balance: blockchainBTC,
+          p_idempotency_key: idempotencyKey,
+          p_note:            `On-chain deposit to ${address.slice(0, 16)}…`,
+        });
+        if (creditErr) throw creditErr;
+        newBalanceBTC = parseFloat(rpcBalance);
+      } catch (creditErr) {
+        if (/duplicate|unique/i.test(creditErr.message || '') || /idempotency_key/i.test(creditErr.message || '')) {
+          console.log(`[DepositMonitor] This on-chain balance for ${username} was already credited — skipping duplicate.`);
           return;
         }
-        if (/relation .* does not exist/i.test(trackErr.message || '')) {
-          console.warn('[DepositMonitor] deposit_tracking table missing — run database/deposit_tracking.sql. Falling back to last_onchain_btc claim only.');
-        } else {
-          console.warn(`[DepositMonitor] deposit_tracking insert error for ${username} (non-fatal, continuing on other guards):`, trackErr.message);
-        }
-      }
-
-      // ── Step 5a: Atomically claim this deposit (compare-and-swap on last_onchain_btc) ──
-      // The upsert this replaced always wrote unconditionally, regardless of what the row
-      // currently held — but blockchainBTC was read (Step 1) and this claim happens several
-      // `await`s later (a DB read, an external price-API call), and the realtime WebSocket
-      // handler + the 15-minute poller legitimately can both fire for the same address in
-      // that window. Two concurrent invocations reading the same stale last_onchain_btc would
-      // both compute the same deposit delta and both credit the wallet for it — a real double
-      // -credit, not a hypothetical one. Guard against it in the WHERE clause itself (checked
-      // against the DB's current value, not our possibly-stale local one) instead of relying on
-      // a local read: only claim if the stored balance hasn't already caught up to what we're
-      // about to record. If another invocation already won, this matches zero rows and we abort
-      // before crediting anything.
-      const nowIso = new Date().toISOString();
-      const { data: claimedRows, error: claimUpdErr } = await supabaseAdmin
-        .from('user_wallets')
-        .update({ last_onchain_btc: blockchainBTC, btc_address: address, updated_at: nowIso })
-        .eq('user_id', userId)
-        .or(`last_onchain_btc.is.null,last_onchain_btc.lt.${blockchainBTC}`)
-        .select('user_id');
-
-      let claimed = !claimUpdErr && claimedRows && claimedRows.length > 0;
-
-      if (!claimed && !claimUpdErr) {
-        // No row matched the WHERE clause — either this user has no user_wallets row yet, or
-        // a concurrent invocation already claimed it. Try an insert: a real row already
-        // existing means the unique constraint on user_id rejects it (race lost — correctly
-        // do NOT credit); no row existing means this insert IS the atomic claim.
-        const { error: insErr } = await supabaseAdmin
-          .from('user_wallets')
-          .insert({ user_id: userId, btc_address: address, last_onchain_btc: blockchainBTC, updated_at: nowIso });
-        claimed = !insErr;
-        if (insErr && !/duplicate|unique|already exists/i.test(insErr.message || '')) {
-          console.warn(`[DepositMonitor] last_onchain_btc insert-claim failed for ${username}:`, insErr.message);
-        }
-      }
-
-      if (claimUpdErr) {
-        // A genuine query/schema error (not a race loss) — fall back to crediting without the
-        // atomic guard rather than silently dropping a real deposit, matching prior behavior
-        // for this specific failure mode.
-        console.warn(`[DepositMonitor] last_onchain_btc claim query failed for ${username} — crediting without atomic guard:`, claimUpdErr.message);
-        claimed = true;
-      }
-
-      if (!claimed) {
-        console.log(`[DepositMonitor] Deposit for ${username} (${depositBTC} BTC) already claimed by a concurrent check — skipping duplicate credit`);
+        // Nothing was committed (the RPC is one transaction) — the checkpoint was
+        // NOT advanced, so the next check (WebSocket event or 15-min poll) will
+        // naturally retry this deposit on its own. Just alert ops loudly.
+        console.error(`🚨 [DepositMonitor] praqen_credit_deposit FAILED for ${username} — will retry automatically on next check: ${creditErr.message}`);
+        this.alertOpsOfCreditFailure(username, userId, depositBTC, 'BTC', creditErr.message).catch(() => {});
         return;
       }
-
-      // ── Step 5b: Credit wallets table FIRST (single source of truth) ────────
-      // wallets is the authoritative balance table read by escrow, HD wallet routes,
-      // and all balance checks. This must succeed before anything else.
-      // Optimistic lock on the UPDATE branch: the Step 5a claim above should already
-      // serialize concurrent invocations for this address, but this credit is the
-      // actual money movement — it must not depend on that alone. Multiple confirmed
-      // cases (duplicate DEPOSIT rows logged for the same on-chain transaction,
-      // ~0.2-0.4s apart — a realtime WebSocket trigger and a poll/manual-check
-      // trigger both reaching this far) showed the double LOG entry did not always
-      // mean a double CREDIT, but relying on that being true by luck isn't safe.
-      // Matching balance_btc against what was just read means a second concurrent
-      // writer gets 0 rows affected here and is treated as a lost race, not a
-      // silent double-credit.
-      let walletCreditErr = null, creditLostRace = false;
-      if (walRow) {
-        const { data: creditRows, error } = await supabaseAdmin.from('wallets')
-          .update({ balance_btc: newBalanceBTC, updated_at: new Date().toISOString() })
-          .eq('user_id', userId)
-          .eq('balance_btc', currentBalanceBTC)
-          .select('user_id');
-        walletCreditErr = error;
-        if (!error && (!creditRows || creditRows.length === 0)) creditLostRace = true;
-      } else {
-        walletCreditErr = (await supabaseAdmin.from('wallets').insert({
-            user_id:            userId,
-            address:            address,
-            balance_btc:        depositBTC,
-            locked_balance_btc: 0,
-            updated_at:         new Date().toISOString(),
-          })).error;
-      }
-
-      if (creditLostRace) {
-        console.log(`[DepositMonitor] wallets.balance_btc for ${username} changed concurrently — a parallel deposit check already credited this. Skipping duplicate credit and its log entry.`);
-        return;
-      }
-
-      if (walletCreditErr) {
-        // The atomic claim above (Step 5a) already advanced last_onchain_btc, marking this
-        // deposit as "seen." If we stop here, the next check for this address will compute
-        // blockchainBTC <= lastOnchainBTC and skip it forever — the deposit is real, on-chain,
-        // and permanently invisible to the user's PRAQEN balance. Revert the claim so the very
-        // next check (WebSocket event or 15-min poll) retries crediting it, and raise a loud
-        // alert so a human catches it immediately even during the window before that retry.
-        console.error(`🚨 [DepositMonitor] wallets credit FAILED for ${username} — reverting claim so it retries: ${walletCreditErr.message}`);
-        await supabaseAdmin.from('user_wallets')
-          .update({ last_onchain_btc: lastOnchainBTC, updated_at: new Date().toISOString() })
-          .eq('user_id', userId)
-          .catch(e => console.error('🚨 [DepositMonitor] CRITICAL — claim revert also failed, deposit may be stuck:', e.message));
-        this.alertOpsOfCreditFailure(username, userId, depositBTC, 'BTC', walletCreditErr.message).catch(() => {});
-        return;
-      }
-
-      // Re-certify the new BTC balance in balance_audit — swapService.js's
-      // _assertLedgerTrueBtc refuses any swap where wallets.balance_btc doesn't match
-      // the LAST row here. Without stamping it on every deposit too (previously only
-      // swaps and trade escrow release/refund did), a user who deposits BTC after their
-      // first trade or swap would have every subsequent swap falsely blocked as a
-      // "balance doesn't match" integrity failure — the deposit legitimately moved their
-      // balance away from the last-audited figure but never re-stamped it. Fire-and-forget
-      // like every other balance_audit write in this codebase; logged loudly on failure
-      // since a missed stamp here silently reintroduces that false-positive block.
-      supabaseAdmin.from('balance_audit').insert({
-        user_id:     userId,
-        change_btc:  depositBTC,
-        new_balance: newBalanceBTC,
-        reason:      'DEPOSIT',
-        created_at:  new Date().toISOString(),
-      }).then(null, (e) => console.error(`[DepositMonitor] ⚠️ balance_audit stamp failed after BTC deposit for ${username} — their next swap may be falsely blocked:`, e.message));
-
-      // ── Step 5b2: Record in wallet_transactions — REQUIRED for idempotency when last_onchain_btc column is absent ──
-      const { error: txInsertErr } = await supabaseAdmin
-        .from('wallet_transactions')
-        .insert({
-          user_id:    userId,
-          type:       'DEPOSIT',
-          amount_btc: depositBTC,
-          status:     'CONFIRMED',
-          notes:      `On-chain deposit to ${address.slice(0, 16)}…`,
-          created_at: new Date().toISOString(),
-        });
-      if (txInsertErr) console.warn(`[DepositMonitor] wallet_transactions insert failed for ${username}:`, txInsertErr.message);
-
-      // ── Step 5c: Keep user_balances + user_wallets in sync (secondary) ──────
-      // These tables are kept up-to-date for backwards compatibility only.
-      // The praqen_credit_balance RPC handles both atomically.
-      await supabaseAdmin.rpc('praqen_credit_balance', {
-        p_user_id: userId,
-        p_btc:     depositBTC,
-        p_usd:     depositUsd,
-        p_type:    'DEPOSIT',
-        p_notes:   `On-chain deposit to ${address.slice(0, 16)}…`,
-      }).then(({ error }) => {
-        if (error) console.warn(`[DepositMonitor] Secondary RPC sync failed for ${username} (funds already credited to wallets):`, error.message);
-      });
+      // Also mirror the deposit address onto user_wallets.btc_address if this is
+      // this user's first detected deposit to it (best-effort; not part of the
+      // atomic credit since it's address metadata, not a balance).
+      supabaseAdmin.from('user_wallets').update({ btc_address: address }).eq('user_id', userId)
+        .then(null, () => {});
 
       // ── Step 8: In-app notification ───────────────────────────────────────
       await supabaseAdmin

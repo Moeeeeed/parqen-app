@@ -3,7 +3,14 @@
 //
 // Strategy: compare wallets.balance_btc (primary source of truth, updated
 // atomically on every trade/deposit/withdrawal) against user_balances.balance_btc
-// (secondary denormalised table). When they drift, sync user_balances to match wallets.
+// (secondary denormalised table). When they drift, FLAG it — do not touch either
+// balance. See BALANCE_MISMATCH_INVESTIGATION.md (2026-08-25) for why: silently
+// overwriting the mirror on every drift papers over the underlying writers that
+// caused the drift in the first place, and a "detect -> auto-correct" balance
+// tool is itself the kind of blind write that can turn a real discrepancy into
+// data loss if the assumption about which side is correct is ever wrong. Every
+// mismatch found here is written to reconciliation_flags with status
+// RECONCILIATION_REQUIRED for a human to actually investigate.
 //
 // We do NOT recompute from wallet_transactions because that ledger is incomplete —
 // escrow releases, referral commissions, admin credits and bonus payouts update
@@ -28,7 +35,7 @@ const PAGE_SIZE     = 50;
 async function runIntegrityCheck() {
   console.log('\n🔍 [BalanceIntegrity] Starting daily balance check...');
   const started = Date.now();
-  let checked = 0, corrected = 0, errors = 0;
+  let checked = 0, flagged = 0, errors = 0;
 
   try {
     let offset  = 0;
@@ -87,33 +94,31 @@ async function runIntegrityCheck() {
 
           console.warn(
             `[BalanceIntegrity] ⚠️  MISMATCH user ${userId.slice(0,8)}: ` +
-            `wallets=${trueBtc.toFixed(8)} user_balances=${secondaryBtc.toFixed(8)} diff=${diff.toFixed(8)}`
+            `wallets=${trueBtc.toFixed(8)} user_balances=${secondaryBtc.toFixed(8)} diff=${diff.toFixed(8)} — flagging for reconciliation`
           );
 
-          // Sync user_balances to match wallets (never the other way — wallets is authoritative)
-          const { error: updateErr } = await supabaseAdmin
-            .from('user_balances')
-            .update({ balance_btc: trueBtc, updated_at: new Date().toISOString() })
-            .eq('user_id', userId);
+          // Flag for a human to investigate. Do NOT touch either balance — see the
+          // file header comment for why "detect and auto-correct" is exactly the
+          // pattern this tool used to have and no longer does.
+          const { error: flagErr } = await supabaseAdmin.from('reconciliation_flags').insert({
+            user_id:              userId,
+            currency:             'BTC',
+            source_table:         'user_balances',
+            authoritative_value:  trueBtc,
+            mirror_value:         secondaryBtc,
+            diff:                 parseFloat((trueBtc - secondaryBtc).toFixed(8)),
+            reason:               'MIRROR_DRIFT',
+            status:               'RECONCILIATION_REQUIRED',
+            detail:               { checked_at: new Date().toISOString() },
+          });
 
-          if (updateErr) {
-            console.error(`[BalanceIntegrity] Failed to sync user ${userId.slice(0,8)}:`, updateErr.message);
+          if (flagErr) {
+            console.error(`[BalanceIntegrity] Failed to record reconciliation_flags for user ${userId.slice(0,8)}:`, flagErr.message);
             errors++;
             continue;
           }
 
-          // Log to audit table (non-fatal if table doesn't exist)
-          try {
-            await supabaseAdmin.from('balance_audit').insert({
-              user_id:     userId,
-              change_btc:  parseFloat((trueBtc - secondaryBtc).toFixed(8)),
-              new_balance: trueBtc,
-              reason:      'INTEGRITY_SYNC',
-              created_at:  new Date().toISOString(),
-            });
-          } catch (_) {}
-
-          corrected++;
+          flagged++;
         } catch (userErr) {
           errors++;
           console.error('[BalanceIntegrity] Error processing user:', userErr.message);
@@ -130,10 +135,10 @@ async function runIntegrityCheck() {
   const ms = Date.now() - started;
   console.log(
     `✅ [BalanceIntegrity] Done in ${ms}ms — ` +
-    `checked: ${checked}, corrected: ${corrected}, errors: ${errors}`
+    `checked: ${checked}, flagged: ${flagged}, errors: ${errors}`
   );
 
-  return { checked, corrected, errors };
+  return { checked, flagged, errors };
 }
 
 function start() {

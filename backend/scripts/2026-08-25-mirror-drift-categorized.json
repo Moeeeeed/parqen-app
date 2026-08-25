@@ -1,0 +1,611 @@
+{
+  "A_recent_wallets_activity": [
+    {
+      "user_id": "4dda3151-e7fc-4eac-8a06-90f2eb163482",
+      "wallets_balance_btc": 0.00419647,
+      "wallets_updated_hrs_ago": "-3.2",
+      "tx_count": 93,
+      "latest_tx": "2026-08-22T14:42:18.226"
+    },
+    {
+      "user_id": "e8d3d037-554b-4b09-b8f7-373f03de10de",
+      "wallets_balance_btc": 0.00639778,
+      "wallets_updated_hrs_ago": "-6.6",
+      "tx_count": 116,
+      "latest_tx": "2026-08-22T21:25:23.599"
+    },
+    {
+      "user_id": "14762cd0-d3b2-474f-acab-fe0071961e9a",
+      "wallets_balance_btc": 0.00694767,
+      "wallets_updated_hrs_ago": "-6.9",
+      "tx_count": 283,
+      "latest_tx": "2026-08-22T21:34:34.33"
+    },
+    {
+      "user_id": "65830906-297b-4eb5-8c60-ed0e9a4aac82",
+      "wallets_balance_btc": 0.0016083,
+      "wallets_updated_hrs_ago": "-6.9",
+      "tx_count": 361,
+      "latest_tx": "2026-08-22T21:32:46.793"
+    },
+    {
+      "user_id": "0ed70b14-65cd-4714-8e57-0c0102e741ec",
+      "wallets_balance_btc": 8.8e-7,
+      "wallets_updated_hrs_ago": "-1.9",
+      "tx_count": 1,
+      "latest_tx": "2026-08-21T19:27:56.943"
+    },
+    {
+      "user_id": "6c238a2a-e908-464d-a9a3-c92b11498ade",
+      "wallets_balance_btc": 0.00024302,
+      "wallets_updated_hrs_ago": "5.5",
+      "tx_count": 112,
+      "latest_tx": "2026-08-22T15:37:18.105"
+    },
+    {
+      "user_id": "5c0eb1cc-715c-4366-afdb-34ae88205821",
+      "wallets_balance_btc": 0.00035327,
+      "wallets_updated_hrs_ago": "2.0",
+      "tx_count": 14,
+      "latest_tx": "2026-08-25T11:29:32.759"
+    },
+    {
+      "user_id": "2af3a00b-d3a7-41f3-b9a5-f7dc601bdd39",
+      "wallets_balance_btc": 0.00091636,
+      "wallets_updated_hrs_ago": "3.8",
+      "tx_count": 35,
+      "latest_tx": "2026-08-25T09:38:54.305"
+    },
+    {
+      "user_id": "834d1825-56b6-4e10-acd0-d2c26a620b58",
+      "wallets_balance_btc": 0.00123386,
+      "wallets_updated_hrs_ago": "-4.9",
+      "tx_count": 4,
+      "latest_tx": "2026-08-25T00:19:17.247"
+    },
+    {
+      "user_id": "266e1a48-8ff6-4887-868d-5289c583e37b",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "3.6",
+      "tx_count": 71,
+      "latest_tx": "2026-08-25T09:51:46.62"
+    },
+    {
+      "user_id": "06a08454-26ed-4dfc-860e-b019cf28566a",
+      "wallets_balance_btc": 0.00486169,
+      "wallets_updated_hrs_ago": "-5.6",
+      "tx_count": 44,
+      "latest_tx": "2026-08-25T19:00:48.985"
+    },
+    {
+      "user_id": "833a31cc-7d19-44ea-aca7-a8e8bc147425",
+      "wallets_balance_btc": 0.00004374,
+      "wallets_updated_hrs_ago": "-4.6",
+      "tx_count": 25,
+      "latest_tx": "2026-08-25T17:55:50.332"
+    },
+    {
+      "user_id": "951a73f5-530e-463c-99d3-4608b5ee3330",
+      "wallets_balance_btc": 0.00512719,
+      "wallets_updated_hrs_ago": "-0.6",
+      "tx_count": 14,
+      "latest_tx": "2026-08-25T14:00:57.629"
+    },
+    {
+      "user_id": "579618af-d8cc-4152-9999-efef89eaa8a0",
+      "wallets_balance_btc": 0.00025147,
+      "wallets_updated_hrs_ago": "-4.6",
+      "tx_count": 37,
+      "latest_tx": "2026-08-25T18:02:02.956"
+    },
+    {
+      "user_id": "cf807625-e8c5-4825-a533-f93971912453",
+      "wallets_balance_btc": 0.20221505,
+      "wallets_updated_hrs_ago": "-7.0",
+      "tx_count": 44,
+      "latest_tx": "2026-08-25T20:24:02.607"
+    },
+    {
+      "user_id": "695d7e05-999f-4264-9952-5ae6730de32a",
+      "wallets_balance_btc": 0.00594099,
+      "wallets_updated_hrs_ago": "-1.1",
+      "tx_count": 7,
+      "latest_tx": "2026-08-25T14:01:41.126"
+    },
+    {
+      "user_id": "a1a39e28-cd97-4e2a-b6a3-1ec5175fc332",
+      "wallets_balance_btc": 0.00630601,
+      "wallets_updated_hrs_ago": "-6.6",
+      "tx_count": 34,
+      "latest_tx": "2026-08-25T20:02:40.408"
+    },
+    {
+      "user_id": "19563f83-e4dd-468e-8bfe-47220cc23bb0",
+      "wallets_balance_btc": 0.00537111,
+      "wallets_updated_hrs_ago": "-0.6",
+      "tx_count": 83,
+      "latest_tx": "2026-08-25T14:03:18.623"
+    },
+    {
+      "user_id": "5a372341-0e7c-45a6-a3c0-a5cddf156456",
+      "wallets_balance_btc": 0.00066906,
+      "wallets_updated_hrs_ago": "-6.9",
+      "tx_count": 25,
+      "latest_tx": "2026-08-25T20:21:32.31"
+    },
+    {
+      "user_id": "e14a1b44-d5bc-44f3-ac4e-1be516311a83",
+      "wallets_balance_btc": 0.00026083,
+      "wallets_updated_hrs_ago": "-4.0",
+      "tx_count": 5,
+      "latest_tx": "2026-08-25T17:23:51.31"
+    }
+  ],
+  "D_zero_tx_history": [
+    {
+      "user_id": "1e9c7a7b-1dbf-4078-9429-1a0118cdcd46",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "142.6",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "22756fe7-83ac-4c6a-890f-eb360cf6a96d",
+      "wallets_balance_btc": 6.7e-7,
+      "wallets_updated_hrs_ago": "24.8",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "6bb2ef92-74c6-46db-b707-9b70bf32d3d1",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "2.1",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "2b3a71c9-6925-4411-a8f6-613eb57abe8d",
+      "wallets_balance_btc": 0.00000512,
+      "wallets_updated_hrs_ago": "27.8",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "169bf33c-8a8c-45ca-a43b-62cd2782e09d",
+      "wallets_balance_btc": 7.6e-7,
+      "wallets_updated_hrs_ago": "47.7",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "ab71df1b-176a-4af5-bd21-fd2946bfeed8",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "79.0",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "ac62848f-6427-4ca2-ad72-a7a4bd3dd475",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "135.3",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "8869b588-0c30-4256-a870-90767a8c683b",
+      "wallets_balance_btc": 3.8e-7,
+      "wallets_updated_hrs_ago": "22.0",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "bd897af9-6127-412c-9264-f1d0fdf6e241",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "155.0",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "54e8c750-84b8-4835-90fe-954f60d79038",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "48.3",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "688be226-244a-4a43-a6a1-caf7c5df543b",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "91.8",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "70911b12-9b78-49a7-b556-58382a3f653b",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "88.1",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "0ae63cd7-dcf7-4866-bd33-12a9a1f67556",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "164.4",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "f56e3bfa-630f-4370-8733-2e84449d6be2",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "44.7",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "e74f2d87-8f57-4dc6-bdc3-5cfc19ff67b6",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "44.5",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "e17e1ead-2620-4ce3-9846-4270fd412fe0",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "125.3",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "8bb53431-7a02-40f2-a74d-26fa10b06a11",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "141.1",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "79317fa7-f80f-4d66-88c3-1e347c580ae4",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "128.3",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "3a231695-420c-4cc7-898d-865c8b6f06ca",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "171.8",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "55db724c-0aa5-4c1c-985e-c393cf601c31",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "171.1",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "49c4a668-9296-4201-8a8d-e38cc2bc8953",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "164.7",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "18137100-0ca3-412d-a5bb-7adcec0f0b1b",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "789.5",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "5ca44a10-df4f-4fbb-bfd2-5a8280cfa41c",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "220.6",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "3f821051-db45-49e5-ab39-ab14a6e1b0eb",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "189.4",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "9cb3fdb0-a03c-40c0-a34b-62d9527a6d42",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "186.9",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "1885c0ca-59de-4473-a6d0-800f2d2c62a8",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "173.7",
+      "tx_count": 0,
+      "latest_tx": null
+    },
+    {
+      "user_id": "73e9742c-5671-41b6-8364-18955943e54f",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "172.2",
+      "tx_count": 0,
+      "latest_tx": null
+    }
+  ],
+  "C_stale_wallets_no_recent_activity": [
+    {
+      "user_id": "e525f060-7c37-4b7c-92ed-05bb2c200ae5",
+      "wallets_balance_btc": 0.00054467,
+      "wallets_updated_hrs_ago": "1519.2",
+      "tx_count": 3,
+      "latest_tx": "2026-06-22T20:39:11.973"
+    },
+    {
+      "user_id": "98aa5609-08a9-4c81-892a-c0c85f22a42b",
+      "wallets_balance_btc": 0.00014445,
+      "wallets_updated_hrs_ago": "405.4",
+      "tx_count": 22,
+      "latest_tx": "2026-08-08T16:02:51.008"
+    },
+    {
+      "user_id": "167f5fad-8c14-4f9d-ad66-3812e2353f64",
+      "wallets_balance_btc": 0.00014306,
+      "wallets_updated_hrs_ago": "19.9",
+      "tx_count": 3,
+      "latest_tx": "2026-08-22T21:34:34.662"
+    },
+    {
+      "user_id": "7d64072c-8b8e-4903-9b0a-8af3bdac59b2",
+      "wallets_balance_btc": 3e-8,
+      "wallets_updated_hrs_ago": "62.0",
+      "tx_count": 3,
+      "latest_tx": "2026-08-20T09:26:20.245"
+    },
+    {
+      "user_id": "d020a6cf-c33c-436c-bc3c-eaaf6ca77f96",
+      "wallets_balance_btc": 0.00000114,
+      "wallets_updated_hrs_ago": "50.7",
+      "tx_count": 3,
+      "latest_tx": "2026-08-22T21:34:26.009"
+    },
+    {
+      "user_id": "0121fb9c-6062-451c-bd6e-4012da23b2b2",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "68.9",
+      "tx_count": 2,
+      "latest_tx": "2026-08-22T16:30:21.363"
+    },
+    {
+      "user_id": "9b79803b-fd2d-4666-bb70-83fc6dd9e6e6",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "137.5",
+      "tx_count": 4,
+      "latest_tx": "2026-08-19T19:54:21.386"
+    },
+    {
+      "user_id": "6cec7fc5-5d98-4158-9a31-af2a3f8fd774",
+      "wallets_balance_btc": 0.00012998,
+      "wallets_updated_hrs_ago": "111.4",
+      "tx_count": 1,
+      "latest_tx": "2026-08-20T22:01:04.588"
+    },
+    {
+      "user_id": "2569b808-04dc-48af-8288-698c66e7a4e3",
+      "wallets_balance_btc": 0.00000585,
+      "wallets_updated_hrs_ago": "153.3",
+      "tx_count": 3,
+      "latest_tx": "2026-08-19T03:48:56.428"
+    },
+    {
+      "user_id": "f7126614-54f4-4487-bab1-4cde4b2b885d",
+      "wallets_balance_btc": 0.00004346,
+      "wallets_updated_hrs_ago": "19.1",
+      "tx_count": 4,
+      "latest_tx": "2026-08-24T18:13:48.57"
+    },
+    {
+      "user_id": "f2802e50-eca8-4587-a0cd-bde32c0f0eee",
+      "wallets_balance_btc": 0.00002645,
+      "wallets_updated_hrs_ago": "74.5",
+      "tx_count": 8,
+      "latest_tx": "2026-08-22T10:38:31.707"
+    },
+    {
+      "user_id": "3c4f8383-85b4-4099-9bae-c67ed9345cd9",
+      "wallets_balance_btc": 0.00631966,
+      "wallets_updated_hrs_ago": "26.0",
+      "tx_count": 25,
+      "latest_tx": "2026-08-24T11:28:33.342"
+    },
+    {
+      "user_id": "d30a80c2-304c-4ba6-88c3-1cb115bd6c36",
+      "wallets_balance_btc": 0.00000931,
+      "wallets_updated_hrs_ago": "23.4",
+      "tx_count": 9,
+      "latest_tx": "2026-08-24T13:55:12.29"
+    },
+    {
+      "user_id": "89fa362c-558f-4d22-8f01-f6b31f24639c",
+      "wallets_balance_btc": 0.00000104,
+      "wallets_updated_hrs_ago": "111.5",
+      "tx_count": 11,
+      "latest_tx": "2026-08-20T21:49:12.588"
+    },
+    {
+      "user_id": "d73761ad-9477-4f8f-aa1e-f925987d1f0d",
+      "wallets_balance_btc": 0.0002047,
+      "wallets_updated_hrs_ago": "153.3",
+      "tx_count": 3,
+      "latest_tx": "2026-08-19T04:07:36.663"
+    },
+    {
+      "user_id": "19635905-aaa2-464b-8570-bb55404d524a",
+      "wallets_balance_btc": 0.00061806,
+      "wallets_updated_hrs_ago": "96.0",
+      "tx_count": 8,
+      "latest_tx": "2026-08-21T13:11:17.432"
+    },
+    {
+      "user_id": "4e96b9ed-d708-4513-8af2-1fdb74d23579",
+      "wallets_balance_btc": 0.00000385,
+      "wallets_updated_hrs_ago": "44.3",
+      "tx_count": 6,
+      "latest_tx": "2026-08-23T17:01:39.604"
+    },
+    {
+      "user_id": "72547477-0929-452c-8d39-2b3832d5d989",
+      "wallets_balance_btc": 7e-8,
+      "wallets_updated_hrs_ago": "74.3",
+      "tx_count": 8,
+      "latest_tx": "2026-08-22T11:02:32.008"
+    },
+    {
+      "user_id": "18d8a621-9e3a-4240-bb68-da9fff3d1707",
+      "wallets_balance_btc": 0.00648253,
+      "wallets_updated_hrs_ago": "8.7",
+      "tx_count": 3,
+      "latest_tx": "2026-08-25T04:42:30.526"
+    },
+    {
+      "user_id": "80b750b8-b2a2-4c4d-bc98-0f87923ee902",
+      "wallets_balance_btc": 0.00001311,
+      "wallets_updated_hrs_ago": "139.0",
+      "tx_count": 5,
+      "latest_tx": "2026-08-19T18:13:50.977"
+    },
+    {
+      "user_id": "bb330031-f74d-46b4-8366-e0d0096d4de6",
+      "wallets_balance_btc": 0.00000818,
+      "wallets_updated_hrs_ago": "42.3",
+      "tx_count": 31,
+      "latest_tx": "2026-08-23T18:16:40.772"
+    },
+    {
+      "user_id": "c750972f-87da-4dee-b8f0-6d68081397e9",
+      "wallets_balance_btc": 0.00075672,
+      "wallets_updated_hrs_ago": "24.2",
+      "tx_count": 2,
+      "latest_tx": "2026-08-24T13:17:15.921"
+    },
+    {
+      "user_id": "4946e386-c63e-4f57-ab06-4ade6e79ece0",
+      "wallets_balance_btc": 0.00000523,
+      "wallets_updated_hrs_ago": "44.1",
+      "tx_count": 8,
+      "latest_tx": "2026-08-23T17:05:01.695"
+    },
+    {
+      "user_id": "4b48f3a0-187e-43fe-a9d0-3c6add8c59f5",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "125.4",
+      "tx_count": 5,
+      "latest_tx": "2026-08-20T08:04:24.832"
+    },
+    {
+      "user_id": "de7d700c-66a8-4c11-b874-bee10eeba3b2",
+      "wallets_balance_btc": 0.00001387,
+      "wallets_updated_hrs_ago": "21.2",
+      "tx_count": 4,
+      "latest_tx": "2026-08-24T16:05:27.031"
+    },
+    {
+      "user_id": "139be266-6a9f-48f1-a51e-9f3b1cf11af2",
+      "wallets_balance_btc": 0.00000343,
+      "wallets_updated_hrs_ago": "146.2",
+      "tx_count": 5,
+      "latest_tx": "2026-08-19T11:00:00.942"
+    },
+    {
+      "user_id": "f7091160-5254-456d-b9cf-e9a7f8f2296d",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "124.6",
+      "tx_count": 4,
+      "latest_tx": "2026-08-19T12:04:27.609"
+    },
+    {
+      "user_id": "cb9e02d4-0adb-44b7-b6ea-cd97d674bf0a",
+      "wallets_balance_btc": 2.6e-7,
+      "wallets_updated_hrs_ago": "120.2",
+      "tx_count": 16,
+      "latest_tx": "2026-08-20T13:09:52.255"
+    },
+    {
+      "user_id": "da5d1c27-c714-4eff-8d0f-7a729144c0b5",
+      "wallets_balance_btc": 0.0034869,
+      "wallets_updated_hrs_ago": "25.9",
+      "tx_count": 14,
+      "latest_tx": "2026-08-24T11:33:23.735"
+    },
+    {
+      "user_id": "00b0a551-888d-4b97-8f19-fc6c4bc5d3cc",
+      "wallets_balance_btc": 8.8e-7,
+      "wallets_updated_hrs_ago": "17.0",
+      "tx_count": 3,
+      "latest_tx": "2026-08-24T20:20:00.214"
+    },
+    {
+      "user_id": "8752a45b-589d-4481-9145-a38082765460",
+      "wallets_balance_btc": 0.00015873,
+      "wallets_updated_hrs_ago": "13.3",
+      "tx_count": 5,
+      "latest_tx": "2026-08-25T00:07:03.149"
+    },
+    {
+      "user_id": "39bd6071-daf1-435f-9a3d-cc3143b4dc6b",
+      "wallets_balance_btc": 1.5e-7,
+      "wallets_updated_hrs_ago": "20.8",
+      "tx_count": 2,
+      "latest_tx": "2026-08-24T16:41:26.133"
+    },
+    {
+      "user_id": "a76658d4-ddef-41a4-8812-0136e1c10c55",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "2300.2",
+      "tx_count": 16,
+      "latest_tx": "2026-05-20T17:37:26.236"
+    },
+    {
+      "user_id": "92c91c0e-b993-4530-b72f-5889cc30b000",
+      "wallets_balance_btc": 0.00027921,
+      "wallets_updated_hrs_ago": "180.2",
+      "tx_count": 1,
+      "latest_tx": "2026-08-18T01:16:59.967"
+    },
+    {
+      "user_id": "cb69d316-bb63-4db3-94d1-62a8c24df848",
+      "wallets_balance_btc": 0.00000126,
+      "wallets_updated_hrs_ago": "181.2",
+      "tx_count": 11,
+      "latest_tx": "2026-08-18T00:13:03.763"
+    },
+    {
+      "user_id": "613f415d-4dec-4bef-a1cb-ad3f2b9da9db",
+      "wallets_balance_btc": 0.00016563,
+      "wallets_updated_hrs_ago": "695.9",
+      "tx_count": 1,
+      "latest_tx": "2026-07-27T13:34:42.819"
+    },
+    {
+      "user_id": "461802f0-5d56-41b4-b144-a8467870b8c9",
+      "wallets_balance_btc": 0.00147931,
+      "wallets_updated_hrs_ago": "693.8",
+      "tx_count": 1,
+      "latest_tx": "2026-07-27T15:39:33.013"
+    },
+    {
+      "user_id": "a0959b42-28e7-4cbe-97f8-1cf227faa39c",
+      "wallets_balance_btc": 0.00015546,
+      "wallets_updated_hrs_ago": "148.9",
+      "tx_count": 1,
+      "latest_tx": "2026-08-19T08:34:38.684"
+    },
+    {
+      "user_id": "085bed69-b5ec-4ea4-ae4b-06c4f85ace93",
+      "wallets_balance_btc": 0,
+      "wallets_updated_hrs_ago": "21.9",
+      "tx_count": 7,
+      "latest_tx": "2026-08-24T15:33:25.186"
+    }
+  ],
+  "UNCLASSIFIED": []
+}

@@ -14,7 +14,7 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
 
-const SWAP_FEE_RATE     = 0.002; // 0.2% fee
+const SWAP_FEE_RATE     = 0.004; // 0.4% fee
 const BINANCE_URL       = process.env.BINANCE_API_URL || 'https://api.binance.com/api/v3';
 const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
 
@@ -206,7 +206,13 @@ class SwapService {
   // (with its own optimistic lock), so the swap genuinely succeeded even if
   // this fee credit needs a retry.
   async _creditCompanyFee(currency, amount) {
-    if (amount <= 0) return;
+    // Mandatory-fee guard: NaN/Infinity would previously slip through `amount <= 0`
+    // (false for NaN in JS) and silently write a corrupt company balance — reject
+    // explicitly instead. A genuine zero fee (e.g. a swap tiny enough to round to
+    // 0) is still a legitimate no-op, so only `<= 0` short-circuits after this check.
+    if (!Number.isFinite(amount)) throw new Error(`_creditCompanyFee: invalid fee amount (${amount}) for ${currency} — refusing to credit`);
+    if (amount < 0) throw new Error(`_creditCompanyFee: negative fee amount (${amount}) for ${currency} — refusing to credit`);
+    if (amount === 0) return;
     const field = currency === 'BTC' ? 'balance_btc' : 'balance_usdt';
     const precision = currency === 'BTC' ? 8 : 6;
 
@@ -263,7 +269,11 @@ class SwapService {
   // was) but the user's balance itself was already committed by the caller
   // before this runs, so these three inserts are all after-the-fact bookkeeping
   // for a transfer that has already happened, not the transfer itself.
-  async _recordSwap(userId, fromCurrency, toCurrency, fromAmount, toAmount, rate, feeBtc, feeUsdt) {
+  // feeCollected: whether _creditCompanyFee actually succeeded for this swap —
+  // determines whether the FEE audit row below is recorded as CONFIRMED or
+  // FAILED, so a fee-collection failure is never indistinguishable from a
+  // real collected fee in the company's own records (mandatory-fee audit trail).
+  async _recordSwap(userId, fromCurrency, toCurrency, fromAmount, toAmount, rate, feeBtc, feeUsdt, feeCollected = true) {
     const now = new Date().toISOString();
     const isBtcSource = fromCurrency === 'BTC';
     const [swapResult, userRowResult, feeResult] = await Promise.all([
@@ -290,15 +300,16 @@ class SwapService {
         notes:       `Swap: ${fromCurrency} → ${toCurrency} | sold ${isBtcSource ? '₿' : '₮'}${fromAmount} | received ${isBtcSource ? '₮' : '₿'}${toAmount} | rate ${rate}`,
         created_at:  now,
       }),
-      // Audit trail: FEE row in wallet_transactions for company wallet
+      // Audit trail: FEE row in wallet_transactions for company wallet — status
+      // reflects whether _creditCompanyFee actually succeeded, not just intent.
       supabaseAdmin.from('wallet_transactions').insert({
         user_id:     COMPANY_WALLET_ID,
         type:        'FEE',
         currency:    feeBtc > 0 ? 'BTC' : 'USDT',
         amount_btc:  feeBtc  > 0 ? feeBtc  : 0,
         amount_usdt: feeUsdt > 0 ? feeUsdt : 0,
-        status:      'CONFIRMED',
-        notes:       `Swap fee: ${fromCurrency}→${toCurrency} | ₿${feeBtc.toFixed(8)} / ₮${feeUsdt.toFixed(6)} | user: ${userId.slice(0, 8)}`,
+        status:      feeCollected ? 'CONFIRMED' : 'FAILED',
+        notes:       `Swap fee: ${fromCurrency}→${toCurrency} | ₿${feeBtc.toFixed(8)} / ₮${feeUsdt.toFixed(6)} | user: ${userId.slice(0, 8)}${feeCollected ? '' : ' — FEE CREDIT FAILED, needs manual reconciliation'}`,
         created_at:  now,
       }),
     ]);
@@ -314,9 +325,13 @@ class SwapService {
     if (amount < 0.000001)      throw new Error('Minimum swap: 0.000001 BTC');
 
     const rate       = await this.getBtcUsdtRate();
+    if (!Number.isFinite(rate) || rate <= 0) throw new Error(`Swap rate unavailable or invalid (${rate}) — try again shortly`);
     const grossUsdt  = parseFloat((amount * rate).toFixed(6));
     const feeUsdt    = parseFloat((grossUsdt * SWAP_FEE_RATE).toFixed(6));
     const netUsdt    = parseFloat((grossUsdt - feeUsdt).toFixed(6));
+
+    // Mandatory fee sanity check — before touching any balance.
+    if (!Number.isFinite(feeUsdt) || feeUsdt < 0) throw new Error(`Fee validation failed before swap — feeUsdt=${feeUsdt}. Swap blocked.`);
 
     const wallet = await this._getWallet(userId);
     const ledgerBtc = await this._assertLedgerTrueBtc(userId, wallet.btc);
@@ -357,16 +372,19 @@ class SwapService {
 
     // Platform fee → company wallet (in USDT). The user's own swap already
     // committed above — don't fail their successful swap over an internal
-    // accounting hiccup, but never let it fail silently either.
+    // accounting hiccup, but never let it fail silently or invisibly either
+    // (feeCollected is recorded in the FEE audit row below either way).
+    let feeCollected = true;
     try {
       await this._creditCompanyFee('USDT', feeUsdt);
     } catch (feeErr) {
-      console.error(`[SwapService] ⚠️ FEE CREDIT FAILED — needs manual reconciliation: $${feeUsdt} USDT from BTC→USDT swap by ${userId.slice(0, 8)}:`, feeErr.message);
+      feeCollected = false;
+      console.error(`🚨 [SwapService] FEE CREDIT FAILED — needs manual reconciliation: $${feeUsdt} USDT from BTC→USDT swap by ${userId.slice(0, 8)}:`, feeErr.message);
     }
 
     // Record swap
     const swapRef = 'SWAP_' + crypto.randomBytes(6).toString('hex').toUpperCase();
-    await this._recordSwap(userId, 'BTC', 'USDT', amount, netUsdt, rate, 0, feeUsdt);
+    await this._recordSwap(userId, 'BTC', 'USDT', amount, netUsdt, rate, 0, feeUsdt, feeCollected);
 
     // In-app notification
     await supabaseAdmin.from('notifications').insert({
@@ -403,9 +421,13 @@ class SwapService {
     if (amount < 1)             throw new Error('Minimum swap: 1 USDT');
 
     const rate      = await this.getBtcUsdtRate();
+    if (!Number.isFinite(rate) || rate <= 0) throw new Error(`Swap rate unavailable or invalid (${rate}) — try again shortly`);
     const grossBtc  = parseFloat((amount / rate).toFixed(8));
     const feeBtc    = parseFloat((grossBtc * SWAP_FEE_RATE).toFixed(8));
     const netBtc    = parseFloat((grossBtc - feeBtc).toFixed(8));
+
+    // Mandatory fee sanity check — before touching any balance.
+    if (!Number.isFinite(feeBtc) || feeBtc < 0) throw new Error(`Fee validation failed before swap — feeBtc=${feeBtc}. Swap blocked.`);
 
     const wallet = await this._getWallet(userId);
     const ledgerUsdt = await this._assertLedgerTrueUsdt(userId, wallet.usdt);
@@ -443,15 +465,18 @@ class SwapService {
 
     // Platform fee → company wallet (in BTC). The user's own swap already
     // committed above — don't fail their successful swap over an internal
-    // accounting hiccup, but never let it fail silently either.
+    // accounting hiccup, but never let it fail silently or invisibly either
+    // (feeCollected is recorded in the FEE audit row below either way).
+    let feeCollected = true;
     try {
       await this._creditCompanyFee('BTC', feeBtc);
     } catch (feeErr) {
-      console.error(`[SwapService] ⚠️ FEE CREDIT FAILED — needs manual reconciliation: ₿${feeBtc} BTC from USDT→BTC swap by ${userId.slice(0, 8)}:`, feeErr.message);
+      feeCollected = false;
+      console.error(`🚨 [SwapService] FEE CREDIT FAILED — needs manual reconciliation: ₿${feeBtc} BTC from USDT→BTC swap by ${userId.slice(0, 8)}:`, feeErr.message);
     }
 
     const swapRef = 'SWAP_' + crypto.randomBytes(6).toString('hex').toUpperCase();
-    await this._recordSwap(userId, 'USDT', 'BTC', amount, netBtc, rate, feeBtc, 0);
+    await this._recordSwap(userId, 'USDT', 'BTC', amount, netBtc, rate, feeBtc, 0, feeCollected);
 
     await supabaseAdmin.from('notifications').insert({
       user_id:    userId,

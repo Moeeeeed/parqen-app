@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, Fragment } from 'react';
 import { useRates } from '../contexts/RatesContext';
 import { useNavigate, Link } from 'react-router-dom';
 import SEO from '../components/SEO';
+import WeeklyStarsSection from '../components/WeeklyStarsSection';
 import axios from 'axios';
 import {
   CheckCircle, RefreshCw, AlertTriangle,
@@ -1599,6 +1600,9 @@ useEffect(() => {
           </div>
         </div>
       </div>
+
+      {/* PRAQEN Weekly Stars — admin-selected recognition */}
+      <WeeklyStarsSection />
 
       {/* ══ PAUSED OFFER BANNER — shown to seller when their gift card offer is paused ══ */}
       {pausedOffer && (

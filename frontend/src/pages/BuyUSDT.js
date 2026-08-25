@@ -23,6 +23,7 @@ import { BadgeChip, BADGE_COLORS } from '../lib/badge';
 import ActiveTradeCard from '../components/ActiveTradeCard';
 import PRQFooter from '../components/PRQFooter';
 import GettingStartedSteps from '../components/GettingStartedSteps';
+import WeeklyStarsSection from '../components/WeeklyStarsSection';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -1508,6 +1509,9 @@ export default function BuyUSDT({user}) {
           </div>
         </div>
       </div>
+
+      {/* PRAQEN Weekly Stars — admin-selected recognition */}
+      <WeeklyStarsSection />
 
       {/* Getting-started guide — shown to logged-in users who haven't funded their wallet yet */}
       {user && userUsdtBalance < 10 && <GettingStartedSteps userId={user.id} />}

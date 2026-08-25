@@ -714,6 +714,86 @@ function WithdrawalApprovals() {
   );
 }
 
+// ─── Reserve Wallet — company-controlled BTC reserve, separate from the hot
+// wallet. SweepService automatically sweeps hot-wallet surplus into it (see
+// backend/services/sweepService.js); moving funds the other way (reserve →
+// hot) always requires this explicit, CEO-authenticated action — nothing ever
+// pulls from the reserve automatically (backend/routes/hdWalletRoutes.js
+// POST /ceo/reserve/topup-hot).
+function ReserveTopupPanel({ reserve, hot, onDone }) {
+  const [amount, setAmount] = useState('');
+  const [busy, setBusy]     = useState(false);
+
+  // Mirrors RESERVE_FEE_BUFFER_BTC in hdWalletRoutes.js — the backend is the real
+  // gate, this just avoids a round-trip for the common case of trying to move 100%.
+  const RESERVE_FEE_BUFFER_BTC = 0.0001;
+  const maxSendable = Math.max(0, parseFloat(((reserve?.confirmed_btc || 0) - RESERVE_FEE_BUFFER_BTC).toFixed(8)));
+
+  const submit = async () => {
+    const amt = parseFloat(amount);
+    if (!amt || amt <= 0) { toast.error('Enter a positive BTC amount'); return; }
+    if (amt > maxSendable) {
+      toast.error(`Max you can move right now is ₿${fmtBtc(maxSendable)} (₿${RESERVE_FEE_BUFFER_BTC.toFixed(8)} stays for the network fee)`);
+      return;
+    }
+    // Preview before it broadcasts — this is the only confirmation step; there's
+    // no separate approval queue for this one since both ends are company-controlled.
+    const ok = window.confirm(
+      `Move ₿${fmtBtc(amt)} from the reserve wallet into the hot wallet?\n\n` +
+      `From (reserve): ${reserve?.address}\n` +
+      `To (hot):       ${hot?.address}\n\n` +
+      `This broadcasts on-chain immediately once confirmed.`
+    );
+    if (!ok) return;
+
+    setBusy(true);
+    try {
+      const r = await axios.post(`${API_URL}/hd-wallet/ceo/reserve/topup-hot`, { amountBtc: amt }, { headers: authH() });
+      toast.success(r.data.message || 'Reserve topped up hot wallet');
+      setAmount('');
+      onDone && onDone();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to move funds from reserve');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border p-5" style={{ borderColor: C.g200 }}>
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <h2 className="text-lg font-black flex items-center gap-2" style={{ color: C.g800 }}>
+            <Shield size={18} /> Reserve → Hot Wallet
+          </h2>
+          <p className="text-xs mt-0.5" style={{ color: C.g400 }}>
+            Reserve fills automatically once the hot wallet exceeds its ceiling. Pulling funds back always needs a CEO to trigger it here — never automatic.
+          </p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className="text-xs font-black block mb-1" style={{ color: C.g500 }}>Amount (BTC)</label>
+          <input
+            type="number" min="0" step="0.00000001" value={amount}
+            onChange={e => setAmount(e.target.value)}
+            placeholder="0.00000000"
+            className="px-3 py-2 rounded-xl border text-sm font-mono w-48"
+            style={{ borderColor: C.g200 }}
+          />
+        </div>
+        <button
+          disabled={busy}
+          onClick={submit}
+          className="px-4 py-2 rounded-xl font-bold text-sm"
+          style={{ backgroundColor: C.forest, color: '#fff', opacity: busy ? 0.6 : 1 }}
+        >
+          {busy ? 'Sending…' : 'Move to Hot Wallet'}
+        </button>
+        <p className="text-xs" style={{ color: C.g400 }}>Max movable now: ₿{fmtBtc(maxSendable)} <span style={{ color: C.g400 }}>(of ₿{fmtBtc(reserve?.confirmed_btc)} reserve)</span></p>
+      </div>
+    </div>
+  );
+}
+
 // ─── KYC image — fetched as a blob with the CEO's auth token (can't just point an <img>
 // at a private, auth-gated endpoint) and rendered from an object URL, same pattern
 // AdminDashboard.js already uses for the same endpoint.
@@ -1841,7 +1921,8 @@ export default function CeoDashboard({ user: appUser }) {
   };
 
   const t = treasury || {};
-  const hotBtc  = t.hotWalletBtc || {};
+  const hotBtc     = t.hotWalletBtc || {};
+  const reserveBtc = t.reserveWalletBtc || {};
   const tron    = t.tron || {};
   const company = t.companyWallet || {};
   const swaps   = t.swapFees || {};
@@ -2081,8 +2162,17 @@ export default function CeoDashboard({ user: appUser }) {
                   primary={`$${fmtUsd(usdOf(company.balance_btc, company.balance_usdt))}`}
                   primarySub={`₿${fmtBtc(company.balance_btc)}${company.locked_balance_btc > 0 ? ` (+₿${fmtBtc(company.locked_balance_btc)} locked)` : ''} + ₮${fmtUsdt(company.balance_usdt)}${company.locked_balance_usdt > 0 ? ` (+₮${fmtUsdt(company.locked_balance_usdt)} locked)` : ''}`}
                   footer="Platform fee revenue" />
+
+                <TreasuryCard
+                  icon={<Shield size={18} />} label="Reserve Wallet · BTC" color="#0F766E" bg="#F0FDFA"
+                  primary={`$${fmtUsd(usdOf(reserveBtc.total_btc ?? reserveBtc.confirmed_btc, 0))}`}
+                  primarySub={reserveBtc.error ? `Error: ${reserveBtc.error}` : `₿${fmtBtc(reserveBtc.total_btc ?? reserveBtc.confirmed_btc)} · ${fmtBtc(reserveBtc.confirmed_btc)} confirmed`}
+                  footer="Fills from hot-wallet surplus — only leaves via CEO action below" />
               </div>
             </div>
+
+            {/* Reserve → Hot Wallet — CEO-triggered, previews before broadcasting */}
+            <ReserveTopupPanel reserve={t.reserveWalletBtc} hot={t.hotWalletBtc} onDone={loadTreasury} />
 
             {/* Swap fees */}
             <div>

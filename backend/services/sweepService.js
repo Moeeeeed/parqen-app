@@ -31,6 +31,17 @@ const SWEEP_INTERVAL_MS = 30 * 60 * 1000; // every 30 minutes
 const SWEEP_MIN_SATS    = 10000;           // 0.0001 BTC minimum — never sweep dust
 const FEE_RATE_SATS     = 5;              // 5 sat/vbyte — economical, reliable
 
+// Hot wallet ceiling — anything above this gets auto-swept to the company
+// reserve wallet at the end of every cycle. Set HOT_WALLET_CEILING_BTC in .env
+// to whatever covers ~24-48h of expected withdrawal volume; this default is a
+// conservative placeholder, not a business-tuned number — raise or lower it to
+// match real volume. Reserve funds only ever come back via CEO-approved
+// hdWallet.sendReserveToHot() — this direction (hot → reserve) is the only one
+// safe to automate.
+const HOT_WALLET_CEILING_BTC  = parseFloat(process.env.HOT_WALLET_CEILING_BTC || '0.05');
+const RESERVE_SWEEP_MIN_SATS  = 20000; // 0.0002 BTC — don't bother sweeping tiny surplus
+const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a'; // same id used across hdWalletRoutes.js / server.js
+
 class SweepService {
   constructor() {
     this.isRunning     = false;
@@ -157,9 +168,55 @@ class SweepService {
         console.log(`[SweepService] ✅ Cycle complete — no addresses needed sweeping`);
       }
 
+      // Run after user deposits have landed in the hot wallet, so this cycle's
+      // ceiling check sees the up-to-date balance rather than lagging a cycle behind.
+      await this._sweepHotSurplusToReserve(hotAddress);
+
     } catch (err) {
       // Outer guard — the entire cycle should NEVER crash the server
       console.error('[SweepService] Cycle error (non-fatal):', err.message);
+    }
+  }
+
+  // ── Sweep hot wallet surplus above HOT_WALLET_CEILING_BTC into the reserve ──
+  // One-way by construction: this only ever calls hdWallet.sweepHotToReserve(),
+  // which can only spend hot-wallet UTXOs. It cannot touch the reserve wallet.
+  async _sweepHotSurplusToReserve(hotAddress) {
+    try {
+      const hotBal = await hdWallet.checkBalance(hotAddress);
+      if (hotBal.error) {
+        console.warn('[SweepService] Reserve check skipped — could not read hot wallet balance:', hotBal.error);
+        return;
+      }
+
+      const surplusBtc = parseFloat((hotBal.confirmed_btc - HOT_WALLET_CEILING_BTC).toFixed(8));
+      const surplusSats = Math.round(surplusBtc * 1e8);
+      if (surplusSats < RESERVE_SWEEP_MIN_SATS) return; // under ceiling or surplus too small to bother
+
+      const reserveAddress = hdWallet.getReserveWalletAddress();
+      console.log(`[SweepService] Hot wallet ₿${hotBal.confirmed_btc} exceeds ceiling ₿${HOT_WALLET_CEILING_BTC} — sweeping ₿${surplusBtc} to reserve ${reserveAddress}`);
+
+      const result = await hdWallet.sweepHotToReserve(surplusBtc, FEE_RATE_SATS);
+
+      console.log(`[SweepService] ✅ Reserve sweep — ₿${surplusBtc} → ${reserveAddress} | TX: ${result.txid}`);
+
+      await supabaseAdmin.from('wallet_transactions').insert({
+        user_id:             COMPANY_WALLET_ID,
+        type:                'RESERVE_SWEEP',
+        amount_btc:          surplusBtc,
+        status:              'CONFIRMED',
+        tx_hash:             result.txid,
+        destination_address: reserveAddress,
+        notes:               `Auto-sweep — hot wallet surplus above ₿${HOT_WALLET_CEILING_BTC} ceiling → reserve — tx: ${result.txid}`,
+        created_at:          new Date().toISOString(),
+      }).then(null, logErr => {
+        console.warn('[SweepService] Reserve sweep audit log failed (funds safe):', logErr.message);
+      });
+
+    } catch (err) {
+      // Never let a reserve-sweep failure affect the rest of the cycle — funds
+      // just stay in the hot wallet and the next cycle retries.
+      console.error('[SweepService] Reserve sweep error (non-fatal):', err.message);
     }
   }
 
@@ -304,11 +361,13 @@ class SweepService {
 
   getStatus() {
     return {
-      running:          this.isRunning,
-      interval_minutes: SWEEP_INTERVAL_MS / 60000,
-      min_sweep_btc:    SWEEP_MIN_SATS / 1e8,
-      in_progress:      this._inProgress.size,
-      hot_wallet:       hdWallet.getHotWalletAddress(),
+      running:             this.isRunning,
+      interval_minutes:    SWEEP_INTERVAL_MS / 60000,
+      min_sweep_btc:        SWEEP_MIN_SATS / 1e8,
+      in_progress:          this._inProgress.size,
+      hot_wallet:           hdWallet.getHotWalletAddress(),
+      hot_wallet_ceiling_btc: HOT_WALLET_CEILING_BTC,
+      reserve_wallet:       hdWallet.getReserveWalletAddress(),
     };
   }
 

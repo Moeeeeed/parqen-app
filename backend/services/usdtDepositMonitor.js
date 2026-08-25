@@ -232,133 +232,42 @@ class USDTDepositMonitor {
       console.log(`   Address     : ${address}`);
       console.log(`   On-chain now: ${onchainUsdt} USDT | Last: ${lastOnchainUsdt} USDT`);
 
-      // ── Step 2b: Primary idempotency gate — deposit_tracking table ──────────
-      // Same guard as depositMonitor.js's BTC path: a UNIQUE constraint on
-      // (user_id, currency, onchain_balance) rejects a second concurrent
-      // attempt to process the same on-chain state atomically, before either
-      // caller touches a wallet balance. Primary guard; the last_onchain_usdt
-      // claim and the balance credit below are defense-in-depth behind it.
-      const { error: usdtTrackErr } = await supabaseAdmin.from('deposit_tracking').insert({
-        user_id:         userId,
-        currency:        'USDT',
-        onchain_balance: onchainUsdt,
-        amount_credited: depositUsdt,
-      });
-      if (usdtTrackErr) {
-        if (/duplicate|unique/i.test(usdtTrackErr.message || '')) {
-          console.log(`[USDTMonitor] deposit_tracking: this on-chain balance for ${username} was already processed — skipping duplicate credit`);
+      // ── Step 3-5: Atomic deposit credit (ledger idempotency key + checkpoint
+      // advance + balance credit + balance_audit stamp, all in ONE Postgres
+      // transaction — see database/2026-08-25_balance_integrity_fix.sql,
+      // function praqen_credit_deposit). Replaces the old three-part
+      // orchestration (deposit_tracking insert -> last_onchain_usdt CAS claim
+      // -> wallets CAS credit), which had a real gap: a hard process crash
+      // between the claim and the credit advanced the checkpoint with no
+      // credit applied, and nothing reverted it. This can no longer land
+      // half-done — it either fully commits or fully rolls back, checkpoint
+      // included. The on-chain balance value is the idempotency key (no
+      // per-tx hash is available from this balance-delta detection method).
+      const usdtIdempotencyKey = `USDT:${userId}:${onchainUsdt.toFixed(6)}`;
+      let newUsdt;
+      try {
+        const { data: rpcBalance, error: creditErr } = await supabaseAdmin.rpc('praqen_credit_deposit', {
+          p_user_id:         userId,
+          p_currency:        'USDT',
+          p_amount:          depositUsdt,
+          p_onchain_balance: onchainUsdt,
+          p_idempotency_key: usdtIdempotencyKey,
+          p_note:            `USDT deposit to ${address.slice(0, 20)}…`,
+        });
+        if (creditErr) throw creditErr;
+        newUsdt = parseFloat(rpcBalance);
+      } catch (creditErr) {
+        if (/duplicate|unique/i.test(creditErr.message || '') || /idempotency_key/i.test(creditErr.message || '')) {
+          console.log(`[USDTMonitor] This on-chain balance for ${username} was already credited — skipping duplicate.`);
           return;
         }
-        if (/relation .* does not exist/i.test(usdtTrackErr.message || '')) {
-          console.warn('[USDTMonitor] deposit_tracking table missing — run database/deposit_tracking.sql. Falling back to last_onchain_usdt claim only.');
-        } else {
-          console.warn(`[USDTMonitor] deposit_tracking insert error for ${username} (non-fatal, continuing on other guards):`, usdtTrackErr.message);
-        }
-      }
-
-      // ── Step 3: Atomically claim this deposit (compare-and-swap on last_onchain_usdt) ──
-      // The unconditional update this replaced always wrote regardless of what the row
-      // currently held — but the periodic scanner (sequential, one address at a time) and the
-      // manual "check my deposit now" trigger (server.js POST handler calling checkUserDeposit
-      // directly) can run concurrently for the SAME user. Both would read the same stale
-      // lastOnchainUsdt and both credit the wallet for the same on-chain deposit. Guard against
-      // it in the WHERE clause itself (checked against the DB's current value, not the possibly
-      // -stale local one): only claim if the stored balance hasn't already caught up to what
-      // we're about to record. If another invocation already won, this matches zero rows and we
-      // abort before crediting anything.
-      const nowIsoUsdt = new Date().toISOString();
-      const { data: claimedUsdtRows, error: claimErr } = await supabaseAdmin
-        .from('user_wallets')
-        .update({ last_onchain_usdt: onchainUsdt, updated_at: nowIsoUsdt })
-        .eq('user_id', userId)
-        .or(`last_onchain_usdt.is.null,last_onchain_usdt.lt.${onchainUsdt}`)
-        .select('user_id');
-
-      let usdtClaimed = !claimErr && claimedUsdtRows && claimedUsdtRows.length > 0;
-
-      if (claimErr) {
-        if (claimErr.message.includes('last_onchain_usdt')) {
-          console.warn(`[USDTMonitor] last_onchain_usdt column missing — run: ALTER TABLE user_wallets ADD COLUMN IF NOT EXISTS last_onchain_usdt NUMERIC DEFAULT 0;`);
-        } else {
-          console.warn(`[USDTMonitor] last_onchain_usdt update failed for ${username}:`, claimErr.message);
-        }
-        // Genuine query/schema error, not a race loss — credit without the atomic guard
-        // rather than silently dropping a real deposit, matching prior behavior.
-        usdtClaimed = true;
-      }
-
-      if (!usdtClaimed) {
-        console.log(`[USDTMonitor] Deposit for ${username} (${depositUsdt} USDT) already claimed by a concurrent check — skipping duplicate credit`);
+        // Nothing was committed (the RPC is one transaction) — the checkpoint was
+        // NOT advanced, so the next poll will naturally retry this deposit on its
+        // own. Just alert ops loudly.
+        console.error(`🚨 [USDTMonitor] praqen_credit_deposit FAILED for ${username} — will retry automatically on next check: ${creditErr.message}`);
+        this.alertOpsOfCreditFailure(username, userId, depositUsdt, 'USDT', creditErr.message).catch(() => {});
         return;
       }
-
-      // ── Step 4: Get current USDT balance from wallets table ───────────────
-      const { data: walRow } = await supabaseAdmin
-        .from('wallets').select('balance_usdt').eq('user_id', userId).maybeSingle();
-
-      const currentUsdt = parseFloat(walRow?.balance_usdt || 0);
-      const newUsdt     = parseFloat((currentUsdt + depositUsdt).toFixed(6));
-
-      // ── Step 5: Credit wallets.balance_usdt (single source of truth) ─────
-      const creditResult = walRow
-        ? await supabaseAdmin.from('wallets')
-            .update({ balance_usdt: newUsdt, updated_at: new Date().toISOString() })
-            .eq('user_id', userId)
-        : await supabaseAdmin.from('wallets')
-            .insert({
-              user_id:            userId,
-              balance_usdt:       depositUsdt,
-              locked_balance_usdt: 0,
-              balance_btc:        0,
-              locked_balance_btc: 0,
-              updated_at:         new Date().toISOString(),
-            });
-
-      if (creditResult.error) {
-        // Step 3's atomic claim already advanced last_onchain_usdt, marking this deposit
-        // "seen." If we stop here, every future check computes onchainUsdt <= lastOnchainUsdt
-        // and skips it forever — the USDT is real, on-chain, and permanently invisible to the
-        // user's PRAQEN balance. Revert the claim so the next poll retries crediting it, and
-        // alert ops immediately so a human catches it even during the window before that retry.
-        console.error(`🚨 [USDTMonitor] wallets credit FAILED for ${username} — reverting claim so it retries: ${creditResult.error.message}`);
-        await supabaseAdmin.from('user_wallets')
-          .update({ last_onchain_usdt: lastOnchainUsdt, updated_at: new Date().toISOString() })
-          .eq('user_id', userId)
-          .catch(e => console.error('🚨 [USDTMonitor] CRITICAL — claim revert also failed, deposit may be stuck:', e.message));
-        this.alertOpsOfCreditFailure(username, userId, depositUsdt, 'USDT', creditResult.error.message).catch(() => {});
-        return;
-      }
-
-      // Re-certify the new USDT balance in balance_audit — swapService.js's
-      // _assertLedgerTrueUsdt refuses any USDT→BTC swap where wallets.balance_usdt
-      // doesn't match the last USDT-context row here. Without stamping it on every
-      // deposit too (previously only swaps and trade escrow release/refund did), a
-      // user who deposits USDT after their first trade or swap would have every
-      // subsequent swap falsely blocked as a "balance doesn't match" integrity
-      // failure. change_btc: 0 marks this as a USDT-context row, matching the
-      // convention _assertLedgerTrueUsdt filters on. Fire-and-forget like every
-      // other balance_audit write in this codebase; logged loudly on failure.
-      supabaseAdmin.from('balance_audit').insert({
-        user_id:     userId,
-        change_btc:  0,
-        new_balance: newUsdt,
-        reason:      'DEPOSIT',
-        created_at:  new Date().toISOString(),
-      }).then(null, (e) => console.error(`[USDTMonitor] ⚠️ balance_audit stamp failed after USDT deposit for ${username} — their next swap may be falsely blocked:`, e.message));
-
-      // ── Step 6: Record in wallet_transactions ─────────────────────────────
-      await supabaseAdmin.from('wallet_transactions').insert({
-        user_id:     userId,
-        type:        'DEPOSIT',
-        currency:    'USDT',
-        amount_btc:  0,
-        amount_usdt: depositUsdt,
-        status:      'CONFIRMED',
-        notes:       `USDT deposit to ${address.slice(0, 20)}…`,
-        created_at:  new Date().toISOString(),
-      }).then(({ error: e }) => {
-        if (e) console.warn('[USDTMonitor] wallet_transactions insert error:', e.message);
-      });
 
       // ── Step 7: In-app notification ───────────────────────────────────────
       await supabaseAdmin.from('notifications').insert({

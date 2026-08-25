@@ -24,6 +24,14 @@ const PRAQEN_FEE_IDENTIFIER        = 'praqen_company_fee_wallet';
 const PRAQEN_HOT_WALLET_IDENTIFIER = 'praqen_hot_withdrawal_wallet'; // funds user external withdrawals
 const PRAQEN_FEE_RATE              = 0.01; // 1%
 
+// Company-controlled reserve — same mnemonic-derived scheme as every other
+// identifier here (NOT a separate key store — see hdWalletRoutes.js ceo/reserve
+// route comment). Funds enter automatically via SweepService whenever the hot
+// wallet exceeds HOT_WALLET_CEILING_BTC; they only ever leave via
+// sendReserveToHot(), which is called exclusively from the CEO-gated
+// /api/hd-wallet/ceo/reserve/topup-hot route — never from an automated job.
+const PRAQEN_RESERVE_WALLET_IDENTIFIER = 'praqen_company_reserve_wallet';
+
 class HDWalletService {
 
   constructor() {
@@ -32,6 +40,31 @@ class HDWalletService {
     this.initialized      = false;
     this.apiBase          = null;
     this.apiFallbacks     = [];
+    this._sendLocks       = new Map(); // fromIdentifier -> tail of its send queue (see _withSendLock)
+  }
+
+  // ── Serialize every sendBitcoin() call per fromIdentifier ──────────────────
+  // sendBitcoin fetches UTXOs, builds a PSBT, signs, and broadcasts. Two
+  // concurrent calls for the SAME identifier — e.g. a CEO approving a customer
+  // withdrawal from the hot wallet at the exact moment SweepService's
+  // hot→reserve sweep also spends from the hot wallet — can both fetch the
+  // same UTXO set before either broadcasts. The network then accepts one and
+  // rejects the other as a double-spend, which either silently drops the
+  // reserve sweep or bounces a customer withdrawal back to PENDING_APPROVAL.
+  // This makes every send for a given identifier wait for the previous one to
+  // fully finish (success or failure) before starting.
+  async _withSendLock(identifier, fn) {
+    const previous = this._sendLocks.get(identifier) || Promise.resolve();
+    const run       = previous.catch(() => {}).then(fn);
+    const wrapped   = run.catch(() => {}); // so a failed send doesn't poison the next waiter, or log as unhandled
+    this._sendLocks.set(identifier, wrapped);
+    try {
+      return await run;
+    } finally {
+      // Only remove the entry if nothing has queued behind us — otherwise this
+      // would delete the next call's slot instead of our own.
+      if (this._sendLocks.get(identifier) === wrapped) this._sendLocks.delete(identifier);
+    }
   }
 
   // ── Initialize from .env MNEMONIC ──────────────────────────────────────────
@@ -282,6 +315,46 @@ class HDWalletService {
     };
   }
 
+  getReserveWalletAddress() {
+    return this.generateAddress(PRAQEN_RESERVE_WALLET_IDENTIFIER).address;
+  }
+
+  async getReserveWalletBalance() {
+    const address = this.getReserveWalletAddress();
+    const bal = await this.checkBalance(address);
+    return {
+      address,
+      confirmed_btc:   bal.confirmed_btc,
+      unconfirmed_btc: bal.unconfirmed_btc,
+      total_btc:       bal.total_btc,
+      tx_count:        bal.tx_count,
+      source:          bal.source,
+      error:           bal.error,
+    };
+  }
+
+  // Sweeps surplus out of the hot wallet into the reserve. Safe to automate —
+  // this only ever moves funds OUT of the hot wallet the app already controls,
+  // never out of the reserve, so a bug here can't drain anything beyond what
+  // was already hot-wallet-exposed. Called by SweepService once the hot wallet
+  // balance exceeds HOT_WALLET_CEILING_BTC.
+  async sweepHotToReserve(amountBTC, feeRate = 5) {
+    this.initialize();
+    const reserveAddress = this.getReserveWalletAddress();
+    return this.sendBitcoin(PRAQEN_HOT_WALLET_IDENTIFIER, reserveAddress, amountBTC, feeRate);
+  }
+
+  // Moves BTC back from the reserve into the hot wallet. This is the ONLY
+  // function in this service that can spend reserve UTXOs — call it exclusively
+  // from a CEO-authenticated route (see /api/hd-wallet/ceo/reserve/topup-hot in
+  // hdWalletRoutes.js). Never call this from a scheduled job or any endpoint a
+  // non-CEO request could reach.
+  async sendReserveToHot(amountBTC, feeRate = 5) {
+    this.initialize();
+    const hotAddress = this.getHotWalletAddress();
+    return this.sendBitcoin(PRAQEN_RESERVE_WALLET_IDENTIFIER, hotAddress, amountBTC, feeRate);
+  }
+
   // Send withdrawal from user's own address if it has UTXOs, otherwise fall back to hot wallet
   async sendWithdrawal(userId, toAddress, amountBTC, feeRate = 5) {
     this.initialize();
@@ -423,7 +496,14 @@ class HDWalletService {
   // toAddress      : any valid BTC address
   // amountBTC      : how much to send (number)
   // feeRate        : satoshis per vbyte (default 5)
+  // Public entry point — serializes concurrent sends for the same fromIdentifier.
+  // See _withSendLock's comment for why this matters (hot-wallet double-spend race).
   async sendBitcoin(fromIdentifier, toAddress, amountBTC, feeRate = 5) {
+    return this._withSendLock(fromIdentifier, () =>
+      this._sendBitcoinLocked(fromIdentifier, toAddress, amountBTC, feeRate));
+  }
+
+  async _sendBitcoinLocked(fromIdentifier, toAddress, amountBTC, feeRate = 5) {
     this.initialize();
 
     console.log(`\n💸 sendBitcoin called`);
@@ -555,7 +635,15 @@ class HDWalletService {
   // ── ESCROW RELEASE — the main trade completion function ───────────────────
   // Called when buyer confirms OR 30min timer fires
   // Splits escrow BTC: 99.5% → seller, 0.5% → PRAQEN
+  // Public entry point — serializes concurrent releases for the same tradeId
+  // (same reasoning as sendBitcoin's lock: this builds/signs/broadcasts its
+  // own PSBT directly against escrow_${tradeId}'s UTXOs).
   async releaseEscrow(tradeId, sellerAddress, totalAmountBTC) {
+    return this._withSendLock(`escrow_${tradeId}`, () =>
+      this._releaseEscrowLocked(tradeId, sellerAddress, totalAmountBTC));
+  }
+
+  async _releaseEscrowLocked(tradeId, sellerAddress, totalAmountBTC) {
     this.initialize();
 
     console.log(`\n🔓 releaseEscrow called for trade: ${tradeId}`);

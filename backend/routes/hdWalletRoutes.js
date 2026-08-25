@@ -76,12 +76,12 @@ async function getLiveBtcPrice() {
     return _btcPriceCache.price; // return last known price rather than hard-coded fallback
 }
 
-// ── Withdrawal fee — flat 3% — returns { feeUsd, feeBtc, label } ─────────────
+// ── Withdrawal fee — flat 4% — returns { feeUsd, feeBtc, label } ─────────────
 function calcWithdrawalFee(amountBtc, btcPrice) {
   const amountUsd = Math.round(amountBtc * btcPrice * 100) / 100;
-  const feeUsd = amountUsd * 0.03;
+  const feeUsd = amountUsd * 0.04;
   const feeBtc = parseFloat((feeUsd / btcPrice).toFixed(8));
-  return { feeUsd: parseFloat(feeUsd.toFixed(2)), feeBtc, label: '3% fee' };
+  return { feeUsd: parseFloat(feeUsd.toFixed(2)), feeBtc, label: '4% fee' };
 }
 
 // ============================================================
@@ -226,7 +226,7 @@ router.get('/wallet', verifyToken, async (req, res) => {
                 .from('wallet_transactions')
                 .select('id, type, status, currency, amount_btc, amount_usdt, tx_hash, notes, created_at')
                 .eq('user_id', userId)
-                .neq('type', 'SWEEP')  // internal platform operation — never shown to users
+                .not('type', 'in', '(SWEEP,RESERVE_SWEEP,RESERVE_TOPUP)')  // internal platform operations — never shown to users
                 .order('created_at', { ascending: false })
                 .limit(50),
         ]);
@@ -465,62 +465,36 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
       // ── INTERNAL TRANSFER — free, instant, no on-chain broadcast ─────────
       const recipientId = internalWallet.user_id;
 
-      const { data: senderBal } = await supabaseAdmin
-        .from('wallets').select('balance_btc').eq('user_id', userId).single();
-      available = parseFloat(senderBal?.balance_btc || 0);
-      if (available < amount) {
-        return res.status(400).json({
-          error: `Insufficient balance. Available: ${available.toFixed(8)} BTC, Requested: ${amount.toFixed(8)} BTC`,
-        });
-      }
-
-      const newSenderBalance    = parseFloat((available - amount).toFixed(8));
-      const { data: recipBal }  = await supabaseAdmin
-        .from('wallets').select('balance_btc').eq('user_id', recipientId).single();
-      const newRecipientBalance = parseFloat((parseFloat(recipBal?.balance_btc || 0) + amount).toFixed(8));
-
-      // Deduct sender — keep all three tables in sync
-      await Promise.all([
-        supabaseAdmin.from('wallets')
-          .update({ balance_btc: newSenderBalance, updated_at: new Date().toISOString() })
-          .eq('user_id', userId),
-        supabaseAdmin.from('user_balances')
-          .update({ balance_btc: newSenderBalance, updated_at: new Date().toISOString() })
-          .eq('user_id', userId),
-        supabaseAdmin.from('user_wallets')
-          .update({ balance_btc: newSenderBalance, updated_at: new Date().toISOString() })
-          .eq('user_id', userId),
-      ]);
-
-      // Credit recipient — keep all three tables in sync (wallets via safe select-then-write; see setWalletBalance)
-      await Promise.all([
-        hdWallet.setWalletBalance(recipientId, newRecipientBalance),
-        supabaseAdmin.from('user_balances')
-          .upsert({ user_id: recipientId, balance_btc: newRecipientBalance, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }),
-        supabaseAdmin.from('user_wallets')
-          .update({ balance_btc: newRecipientBalance, updated_at: new Date().toISOString() })
-          .eq('user_id', recipientId),
-      ]);
-
       const crypto = require('crypto');
       const txRef  = 'INT_' + crypto
         .createHash('sha256').update(`${userId}:${recipientId}:${amount}:${Date.now()}`).digest('hex')
         .slice(0, 20).toUpperCase();
 
-      await supabaseAdmin.from('wallet_transactions').insert([
-        {
-          user_id: userId, type: 'TRANSFER_OUT', amount_btc: amount,
-          status: 'CONFIRMED', tx_hash: txRef,
-          notes: `Internal transfer → PRAQEN user · No fee`,
-          created_at: new Date().toISOString(),
-        },
-        {
-          user_id: recipientId, type: 'TRANSFER_IN', amount_btc: amount,
-          status: 'CONFIRMED', tx_hash: txRef,
-          notes: `Internal transfer received · No fee`,
-          created_at: new Date().toISOString(),
-        },
-      ]);
+      // Sender debit + recipient credit + both ledger rows, atomically, in one
+      // Postgres transaction — see database/2026-08-25_balance_integrity_fix.sql,
+      // function praqen_internal_transfer. This replaces the old unguarded
+      // read-JS-compute-write pattern (no optimistic lock on either leg), which
+      // was a real double-spend/lost-update race under concurrent requests.
+      let newSenderBalance;
+      try {
+        const { data: rpcRows, error: transferErr } = await supabaseAdmin.rpc('praqen_internal_transfer', {
+          p_sender_id:        userId,
+          p_recipient_id:     recipientId,
+          p_currency:         'BTC',
+          p_amount:           amount,
+          p_idempotency_key:  txRef,
+          p_note:             'Internal transfer · No fee',
+        });
+        if (transferErr) throw transferErr;
+        const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+        newSenderBalance = parseFloat(row.sender_balance);
+      } catch (transferErr) {
+        if (/INSUFFICIENT_BALANCE/.test(transferErr.message || '')) {
+          return res.status(400).json({ error: `Insufficient balance. Requested: ${amount.toFixed(8)} BTC` });
+        }
+        console.error('[InternalTransfer BTC] praqen_internal_transfer failed:', transferErr.message);
+        return res.status(500).json({ error: 'Transfer failed — please try again' });
+      }
 
       const [{ data: recip }, { data: senderUser }] = await Promise.all([
         supabaseAdmin.from('users').select('id, email, username').eq('id', recipientId).single(),
@@ -826,8 +800,9 @@ router.get('/ceo/treasury', verifyToken, async (req, res) => {
   try {
     const ceo = await requireCeo(req, res); if (!ceo) return;
 
-    const [hotBtcR, tronR, companyR, swapFeesR, recentSwapsR] = await Promise.allSettled([
+    const [hotBtcR, reserveBtcR, tronR, companyR, swapFeesR, recentSwapsR] = await Promise.allSettled([
       hdWallet.getHotWalletBalance(),
+      hdWallet.getReserveWalletBalance(),
       tronHotWallet.getStatus(),
       supabaseAdmin.from('wallets')
         .select('balance_btc, locked_balance_btc, balance_usdt, locked_balance_usdt')
@@ -841,6 +816,7 @@ router.get('/ceo/treasury', verifyToken, async (req, res) => {
     ]);
 
     const hotWalletBtc = hotBtcR.status === 'fulfilled' ? hotBtcR.value : { error: hotBtcR.reason?.message || 'unavailable' };
+    const reserveWalletBtc = reserveBtcR.status === 'fulfilled' ? reserveBtcR.value : { error: reserveBtcR.reason?.message || 'unavailable' };
     const tron          = tronR.status === 'fulfilled' ? tronR.value : { error: tronR.reason?.message || 'unavailable' };
     const companyRow    = companyR.status === 'fulfilled' ? companyR.value.data : null;
 
@@ -867,6 +843,7 @@ router.get('/ceo/treasury', verifyToken, async (req, res) => {
     res.json({
       success: true,
       hotWalletBtc,
+      reserveWalletBtc,
       tron: tron?.error ? tron : {
         address:            tron.hot_wallet_address,
         usdt:                tron.hot_wallet_usdt,
@@ -890,6 +867,86 @@ router.get('/ceo/treasury', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('[hdWalletRoutes GET /ceo/treasury]', error.message);
     res.status(500).json({ error: 'Failed to load treasury overview.' });
+  }
+});
+
+// POST /api/hd-wallet/ceo/reserve/topup-hot  { amountBtc }
+// Moves BTC from the company reserve wallet back into the hot wallet. CEO-only.
+// This is the ONLY path that can ever spend reserve funds — see
+// hdWallet.sendReserveToHot()'s comment. It broadcasts immediately rather than
+// going through the customer-withdrawal PENDING_APPROVAL queue because both
+// ends are company-controlled addresses (no external destination, no customer
+// balance involved); it still requires a live CEO session to reach this route.
+//
+// IMPORTANT — interim architecture note: the reserve wallet is currently
+// derived from the SAME MNEMONIC as the hot wallet (see hdWalletService.js).
+// That means it protects against operational mistakes (a bug or runaway
+// process draining the hot wallet) but NOT against a leaked .env/MNEMONIC —
+// anyone with that mnemonic can derive the reserve key exactly as easily as
+// the hot wallet's. Treat this as a stopgap until the reserve is moved to real
+// separate key material (hardware-wallet multisig) outside this server.
+router.post('/ceo/reserve/topup-hot', verifyToken, async (req, res) => {
+  try {
+    const ceo = await requireCeo(req, res); if (!ceo) return;
+
+    const amount = parseFloat(req.body.amountBtc);
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: 'Positive BTC amount required' });
+    }
+
+    const reserveBal = await hdWallet.getReserveWalletBalance();
+    if (reserveBal.error) {
+      return res.status(503).json({ error: `Could not verify reserve balance — blockchain API unreachable (${reserveBal.error}). Try again shortly.` });
+    }
+    // Requesting the full confirmed balance leaves nothing for the network fee —
+    // sendBitcoin computes change as inputSum - amount - fee, which goes negative
+    // and throws. Reject with a clear reason here instead of a generic 500 that
+    // would just repeat on every retry at that exact amount.
+    const RESERVE_FEE_BUFFER_BTC = 0.0001; // generous — covers fee for a handful of UTXOs at 5 sat/vbyte
+    const maxSendableBtc = parseFloat((reserveBal.confirmed_btc - RESERVE_FEE_BUFFER_BTC).toFixed(8));
+    if (amount > maxSendableBtc) {
+      return res.status(400).json({
+        error: `Reserve has ₿${reserveBal.confirmed_btc.toFixed(8)} but ~₿${RESERVE_FEE_BUFFER_BTC.toFixed(8)} must stay to cover the network fee — max you can move right now is ₿${Math.max(0, maxSendableBtc).toFixed(8)}.`,
+      });
+    }
+
+    let result;
+    try {
+      result = await hdWallet.sendReserveToHot(amount);
+    } catch (sendErr) {
+      // Belt-and-suspenders — if the actual fee still exceeds the buffer above
+      // (e.g. reserve is spread across many small UTXOs), surface it plainly
+      // instead of a generic 500.
+      if (/Not enough to cover fee/i.test(sendErr.message || '')) {
+        return res.status(400).json({ error: `Amount too close to the full reserve balance — reduce it slightly to leave room for the network fee. (${sendErr.message})` });
+      }
+      throw sendErr;
+    }
+
+    const ts = new Date().toISOString();
+    await supabaseAdmin.from('wallet_transactions').insert({
+      user_id:             COMPANY_WALLET_ID,
+      type:                'RESERVE_TOPUP',
+      amount_btc:          amount,
+      status:              'CONFIRMED',
+      tx_hash:             result.txid,
+      destination_address: result.to,
+      notes:               `Reserve → hot wallet top-up, approved by CEO ${ceo.email} — tx: ${result.txid}`,
+      created_at:          ts,
+    }).then(null, logErr => {
+      console.warn('[hdWalletRoutes] Reserve topup audit log failed (funds safe):', logErr.message);
+    });
+
+    console.log(`✅ [CEO] Reserve topup — ₿${amount} reserve → hot wallet | TX ${result.txid} | by ${ceo.email}`);
+    res.json({
+      success:      true,
+      txid:         result.txid,
+      explorer_url: result.explorer_url,
+      message:      `₿${amount.toFixed(8)} moved from reserve to hot wallet.`,
+    });
+  } catch (error) {
+    console.error('[hdWalletRoutes POST /ceo/reserve/topup-hot]', error.message);
+    res.status(500).json({ error: 'Failed to top up hot wallet from reserve: ' + error.message });
   }
 });
 
@@ -1572,31 +1629,41 @@ router.post('/ceo-withdrawals/:id/reject', verifyToken, async (req, res) => {
     const reason = (req.body.reason || '').trim();
     if (!reason) return res.status(400).json({ error: 'A rejection reason is required.' });
 
-    const { data: txRow } = await supabaseAdmin
-      .from('wallet_transactions').select('*').eq('id', id).eq('status', 'PENDING_APPROVAL').maybeSingle();
-    if (!txRow) return res.status(404).json({ error: 'No pending withdrawal found with that ID — it may have already been reviewed.' });
+    // Atomic claim + refund + finalize, all in one Postgres transaction — see
+    // database/2026-08-25_balance_integrity_fix.sql, function
+    // praqen_reject_withdrawal. This replaces the old flow, which (unlike its
+    // approve sibling) had no atomic claim before crediting the refund — two
+    // concurrent reject calls on the same withdrawal could both refund it. The
+    // function claims PENDING_APPROVAL -> PROCESSING first (only one caller
+    // wins), and releases the claim back to PENDING_APPROVAL if the refund
+    // itself fails, so a retry is always safe.
+    let txRow, refundAmount;
+    try {
+      const { data: preRow } = await supabaseAdmin
+        .from('wallet_transactions').select('*').eq('id', id).maybeSingle();
+      if (!preRow) return res.status(404).json({ error: 'No withdrawal found with that ID.' });
+      txRow = preRow;
+
+      const { data: rpcRows, error: rejectErr } = await supabaseAdmin.rpc('praqen_reject_withdrawal', {
+        p_tx_id:  id,
+        p_ceo_id: ceo.id,
+        p_reason: reason,
+      });
+      if (rejectErr) throw rejectErr;
+      const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+      refundAmount = parseFloat(row.refunded_amount);
+    } catch (rejectErr) {
+      if (/ALREADY_REVIEWED/.test(rejectErr.message || '')) {
+        return res.status(404).json({ error: 'No pending withdrawal found with that ID — it may have already been reviewed.' });
+      }
+      console.error('[hdWalletRoutes POST /ceo-withdrawals/:id/reject] praqen_reject_withdrawal failed:', rejectErr.message);
+      return res.status(500).json({ error: 'Failed to reject withdrawal: ' + rejectErr.message });
+    }
 
     const isUsdt = txRow.currency === 'USDT';
     const isFeeCollection = txRow.user_id === COMPANY_WALLET_ID;
     const sendAmount = isUsdt ? parseFloat(txRow.amount_usdt) : parseFloat(txRow.amount_btc);
-    const platformFee = isUsdt ? parseFloat(txRow.platform_fee_usdt || 0) : parseFloat(txRow.platform_fee_btc || 0);
-    const refundAmount = parseFloat((sendAmount + platformFee).toFixed(isUsdt ? 6 : 8));
     const userId = txRow.user_id;
-    const ts = new Date().toISOString();
-    const balField = isUsdt ? 'balance_usdt' : 'balance_btc';
-
-    const { data: bal } = await supabaseAdmin.from('wallets').select(balField).eq('user_id', userId).single();
-    const newBalance = parseFloat((parseFloat(bal?.[balField] || 0) + refundAmount).toFixed(isUsdt ? 6 : 8));
-
-    await Promise.all([
-      supabaseAdmin.from('wallets').update({ [balField]: newBalance, updated_at: ts }).eq('user_id', userId),
-      supabaseAdmin.from('user_balances').update({ [balField]: newBalance, updated_at: ts }).eq('user_id', userId),
-      supabaseAdmin.from('user_wallets').update({ [balField]: newBalance, updated_at: ts }).eq('user_id', userId),
-    ]);
-
-    await supabaseAdmin.from('wallet_transactions').update({
-      status: 'REJECTED', reviewed_by: ceo.id, reviewed_at: ts, rejection_reason: reason,
-    }).eq('id', id);
 
     // A CEO's rejection reason is often the actual next-step instruction (e.g.
     // "please use BTC instead") — this used to only reach BTC users, since the
@@ -1616,7 +1683,7 @@ router.post('/ceo-withdrawals/:id/reject', verifyToken, async (req, res) => {
       message: isFeeCollection
         ? `Fee collection of ${symbol}${sendAmount.toFixed(decimals)} was declined — the full amount was returned to the company wallet. Reason: ${reason}`
         : `We weren't able to complete your withdrawal of ${symbol}${sendAmount.toFixed(decimals)} — the full amount (${symbol}${refundAmount.toFixed(decimals)}) was returned to your wallet. Next step: ${reason}`,
-      action: '/wallet', is_read: false, created_at: ts,
+      action: '/wallet', is_read: false, created_at: new Date().toISOString(),
     }).then(null, () => {});
 
     console.log(`⛔ [CEO] Rejected ${isFeeCollection ? 'fee collection' : 'withdrawal'} ${id} — ${symbol}${refundAmount} refunded to ${userId.slice(0,8)} | by ${ceo.email} | reason: ${reason}`);

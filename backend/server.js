@@ -372,7 +372,7 @@ const { getClientIp, logSecurityEvent, isLockedOut } = require('./services/secur
 const balanceIntegrity = require('./services/balanceIntegrityService');
 const { checkAndAwardBadges } = require('./services/badgeService');
 const { syncAllOfferStatuses, deactivateStaleOffers, reactivateReturnedSellers, setCacheBuster, setBtcPriceGetter, updateOfferStatus } = require('./services/offerStatusService');
-const { syncTraderOfWeek, getAllWinners: getTraderOfWeekWinners } = require('./services/traderOfWeekService');
+const traderOfWeekService = require('./services/traderOfWeekService');
 const telegramService = require('./services/telegramService');
 setCacheBuster(bustCache);
 // Was never wired up — offerStatusService's pause sweep was silently running on the
@@ -1529,15 +1529,21 @@ async function payReferralCommissions(tradeId, buyerId, sellerId, amountBtc, amo
     for (const [referrerId, referredUserId] of payouts) {
       const rate = referralCommissionRate(referrerMap[referrerId]?.total_referrals);
       const commissionBtc = parseFloat((grossBtc * rate).toFixed(8));
-      const commissionUsd = parseFloat((grossUsd * rate).toFixed(2));
       if (commissionBtc <= 0) continue;
       rows.push({
         referrer_id: referrerId,
         referred_user_id: referredUserId,
         trade_id: tradeId,
         commission_btc: commissionBtc,
-        commission_usd: commissionUsd,
-        commission_rate: rate * 100,
+        // 2026-08-25: commission_usd / commission_rate do NOT exist on the live
+        // affiliate_earnings table (verified against production schema) — every
+        // insert here was failing on every trade release (0 new rows since
+        // 2026-07-27, confirmed against production data), meaning referral
+        // commissions had silently stopped being credited at all. trade_amount_btc
+        // / trade_amount_usd are the real columns that exist and carry equivalent
+        // context (the trade this commission was earned from).
+        trade_amount_btc: grossBtc,
+        trade_amount_usd: grossUsd,
         status: 'CREDITED',
         created_at: new Date().toISOString(),
       });
@@ -1554,8 +1560,12 @@ async function payReferralCommissions(tradeId, buyerId, sellerId, amountBtc, amo
     // Update referral_earnings_btc for each referrer directly, and let them know
     // right away — this is what surfaces the commission on their dashboard/bell
     // without waiting for the next poll cycle.
+    // 2026-08-25: excludes WITHDRAWN commissions — without this filter, a
+    // referrer's next commission resurrected every already-withdrawn commission
+    // back into referral_earnings_btc, permanently inflating their displayed
+    // balance above what they actually still have coming.
     for (const { referrerId, commissionBtc } of notifyPlan) {
-      const { data: allE } = await supabaseAdmin.from('affiliate_earnings').select('commission_btc').eq('referrer_id', referrerId);
+      const { data: allE } = await supabaseAdmin.from('affiliate_earnings').select('commission_btc').eq('referrer_id', referrerId).neq('status', 'WITHDRAWN');
       const newTotal = (allE || []).reduce((s, e) => s + parseFloat(e.commission_btc || 0), 0);
       await supabaseAdmin.from('users').update({ referral_earnings_btc: parseFloat(newTotal.toFixed(8)) }).eq('id', referrerId);
       createNotification(
@@ -6776,16 +6786,59 @@ app.get('/api/offers/:id', async (req, res) => {
   }
 });
 
-// GET /api/trader-of-week — the current auto-picked "Active Trader of the Week"
-// for each market category (buy_bitcoin, sell_bitcoin, gift_card). Replaces the
-// hardcoded usernames the Buy/Sell/Gift Card pages used to pin in source code —
-// see services/traderOfWeekService.js for the selection + weekly rotation logic.
+// GET /api/trader-of-week — PRAQEN Weekly Stars: the 5 admin-selected winners
+// (sell_bitcoin_gh, buy_bitcoin_global, gift_card, kenya_market, rising_trader).
+// This never changes on its own — see services/traderOfWeekService.js — a
+// winner only changes when an admin picks a new one via the endpoint below.
 app.get('/api/trader-of-week', async (req, res) => {
   try {
-    const winners = await getTraderOfWeekWinners();
+    const winners = await traderOfWeekService.getCurrentWinners();
     res.json({ success: true, winners });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/trader-of-week/candidates?slot=kenya_market — ranked, live-
+// computed recommendations for the admin selection UI. Never writes anything;
+// eligibility (>=5 trades / >=70% completion for the 4 established slots, the
+// lighter Rising Trader bar) is enforced in traderOfWeekService itself, so a
+// zero-trade account can never appear here regardless of listing activity.
+app.get('/api/admin/trader-of-week/candidates', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const { slot } = req.query;
+    if (!traderOfWeekService.SLOTS.includes(slot)) {
+      return res.status(400).json({ error: `Invalid slot. Must be one of: ${traderOfWeekService.SLOTS.join(', ')}` });
+    }
+    const candidates = await traderOfWeekService.getCandidates(slot);
+    res.json({ success: true, slot, candidates });
+  } catch (err) {
+    console.error('[GET /admin/trader-of-week/candidates]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/trader-of-week/select — { slot, userId } OR { slot, username } —
+// the ONLY place trader_of_week is ever written. `userId` selects from the ranked
+// getCandidates() list; `username` is a manual pick that bypasses the ranking
+// thresholds entirely (still validates the account is real, not banned, and has
+// a genuinely active listing matching the slot — see validateManualSelection in
+// traderOfWeekService.js). Records who picked the winner and when in both the
+// live row and the append-only trader_of_week_history table.
+app.post('/api/admin/trader-of-week/select', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const { data: adminUser } = await supabaseAdmin.from('users').select('username').eq('id', req.userId).single();
+    const { slot, userId, username } = req.body;
+    if (!slot || (!userId && !username)) return res.status(400).json({ error: 'slot and either userId or username are required' });
+    const row = await traderOfWeekService.selectWinner({
+      slot, userId, username, adminId: req.userId, adminUsername: adminUser?.username || 'admin',
+    });
+    res.json({ success: true, winner: row });
+  } catch (err) {
+    console.error('[POST /admin/trader-of-week/select]', err.message);
+    res.status(400).json({ error: err.message });
   }
 });
 
@@ -13416,43 +13469,37 @@ app.post('/api/wallet/usdt/internal-transfer', verifyToken, requireNotBanned, as
       return res.status(400).json({ error: 'Recipient wallet not initialised. Ask them to open the PRAQEN wallet page first.' });
     }
 
-    // ── Check sender USDT balance ─────────────────────────────────────────
-    const { data: senderWallet } = await supabaseAdmin
-      .from('wallets').select('balance_usdt').eq('user_id', req.userId).maybeSingle();
-    const available = parseFloat(senderWallet?.balance_usdt || 0);
-    if (available < amount) {
-      return res.status(400).json({
-        error: `Insufficient USDT. Available: ₮${available.toFixed(2)}, Required: ₮${amount.toFixed(2)}`,
+    // ── Sender debit + recipient credit + both ledger rows, atomically, in one
+    // Postgres transaction — see database/2026-08-25_balance_integrity_fix.sql,
+    // function praqen_internal_transfer. This replaces the old pattern where the
+    // sender's debit was optimistic-locked but the recipient's credit was not —
+    // two concurrent transfers into the same recipient could read the same stale
+    // balance and one credit would silently overwrite the other (lost update).
+    const crypto = require('crypto');
+    const usdtTxRef = 'INT_' + crypto
+      .createHash('sha256').update(`${req.userId}:${recipient.id}:${amount}:${Date.now()}`).digest('hex')
+      .slice(0, 20).toUpperCase();
+
+    let newSenderBal, newRecipBal;
+    try {
+      const { data: rpcRows, error: transferErr } = await supabaseAdmin.rpc('praqen_internal_transfer', {
+        p_sender_id:       req.userId,
+        p_recipient_id:    recipient.id,
+        p_currency:        'USDT',
+        p_amount:          amount,
+        p_idempotency_key: usdtTxRef,
+        p_note:            'Internal USDT transfer · No fee',
       });
-    }
-
-    // ── Deduct from sender (optimistic lock: reject if balance changed since read) ──
-    const newSenderBal = parseFloat((available - amount).toFixed(6));
-    const { data: deductRows, error: deductErr } = await supabaseAdmin
-      .from('wallets')
-      .update({ balance_usdt: newSenderBal, updated_at: new Date().toISOString() })
-      .eq('user_id', req.userId)
-      .eq('balance_usdt', available)   // optimistic lock — fails if concurrent tx modified it
-      .select('balance_usdt');
-    if (deductErr) {
+      if (transferErr) throw transferErr;
+      const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+      newSenderBal = parseFloat(row.sender_balance);
+      newRecipBal  = parseFloat(row.recipient_balance);
+    } catch (transferErr) {
+      if (/INSUFFICIENT_BALANCE/.test(transferErr.message || '')) {
+        return res.status(400).json({ error: `Insufficient USDT. Required: ₮${amount.toFixed(2)}` });
+      }
+      console.error('[InternalTransfer USDT] praqen_internal_transfer failed:', transferErr.message);
       return res.status(500).json({ error: 'Transfer failed — please try again' });
-    }
-    if (!deductRows || deductRows.length === 0) {
-      return res.status(409).json({ error: 'Balance changed — please retry the transfer' });
-    }
-
-    // ── Credit recipient (rollback sender on failure) ─────────────────────
-    const newRecipBal = parseFloat((parseFloat(recipWallet.balance_usdt || 0) + amount).toFixed(6));
-    const { error: creditErr } = await supabaseAdmin
-      .from('wallets')
-      .update({ balance_usdt: newRecipBal, updated_at: new Date().toISOString() })
-      .eq('user_id', recipient.id);
-    if (creditErr) {
-      // Rollback sender deduction so no funds are lost
-      await supabaseAdmin.from('wallets')
-        .update({ balance_usdt: available, updated_at: new Date().toISOString() })
-        .eq('user_id', req.userId);
-      return res.status(500).json({ error: 'Transfer failed — your balance has been restored' });
     }
 
     // Keep swapService._assertLedgerTrueUsdt's reference current for both sides —
@@ -13468,47 +13515,14 @@ app.post('/api/wallet/usdt/internal-transfer', verifyToken, requireNotBanned, as
       reason: 'TRANSFER_IN', created_at: new Date().toISOString(),
     }).then(null, (e) => console.error('[UsdtTransfer] recipient ledger stamp failed:', e.message));
 
-    // ── Generate transfer reference ────────────────────────────────────────
-    const txRef = 'UINT_' + require('crypto')
-      .createHash('sha256')
-      .update(`${req.userId}:${recipient.id}:${amount}:${Date.now()}`)
-      .digest('hex').slice(0, 16).toUpperCase();
+    // ── Transfer reference — reuse the idempotency key already used for the
+    // atomic RPC call above (which already logged the TRANSFER_OUT/TRANSFER_IN
+    // ledger rows in the same transaction as the balance move — no separate
+    // insert needed here, that would just duplicate the ledger entry).
+    const txRef = usdtTxRef;
 
     const { data: senderUser } = await supabaseAdmin.from('users').select('username, email').eq('id', req.userId).single();
     const senderName = senderUser?.username || 'a PRAQEN user';
-    const txTs = new Date().toISOString();
-
-    // ── Log TRANSFER_OUT for sender ───────────────────────────────────────
-    {
-      const { error: outErr } = await supabaseAdmin.from('wallet_transactions').insert({
-        user_id: req.userId,
-        type: 'TRANSFER_OUT',
-        currency: 'USDT',
-        amount_usdt: amount,
-        amount_btc: 0,
-        status: 'CONFIRMED',
-        tx_hash: `${txRef}_OUT`,
-        notes: `USDT transfer → @${recipient.username} · No fee`,
-        created_at: txTs,
-      });
-      if (outErr) console.error('[UsdtTransfer] OUT log err:', outErr.message);
-    }
-
-    // ── Log TRANSFER_IN for recipient ─────────────────────────────────────
-    {
-      const { error: inErr } = await supabaseAdmin.from('wallet_transactions').insert({
-        user_id: recipient.id,
-        type: 'TRANSFER_IN',
-        currency: 'USDT',
-        amount_usdt: amount,
-        amount_btc: 0,
-        status: 'CONFIRMED',
-        tx_hash: `${txRef}_IN`,
-        notes: `USDT received from @${senderName} · No fee`,
-        created_at: txTs,
-      });
-      if (inErr) console.error('[UsdtTransfer] IN log err:', inErr.message);
-    }
 
     // ── In-app notifications ──────────────────────────────────────────────
     await createNotification(
@@ -13916,10 +13930,9 @@ app.listen(PORT, () => {
   reactivateReturnedSellers().catch(err => console.error('[startup] reactivateReturnedSellers:', err.message));
   setInterval(() => reactivateReturnedSellers().catch(err => console.error('[interval] reactivateReturnedSellers:', err.message)), 6 * 60 * 60 * 1000);
 
-  // "Active Trader of the Week" auto-pick — runs at startup then checked every 6 hours;
-  // each category only actually re-picks once its own 7-day rotation window is due.
-  syncTraderOfWeek().catch(err => console.error('[startup] syncTraderOfWeek:', err.message));
-  setInterval(() => syncTraderOfWeek().catch(err => console.error('[interval] syncTraderOfWeek:', err.message)), 6 * 60 * 60 * 1000);
+  // PRAQEN Weekly Stars winners are admin-selected now (POST /api/admin/trader-of-week/select)
+  // — no automatic rotation cron here anymore, deliberately, so a CEO/admin pick is never
+  // silently overwritten. See services/traderOfWeekService.js.
 
   // Backfill missing country codes for existing users using phone/KYC data
   backfillCountriesFromPhone().catch(err => console.error('[startup] backfillCountries:', err.message));

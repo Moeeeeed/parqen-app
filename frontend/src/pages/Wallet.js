@@ -82,11 +82,11 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
     ? parseFloat((parseFloat(usdAmount || 0) / price).toFixed(8))
     : parseFloat(amount || 0);
 
-  // Flat 3% withdrawal fee — mirrors backend calcWithdrawalFee()
+  // Flat 4% withdrawal fee — mirrors backend calcWithdrawalFee()
   // Use raw USD input when in USD mode to avoid BTC round-trip floating-point boundary errors
   const calcFeeByUsd = (usd) => {
     if (usd <= 0) return { feeUsd: 0, feeBtc: 0, label: '' };
-    return { feeUsd: usd * 0.03, feeBtc: (usd * 0.03) / price, label: '3% fee' };
+    return { feeUsd: usd * 0.04, feeBtc: (usd * 0.04) / price, label: '4% fee' };
   };
   const calcFee = (btc) => {
     // Round to nearest cent before tier comparison to avoid floating-point boundary mismatches
@@ -2957,7 +2957,7 @@ export default function WalletPage({ user }) {
   });
 
   // USDT + Swap state — SWAP_FEE_PERCENT mirrors backend swapService.js
-  const SWAP_FEE_PERCENT = 0.002; // 0.2%
+  const SWAP_FEE_PERCENT = 0.004; // 0.4%
   const [activeCoin,    setActiveCoin]    = useState('BTC');
   const [usdtData,      setUsdtData]      = useState(null);
   const [swapRate,      setSwapRate]      = useState(null);
