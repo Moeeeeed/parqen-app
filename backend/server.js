@@ -13034,7 +13034,7 @@ app.post('/api/wallet/usdt/send', verifyToken, requireNotBanned, async (req, res
   // thing, whichever path they hit it through.
   if (process.env.USDT_SENDS_DISABLED === 'true') {
     return res.status(503).json({
-      error: "We're experiencing send-out delays with USDT. Please kindly use BTC for now, or contact support.",
+      error: 'USDT external withdrawals are temporarily delayed due to low network gas availability. Your USDT balance is completely safe — please use BTC for external withdrawals for now.',
       code: 'USDT_SENDS_DISABLED',
     });
   }
@@ -13143,6 +13143,13 @@ app.post('/api/wallet/usdt/send', verifyToken, requireNotBanned, async (req, res
     // balance — see GIFT_CARD_SAFETY_MIN_USD in offerStatusService.js. Best-effort; never
     // blocks the withdrawal itself.
     updateOfferStatus(req.userId).catch(() => {});
+    // Keep swapService._assertLedgerTrueUsdt's reference current — without this, a
+    // withdrawal drifts wallets.balance_usdt away from the last swap/deposit-stamped
+    // figure and permanently (falsely) blocks this account's next USDT swap.
+    supabaseAdmin.from('balance_audit').insert({
+      user_id: req.userId, change_btc: 0, new_balance: newBalance,
+      reason: 'WITHDRAWAL', created_at: new Date().toISOString(),
+    }).then(null, (e) => console.error('[USDT Send] ledger stamp failed:', e.message));
 
     // ── Step 2: Hold for CEO review instead of broadcasting ────────────────
     // SECURITY FIX: this route used to credit the fee and broadcast on-chain in
@@ -13247,6 +13254,14 @@ app.get('/api/swap/rate', verifyToken, async (req, res) => {
 // POST /api/swap/btc-to-usdt — swap BTC → USDT (internal ledger)
 app.post('/api/swap/btc-to-usdt', verifyToken, requireNotBanned, async (req, res) => {
   try {
+    // Temporary swap-direction kill-switch (low TRX gas) — only this direction is
+    // blocked; USDT->BTC, BTC withdrawals, and USDT withdrawals are unaffected.
+    if (process.env.BTC_TO_USDT_SWAP_DISABLED === 'true') {
+      return res.status(503).json({
+        error: 'BTC → USDT swaps are temporarily unavailable. You can still swap USDT → BTC and withdraw BTC normally. We apologize for the inconvenience.',
+        code: 'BTC_TO_USDT_SWAP_DISABLED',
+      });
+    }
     const { btcAmount } = req.body;
     if (!btcAmount || parseFloat(btcAmount) <= 0) {
       return res.status(400).json({ error: 'Missing or invalid btcAmount' });
@@ -13439,6 +13454,19 @@ app.post('/api/wallet/usdt/internal-transfer', verifyToken, requireNotBanned, as
         .eq('user_id', req.userId);
       return res.status(500).json({ error: 'Transfer failed — your balance has been restored' });
     }
+
+    // Keep swapService._assertLedgerTrueUsdt's reference current for both sides —
+    // without this, an internal transfer drifts wallets.balance_usdt away from the
+    // last swap/deposit-stamped figure and permanently (falsely) blocks the next
+    // USDT swap for whichever account isn't re-stamped.
+    supabaseAdmin.from('balance_audit').insert({
+      user_id: req.userId, change_btc: 0, new_balance: newSenderBal,
+      reason: 'TRANSFER_OUT', created_at: new Date().toISOString(),
+    }).then(null, (e) => console.error('[UsdtTransfer] sender ledger stamp failed:', e.message));
+    supabaseAdmin.from('balance_audit').insert({
+      user_id: recipient.id, change_btc: 0, new_balance: newRecipBal,
+      reason: 'TRANSFER_IN', created_at: new Date().toISOString(),
+    }).then(null, (e) => console.error('[UsdtTransfer] recipient ledger stamp failed:', e.message));
 
     // ── Generate transfer reference ────────────────────────────────────────
     const txRef = 'UINT_' + require('crypto')

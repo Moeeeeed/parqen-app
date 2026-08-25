@@ -147,13 +147,21 @@ class SwapService {
   // marks a row as "this new_balance is a USDT figure, not BTC" — every BTC-context
   // reason (INTEGRITY_SYNC, BTC-side SWAP/DEPOSIT stamps, real BTC trades) writes a
   // genuine non-zero change_btc in practice.
+  //
+  // 2026-08-25: same gap found for internal USDT transfers (POST /api/users/usdt/transfer)
+  // and USDT withdrawals (POST /api/wallet/usdt/send) — neither stamped balance_audit,
+  // so any account that sent/received an internal transfer or withdrew USDT after its
+  // last swap/deposit was permanently blocked from swapping again (real case: a $150
+  // TRANSFER_OUT and a $100 WITHDRAWAL, both confirmed and legitimate, left the ledger
+  // reference frozen 2 days stale). Both call sites now stamp balance_audit themselves
+  // (TRANSFER_OUT/TRANSFER_IN/WITHDRAWAL reasons) — added to the whitelist below.
   async _assertLedgerTrueUsdt(userId, walletUsdt) {
     const { data: lastAudit, error } = await supabaseAdmin
       .from('balance_audit')
       .select('new_balance, created_at')
       .eq('user_id', userId)
       .eq('change_btc', 0)
-      .in('reason', ['ESCROW_RELEASE', 'ESCROW_REFUND', 'SWAP_USDT', 'DEPOSIT'])
+      .in('reason', ['ESCROW_RELEASE', 'ESCROW_REFUND', 'SWAP_USDT', 'DEPOSIT', 'TRANSFER_OUT', 'TRANSFER_IN', 'WITHDRAWAL'])
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();

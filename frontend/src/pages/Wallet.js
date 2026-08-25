@@ -1763,9 +1763,9 @@ function UsdtWithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoF
                 <AlertTriangle size={28} style={{ color: '#B45309' }} />
               </div>
               <div>
-                <h3 className="font-black text-base mb-1" style={{ color: '#1f2937' }}>USDT Sends Paused</h3>
+                <h3 className="font-black text-base mb-1" style={{ color: '#1f2937' }}>USDT Withdrawal Notice</h3>
                 <p className="text-sm max-w-xs" style={{ color: '#6b7280' }}>
-                  We're experiencing send-out delays with USDT. Please kindly use BTC for now, or contact support.
+                  USDT external withdrawals are temporarily delayed due to low network gas availability. Your USDT balance is completely safe — please use BTC for external withdrawals for now.
                 </p>
               </div>
               <button onClick={onClose}
