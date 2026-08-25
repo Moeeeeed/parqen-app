@@ -6,7 +6,7 @@ import {
   Send, Star, Clock, CheckCircle, AlertCircle, Lock,
   MessageCircle, Bitcoin, Shield, AlertTriangle,
   X, RefreshCw, Info, Check, CheckCheck, Timer,
-  Paperclip, Flag, BadgeCheck, FileText, Copy, Globe,
+  Flag, BadgeCheck, FileText, Copy, Globe,
   ChevronDown, ChevronUp, DollarSign, CreditCard,
 Smartphone, Building2, ThumbsUp, ThumbsDown, Gift, Repeat2, Heart,
   Bell, Camera, Mail, PartyPopper, Rocket, Unlock, Stamp,
@@ -1926,26 +1926,6 @@ export default function TradeDetail({user}) {
                     </div>
                   );
                 })()}
-
-                {/* Proof images */}
-                {images.length>0&&(
-                  <div className="flex gap-2 flex-wrap">
-                    <span className="text-xs w-full font-bold flex items-center gap-1" style={{color:C.g400}}><Paperclip size={12}/> Uploaded Proofs:</span>
-                    {images.map((img,i)=>{
-                      const src=img.image_url||img.url;
-                      if(!src)return null;
-                      const fullSrc=(src.startsWith('http')||src.startsWith('data:')||src.startsWith('blob:'))?src:`${API_URL}${src}`;
-                      return(
-                        <button key={i} onClick={()=>setImgSrc(fullSrc)}
-                          className="w-14 h-14 rounded-xl overflow-hidden border-2 hover:opacity-80 transition"
-                          style={{borderColor:C.green}}>
-                          <img src={fullSrc} alt="Proof" className="w-full h-full object-cover"
-                            onError={e=>{e.target.style.display='none';}}/>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
 
                 {/* Messages */}
                 {messages.length===0?(
