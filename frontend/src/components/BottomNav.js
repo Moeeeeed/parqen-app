@@ -13,7 +13,8 @@ const NAV_ITEMS = [
 function NavItem({ label, icon: Icon, to, active }) {
   return (
     <NavLink
-      to={to}
+      to={to} 
+      aria-label={label}          
       style={{ color: active ? '#F4A422' : '#64748B', textDecoration: 'none', flex: 1 }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', padding: '0 4px' }}>
