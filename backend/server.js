@@ -413,7 +413,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
     if (result?.success) {
       await telegramService.sendTelegramMessage(
         chatId,
-        '✅ Your PRAQEN account is now linked! You will receive trade alerts here.\n\nSend /stop to disable notifications, /enable to re-enable.'
+        '✅ Your PraQen account is now linked! You will receive trade alerts here.\n\nSend /stop to disable notifications, /enable to re-enable.'
       );
     }
 
@@ -754,7 +754,7 @@ function tradeEmailTemplate(subject, title, message, tradeRef, amount, actionUrl
               <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
                 <tr>
                   <td align="center">
-                    <a href="${actionUrl}" style="display:inline-block;background:linear-gradient(135deg,#1B4332,#2D6A4F);color:#FFFFFF;text-align:center;padding:15px 40px;border-radius:12px;text-decoration:none;font-weight:700;font-size:15px;letter-spacing:0.2px;">View on PRAQEN →</a>
+                    <a href="${actionUrl}" style="display:inline-block;background:linear-gradient(135deg,#1B4332,#2D6A4F);color:#FFFFFF;text-align:center;padding:15px 40px;border-radius:12px;text-decoration:none;font-weight:700;font-size:15px;letter-spacing:0.2px;">View on PraQen →</a>
                   </td>
                 </tr>
               </table>` : ''}
@@ -763,7 +763,7 @@ function tradeEmailTemplate(subject, title, message, tradeRef, amount, actionUrl
                 <tr>
                   <td style="border-top:1px solid #E8F0EB;padding-top:20px;">
                     <p style="color:#94A3B8;font-size:11px;margin:0;line-height:1.6;">
-                      🔒 This is an automated message from PRAQEN. Your funds are always protected by our escrow system. Never share your login credentials with anyone.
+                      🔒 This is an automated message from PraQen. Your funds are always protected by our escrow system. Never share your login credentials with anyone.
                     </p>
                   </td>
                 </tr>
@@ -779,9 +779,9 @@ function tradeEmailTemplate(subject, title, message, tradeRef, amount, actionUrl
                 <a href="https://www.instagram.com/praqen?igsh=MTRkZWg2amp5YnJlYQ%3D%3D&amp;utm_source=qr" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">Instagram</a>
                 <a href="https://www.linkedin.com/in/pra-qen-045373402/" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">LinkedIn</a>
               </p>
-              <p style="color:#64748B;font-size:11px;font-weight:700;margin:0 0 4px 0;letter-spacing:0.5px;">PRAQEN — SECURE P2P BITCOIN TRADING</p>
+              <p style="color:#64748B;font-size:11px;font-weight:700;margin:0 0 4px 0;letter-spacing:0.5px;">PraQen — SECURE P2P BITCOIN TRADING</p>
               <p style="color:#94A3B8;font-size:10px;margin:0;">Escrow Protected · 0.5% Fee · Trusted by traders worldwide</p>
-              <p style="color:#CBD5E1;font-size:10px;margin:8px 0 0 0;">© ${year} PRAQEN. All rights reserved. Do not reply to this email.</p>
+              <p style="color:#CBD5E1;font-size:10px;margin:8px 0 0 0;">© ${year} PraQen. All rights reserved. Do not reply to this email.</p>
             </td>
           </tr>
 
@@ -815,7 +815,7 @@ async function notifyTradeParties(trade, subject, _smsMessage, htmlContent) {
 function buildVerificationEmailHtml(code) {
   return `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PRAQEN Verification Code</title></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PraQen Verification Code</title></head>
 <body style="margin:0;padding:0;background:#F0FAF5;font-family:'Segoe UI',Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#F0FAF5;padding:32px 0;">
     <tr><td align="center">
@@ -824,11 +824,9 @@ function buildVerificationEmailHtml(code) {
         <tr><td style="background:linear-gradient(135deg,#1B4332 0%,#2D6A4F 100%);padding:32px 40px;text-align:center;">
           <a href="https://praqen.com" style="text-decoration:none;">
             <div style="display:inline-block;width:56px;height:56px;background:#fff;border-radius:14px;line-height:56px;text-align:center;">
-              <img src="https://praqen.com/logo512.png" width="40" height="40" alt="PRAQEN" style="vertical-align:middle;border-radius:8px;">
+              <img src="https://praqen.com/logo512.png" width="40" height="40" alt="PraQen" style="vertical-align:middle;border-radius:8px;">
             </div>
-            <p style="margin:12px 0 0;color:#ffffff;font-size:20px;font-weight:800;letter-spacing:3px;">PRAQEN</p>
           </a>
-          <p style="margin:4px 0 0;color:rgba(255,255,255,0.65);font-size:12px;letter-spacing:1px;">The World's Most Trusted Bitcoin Marketplace</p>
         </td></tr>
         <!-- Body -->
         <tr><td style="padding:40px 40px 32px;text-align:center;">
@@ -839,12 +837,12 @@ function buildVerificationEmailHtml(code) {
             <span style="font-size:42px;font-weight:900;letter-spacing:10px;color:#1B4332;font-family:'Courier New',monospace;">${code}</span>
           </div>
           <p style="margin:0 0 8px;font-size:12px;color:#94A3B8;">If you didn't request this, you can safely ignore this email.</p>
-          <p style="margin:0;font-size:12px;color:#94A3B8;">Never share this code with anyone — PRAQEN will never ask for it.</p>
+          <p style="margin:0;font-size:12px;color:#94A3B8;">Never share this code with anyone — <b>PraQen</b> will never ask for it.</p>
         </td></tr>
         <!-- Warning -->
         <tr><td style="padding:0 40px 24px;">
           <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:10px;padding:14px 18px;text-align:center;">
-            <p style="margin:0;font-size:12px;font-weight:700;color:#92400E;">⚠️ Always trade within PRAQEN — never outside our platform</p>
+            <p style="margin:0;font-size:12px;font-weight:700;color:#92400E;">Always trade within <b>PraQen</b> — never outside our platform</p>
           </div>
         </td></tr>
         <!-- Footer -->
@@ -855,7 +853,7 @@ function buildVerificationEmailHtml(code) {
             <a href="https://www.linkedin.com/in/pra-qen-045373402/" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">LinkedIn</a>
           </p>
           <p style="margin:0 0 4px;font-size:12px;color:#94A3B8;">Need help? Contact us at <a href="mailto:support@praqen.com" style="color:#2D6A4F;font-weight:700;">support@praqen.com</a> · <a href="https://praqen.com" style="color:#2D6A4F;font-weight:700;">praqen.com</a></p>
-          <p style="margin:0;font-size:11px;color:#CBD5E1;">© ${new Date().getFullYear()} PRAQEN · The World's Most Trusted P2P Bitcoin Marketplace</p>
+          <p style="margin:0;font-size:11px;color:#CBD5E1;">© ${new Date().getFullYear()} <b>PraQen</b> · The World's Most Trusted P2P Bitcoin Marketplace</p>
         </td></tr>
       </table>
     </td></tr>
@@ -868,7 +866,7 @@ function buildWelcomeEmailHtml(username) {
   const name = username || 'Trader';
   return `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Welcome to PRAQEN!</title></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Welcome to PraQen!</title></head>
 <body style="margin:0;padding:0;background:#F0FAF5;font-family:'Segoe UI',Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#F0FAF5;padding:32px 0;">
     <tr><td align="center">
@@ -879,14 +877,13 @@ function buildWelcomeEmailHtml(username) {
             <div style="display:inline-block;width:64px;height:64px;background:#fff;border-radius:16px;line-height:64px;text-align:center;">
               <img src="https://praqen.com/logo512.png" width="46" height="46" alt="PRAQEN" style="vertical-align:middle;border-radius:10px;">
             </div>
-            <p style="margin:14px 0 4px;color:#ffffff;font-size:22px;font-weight:900;letter-spacing:3px;">PRAQEN</p>
+            <p style="margin:14px 0 4px;color:#ffffff;font-size:22px;font-weight:900;letter-spacing:3px;"><b>PraQen</b></p>
           </a>
-          <p style="margin:0;color:rgba(255,255,255,0.70);font-size:13px;letter-spacing:1px;">The World's Most Trusted Bitcoin Marketplace</p>
         </td></tr>
         <!-- Welcome headline -->
         <tr><td style="padding:36px 40px 8px;text-align:center;">
           <p style="margin:0 0 6px;font-size:22px;font-weight:800;color:#1B4332;">Welcome aboard, ${name}! 🎉</p>
-          <p style="margin:0;font-size:14px;color:#64748B;line-height:1.7;">You've just joined <strong>the world's most trusted peer-to-peer Bitcoin marketplace</strong>. We're so glad you're here — think of PRAQEN as your secure home to buy, sell and trade Bitcoin freely and confidently.</p>
+          <p style="margin:0;font-size:14px;color:#64748B;line-height:1.7;">You've just joined <strong>the world's most trusted peer-to-peer Bitcoin marketplace</strong>. We're so glad you're here — think of PraQen as your secure home to buy, sell and trade Bitcoin freely and confidently.</p>
         </td></tr>
         <!-- Steps -->
         <tr><td style="padding:28px 40px;">
@@ -938,7 +935,7 @@ function buildWelcomeEmailHtml(username) {
         <!-- Warning -->
         <tr><td style="padding:0 40px 24px;">
           <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:10px;padding:14px 18px;text-align:center;">
-            <p style="margin:0;font-size:12px;font-weight:700;color:#92400E;">⚠️ Always trade within PRAQEN — never share your OTP or trade outside the platform</p>
+            <p style="margin:0;font-size:12px;font-weight:700;color:#92400E;">⚠️ Always trade within <b>PraQen</b> — never share your OTP or trade outside the platform</p>
           </div>
         </td></tr>
         <!-- Footer -->
@@ -949,7 +946,7 @@ function buildWelcomeEmailHtml(username) {
             <a href="https://www.linkedin.com/in/pra-qen-045373402/" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">LinkedIn</a>
           </p>
           <p style="margin:0 0 4px;font-size:12px;color:#94A3B8;">Questions? Reach us at <a href="mailto:support@praqen.com" style="color:#2D6A4F;font-weight:700;">support@praqen.com</a> · <a href="https://praqen.com" style="color:#2D6A4F;font-weight:700;">praqen.com</a></p>
-          <p style="margin:0;font-size:11px;color:#CBD5E1;">© ${new Date().getFullYear()} PRAQEN · The World's Most Trusted P2P Bitcoin Marketplace</p>
+          <p style="margin:0;font-size:11px;color:#CBD5E1;">© ${new Date().getFullYear()} <b>PraQen</b> · The World's Most Trusted P2P Bitcoin Marketplace</p>
         </td></tr>
       </table>
     </td></tr>
@@ -960,9 +957,9 @@ function buildWelcomeEmailHtml(username) {
 
 // NOTE: For Resend to deliver to real inboxes, verify praqen.com in your Resend dashboard
 // then set RESEND_FROM=hello@praqen.com in .env
-const RESEND_FROM_ADDR = process.env.RESEND_FROM || 'PRAQEN <hello@praqen.com>';
+const RESEND_FROM_ADDR = process.env.RESEND_FROM || 'PraQen <hello@praqen.com>';
 
-async function sendVerificationEmail(email, code, subject = 'Your PRAQEN Verification Code') {
+async function sendVerificationEmail(email, code, subject = 'Your PraQen Verification Code') {
   console.log(`📧 Sending verification to ${email}`);
   const html = buildVerificationEmailHtml(code);
 
@@ -985,7 +982,7 @@ async function sendVerificationEmail(email, code, subject = 'Your PRAQEN Verific
 
 async function sendWelcomeEmail(email, username) {
   const html = buildWelcomeEmailHtml(username);
-  const subject = `Welcome to PRAQEN, ${username || 'Trader'}! 🎉`;
+  const subject = `Welcome to PraQen, ${username || 'Trader'}!`;
 
   // Try Resend first
   try {
@@ -1011,7 +1008,7 @@ async function sendWelcomeEmail(email, username) {
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
     });
     await transporter.sendMail({
-      from: `"PRAQEN" <${process.env.EMAIL_USER}>`,
+      from: `"PraQen" <${process.env.EMAIL_USER}>`,
       to: email, subject, html,
     });
     console.log(`✅ Welcome email sent via Gmail to ${email}`);
@@ -2341,9 +2338,9 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
         pending2FALogin.set(tempToken, { code: code2fa, expires: Date.now() + 5 * 60 * 1000, method });
         try {
           if ((method === 'sms' || method === 'whatsapp') && data.phone && (data.is_phone_verified || data.phone_verified)) {
-            await sendSmsOtp(data.phone, `${code2fa} is your PRAQEN 2FA code. Valid for 5 minutes. Don't share this with anyone.`);
+            await sendSmsOtp(data.phone, `${code2fa} is your PraQen 2FA code. Valid for 5 minutes. Don't share this with anyone.`);
           } else {
-            await sendVerificationEmail(data.email, code2fa, 'Your PRAQEN 2FA Code');
+            await sendVerificationEmail(data.email, code2fa, 'Your PraQen 2FA Code');
           }
         } catch (sendErr) {
           pending2FALogin.delete(tempToken);
@@ -2538,7 +2535,7 @@ function buildPasswordResetEmailHtml(resetUrl) {
         </td></tr>
         <tr><td style="padding:0 40px 24px;">
           <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:10px;padding:14px 18px;text-align:center;">
-            <p style="margin:0;font-size:12px;font-weight:700;color:#92400E;">⚠️ Always trade within PRAQEN — never outside our platform</p>
+            <p style="margin:0;font-size:12px;font-weight:700;color:#92400E;">Always trade within <b>PraQen</b> — never outside our platform</p>
           </div>
         </td></tr>
         <tr><td style="background:#F8FAFC;padding:20px 40px;text-align:center;border-top:1px solid #E2E8F0;">
@@ -4063,7 +4060,7 @@ app.post('/api/auth/send-action-code', otpLimiter, verifyToken, async (req, res)
     // less reliable, not more.
     const hasPhone = !!(user.phone && user.is_phone_verified);
     const [emailResult, smsResult] = await Promise.allSettled([
-      sendVerificationEmail(user.email, code, `PRAQEN Security Code — ${label}`),
+      sendVerificationEmail(user.email, code, `PraQen Security Code — ${label}`),
       hasPhone
         ? sendSmsOtp(user.phone, `${code} is your PRAQEN security code for ${label}. Valid for 5 minutes. Don't share this with anyone.`)
         : Promise.reject(new Error('no verified phone on file')),
@@ -9962,8 +9959,8 @@ app.post('/api/admin/send-welcome-emails', verifyToken, async (req, res) => {
 
         <tr>
           <td style="background:#F0F4F1;padding:18px 32px;text-align:center;">
-            <p style="color:#64748B;font-size:11px;font-weight:700;margin:0 0 4px 0;">PRAQEN — SECURE P2P BITCOIN TRADING</p>
-            <p style="color:#CBD5E1;font-size:10px;margin:0;">© ${year} PRAQEN. All rights reserved. 🔒 Escrow protected.</p>
+            <p style="color:#64748B;font-size:11px;font-weight:700;margin:0 0 4px 0;">PraQen — SECURE P2P BITCOIN TRADING</p>
+            <p style="color:#CBD5E1;font-size:10px;margin:0;">© ${year} PraQen. All rights reserved. 🔒 Escrow protected.</p>
           </td>
         </tr>
 
@@ -12703,67 +12700,24 @@ app.post('/api/wallet/internal-transfer', verifyToken, requireNotBanned, async (
     sendTelegramAlert(req.userId, `✅ Transfer sent! ${amount.toFixed(8)} BTC → @${recipientUsername} — instant & free. Ref: ${txRef.slice(0, 16)}`).catch(() => {});
 
     // ── Email notifications (fire-and-forget) ──────────────────────────────
-    const txDate = new Date().toUTCString();
-
-    const recipientHtml = `
-<div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:520px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #E2E8F0">
-  <div style="background:linear-gradient(135deg,#1B4332,#2D6A4F);padding:28px 32px;text-align:center">
-    <h1 style="color:#F4A422;font-size:28px;margin:0;font-weight:900">₿ Bitcoin Received!</h1>
-    <p style="color:rgba(255,255,255,0.7);margin:8px 0 0;font-size:14px">Instant PRAQEN internal transfer</p>
-  </div>
-  <div style="padding:28px 32px">
-    <div style="background:#F0FAF5;border-radius:12px;padding:20px;margin-bottom:20px;text-align:center">
-      <p style="color:#64748B;font-size:12px;margin:0 0 6px">You received</p>
-      <p style="color:#1B4332;font-size:32px;font-weight:900;margin:0">₿ ${amount.toFixed(8)}</p>
-      <p style="color:#10B981;font-size:12px;font-weight:700;margin:6px 0 0">⚡ Instant &amp; FREE — no fees</p>
-    </div>
-    <table style="width:100%;border-collapse:collapse;font-size:13px">
-      <tr><td style="color:#64748B;padding:6px 0">From</td><td style="color:#1B4332;font-weight:700;text-align:right">@${senderName}</td></tr>
-      <tr><td style="color:#64748B;padding:6px 0">Network Fee</td><td style="color:#10B981;font-weight:700;text-align:right">₿ 0.00000000 (Free)</td></tr>
-      <tr><td style="color:#64748B;padding:6px 0">Reference</td><td style="color:#1B4332;font-weight:700;text-align:right;font-family:monospace;font-size:11px">${txRef}</td></tr>
-      <tr><td style="color:#64748B;padding:6px 0">Date</td><td style="color:#475569;text-align:right">${txDate}</td></tr>
-    </table>
-    <div style="text-align:center;margin-top:24px">
-      <a href="https://praqen.com/wallet" style="display:inline-block;background:#2D6A4F;color:#fff;font-weight:900;padding:14px 32px;border-radius:12px;text-decoration:none;font-size:14px">View Wallet</a>
-    </div>
-  </div>
-  <div style="background:#F8FAFC;padding:16px 32px;text-align:center">
-    <p style="color:#94A3B8;font-size:11px;margin:0">PRAQEN · The world's most trusted P2P Bitcoin platform · Escrow-protected · 0.5% fee on trades</p>
-  </div>
-</div>`;
-
-    const senderHtml = `
-<div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:520px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #E2E8F0">
-  <div style="background:linear-gradient(135deg,#1B4332,#2D6A4F);padding:28px 32px;text-align:center">
-    <h1 style="color:#fff;font-size:24px;margin:0;font-weight:900">Transfer Sent ✅</h1>
-    <p style="color:rgba(255,255,255,0.7);margin:8px 0 0;font-size:14px">Your PRAQEN internal transfer was delivered</p>
-  </div>
-  <div style="padding:28px 32px">
-    <div style="background:#F8FAFC;border-radius:12px;padding:20px;margin-bottom:20px;text-align:center">
-      <p style="color:#64748B;font-size:12px;margin:0 0 6px">You sent</p>
-      <p style="color:#EF4444;font-size:32px;font-weight:900;margin:0">−₿ ${amount.toFixed(8)}</p>
-    </div>
-    <table style="width:100%;border-collapse:collapse;font-size:13px">
-      <tr><td style="color:#64748B;padding:6px 0">To</td><td style="color:#1B4332;font-weight:700;text-align:right">@${recipientUsername}</td></tr>
-      <tr><td style="color:#64748B;padding:6px 0">Fee</td><td style="color:#10B981;font-weight:700;text-align:right">₿ 0.00000000 (Free)</td></tr>
-      <tr><td style="color:#64748B;padding:6px 0">New Balance</td><td style="color:#1B4332;font-weight:700;text-align:right">₿ ${newSenderBalance.toFixed(8)}</td></tr>
-      <tr><td style="color:#64748B;padding:6px 0">Reference</td><td style="color:#1B4332;font-weight:700;text-align:right;font-family:monospace;font-size:11px">${txRef}</td></tr>
-      <tr><td style="color:#64748B;padding:6px 0">Date</td><td style="color:#475569;text-align:right">${txDate}</td></tr>
-    </table>
-    <div style="text-align:center;margin-top:24px">
-      <a href="https://praqen.com/wallet" style="display:inline-block;background:#2D6A4F;color:#fff;font-weight:900;padding:14px 32px;border-radius:12px;text-decoration:none;font-size:14px">View Wallet</a>
-    </div>
-  </div>
-  <div style="background:#F8FAFC;padding:16px 32px;text-align:center">
-    <p style="color:#94A3B8;font-size:11px;margin:0">PRAQEN · The world's most trusted P2P Bitcoin platform · Escrow-protected · 0.5% fee on trades</p>
-  </div>
-</div>`;
-
-    const emailFrom = `"PRAQEN" <${process.env.EMAIL_USER || 'support@praqen.com'}>`;
-    Promise.all([
-      recipientEmail && transporter.sendMail({ from: emailFrom, to: recipientEmail, subject: `₿ You received ${amount.toFixed(8)} BTC from @${senderName} on PRAQEN`, html: recipientHtml }),
-      senderUser?.email && transporter.sendMail({ from: emailFrom, to: senderUser.email, subject: `✅ Transfer sent: ₿${amount.toFixed(8)} → @${recipientUsername}`, html: senderHtml }),
-    ]).catch(err => console.warn('[InternalTransfer] Email send error (non-fatal):', err.message));
+    // Replaced broken duplicate email code (separate Gmail transporter with missing
+    // EMAIL_USER/EMAIL_PASS credentials) with calls to the working emailService.js.
+    if (senderUser?.email) {
+      emailService.sendTxReceiptEmail(
+        { id: req.userId, email: senderUser.email, username: senderUser.username },
+        { type: 'TRANSFER_OUT', amount_btc: amount, status: 'CONFIRMED',
+          notes: `Internal transfer → @${recipientUsername} · No fee`,
+          created_at: txTs }
+      ).catch(() => {});
+    }
+    if (recipientEmail) {
+      emailService.sendTxReceiptEmail(
+        { id: recipientId, email: recipientEmail, username: recipientUsername },
+        { type: 'TRANSFER_IN', amount_btc: amount, status: 'CONFIRMED',
+          notes: `Internal transfer received from @${senderName} · No fee`,
+          created_at: txTs }
+      ).catch(() => {});
+    }
 
     console.log(`[InternalTransfer] @${senderUser?.username} → @${recipientUsername} | ₿${amount} | FREE | ref:${txRef}`);
 

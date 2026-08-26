@@ -19,7 +19,7 @@ const supabase = createClient(
 // the "kendevdash@11171618.brevosend.com" users were seeing instead of a praqen.com address.
 // Never fall back to EMAIL_USER here; only SMTP_FROM (if explicitly set for this purpose) or
 // the praqen.com default.
-const FROM_ADDRESS = `PRAQEN <${process.env.SMTP_FROM || 'noreply@praqen.com'}>`;
+const FROM_ADDRESS = `PraQen <${process.env.SMTP_FROM || 'noreply@praqen.com'}>`;
 
 // Pooled, reused connection — nodemailer's defaults (no pooling, connectionTimeout
 // 2min, socketTimeout 10min) meant every single email paid a fresh TCP+TLS
@@ -78,7 +78,7 @@ async function logEmail({ userId, email, subject, type, status, messageId, error
 async function sendEmail({ userId, to, subject, html, text, type, metadata }) {
   // ── Attempt 1: Resend API ────────────────────────────────────────────────
   const resendKey  = process.env.RESEND_API_KEY;
-  const resendFrom = process.env.RESEND_FROM || 'PRAQEN <onboarding@resend.dev>';
+  const resendFrom = process.env.RESEND_FROM || 'PraQen <onboarding@resend.dev>';
   if (resendKey) {
     try {
       const response = await fetch('https://api.resend.com/emails', {
@@ -155,11 +155,9 @@ function base(title, body) {
         <tr><td style="background:linear-gradient(135deg,#10b981 0%,#059669 100%);padding:32px 40px;text-align:center;">
           <a href="https://praqen.com" style="text-decoration:none;">
             <div style="display:inline-block;width:56px;height:56px;background:#fff;border-radius:14px;line-height:56px;text-align:center;">
-              <img src="https://praqen.com/logo512.png" width="40" height="40" alt="PRAQEN" style="vertical-align:middle;border-radius:8px;">
+              <img src="https://praqen.com/logo512.png" width="40" height="40" alt="PraQen" style="vertical-align:middle;border-radius:8px;">
             </div>
-            <p style="margin:12px 0 0;color:#fff;font-size:22px;font-weight:900;letter-spacing:3px;">PRAQEN</p>
           </a>
-          <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:12px;letter-spacing:1px;">The World's Most Trusted Bitcoin Marketplace</p>
         </td></tr>
         <!-- BODY -->
         <tr><td style="padding:36px 40px 28px;">${body}</td></tr>
@@ -171,7 +169,7 @@ function base(title, body) {
             <a href="https://www.linkedin.com/in/pra-qen-045373402/" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">LinkedIn</a>
           </p>
           <p style="margin:0 0 4px;font-size:12px;color:#94A3B8;">Need help? <a href="mailto:support@praqen.com" style="color:#10b981;font-weight:700;">support@praqen.com</a> · <a href="https://praqen.com" style="color:#10b981;font-weight:700;">praqen.com</a></p>
-          <p style="margin:0;font-size:11px;color:#CBD5E1;">© ${yr} PRAQEN · The World's Most Trusted P2P Bitcoin Marketplace</p>
+          <p style="margin:0;font-size:11px;color:#CBD5E1;">© ${yr} <b>PraQen</b> · The World's Most Trusted P2P Bitcoin Marketplace</p>
         </td></tr>
       </table>
     </td></tr>
@@ -208,11 +206,11 @@ function warningBox(msg) {
 // ── Email HTML builders ───────────────────────────────────────────────────────
 
 function welcomeHtml(name) {
-  return base('Welcome to PRAQEN!', `
-    <h2 style="color:#10b981;font-size:22px;margin:0 0 8px;">Welcome, ${name}! 🎉</h2>
+  return base('Welcome to <b>PraQen</b>!', `
+    <h2 style="color:#10b981;font-size:22px;margin:0 0 8px;">Welcome, ${name}!</h2>
     <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">You've joined <strong>the world's most trusted P2P Bitcoin marketplace</strong>. Your account is ready!</p>
     <div style="background:#F0FAF5;border-left:4px solid #10b981;padding:16px 20px;border-radius:8px;margin-bottom:24px;">
-      <p style="margin:0 0 8px;font-weight:700;color:#1B4332;">✅ Your next steps:</p>
+      <p style="margin:0 0 8px;font-weight:700;color:#1B4332;">Your next steps:</p>
       <ul style="margin:0;padding-left:20px;color:#475569;font-size:14px;line-height:1.9;">
         <li>Verify your email address</li>
         <li>Verify your phone number</li>
@@ -220,13 +218,13 @@ function welcomeHtml(name) {
         <li>Load your wallet and start trading!</li>
       </ul>
     </div>
-    ${ctaButton('🚀 Start Trading Now', 'https://praqen.com/buy-bitcoin')}
-    ${warningBox('⚠️ Always trade within PRAQEN — never share your login credentials')}
+    ${ctaButton('Start Trading Now', 'https://praqen.com/buy-bitcoin')}
+    ${warningBox('Always trade within <b>PraQen</b> — never share your login credentials')}
   `);
 }
 
 function verificationHtml(code) {
-  return base('Your PRAQEN Verification Code', `
+  return base('Your <b>PraQen</b> Verification Code', `
     <p style="margin:0 0 8px;font-size:16px;font-weight:600;color:#334155;text-align:center;">Your Verification Code</p>
     <p style="margin:0 0 28px;font-size:13px;color:#64748B;line-height:1.6;text-align:center;">Use the code below to verify your account. It expires in <strong>10 minutes</strong>.</p>
     <div style="text-align:center;margin-bottom:28px;">
@@ -234,20 +232,20 @@ function verificationHtml(code) {
         <span style="font-size:42px;font-weight:900;letter-spacing:10px;color:#059669;font-family:'Courier New',monospace;">${code}</span>
       </div>
     </div>
-    <p style="margin:0;font-size:12px;color:#94A3B8;text-align:center;">If you didn't request this, you can safely ignore this email. Never share this code with anyone — PRAQEN will never ask for it.</p>
+    <p style="margin:0;font-size:12px;color:#94A3B8;text-align:center;">If you didn't request this, you can safely ignore this email. Never share this code with anyone — <b>PraQen</b> will never ask for it.</p>
   `);
 }
 
 function loginAlertHtml(name, loginTime) {
-  return base('New Login to Your PRAQEN Account', `
-    <h2 style="color:#10b981;font-size:20px;margin:0 0 8px;">New Login Detected 🔐</h2>
+  return base('New Login to Your <b>PraQen</b> Account', `
+    <h2 style="color:#10b981;font-size:20px;margin:0 0 8px;">New Login Detected</h2>
     <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>, a login was recorded on your account.</p>
     ${infoBox(
       infoRow('Time', loginTime || new Date().toUTCString()) +
       infoRow('Method', 'Email &amp; Password')
     )}
     <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 16px;">
-      <p style="margin:0;font-size:13px;color:#991b1b;"><strong>⚠️ Not you?</strong> Change your password immediately at <a href="https://praqen.com/settings" style="color:#b45309;font-weight:700;">Settings → Security</a></p>
+      <p style="margin:0;font-size:13px;color:#991b1b;"><strong>Not you?</strong> Change your password immediately at <a href="https://praqen.com/settings" style="color:#b45309;font-weight:700;">Settings → Security</a></p>
     </div>
   `);
 }
@@ -255,12 +253,12 @@ function loginAlertHtml(name, loginTime) {
 function kycApprovedHtml(name) {
   return base('KYC Approved — Full Access Unlocked!', `
     <div style="text-align:center;margin-bottom:20px;">
-      <div style="font-size:48px;">✅</div>
+      
       <h2 style="color:#10b981;font-size:22px;margin:8px 0;">KYC Approved!</h2>
     </div>
-    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Congratulations <strong>${name}</strong>! Your identity has been verified. You now have full access to all PRAQEN features.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Congratulations <strong>${name}</strong>! Your identity has been verified. You now have full access to all <b>PraQen</b> features.</p>
     <div style="background:#F0FAF5;border-left:4px solid #10b981;padding:16px 20px;border-radius:8px;margin-bottom:24px;">
-      <p style="margin:0 0 8px;font-weight:700;color:#1B4332;">🔓 Now Unlocked:</p>
+      <p style="margin:0 0 8px;font-weight:700;color:#1B4332;">Now Unlocked:</p>
       <ul style="margin:0;padding-left:20px;color:#475569;font-size:14px;line-height:1.9;">
         <li>Full market access — buy &amp; sell without limits</li>
         <li>Your verified badge on all offers</li>
@@ -268,14 +266,14 @@ function kycApprovedHtml(name) {
         <li>Higher trade volume limits</li>
       </ul>
     </div>
-    ${ctaButton('🚀 Start Trading Now', 'https://praqen.com/buy-bitcoin')}
+    ${ctaButton('Start Trading Now', 'https://praqen.com/buy-bitcoin')}
   `);
 }
 
 function kycRejectedHtml(name, reason) {
   return base('KYC Verification — Action Required', `
     <div style="text-align:center;margin-bottom:20px;">
-      <div style="font-size:48px;">❌</div>
+      
       <h2 style="color:#ef4444;font-size:22px;margin:8px 0;">KYC Not Approved</h2>
     </div>
     <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>, unfortunately your KYC submission was not approved.</p>
@@ -290,9 +288,9 @@ function kycRejectedHtml(name, reason) {
 
 function tradeConfirmationHtml(name, trade, role) {
   const isBuyer = role === 'buyer';
-  const headline = isBuyer ? '💰 Trade Complete — BTC Received!' : '✅ Trade Complete — Payment Confirmed!';
+  const headline = isBuyer ? 'Trade Complete — BTC Received!' : 'Trade Complete — Payment Confirmed!';
   const detail = isBuyer
-    ? `<strong>${parseFloat(trade.amount_btc || 0).toFixed(8)} BTC</strong> has been released to your PRAQEN wallet.`
+    ? `<strong>${parseFloat(trade.amount_btc || 0).toFixed(8)} BTC</strong> has been released to your <b>PraQen</b> wallet.`
     : `Payment has been confirmed. Your trade is now complete.`;
 
   const amountUsd = trade.amount_usd ? `<tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Value (USD)</td><td style="padding:7px 0;color:#1B4332;font-size:13px;text-align:right;">$${parseFloat(trade.amount_usd || 0).toFixed(2)}</td></tr>` : '';
@@ -307,18 +305,18 @@ function tradeConfirmationHtml(name, trade, role) {
       <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Your Role</td><td style="padding:7px 0;color:#1B4332;font-size:13px;text-align:right;text-transform:capitalize;">${role}</td></tr>
     `)}
     ${ctaButton('View Trade Details', `https://praqen.com/trade/${trade.id}`)}
-    ${warningBox('🔒 PRAQEN escrow protected every step of this trade')}
+    ${warningBox('<b>PraQen</b> escrow protected every step of this trade')}
   `);
 }
 
 function depositAlertHtml(name, amountBtc, txHash) {
   const txRow = txHash ? infoRow('Transaction ID', `<span style="font-size:10px;color:#94A3B8;word-break:break-all;">${txHash}</span>`) : '';
-  return base('Bitcoin Deposit Confirmed! 🎉', `
+  return base('Bitcoin Deposit Confirmed!', `
     <div style="text-align:center;margin-bottom:20px;">
       <div style="font-size:48px;">₿</div>
       <h2 style="color:#10b981;font-size:22px;margin:8px 0;">Deposit Confirmed!</h2>
     </div>
-    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>! Your Bitcoin deposit has been confirmed and credited to your PRAQEN wallet.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>! Your Bitcoin deposit has been confirmed and credited to your <b>PraQen</b> wallet.</p>
     ${infoBox(`
       <tr><td style="padding:8px 0;color:#64748B;font-size:13px;font-weight:600;">Amount Received</td><td style="padding:8px 0;color:#059669;font-size:20px;font-weight:900;text-align:right;">₿ ${parseFloat(amountBtc || 0).toFixed(8)}</td></tr>
       ${txRow}
@@ -329,7 +327,7 @@ function depositAlertHtml(name, amountBtc, txHash) {
 
 function tradeOpenedHtml(name, trade, role) {
   const isBuyer  = role === 'buyer';
-  const headline = isBuyer ? '⚡ Trade Opened — Send Your Payment' : '⚡ New Trade Request Received';
+  const headline = isBuyer ? 'Trade Opened — Send Your Payment' : 'New Trade Request Received';
   const detail   = isBuyer
     ? `You have opened a trade and <strong>${parseFloat(trade.amount_btc || 0).toFixed(8)} BTC</strong> is locked safely in escrow. Send your payment now to complete the trade.`
     : `A buyer wants to trade with you. <strong>${parseFloat(trade.amount_btc || 0).toFixed(8)} BTC</strong> is locked in escrow — you'll be notified once payment is sent.`;
@@ -356,7 +354,7 @@ function tradeOpenedHtml(name, trade, role) {
           <td style="padding:7px 0;color:#1B4332;font-size:13px;text-align:right;text-transform:capitalize;">${role}</td></tr>
     `)}
     ${ctaButton('View Trade →', `https://praqen.com/trade/${trade.id}`)}
-    ${warningBox('🔒 Bitcoin is secured in PRAQEN escrow until you confirm payment')}
+    ${warningBox('Bitcoin is secured in <b>PraQen</b> escrow until you confirm payment')}
   `);
 }
 
@@ -365,8 +363,8 @@ function paymentSentHtml(name, trade) {
   const payDisp = trade.amount_local > 0 && trade.local_currency
     ? `${trade.currency_symbol || ''}${fmt(trade.amount_local)} ${trade.local_currency}`
     : `$${parseFloat(trade.amount_usd || 0).toFixed(2)} USD`;
-  return base('💰 Payment Sent — Release BTC Now', `
-    <h2 style="color:#D97706;font-size:20px;margin:0 0 8px;">💰 Buyer Has Sent Payment!</h2>
+  return base('Payment Sent — Release BTC Now', `
+    <h2 style="color:#D97706;font-size:20px;margin:0 0 8px;">Buyer Has Sent Payment!</h2>
     <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>! The buyer has confirmed payment for your trade. Verify the payment in your account, then release the Bitcoin.</p>
     ${infoBox(`
       <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Trade Ref</td>
@@ -379,16 +377,16 @@ function paymentSentHtml(name, trade) {
           <td style="padding:7px 0;color:#1B4332;font-size:13px;text-align:right;">${trade.payment_method || 'Mobile Money'}</td></tr>
     `)}
     <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:14px 16px;margin-bottom:20px;">
-      <p style="margin:0;font-size:13px;font-weight:700;color:#92400E;">⚠️ Only release Bitcoin AFTER you confirm the money arrived in your account. Once released it cannot be reversed.</p>
+      <p style="margin:0;font-size:13px;font-weight:700;color:#92400E;">Only release Bitcoin AFTER you confirm the money arrived in your account. Once released it cannot be reversed.</p>
     </div>
-    ${ctaButton('✅ Verify & Release BTC', `https://praqen.com/trade/${trade.id}`)}
+    ${ctaButton('Verify & Release BTC', `https://praqen.com/trade/${trade.id}`)}
   `);
 }
 
 function tradeCancelledHtml(name, trade, reason) {
-  return base('❌ Trade Cancelled', `
+  return base('Trade Cancelled', `
     <div style="text-align:center;margin-bottom:20px;">
-      <div style="font-size:48px;">❌</div>
+      
       <h2 style="color:#ef4444;font-size:22px;margin:8px 0;">Trade Cancelled</h2>
     </div>
     <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>! The trade below has been cancelled${reason ? ` — <em>${reason}</em>` : ''}. Any BTC locked in escrow has been returned to the seller's wallet.</p>
@@ -406,9 +404,9 @@ function tradeCancelledHtml(name, trade, reason) {
 }
 
 function withdrawalAlertHtml(name, amountBtc, toAddress) {
-  return base('Withdrawal Initiated 🔄', `
+  return base('Withdrawal Initiated', `
     <div style="text-align:center;margin-bottom:20px;">
-      <div style="font-size:48px;">🔄</div>
+      
       <h2 style="color:#10b981;font-size:22px;margin:8px 0;">Withdrawal Initiated</h2>
     </div>
     <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>! Your withdrawal request has been submitted.</p>
@@ -419,7 +417,7 @@ function withdrawalAlertHtml(name, amountBtc, toAddress) {
     `)}
     <p style="color:#64748B;font-size:13px;margin:0 0 16px;">Withdrawals are processed within 24 hours. You'll receive another email once complete.</p>
     <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 16px;">
-      <p style="margin:0;font-size:13px;color:#991b1b;"><strong>⚠️ Didn't request this?</strong> Contact us immediately at <a href="mailto:support@praqen.com" style="color:#b45309;font-weight:700;">support@praqen.com</a></p>
+      <p style="margin:0;font-size:13px;color:#991b1b;"><strong>Didn't request this?</strong> Contact us immediately at <a href="mailto:support@praqen.com" style="color:#b45309;font-weight:700;">support@praqen.com</a></p>
     </div>
   `);
 }
@@ -438,7 +436,7 @@ function txReceiptHtml(name, tx) {
   // Deliberately not "under review" — that reads as PRAQEN scrutinizing the user, when
   // this is really just a normal processing step before the first confirmation, same as
   // any blockchain send. Framed the same way a pending on-chain confirmation would be.
-  const statusLabel = isReview ? '⏳ PENDING 1ST CONFIRMATION' : isPending ? '⏳ PENDING' : '✅ CONFIRMED';
+  const statusLabel = isReview ? 'PENDING 1ST CONFIRMATION' : isPending ? 'PENDING' : 'CONFIRMED';
 
   const dateStr = tx.created_at
     ? new Date(tx.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -480,27 +478,27 @@ function txReceiptHtml(name, tx) {
         <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:10px;overflow:hidden;border:1px solid #FDE68A;">
           <tr>
             <td style="background:#FEF3C7;padding:9px 14px;">
-              <span style="font-size:13px;font-weight:800;color:#92400E;">⚠️&nbsp; Risky Wallet Warning</span>
+              <span style="font-size:13px;font-weight:800;color:#92400E;">Risky Wallet Warning</span>
             </td>
           </tr>
           <tr>
             <td style="background:#FFFDF5;padding:12px 14px;">
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
-                  <td width="24" style="vertical-align:top;padding:4px 0;font-size:15px;">✅</td>
+                  <td width="24" style="vertical-align:top;padding:4px 0;font-size:15px;"></td>
                   <td style="padding:4px 0;font-size:12px;color:#475569;line-height:1.55;">User confirmed twice before sending</td>
                 </tr>
                 <tr>
-                  <td width="24" style="vertical-align:top;padding:4px 0;font-size:15px;">⚠️</td>
+                  <td width="24" style="vertical-align:top;padding:4px 0;font-size:15px;"></td>
                   <td style="padding:4px 0;font-size:12px;color:#475569;line-height:1.55;">Warned this is a risky wallet and chose to proceed</td>
                 </tr>
                 ${feeAmt ? `<tr>
-                  <td width="24" style="vertical-align:top;padding:4px 0;font-size:15px;">💰</td>
-                  <td style="padding:4px 0;font-size:12px;color:#475569;line-height:1.55;">Fee of ₿${feeAmt} held by PRAQEN</td>
+                  <td width="24" style="vertical-align:top;padding:4px 0;font-size:15px;"></td>
+                  <td style="padding:4px 0;font-size:12px;color:#475569;line-height:1.55;">Fee of ₿${feeAmt} held by <b>PraQen</b></td>
                 </tr>` : ''}
                 <tr>
-                  <td width="24" style="vertical-align:top;padding:4px 0;font-size:15px;">🚫</td>
-                  <td style="padding:4px 0;font-size:12px;color:#475569;line-height:1.55;">PRAQEN is not responsible for any loss from this transaction</td>
+                  <td width="24" style="vertical-align:top;padding:4px 0;font-size:15px;"></td>
+                  <td style="padding:4px 0;font-size:12px;color:#475569;line-height:1.55;"><b>PraQen</b> is not responsible for any loss from this transaction</td>
                 </tr>
               </table>
             </td>
@@ -512,19 +510,39 @@ function txReceiptHtml(name, tx) {
   const blockchainNote = isSend ? `
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;border-radius:10px;overflow:hidden;background:#EFF6FF;border:1px solid #BFDBFE;">
       <tr><td style="padding:12px 16px;">
-        <p style="margin:0 0 4px;font-size:13px;font-weight:800;color:#1D4ED8;">🔗 Blockchain External Wallet Send-Out</p>
-        <p style="margin:0;font-size:12px;color:#3B82F6;line-height:1.55;">⚠️ The blockchain network is responsible for this external wallet transaction. PRAQEN is not liable once funds leave to an external address.</p>
+        <p style="margin:0 0 4px;font-size:13px;font-weight:800;color:#1D4ED8;">Blockchain External Wallet Send-Out</p>
+        <p style="margin:0;font-size:12px;color:#3B82F6;line-height:1.55;">The blockchain network is responsible for this external wallet transaction. <b>PraQen</b> is not liable once funds leave to an external address.</p>
       </td></tr>
     </table>` : '';
 
   const yr = new Date().getFullYear();
+
+  // ── Select heading/title based on transaction type ──────────────────────
+  const isUsdt = tx.currency === 'USDT';
+  const currencySymbol = isUsdt ? '₮' : '₿';
+  let receiptTitle, receiptHeading;
+  if (isInternal) {
+    if (isSend) {
+      receiptTitle = 'Transfer Sent';
+      receiptHeading = 'Transfer Sent';
+    } else {
+      receiptTitle = 'Transfer Received';
+      receiptHeading = 'Transfer Received';
+    }
+  } else if (isSend) {
+    receiptTitle = `${currencySymbol === '₮' ? 'USDT' : 'BTC'} Withdrawal Successful`;
+    receiptHeading = `${currencySymbol === '₮' ? 'USDT' : 'BTC'} Withdrawal Successful`;
+  } else {
+    receiptTitle = `${currencySymbol === '₮' ? 'USDT' : 'BTC'} Deposit Confirmed`;
+    receiptHeading = `${currencySymbol === '₮' ? 'USDT' : 'BTC'} Deposit Confirmed`;
+  }
 
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>Transaction Receipt</title>
+  <title>${receiptTitle}</title>
 </head>
 <body style="margin:0;padding:0;background:#F0FAF5;font-family:'Segoe UI',Arial,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#F0FAF5;padding:32px 0;">
@@ -534,10 +552,9 @@ function txReceiptHtml(name, tx) {
   <!-- ═══ GREEN HEADER ═══ -->
   <tr><td style="background:linear-gradient(135deg,#1B4332 0%,#2D6A4F 60%,#40916C 100%);padding:32px 32px 40px;text-align:center;">
     <a href="https://praqen.com" style="text-decoration:none;">
-      <img src="https://praqen.com/logo512.png" width="32" height="32" alt="PRAQEN" style="border-radius:8px;vertical-align:middle;margin-right:8px;">
-      <span style="font-size:10px;font-weight:800;color:rgba(255,255,255,0.6);letter-spacing:3px;text-transform:uppercase;vertical-align:middle;">PRAQEN</span>
+      <img src="https://praqen.com/logo512.png" width="32" height="32" alt="PraQen" style="border-radius:8px;vertical-align:middle;">
     </a>
-    <p style="margin:12px 0 20px;font-size:16px;font-weight:900;color:#ffffff;">Transaction Receipt</p>
+    <p style="margin:12px 0 20px;font-size:16px;font-weight:900;color:#ffffff;">${receiptHeading}</p>
     <!-- Amount circle -->
     <div style="display:inline-block;width:72px;height:72px;border-radius:50%;background:${isPending ? 'rgba(245,158,11,0.25)' : isSend ? 'rgba(239,68,68,0.25)' : 'rgba(16,185,129,0.25)'};border:2px solid ${isPending ? 'rgba(245,158,11,0.5)' : isSend ? 'rgba(239,68,68,0.5)' : 'rgba(16,185,129,0.5)'};line-height:72px;text-align:center;font-size:28px;">
       ${isPending ? '⏳' : isSend ? '↑' : '↓'}
@@ -548,7 +565,7 @@ function txReceiptHtml(name, tx) {
 
   <!-- ═══ RECEIPT BODY ═══ -->
   <tr><td style="padding:24px 28px 8px;">
-    <p style="margin:0 0 20px;font-size:13px;color:#64748B;line-height:1.6;">Hello <strong style="color:#1E293B;">${name}</strong>, here is your transaction receipt.</p>
+    <p style="margin:0 0 20px;font-size:13px;color:#64748B;line-height:1.6;">Hello <strong style="color:#1E293B;">${name}</strong>, ${isInternal ? (isSend ? `your transfer of <strong style="color:#1E293B;">${amountLabel}</strong> has been sent` : `you received a transfer of <strong style="color:#1E293B;">${amountLabel}</strong>`) : (isSend ? `your ${isUsdt ? 'USDT' : 'BTC'} withdrawal of <strong style="color:#1E293B;">${amountLabel}</strong> has been sent to an external wallet` : `your ${isUsdt ? 'USDT' : 'BTC'} deposit of <strong style="color:#1E293B;">${amountLabel}</strong> has been confirmed`)}.</p>
 
     <!-- Dashed top rule -->
     <div style="border-top:2px dashed #E2E8F0;margin-bottom:4px;"></div>
@@ -584,7 +601,7 @@ function txReceiptHtml(name, tx) {
       <a href="https://www.linkedin.com/in/pra-qen-045373402/" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">LinkedIn</a>
     </p>
     <p style="margin:0 0 3px;font-size:12px;color:#94A3B8;">Need help? <a href="mailto:support@praqen.com" style="color:#10b981;font-weight:700;">support@praqen.com</a> · <a href="https://praqen.com" style="color:#10b981;font-weight:700;">praqen.com</a></p>
-    <p style="margin:0;font-size:11px;color:#CBD5E1;">© ${yr} PRAQEN · The World's Most Trusted P2P Bitcoin Marketplace</p>
+    <p style="margin:0;font-size:11px;color:#CBD5E1;">© ${yr} <b>PraQen</b> · The World's Most Trusted P2P Bitcoin Marketplace</p>
   </td></tr>
 
 </table>
@@ -596,14 +613,24 @@ function txReceiptHtml(name, tx) {
 
 async function sendTxReceiptEmail(user, tx) {
   const name = user.username || user.email || 'Trader';
-  const isSend    = tx.type === 'WITHDRAWAL' || tx.type === 'SEND';
-  const isPending = tx.status === 'PENDING';
-  const amountStr = `₿${parseFloat(tx.amount_btc || 0).toFixed(8)}`;
-  const subject = isPending
-    ? `⏳ Withdrawal Queued — ${amountStr} Pending`
-    : isSend
-      ? `✅ Transaction Receipt — ${amountStr} Sent`
-      : `✅ Transaction Receipt — ${amountStr} Received`;
+  const isSend     = tx.type === 'WITHDRAWAL' || tx.type === 'SEND' || tx.type === 'TRANSFER_OUT';
+  const isInternal = tx.type === 'TRANSFER_IN' || tx.type === 'TRANSFER_OUT';
+  const isPending  = tx.status === 'PENDING' || tx.status === 'PENDING_APPROVAL';
+  const isUsdt = tx.currency === 'USDT';
+  const currencySymbol = isUsdt ? '₮' : '₿';
+  const amountStr = `${currencySymbol}${parseFloat(tx.amount_btc || tx.amount_usdt || 0).toFixed(isUsdt ? 2 : 8)}`;
+  let subject;
+  if (isPending) {
+    subject = `Withdrawal Queued — ${amountStr} Pending`;
+  } else if (isInternal) {
+    subject = isSend
+      ? `Transfer Sent — ${amountStr}`
+      : `Transfer Received — ${amountStr}`;
+  } else if (isSend) {
+    subject = `${isUsdt ? 'USDT' : 'BTC'} Withdrawal Successful — ${amountStr}`;
+  } else {
+    subject = `${isUsdt ? 'USDT' : 'BTC'} Deposit Confirmed — ${amountStr}`;
+  }
   return sendEmail({
     userId:   user.id,
     to:       user.email,
@@ -620,7 +647,7 @@ async function sendWelcomeEmail(user) {
   return sendEmail({
     userId:  user.id,
     to:      user.email,
-    subject: `Welcome to PRAQEN, ${user.username || 'Trader'}! 🎉`,
+    subject: `Welcome to PraQen, ${user.username || 'Trader'}!`,
     html:    welcomeHtml(user.username || 'Trader'),
     type:    'welcome',
   });
@@ -630,7 +657,7 @@ async function sendVerificationEmail(email, code, userId) {
   return sendEmail({
     userId,
     to:       email,
-    subject:  'Your PRAQEN Verification Code',
+    subject:  'Your PraQen Verification Code',
     html:     verificationHtml(code),
     type:     'verification',
     metadata: { code_hint: String(code).slice(0, 2) + '****' },
@@ -641,7 +668,7 @@ async function sendLoginAlertEmail(user) {
   return sendEmail({
     userId:  user.id,
     to:      user.email,
-    subject: '🔐 New Login to Your PRAQEN Account',
+    subject: 'New Login to Your <b>PraQen</b> Account',
     html:    loginAlertHtml(user.username || user.email, new Date().toUTCString()),
     type:    'login_alert',
   });
@@ -662,7 +689,7 @@ async function sendLoginOtpEmail(user, code) {
   return sendEmail({
     userId:  user.id,
     to:      user.email,
-    subject: `${code} is your PRAQEN login code`,
+    subject: `${code} is your PraQen login code`,
     html,
     type:    'login_otp',
   });
@@ -672,7 +699,7 @@ async function sendKycApprovedEmail(user) {
   return sendEmail({
     userId:  user.id,
     to:      user.email,
-    subject: '✅ KYC Approved — Full Access Unlocked!',
+    subject: 'KYC Approved — Full Access Unlocked!',
     html:    kycApprovedHtml(user.username || 'Trader'),
     type:    'kyc_approved',
   });
@@ -682,7 +709,7 @@ async function sendKycRejectedEmail(user, reason) {
   return sendEmail({
     userId:   user.id,
     to:       user.email,
-    subject:  '❌ KYC Not Approved — Action Required',
+    subject:  'KYC Not Approved — Action Required',
     html:     kycRejectedHtml(user.username || 'Trader', reason),
     type:     'kyc_rejected',
     metadata: { reason },
@@ -690,8 +717,8 @@ async function sendKycRejectedEmail(user, reason) {
 }
 
 async function sendTradeConfirmationEmail(user, trade, role) {
-  const subjectBuyer  = `✅ Trade Complete — ₿${parseFloat(trade.amount_btc || 0).toFixed(8)} Received`;
-  const subjectSeller = `✅ Trade Complete — Payment Confirmed`;
+  const subjectBuyer  = `Trade Complete — ₿${parseFloat(trade.amount_btc || 0).toFixed(8)} Received`;
+  const subjectSeller = `Trade Complete — Payment Confirmed`;
   return sendEmail({
     userId:   user.id,
     to:       user.email,
@@ -706,7 +733,7 @@ async function sendDepositAlertEmail(user, amountBtc, txHash) {
   return sendEmail({
     userId:   user.id,
     to:       user.email,
-    subject:  `🎉 Deposit Confirmed: ₿${parseFloat(amountBtc || 0).toFixed(8)}`,
+    subject:  `Deposit Confirmed: ₿${parseFloat(amountBtc || 0).toFixed(8)}`,
     html:     depositAlertHtml(user.username || 'Trader', amountBtc, txHash),
     type:     'deposit_alert',
     metadata: { amount_btc: amountBtc, tx_hash: txHash },
@@ -717,7 +744,7 @@ async function sendWithdrawalAlertEmail(user, amountBtc, toAddress) {
   return sendEmail({
     userId:   user.id,
     to:       user.email,
-    subject:  `🔄 Withdrawal Initiated: ₿${parseFloat(amountBtc || 0).toFixed(8)}`,
+    subject:  `Withdrawal Initiated: ₿${parseFloat(amountBtc || 0).toFixed(8)}`,
     html:     withdrawalAlertHtml(user.username || 'Trader', amountBtc, toAddress),
     type:     'withdrawal_alert',
     metadata: { amount_btc: amountBtc, destination: toAddress },
@@ -725,9 +752,9 @@ async function sendWithdrawalAlertEmail(user, amountBtc, toAddress) {
 }
 
 function ceoApprovalRequestHtml(ceoName, info) {
-  return base('Withdrawal Awaiting Approval 🔒', `
+  return base('Withdrawal Awaiting Approval', `
     <div style="text-align:center;margin-bottom:20px;">
-      <div style="font-size:48px;">🔒</div>
+      
       <h2 style="color:#B45309;font-size:22px;margin:8px 0;">Security Review Needed</h2>
     </div>
     <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hi ${ceoName}, a user has requested an external BTC withdrawal. Review it before it can be sent.</p>
@@ -737,8 +764,8 @@ function ceoApprovalRequestHtml(ceoName, info) {
       <tr><td style="padding:7px 0;color:#64748B;font-size:12px;font-weight:600;">To Address</td><td style="padding:7px 0;color:#94A3B8;font-size:11px;text-align:right;word-break:break-all;">${info.toAddress}</td></tr>
       <tr><td style="padding:7px 0;color:#64748B;font-size:12px;font-weight:600;">Request ID</td><td style="padding:7px 0;color:#94A3B8;font-size:11px;text-align:right;">${info.requestId}</td></tr>
     `)}
-    <p style="color:#64748B;font-size:13px;margin:0 0 16px;">Log in to the PRAQEN Approvals dashboard to check this user's account history and approve or decline the request.</p>
-    ${ctaButton('Review in PRAQEN Approvals', 'https://praqen.com/ceo')}
+    <p style="color:#64748B;font-size:13px;margin:0 0 16px;">Log in to the PraQen Approvals dashboard to check this user's account history and approve or decline the request.</p>
+    ${ctaButton('Review in PraQen Approvals', 'https://praqen.com/ceo')}
   `);
 }
 
@@ -746,7 +773,7 @@ async function sendCeoApprovalRequestEmail(ceoUser, info) {
   return sendEmail({
     userId:   ceoUser.id,
     to:       ceoUser.email,
-    subject:  `🔒 Withdrawal Awaiting Approval — ₿${parseFloat(info.amountBtc || 0).toFixed(8)}`,
+    subject:  `Withdrawal Awaiting Approval — ₿${parseFloat(info.amountBtc || 0).toFixed(8)}`,
     html:     ceoApprovalRequestHtml(ceoUser.username || 'there', info),
     type:     'ceo_approval_request',
     metadata: { request_id: info.requestId, amount_btc: info.amountBtc, destination: info.toAddress, from_user_id: info.fromUserId },
@@ -764,12 +791,12 @@ function withdrawalRejectedHtml(name, amount, reason, currency = 'BTC') {
   const isUsdt = currency === 'USDT';
   const symbol = isUsdt ? '₮' : '₿';
   const formatted = isUsdt ? parseFloat(amount || 0).toFixed(2) : parseFloat(amount || 0).toFixed(8);
-  return base('Withdrawal Declined ⚠️', `
+  return base('Withdrawal Declined', `
     <div style="text-align:center;margin-bottom:20px;">
-      <div style="font-size:48px;">⚠️</div>
+      
       <h2 style="color:#991B1B;font-size:22px;margin:8px 0;">Withdrawal Declined</h2>
     </div>
-    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>, we weren't able to complete this withdrawal request. The full amount has been returned to your PRAQEN wallet — no funds were lost.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>, we weren't able to complete this withdrawal request. The full amount has been returned to your <b>PraQen</b> wallet — no funds were lost.</p>
     ${infoBox(`
       <tr><td style="padding:8px 0;color:#64748B;font-size:13px;font-weight:600;">Amount Returned</td><td style="padding:8px 0;color:#059669;font-size:20px;font-weight:900;text-align:right;">${symbol} ${formatted}</td></tr>
     `)}
@@ -787,7 +814,7 @@ async function sendWithdrawalRejectedEmail(user, amount, reason, currency = 'BTC
   return sendEmail({
     userId:   user.id,
     to:       user.email,
-    subject:  `⚠️ Withdrawal Declined — funds returned to your wallet`,
+    subject:  `Withdrawal Declined — funds returned to your wallet`,
     html:     withdrawalRejectedHtml(user.username || 'Trader', amount, reason, currency),
     type:     'withdrawal_rejected',
     metadata: { amount, currency, reason },
@@ -795,14 +822,14 @@ async function sendWithdrawalRejectedEmail(user, amount, reason, currency = 'BTC
 }
 
 function accountBannedHtml(name, reason) {
-  return base('Account Banned 🚫', `
+  return base('Account Banned', `
     <div style="text-align:center;margin-bottom:20px;">
-      <div style="font-size:48px;">🚫</div>
+      
       <h2 style="color:#991B1B;font-size:22px;margin:8px 0;">Your Account Has Been Banned</h2>
     </div>
-    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>, your PRAQEN account has been restricted by our team.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>, your <b>PraQen</b> account has been restricted by our team.</p>
     ${infoBox(`
-      <tr><td style="padding:8px 0;color:#64748B;font-size:13px;font-weight:600;">Reason</td><td style="padding:8px 0;color:#1E293B;font-size:13px;text-align:right;">${reason || 'Violation of PRAQEN terms of service'}</td></tr>
+      <tr><td style="padding:8px 0;color:#64748B;font-size:13px;font-weight:600;">Reason</td><td style="padding:8px 0;color:#1E293B;font-size:13px;text-align:right;">${reason || 'Violation of <b>PraQen</b> terms of service'}</td></tr>
     `)}
     <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 16px;margin-bottom:16px;">
       <p style="margin:0;font-size:13px;color:#991b1b;line-height:1.6;">While your account is banned you cannot send, transfer, swap, or trade. Any balance already in your wallet stays there and is not affected.</p>
@@ -815,7 +842,7 @@ async function sendAccountBannedEmail(user, reason) {
   return sendEmail({
     userId:   user.id,
     to:       user.email,
-    subject:  `🚫 Your PRAQEN account has been banned`,
+    subject:  `Your PraQen account has been banned`,
     html:     accountBannedHtml(user.username || 'Trader', reason),
     type:     'account_banned',
     metadata: { reason },
@@ -823,8 +850,8 @@ async function sendAccountBannedEmail(user, reason) {
 }
 
 async function sendTradeOpenedEmail(user, trade, role) {
-  const subjectBuyer  = `⚡ Trade Opened — Send Payment to Get ₿${parseFloat(trade.amount_btc||0).toFixed(8)}`;
-  const subjectSeller = `⚡ New Trade — ₿${parseFloat(trade.amount_btc||0).toFixed(8)} Locked in Escrow`;
+  const subjectBuyer  = `Trade Opened — Send Payment to Get ₿${parseFloat(trade.amount_btc||0).toFixed(8)}`;
+  const subjectSeller = `New Trade — ₿${parseFloat(trade.amount_btc||0).toFixed(8)} Locked in Escrow`;
   return sendEmail({
     userId:   user.id,
     to:       user.email,
@@ -839,7 +866,7 @@ async function sendPaymentSentEmail(sellerUser, trade) {
   return sendEmail({
     userId:   sellerUser.id,
     to:       sellerUser.email,
-    subject:  `💰 Payment Sent — Release BTC for Trade #${(trade.trade_ref||trade.id||'').toString().slice(0,8).toUpperCase()}`,
+    subject:  `Trade Marked as Paid — Action Required for Trade #${(trade.trade_ref||trade.id||'').toString().slice(0,8).toUpperCase()}`,
     html:     paymentSentHtml(sellerUser.username || 'Trader', trade),
     type:     'payment_sent',
     metadata: { trade_id: trade.id, trade_ref: trade.trade_ref },
@@ -850,7 +877,7 @@ async function sendTradeCancelledEmail(user, trade, reason) {
   return sendEmail({
     userId:   user.id,
     to:       user.email,
-    subject:  `❌ Trade Cancelled — #${(trade.trade_ref||trade.id||'').toString().slice(0,8).toUpperCase()}`,
+    subject:  `Trade Cancelled — #${(trade.trade_ref||trade.id||'').toString().slice(0,8).toUpperCase()}`,
     html:     tradeCancelledHtml(user.username || 'Trader', trade, reason),
     type:     'trade_cancelled',
     metadata: { trade_id: trade.id, trade_ref: trade.trade_ref, reason },
@@ -859,12 +886,12 @@ async function sendTradeCancelledEmail(user, trade, reason) {
 
 function disputeOpenedHtml(name, trade, reason) {
   const ref = (trade.trade_ref || trade.id || '').toString().slice(0, 8).toUpperCase();
-  return base('🚨 Dispute Opened — Moderator Notified', `
+  return base('Dispute Opened — Moderator Notified', `
     <div style="text-align:center;margin-bottom:20px;">
-      <div style="font-size:48px;">🚨</div>
+      
       <h2 style="color:#7C3AED;font-size:22px;margin:8px 0;">Dispute Filed on Your Trade</h2>
     </div>
-    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>! A dispute has been opened on trade <strong>#${ref}</strong>. A PRAQEN moderator has been notified and will review all evidence.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>! A dispute has been opened on trade <strong>#${ref}</strong>. A <b>PraQen</b> moderator has been notified and will review all evidence.</p>
     ${infoBox(`
       <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Trade Ref</td>
           <td style="padding:7px 0;text-align:right;"><span style="background:#7C3AED;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;">#${ref}</span></td></tr>
@@ -873,9 +900,9 @@ function disputeOpenedHtml(name, trade, reason) {
       ${reason ? `<tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Reason</td><td style="padding:7px 0;color:#7C3AED;font-size:13px;text-align:right;">${reason}</td></tr>` : ''}
     `)}
     <div style="background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;padding:14px 16px;margin-bottom:20px;">
-      <p style="margin:0;font-size:13px;font-weight:700;color:#5B21B6;">⚠️ Do NOT release or transfer any funds until the dispute is fully resolved by a moderator.</p>
+      <p style="margin:0;font-size:13px;font-weight:700;color:#5B21B6;">Do NOT release or transfer any funds until the dispute is fully resolved by a moderator.</p>
     </div>
-    ${ctaButton('📋 View Trade & Evidence', `https://praqen.com/trade/${trade.id}`)}
+    ${ctaButton('View Trade & Evidence', `https://praqen.com/trade/${trade.id}`)}
   `);
 }
 
@@ -883,14 +910,14 @@ function disputeResolvedHtml(name, trade, resolution, notes) {
   const ref = (trade.trade_ref || trade.id || '').toString().slice(0, 8).toUpperCase();
   const isCompleted = (resolution || '').toUpperCase().includes('BUYER') || (resolution || '').toUpperCase() === 'COMPLETED';
   const color = isCompleted ? '#10b981' : '#ef4444';
-  const icon  = isCompleted ? '✅' : '❌';
+  const icon  = isCompleted ? '' : '';
   const label = isCompleted ? 'Resolved — Trade Completed' : 'Resolved — Trade Cancelled';
   return base(`${icon} Dispute Resolved`, `
     <div style="text-align:center;margin-bottom:20px;">
       <div style="font-size:48px;">${icon}</div>
       <h2 style="color:${color};font-size:22px;margin:8px 0;">${label}</h2>
     </div>
-    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>! The dispute on trade <strong>#${ref}</strong> has been reviewed and resolved by a PRAQEN moderator.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>! The dispute on trade <strong>#${ref}</strong> has been reviewed and resolved by a <b>PraQen</b> moderator.</p>
     ${infoBox(`
       <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Trade Ref</td>
           <td style="padding:7px 0;text-align:right;"><span style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;">#${ref}</span></td></tr>
@@ -907,7 +934,7 @@ async function sendDisputeOpenedEmail(user, trade, reason) {
   return sendEmail({
     userId:   user.id,
     to:       user.email,
-    subject:  `🚨 Dispute Opened — Trade #${ref}`,
+    subject:  `Dispute Opened — Trade #${ref}`,
     html:     disputeOpenedHtml(user.username || 'Trader', trade, reason),
     type:     'dispute_opened',
     metadata: { trade_id: trade.id, trade_ref: trade.trade_ref, reason },
@@ -919,7 +946,7 @@ async function sendDisputeResolvedEmail(user, trade, resolution, notes) {
   return sendEmail({
     userId:   user.id,
     to:       user.email,
-    subject:  `⚖️ Dispute Resolved — Trade #${ref}`,
+    subject:  `Dispute Resolved — Trade #${ref}`,
     html:     disputeResolvedHtml(user.username || 'Trader', trade, resolution, notes),
     type:     'dispute_resolved',
     metadata: { trade_id: trade.id, trade_ref: trade.trade_ref, resolution },
@@ -946,14 +973,14 @@ function buildEidBonusHtml(username, referralCode) {
   <tr>
     <td style="background:linear-gradient(160deg,#0c1a10 0%,#1B4332 40%,#2D6A4F 100%);padding:40px 32px 32px;text-align:center;position:relative;">
       <!-- Stars decorative row -->
-      <p style="margin:0 0 10px;font-size:22px;letter-spacing:8px;">✦ ✦ ✦ ✦ ✦</p>
+      <p style="margin:0 0 10px;font-size:22px;letter-spacing:8px;"></p>
       <!-- Crescent + logo -->
       <div style="display:inline-block;background:#F4A422;border-radius:50%;width:72px;height:72px;line-height:72px;text-align:center;margin-bottom:16px;box-shadow:0 0 32px rgba(244,164,34,0.55);">
-        <span style="font-size:36px;font-weight:900;color:#1B4332;font-family:Georgia,serif;line-height:72px;">🌙</span>
+        
       </div>
       <h1 style="color:#F4A422;font-size:30px;font-weight:900;margin:0 0 4px;font-family:Georgia,serif;letter-spacing:1px;">Eid Mubarak!</h1>
       <p style="color:#ffffff;font-size:13px;margin:0 0 6px;opacity:0.7;letter-spacing:3px;text-transform:uppercase;">عيد مبارك</p>
-      <p style="color:rgba(255,255,255,0.6);font-size:13px;margin:0;">From the entire PRAQEN team to you and your family 🤲</p>
+      <p style="color:rgba(255,255,255,0.6);font-size:13px;margin:0;">From the entire PraQen team to you and your family</p>
     </td>
   </tr>
 
@@ -963,10 +990,10 @@ function buildEidBonusHtml(username, referralCode) {
       <p style="color:#1B4332;font-size:17px;font-weight:800;margin:0 0 10px;">Salaam ${username || 'Trader'},</p>
       <p style="color:#475569;font-size:14px;line-height:1.75;margin:0 0 18px;">
         On this blessed occasion of Eid ul-Adha, we pray that joy, peace, and prosperity find you and everyone you love.
-        May this Eid be filled with moments of gratitude, togetherness, and new beginnings. 🌟
+        May this Eid be filled with moments of gratitude, togetherness, and new beginnings.
       </p>
       <p style="color:#475569;font-size:14px;line-height:1.75;margin:0;">
-        To celebrate with you, we have something special — a <strong style="color:#1B4332;">$2 FREE Bitcoin gift</strong> for every PRAQEN trader!
+        To celebrate with you, we have something special — a <strong style="color:#1B4332;">$2 FREE Bitcoin gift</strong> for every PraQen trader!
       </p>
     </td>
   </tr>
@@ -977,7 +1004,7 @@ function buildEidBonusHtml(username, referralCode) {
       <table width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#1B4332 0%,#2D6A4F 60%,#40916C 100%);border-radius:16px;overflow:hidden;">
         <tr>
           <td style="padding:28px 28px 20px;text-align:center;">
-            <p style="margin:0 0 6px;font-size:11px;font-weight:800;color:#F4A422;letter-spacing:2px;text-transform:uppercase;">🎁 Welcome Bonus</p>
+            <p style="margin:0 0 6px;font-size:11px;font-weight:800;color:#F4A422;letter-spacing:2px;text-transform:uppercase;">Welcome Bonus</p>
             <p style="margin:0 0 4px;font-size:34px;font-weight:900;color:#ffffff;font-family:Georgia,serif;">$2 Free Bitcoin</p>
             <p style="margin:0 0 20px;font-size:13px;color:rgba(255,255,255,0.65);">That's $2 Free Bitcoin — Yours to Keep!</p>
             <!-- 3-step table -->
@@ -985,7 +1012,7 @@ function buildEidBonusHtml(username, referralCode) {
               <tr>
                 <td width="33%" style="text-align:center;padding:0 4px;">
                   <div style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:12px 8px;">
-                    <p style="margin:0;font-size:20px;">✅</p>
+                    <p style="margin:0;font-size:20px;"></p>
                     <p style="margin:4px 0 2px;font-size:11px;font-weight:800;color:#ffffff;">Register</p>
                     <p style="margin:0;font-size:9px;color:rgba(255,255,255,0.5);">$1 BTC locked</p>
                   </div>
@@ -993,7 +1020,7 @@ function buildEidBonusHtml(username, referralCode) {
                 <td width="4%" style="text-align:center;color:rgba(255,255,255,0.3);font-size:16px;">›</td>
                 <td width="33%" style="text-align:center;padding:0 4px;">
                   <div style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:12px 8px;">
-                    <p style="margin:0;font-size:20px;">⚡</p>
+                    <p style="margin:0;font-size:20px;"></p>
                     <p style="margin:4px 0 2px;font-size:11px;font-weight:800;color:#ffffff;">Verify</p>
                     <p style="margin:0;font-size:9px;color:rgba(255,255,255,0.5);">stays locked safe</p>
                   </div>
@@ -1003,7 +1030,7 @@ function buildEidBonusHtml(username, referralCode) {
                   <div style="background:rgba(244,164,34,0.2);border:1px solid rgba(244,164,34,0.4);border-radius:10px;padding:12px 8px;">
                     <p style="margin:0;font-size:20px;">₿</p>
                     <p style="margin:4px 0 2px;font-size:11px;font-weight:800;color:#F4A422;">1st Trade</p>
-                    <p style="margin:0;font-size:9px;color:rgba(255,255,255,0.5);">$2 unlocks! 🔓</p>
+                    <p style="margin:0;font-size:9px;color:rgba(255,255,255,0.5);">$2 unlocks!</p>
                   </div>
                 </td>
               </tr>
@@ -1017,16 +1044,16 @@ function buildEidBonusHtml(username, referralCode) {
   <!-- ═══ REFERRAL SECTION ═══ -->
   <tr>
     <td style="padding:0 36px 24px;">
-      <p style="color:#1B4332;font-size:16px;font-weight:900;margin:0 0 6px;">Already Trading? Share &amp; Earn Even More! 💰</p>
+      <p style="color:#1B4332;font-size:16px;font-weight:900;margin:0 0 6px;">Already Trading? Share &amp; Earn Even More!</p>
       <p style="color:#475569;font-size:13px;line-height:1.7;margin:0 0 16px;">
-        Invite friends to PRAQEN and earn up to <strong style="color:#1B4332;">0.5% commission</strong> on every trade they make — forever.
+        Invite friends to PraQen and earn up to <strong style="color:#1B4332;">0.5% commission</strong> on every trade they make — forever.
         The more friends you bring in, the more you earn. No cap. No expiry.
       </p>
       <!-- Referral link box -->
       <table width="100%" cellpadding="0" cellspacing="0" style="background:#F0FAF5;border:2px dashed #40916C;border-radius:12px;margin-bottom:16px;">
         <tr>
           <td style="padding:14px 18px;">
-            <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#40916C;text-transform:uppercase;letter-spacing:1px;">🔗 Your Personal Referral Link</p>
+            <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#40916C;text-transform:uppercase;letter-spacing:1px;">Your Personal Referral Link</p>
             <p style="margin:0;font-size:12px;font-family:monospace;color:#1B4332;word-break:break-all;">${link}</p>
           </td>
         </tr>
@@ -1066,7 +1093,7 @@ function buildEidBonusHtml(username, referralCode) {
           <td width="4%"></td>
           <td width="48%" style="padding-left:6px;">
             <a href="${link}" style="display:block;background:#F4A422;color:#1B4332;text-decoration:none;padding:13px 10px;border-radius:12px;font-size:13px;font-weight:800;text-align:center;">
-              🎁 Share &amp; Earn
+              Share &amp; Earn
             </a>
           </td>
         </tr>
@@ -1077,7 +1104,7 @@ function buildEidBonusHtml(username, referralCode) {
   <!-- ═══ EID CLOSING ═══ -->
   <tr>
     <td style="background:#F8FAFC;padding:22px 36px;text-align:center;border-top:1px solid #E2E8F0;">
-      <p style="margin:0 0 6px;font-size:20px;">🌙 ✦ 🤲 ✦ 🌙</p>
+      <p style="margin:0 0 6px;font-size:20px;"></p>
       <p style="margin:0 0 4px;color:#1B4332;font-size:14px;font-weight:800;">Eid Mubarak — تقبل الله منا ومنكم</p>
       <p style="margin:0;color:#64748B;font-size:12px;">May Allah accept our good deeds. Wishing you a blessed Eid.</p>
     </td>
@@ -1086,7 +1113,7 @@ function buildEidBonusHtml(username, referralCode) {
   <!-- ═══ FOOTER ═══ -->
   <tr>
     <td style="background:#1B4332;padding:22px 36px;text-align:center;">
-      <p style="margin:0 0 6px;font-size:20px;font-weight:900;color:#F4A422;font-family:Georgia,serif;">PRAQEN</p>
+      <p style="margin:0 0 6px;font-size:20px;font-weight:900;color:#F4A422;font-family:Georgia,serif;"><b>PraQen</b></p>
       <p style="margin:0 0 10px;font-size:10px;color:rgba(255,255,255,0.45);letter-spacing:2px;text-transform:uppercase;">The Global P2P Bitcoin Platform</p>
       <p style="margin:0 0 10px;">
         <a href="https://praqen.com/buy-bitcoin" style="color:rgba(255,255,255,0.5);text-decoration:none;font-size:11px;margin:0 8px;">Buy Bitcoin</a>
@@ -1094,7 +1121,7 @@ function buildEidBonusHtml(username, referralCode) {
         <a href="${link}" style="color:rgba(255,255,255,0.5);text-decoration:none;font-size:11px;margin:0 8px;">Refer Friends</a>
       </p>
       <p style="margin:0;font-size:10px;color:rgba(255,255,255,0.3);">
-        © ${yr} PRAQEN · You're receiving this because you have an account with us.<br>
+        © ${yr} PraQen · You're receiving this because you have an account with us.<br>
         <a href="https://praqen.com" style="color:rgba(255,255,255,0.3);text-decoration:underline;">praqen.com</a>
       </p>
     </td>
@@ -1111,7 +1138,7 @@ async function sendEidBonusEmail({ userId, to, username, referralCode }) {
   return sendEmail({
     userId,
     to,
-    subject: '🌙 Eid Mubarak + $2 FREE Bitcoin — Just for You!',
+    subject: 'Eid Mubarak + $2 FREE Bitcoin — Just for You!',
     html:    buildEidBonusHtml(username, referralCode),
     type:    'eid_bonus_broadcast',
     metadata: { referral_code: referralCode, campaign: 'eid_2025' },
@@ -1128,7 +1155,7 @@ function buildUsdtAnnouncementHtml(username, referralCode) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>Happy New Month! USDT Wallet is Live on PRAQEN</title>
+  <title>Happy New Month! USDT Wallet is Live on PraQen</title>
 </head>
 <body style="margin:0;padding:0;background:#F0FAF5;font-family:'Segoe UI',Arial,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#F0FAF5;padding:32px 16px;">
@@ -1138,12 +1165,12 @@ function buildUsdtAnnouncementHtml(username, referralCode) {
   <!-- ═══ HEADER ═══ -->
   <tr>
     <td style="background:linear-gradient(135deg,#1B4332 0%,#2D6A4F 60%,#40916C 100%);padding:40px 32px 32px;text-align:center;">
-      <p style="margin:0 0 10px;font-size:22px;letter-spacing:8px;">✦ ✦ ✦ ✦ ✦</p>
+      <p style="margin:0 0 10px;font-size:22px;letter-spacing:8px;"></p>
       <div style="display:inline-block;background:#F4A422;border-radius:50%;width:72px;height:72px;line-height:72px;text-align:center;margin-bottom:16px;box-shadow:0 0 32px rgba(244,164,34,0.55);">
-        <span style="font-size:34px;line-height:72px;">🎉</span>
+        
       </div>
       <h1 style="color:#F4A422;font-size:28px;font-weight:900;margin:0 0 4px;font-family:Georgia,serif;letter-spacing:1px;">Happy New Month!</h1>
-      <p style="color:rgba(255,255,255,0.65);font-size:13px;margin:0;">From the entire PRAQEN team — welcome to ${month}! 🎊</p>
+      <p style="color:rgba(255,255,255,0.65);font-size:13px;margin:0;">From the entire PraQen team — welcome to ${month}!</p>
     </td>
   </tr>
 
@@ -1152,7 +1179,7 @@ function buildUsdtAnnouncementHtml(username, referralCode) {
     <td style="padding:32px 36px 20px;background:#ffffff;">
       <p style="color:#1B4332;font-size:17px;font-weight:800;margin:0 0 10px;">Hi ${username || 'Trader'},</p>
       <p style="color:#475569;font-size:14px;line-height:1.75;margin:0;">
-        We've got big news to kick off the month — <strong style="color:#1B4332;">USDT wallets are now live on PRAQEN!</strong>
+        We've got big news to kick off the month — <strong style="color:#1B4332;">USDT wallets are now live on PraQen!</strong>
         You can deposit, hold, and trade USDT directly from your wallet, no BTC conversion needed.
       </p>
     </td>
@@ -1167,12 +1194,12 @@ function buildUsdtAnnouncementHtml(username, referralCode) {
             <div style="display:inline-block;background:rgba(255,255,255,0.12);border-radius:50%;width:52px;height:52px;line-height:52px;margin-bottom:10px;">
               <span style="font-size:24px;line-height:52px;">₮</span>
             </div>
-            <p style="margin:0 0 6px;font-size:18px;font-weight:900;color:#ffffff;">USDT Wallet is Here 💵</p>
+            <p style="margin:0 0 6px;font-size:18px;font-weight:900;color:#ffffff;">USDT Wallet is Here</p>
             <p style="margin:0 0 18px;font-size:13px;color:rgba(255,255,255,0.65);line-height:1.7;">
               Go to your Wallet → select USDT → Deposit, and start trading freely. Fast, stable, and always 1:1 with the dollar.
             </p>
             <a href="https://praqen.com/wallet" style="display:inline-block;background:#F4A422;color:#1B4332;text-decoration:none;padding:13px 32px;border-radius:12px;font-size:14px;font-weight:800;">
-              💰 Go to My Wallet
+              Go to My Wallet
             </a>
           </td>
         </tr>
@@ -1184,12 +1211,12 @@ function buildUsdtAnnouncementHtml(username, referralCode) {
   <tr>
     <td style="padding:0 36px 24px;">
       <div style="background:linear-gradient(135deg,#F0FDF4,#DCFCE7);border-radius:14px;padding:22px 24px;border:2px solid #86EFAC;">
-        <p style="margin:0 0 8px;font-size:16px;font-weight:900;color:#166534;">📢 Create Your Offer Now</p>
+        <p style="margin:0 0 8px;font-size:16px;font-weight:900;color:#166534;">Create Your Offer Now</p>
         <p style="margin:0 0 16px;font-size:13px;color:#15803D;line-height:1.7;">
           The marketplace is active 24/7 — post a buy or sell offer for BTC or USDT and reach thousands of traders today.
         </p>
         <a href="https://praqen.com/create-offer" style="display:inline-block;background:#166534;color:#ffffff;text-decoration:none;padding:11px 24px;border-radius:10px;font-size:13px;font-weight:800;">
-          ➕ Create an Offer
+          Create an Offer
         </a>
       </div>
     </td>
@@ -1198,7 +1225,7 @@ function buildUsdtAnnouncementHtml(username, referralCode) {
   <!-- ═══ REFERRAL SECTION ═══ -->
   <tr>
     <td style="padding:0 36px 24px;">
-      <p style="color:#1B4332;font-size:16px;font-weight:900;margin:0 0 6px;">Share Your Link — Friends Get $2 Free! 🎁</p>
+      <p style="color:#1B4332;font-size:16px;font-weight:900;margin:0 0 6px;">Share Your Link — Friends Get $2 Free!</p>
       <p style="color:#475569;font-size:13px;line-height:1.7;margin:0 0 16px;">
         Share your referral link below. Anyone who signs up, verifies, and completes their first trade unlocks an
         <strong style="color:#1B4332;">instant $2 Bitcoin bonus</strong> — and you keep earning ongoing commission every time they trade.
@@ -1207,7 +1234,7 @@ function buildUsdtAnnouncementHtml(username, referralCode) {
       <table width="100%" cellpadding="0" cellspacing="0" style="background:#F0FAF5;border:2px dashed #40916C;border-radius:12px;">
         <tr>
           <td style="padding:14px 18px;">
-            <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#40916C;text-transform:uppercase;letter-spacing:1px;">🔗 Your Personal Referral Link</p>
+            <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#40916C;text-transform:uppercase;letter-spacing:1px;">Your Personal Referral Link</p>
             <p style="margin:0;font-size:12px;font-family:monospace;color:#1B4332;word-break:break-all;">${link}</p>
           </td>
         </tr>
@@ -1228,7 +1255,7 @@ function buildUsdtAnnouncementHtml(username, referralCode) {
           <td width="4%"></td>
           <td width="48%" style="padding-left:6px;">
             <a href="${link}" style="display:block;background:#F4A422;color:#1B4332;text-decoration:none;padding:13px 10px;border-radius:12px;font-size:13px;font-weight:800;text-align:center;">
-              🎁 Share & Earn
+              Share & Earn
             </a>
           </td>
         </tr>
@@ -1239,7 +1266,7 @@ function buildUsdtAnnouncementHtml(username, referralCode) {
   <!-- ═══ FOOTER ═══ -->
   <tr>
     <td style="background:#1B4332;padding:22px 36px;text-align:center;">
-      <p style="margin:0 0 6px;font-size:20px;font-weight:900;color:#F4A422;font-family:Georgia,serif;">PRAQEN</p>
+      <p style="margin:0 0 6px;font-size:20px;font-weight:900;color:#F4A422;font-family:Georgia,serif;"><b>PraQen</b></p>
       <p style="margin:0 0 10px;font-size:10px;color:rgba(255,255,255,0.45);letter-spacing:2px;text-transform:uppercase;">The Global P2P Bitcoin Platform</p>
       <p style="margin:0 0 10px;">
         <a href="https://praqen.com/buy-bitcoin" style="color:rgba(255,255,255,0.5);text-decoration:none;font-size:11px;margin:0 8px;">Buy Bitcoin</a>
@@ -1247,7 +1274,7 @@ function buildUsdtAnnouncementHtml(username, referralCode) {
         <a href="${link}" style="color:rgba(255,255,255,0.5);text-decoration:none;font-size:11px;margin:0 8px;">Refer Friends</a>
       </p>
       <p style="margin:0;font-size:10px;color:rgba(255,255,255,0.3);">
-        © ${yr} PRAQEN · You're receiving this because you have an account with us.<br>
+        © ${yr} PraQen · You're receiving this because you have an account with us.<br>
         <a href="https://praqen.com" style="color:rgba(255,255,255,0.3);text-decoration:underline;">praqen.com</a>
       </p>
     </td>
@@ -1264,7 +1291,7 @@ async function sendUsdtAnnouncementEmail({ userId, to, username, referralCode })
   return sendEmail({
     userId,
     to,
-    subject: '🎉 Happy New Month! USDT Wallet is Live — Deposit, Trade & Earn $2 Per Referral',
+    subject: 'Happy New Month! USDT Wallet is Live — Deposit, Trade & Earn $2 Per Referral',
     html:    buildUsdtAnnouncementHtml(username, referralCode),
     type:    'usdt_announcement_broadcast',
     metadata: { referral_code: referralCode, campaign: 'usdt_wallet_launch' },
