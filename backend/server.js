@@ -8506,7 +8506,8 @@ app.post('/api/trades/:id/cancel', tradeLimiter, verifyToken, async (req, res) =
 
     setImmediate(async () => {
       try {
-        sendTradeAlert([trade.buyer_id, trade.seller_id].filter(Boolean), trade, 'trade_cancelled').catch(() => { });
+        // Note: push for trade_cancelled is already sent inside tradeEscrowService.cancelTrade()
+        // (sendSystemAlert to btcProvider for refund + sendTradeAlert to other party)
         // Email both parties about the cancellation
         const [buyerCancel, sellerCancel] = await Promise.allSettled([
           supabaseAdmin.from('users').select('id, email, username').eq('id', trade.buyer_id).single(),
@@ -8610,6 +8611,10 @@ app.post('/api/messages', verifyToken, async (req, res) => {
               `${senderName}: ${preview}`,
               `/trade/${tradeId}`
             );
+            // Push notification for trade chat — time-sensitive, user may be off-platform
+            sendSystemAlert(recipientId, `💬 New Message in Trade #${tradeRef}`,
+              `${senderName}: ${preview}`,
+              `https://praqen.com/trade/${tradeId}`).catch(() => { });
           }
         } catch (e) {
           console.error('[Message notification] Failed:', e.message);
@@ -8748,6 +8753,8 @@ app.post('/api/trades/:id/dispute', tradeLimiter, verifyToken, async (req, res) 
       // In-app notifications and system message
       await createNotification(trade.seller_id, 'support', '⚠️ Dispute Opened', `Dispute opened for trade #${req.params.id.slice(0, 8)}. Moderator will review.`, `/trade/${req.params.id}`);
       await createNotification(trade.buyer_id, 'support', '⚠️ Dispute Opened', `Dispute opened for trade #${req.params.id.slice(0, 8)}. Please provide evidence.`, `/trade/${req.params.id}`);
+      // Browser push notifications for dispute opened
+      sendTradeAlert([trade.buyer_id, trade.seller_id].filter(Boolean), trade, 'dispute_opened').catch(() => { });
       notifyModerators(req.params.id, trade, reason || 'User opened a dispute').catch(e => console.error('[dispute] notifyModerators failed:', e.message));
       // Telegram alerts for dispute opened
       const disputeRef = `#${String(req.params.id).slice(0,8).toUpperCase()}`;
@@ -9208,6 +9215,7 @@ app.post('/api/admin/disputes/:id/comments', verifyToken, async (req, res) => {
     const ids = (await getModeratorUserIds()).filter(id => id !== req.userId);
     for (const uid of ids) {
       await createNotification(uid, 'dispute', '💬 New dispute comment', `${userData?.full_name || userData?.username || 'A moderator'} commented on trade #${req.params.id.slice(0, 8)}`, '/moderator');
+      sendSystemAlert(uid, '💬 New dispute comment', `${userData?.full_name || userData?.username || 'A moderator'} commented on trade #${req.params.id.slice(0, 8)}`, `https://praqen.com/moderator`).catch(() => { });
     }
     res.json({ comment: data });
   } catch (error) { res.status(500).json({ error: error.message }); }
@@ -10382,6 +10390,7 @@ app.put('/api/admin/users/:id', verifyToken, async (req, res) => {
       const reason = req.body.reason || '';
       createNotification(req.params.id, 'security', '🚫 Account Banned',
         reason ? `Your account has been banned. Reason: ${reason}` : 'Your account has been banned. Contact support if you believe this is a mistake.', '/').catch(() => { });
+      sendSystemAlert(req.params.id, '🚫 Account Banned', reason ? `Your account has been banned. Reason: ${reason}` : 'Your account has been banned.', 'https://praqen.com').catch(() => { });
       emailService.sendAccountBannedEmail(data, reason).catch(() => { });
     }
     res.json({ success: true, user: data });
@@ -10518,6 +10527,7 @@ app.put('/api/admin/kyc/:userId/reject', verifyToken, async (req, res) => {
     if (!updated) return res.status(404).json({ error: 'User not found' });
     try {
       await createNotification(req.params.userId, 'kyc', '❌ KYC Rejected', `Your KYC was not approved: ${reason}. Please re-submit with clearer documents.`, '/settings');
+      sendSystemAlert(req.params.userId, '❌ KYC Rejected', `Your KYC was not approved: ${reason}. Please re-submit with clearer documents.`, 'https://praqen.com/settings').catch(() => { });
     } catch (_) { }
     res.json({ success: true, user: updated });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -11027,6 +11037,7 @@ app.put('/api/admin/users/:id/verify-email', verifyToken, async (req, res) => {
     if (error) return res.status(400).json({ error: error.message });
     logAdminAction(req, 'VERIFY_EMAIL', req.params.id, null).catch(() => { });
     await createNotification(req.params.id, 'system', '📧 Email Verified', 'Your email address has been manually verified by an admin.', '/settings');
+    sendSystemAlert(req.params.id, '📧 Email Verified', 'Your email address has been manually verified by an admin.', 'https://praqen.com/settings').catch(() => { });
     res.json({ success: true, user: data });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -11150,6 +11161,9 @@ app.put('/api/admin/phone-verifications/:id/reject', verifyToken, async (req, re
     await createNotification(request.user_id, 'system', '📱 Phone Verification Failed',
       `We could not verify ${request.phone}. Reason: ${reason}. Please submit a valid number.`,
       '/settings?tab=verification').catch(() => { });
+    sendSystemAlert(request.user_id, '📱 Phone Verification Failed',
+      `We could not verify ${request.phone}. Reason: ${reason}. Please submit a valid number.`,
+      'https://praqen.com/settings?tab=verification').catch(() => { });
 
     console.log(`[phone-verif] ❌ Admin ${req.userId.slice(0, 8)} rejected ${request.phone} for user ${request.user_id.slice(0, 8)}`);
     res.json({ success: true });
@@ -11274,6 +11288,9 @@ app.post('/api/admin/phone/reject', verifyToken, async (req, res) => {
     await createNotification(userId, 'system', '📱 Phone Verification Failed',
       `Your phone number (${phone}) could not be verified. Reason: ${reason}. Please submit a valid number.`,
       '/settings?tab=verification').catch(() => { });
+    sendSystemAlert(userId, '📱 Phone Verification Failed',
+      `Your phone number (${phone}) could not be verified. Reason: ${reason}. Please submit a valid number.`,
+      'https://praqen.com/settings?tab=verification').catch(() => { });
 
     console.log(`[phone/reject] ❌ Admin ${req.userId.slice(0, 8)} rejected ${phone} for user ${userId.slice(0, 8)}`);
     res.json({ success: true });
@@ -11299,6 +11316,7 @@ app.put('/api/admin/users/:id/ban', verifyToken, async (req, res) => {
       .then(({ error: listErr }) => { if (listErr) console.error('[BAN] Failed to pause listings for', req.params.id, ':', listErr.message); });
     await createNotification(req.params.id, 'security', '🚫 Account Banned',
       reason ? `Your account has been banned. Reason: ${reason}` : 'Your account has been banned. Contact support if you believe this is a mistake.', '/');
+    sendSystemAlert(req.params.id, '🚫 Account Banned', reason ? `Your account has been banned. Reason: ${reason}` : 'Your account has been banned. Contact support if you believe this is a mistake.', 'https://praqen.com').catch(() => { });
     if (data?.email) emailService.sendAccountBannedEmail(data, reason).catch(() => {});
     res.json({ success: true, user: data });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -11312,6 +11330,7 @@ app.put('/api/admin/users/:id/unban', verifyToken, async (req, res) => {
     if (error) return res.status(400).json({ error: error.message });
     logAdminAction(req, 'UNBAN', req.params.id, null).catch(() => { });
     await createNotification(req.params.id, 'system', '✅ Account Reinstated', 'Your account ban has been lifted. Welcome back to PRAQEN!', '/dashboard');
+    sendSystemAlert(req.params.id, '✅ Account Reinstated', 'Your account ban has been lifted. Welcome back to PRAQEN!', 'https://praqen.com/dashboard').catch(() => { });
     res.json({ success: true, user: data });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -11361,6 +11380,7 @@ app.put('/api/admin/users/:id/warn', verifyToken, async (req, res) => {
     if (error) return res.status(400).json({ error: error.message });
     logAdminAction(req, 'WARN', req.params.id, { reason }).catch(() => { });
     await createNotification(req.params.id, 'security', '⚠️ Account Warning', 'PRAQEN has issued a warning on your account. Please review our terms and trade responsibly.', '/dashboard');
+    sendSystemAlert(req.params.id, '⚠️ Account Warning', 'PRAQEN has issued a warning on your account. Please review our terms and trade responsibly.', 'https://praqen.com/dashboard').catch(() => { });
     res.json({ success: true, user: data });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -11843,6 +11863,9 @@ app.post('/api/admin/support/tickets/:id/reply', verifyToken, async (req, res) =
       `Your ticket "${(ticket.subject || '').slice(0, 60)}" has a new reply. Open Community Board → Support to read it.`,
       '/'
     );
+    sendSystemAlert(ticket.user_id, '💬 Support team replied to your ticket',
+      `Your ticket "${(ticket.subject || '').slice(0, 60)}" has a new reply.`,
+      'https://praqen.com').catch(() => { });
     res.json({ success: true, message: msg });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -12341,6 +12364,9 @@ app.post('/api/agent/tickets/:id/reply', verifyToken, async (req, res) => {
       `Your support chat "${(ticket.subject || '').slice(0, 60)}" has a new reply.`,
       '/'
     );
+    sendSystemAlert(ticket.user_id, '💬 Support agent replied to your chat',
+      `Your support chat "${(ticket.subject || '').slice(0, 60)}" has a new reply.`,
+      'https://praqen.com').catch(() => { });
 
     // Clear typing indicator for this agent on this ticket
     delete supportTypingState[`${req.params.id}:${req.userId}`];
@@ -12755,7 +12781,7 @@ app.post('/api/wallet/internal-transfer', verifyToken, requireNotBanned, async (
     });
     if (txInErr) console.error('[InternalTransfer] CRITICAL: TRANSFER_IN insert failed', txInErr);
 
-    // ── Notify recipient (in-app) ──────────────────────────────────────────
+    // ── Notify recipient (in-app + push) ──────────────────────────────────
     await createNotification(
       recipientId,
       'system',
@@ -12763,8 +12789,11 @@ app.post('/api/wallet/internal-transfer', verifyToken, requireNotBanned, async (
       `@${senderName} sent you ₿${amount.toFixed(8)} — arrived instantly, zero fees.`,
       '/wallet'
     ).catch(() => { });
+    sendSystemAlert(recipientId, '₿ Bitcoin Received!',
+      `@${senderName} sent you ₿${amount.toFixed(8)} — arrived instantly, zero fees.`,
+      'https://praqen.com/wallet').catch(() => { });
 
-    // ── Notify sender (in-app receipt) ────────────────────────────────────
+    // ── Notify sender (in-app receipt + push) ────────────────────────────
     await createNotification(
       req.userId,
       'system',
@@ -12772,6 +12801,9 @@ app.post('/api/wallet/internal-transfer', verifyToken, requireNotBanned, async (
       `₿${amount.toFixed(8)} sent to @${recipientUsername} — instant & free. Ref: ${txRef.slice(0, 16)}`,
       '/wallet'
     ).catch(() => { });
+    sendSystemAlert(req.userId, '✅ Transfer Sent',
+      `₿${amount.toFixed(8)} sent to @${recipientUsername} — instant & free.`,
+      'https://praqen.com/wallet').catch(() => { });
 
     // ── Telegram alerts (fire-and-forget) ──────────────────────────────────
     sendTelegramAlert(recipientId, `₿ Bitcoin received! @${senderName} sent you ${amount.toFixed(8)} BTC — instant & free.`).catch(() => {});
@@ -13558,15 +13590,21 @@ app.post('/api/wallet/usdt/internal-transfer', verifyToken, requireNotBanned, as
     const { data: senderUser } = await supabaseAdmin.from('users').select('username, email').eq('id', req.userId).single();
     const senderName = senderUser?.username || 'a PRAQEN user';
 
-    // ── In-app notifications ──────────────────────────────────────────────
+    // ── In-app notifications + push ──────────────────────────────────────
     await createNotification(
       recipient.id, 'system', '₮ USDT Received!',
       `@${senderName} sent you ₮${amount.toFixed(2)} USDT — instant & free.`, '/wallet'
     ).catch(() => { });
+    sendSystemAlert(recipient.id, '₮ USDT Received!',
+      `@${senderName} sent you ₮${amount.toFixed(2)} USDT — instant & free.`,
+      'https://praqen.com/wallet').catch(() => { });
     await createNotification(
       req.userId, 'system', '✅ USDT Transfer Sent',
       `₮${amount.toFixed(2)} USDT sent to @${recipient.username} instantly. Ref: ${txRef}`, '/wallet'
     ).catch(() => { });
+    sendSystemAlert(req.userId, '✅ USDT Transfer Sent',
+      `₮${amount.toFixed(2)} USDT sent to @${recipient.username} instantly.`,
+      'https://praqen.com/wallet').catch(() => { });
 
     // ── Email notifications (fire-and-forget) ──────────────────────────────
     const txDate = new Date().toUTCString();

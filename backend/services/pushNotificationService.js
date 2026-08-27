@@ -37,31 +37,33 @@ async function send({ userIds, title, message, url }) {
     url: url || 'https://praqen.com',
   };
 
-  console.log(`[Push] Sending to user(s): ${userIds.join(',')} | title: ${title}`);
+  console.log(`[Push] Sending to user(s): ${userIds.join(',')} | title: ${title} | app_id: ${APP_ID ? APP_ID.slice(0, 8) + '...' : 'MISSING'}`);
 
   try {
     const response = await axios.post('https://onesignal.com/api/v1/notifications', body, {
       headers: {
-        Authorization: `Basic ${API_KEY}`,  // ✅ FIXED: 'Key' → 'Basic'
+        Authorization: `Basic ${API_KEY}`,
         'Content-Type': 'application/json',
       },
       timeout: 8000,
     });
     const { id, recipients, errors } = response.data || {};
     if (recipients === 0) {
-      console.warn(`[Push] 0 recipients for user(s) ${userIds.join(',')} — their browser may not have called OS.login(userId) yet. Check frontend identifyUser.`);
+      console.warn(`[Push] 0 recipients for user(s) ${userIds.join(',')} | event: ${title} — their browser may not have called OS.login(userId) yet. Check frontend identifyUser.`);
     } else {
-      console.log(`[Push] Delivered — notification id: ${id} | recipients: ${recipients}`);
+      console.log(`[Push] Delivered — notification id: ${id} | recipients: ${recipients} | event: ${title}`);
     }
-    if (errors) console.error('[Push] OneSignal errors:', JSON.stringify(errors));
+    if (errors) {
+      console.error(`[Push] OneSignal errors for user(s) ${userIds.join(',')} | event: ${title}:`, JSON.stringify(errors));
+    }
     return response.data;
   } catch (e) {
     const detail = e.response?.data || e.message;
-    console.error('[Push] ❌ OneSignal API error:', JSON.stringify(detail));
+    console.error(`[Push] ❌ OneSignal API error for user(s) ${userIds.join(',')} | event: ${title}:`, JSON.stringify(detail));
 
-    // 🔥 ADDED: Try with User Auth Key if REST API Key fails
+    // Try with User Auth Key if REST API Key fails (401/403)
     if (e.response?.status === 401 || e.response?.status === 403) {
-      console.log('[Push] 🔄 Trying with User Auth Key instead...');
+      console.log(`[Push] 🔄 Retrying with User Auth Key for user(s) ${userIds.join(',')} | event: ${title}...`);
       try {
         const userAuthKey = process.env.ONESIGNAL_USER_AUTH_KEY;
         if (userAuthKey && userAuthKey !== 'your-user-auth-key-here') {
@@ -73,11 +75,11 @@ async function send({ userIds, title, message, url }) {
             timeout: 8000,
           });
           const { id, recipients } = retryResponse.data || {};
-          console.log(`[Push] ✅ Retry successful — notification id: ${id} | recipients: ${recipients}`);
+          console.log(`[Push] ✅ Retry successful — notification id: ${id} | recipients: ${recipients} | event: ${title}`);
           return retryResponse.data;
         }
       } catch (retryErr) {
-        console.error('[Push] ❌ Retry also failed:', retryErr.response?.data || retryErr.message);
+        console.error(`[Push] ❌ Retry also failed for user(s) ${userIds.join(',')} | event: ${title}:`, retryErr.response?.data || retryErr.message);
       }
     }
   }
