@@ -153,7 +153,7 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
   // ── Desktop Nav Links ───────────────────────────────────────────────────────
   const segStyle = (active, activeColor) => ({
     display: 'flex', alignItems: 'center', gap: 6,
-    color: active ? activeColor : #111827,
+    color: active ? activeColor : '#111827',
     background: active ? '#fff' : 'transparent',
     boxShadow: active ? '0 1px 5px rgba(15,23,42,0.10)' : 'none',
     borderRadius: 999, padding: '7px 14px',
