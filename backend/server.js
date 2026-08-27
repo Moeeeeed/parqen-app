@@ -5351,10 +5351,16 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
         } catch { return {}; }
       })(),
       (async () => {
-        // Balance — non-critical, silently ignored on error
+        // Balance — read from wallets, the source of truth (matches Wallet page,
+        // escrow, swap, and every other balance display in the app). Non-critical,
+        // silently ignored on error.
         try {
-          const { data: bal } = await supabaseAdmin.from('user_balances').select('balance_btc, balance_usd').eq('user_id', req.userId).single();
-          return bal || { balance_btc: 0, balance_usd: 0 };
+          const [{ data: bal }, btcPrice] = await Promise.all([
+            supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', req.userId).maybeSingle(),
+            getCurrentBTCPrice().catch(() => 88000),
+          ]);
+          const btc = parseFloat(bal?.balance_btc || 0);
+          return { balance_btc: btc, balance_usd: parseFloat((btc * btcPrice).toFixed(2)) };
         } catch { return { balance_btc: 0, balance_usd: 0 }; }
       })(),
     ]);
@@ -8384,10 +8390,12 @@ app.post('/api/trades/:id/release', tradeLimiter, verifyToken, async (req, res) 
               // and the sell-offer auto-pause check) from drifting stale — see
               // syncSecondaryBtcBalance in tradeEscrowService.js for the same fix
               // applied to trade release/refund.
-              await Promise.all([
+              const [ubBonus, uwBonus] = await Promise.all([
                 supabaseAdmin.from('user_balances').update({ balance_btc: newBal, updated_at: new Date().toISOString() }).eq('user_id', releasedTrade.buyer_id),
                 supabaseAdmin.from('user_wallets').update({ balance_btc: newBal, updated_at: new Date().toISOString() }).eq('user_id', releasedTrade.buyer_id),
-              ]).catch(e => console.error('[bonus] Secondary balance sync failed (non-fatal):', e.message));
+              ]).catch(e => ({ ubError: e })); // network-level rejection fallback (rare — .update() itself resolves with {error})
+              if (ubBonus?.error || ubBonus?.ubError) console.error('🚨 [bonus] user_balances mirror sync failed (non-fatal):', (ubBonus.error || ubBonus.ubError).message);
+              if (uwBonus?.error) console.error('🚨 [bonus] user_wallets mirror sync failed (non-fatal):', uwBonus.error.message);
               await supabaseAdmin.from('users').update({
                 bonus_step: 3, bonus_unlocked_at: new Date().toISOString(),
               }).eq('id', releasedTrade.buyer_id);
@@ -10254,10 +10262,16 @@ app.get('/api/admin/users/:id/detail', verifyToken, async (req, res) => {
     const { data: user, error } = await supabaseAdmin.from('users').select(
       'id, username, email, full_name, avatar_url, badge, country, account_status, has_warning, ' +
       'created_at, last_login, last_seen_at, kyc_status, is_id_verified, is_email_verified, is_phone_verified, ' +
-      'average_rating, total_trades, positive_feedback, negative_feedback'
+      'average_rating, total_trades, positive_feedback, negative_feedback, referred_by'
     ).eq('id', id).maybeSingle();
     if (error) throw error;
     if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Who referred this user, if anyone — a single extra read-only lookup by their
+    // own referred_by FK (not the reverse "who did they refer" direction).
+    const { data: referrer } = user.referred_by
+      ? await supabaseAdmin.from('users').select('id, username, email, created_at').eq('id', user.referred_by).maybeSingle()
+      : { data: null };
 
     const OPEN_TRADE_STATUSES = ['CREATED', 'FUNDS_LOCKED', 'PAYMENT_SENT', 'DISPUTED'];
     const [completedR, activeR, reviewsR, listingsR] = await Promise.all([
@@ -10293,6 +10307,7 @@ app.get('/api/admin/users/:id/detail', verifyToken, async (req, res) => {
       activeTrades,
       activeListingCount: activeListings.length,
       activeListings,
+      referredBy: referrer || null,
     });
   } catch (error) {
     console.error('[GET /api/admin/users/:id/detail]', error.message);
@@ -12481,9 +12496,11 @@ app.get('/api/wallet', verifyToken, async (req, res) => {
       console.error('[GET /api/wallet] DB error:', userError.message, '| code:', userError.code);
       return res.json({ success: true, wallet: { address: null, walletId: null, created_at: null, balance_btc: 0, locked_balance_btc: 0, balance_usd: 0, has_address: false }, transactions: [] });
     }
-    const [{ data: balance }, { data: balanceUsd }] = await Promise.all([
+    // balance_usd is computed live from wallets.balance_btc — wallets is the
+    // source of truth; user_balances is a legacy mirror that can drift stale.
+    const [{ data: balance }, btcPriceForUsd] = await Promise.all([
       supabaseAdmin.from('wallets').select('balance_btc, locked_balance_btc').eq('user_id', req.userId).maybeSingle(),
-      supabaseAdmin.from('user_balances').select('balance_usd').eq('user_id', req.userId).maybeSingle(),
+      getCurrentBTCPrice().catch(() => 88000),
     ]);
     let address = user.bitcoin_wallet_address || user.coinbase_wallet_address;
     let walletId = user.coinbase_wallet_id;
@@ -12502,7 +12519,7 @@ app.get('/api/wallet', verifyToken, async (req, res) => {
       .order('completed_at', { ascending: false }).limit(10);
     res.json({
       success: true,
-      wallet: { address, walletId, created_at: user.wallet_created_at, balance_btc: parseFloat(balance?.balance_btc || 0), locked_balance_btc: parseFloat(balance?.locked_balance_btc || 0), balance_usd: parseFloat(balanceUsd?.balance_usd || 0), has_address: !!address },
+      wallet: { address, walletId, created_at: user.wallet_created_at, balance_btc: parseFloat(balance?.balance_btc || 0), locked_balance_btc: parseFloat(balance?.locked_balance_btc || 0), balance_usd: parseFloat((parseFloat(balance?.balance_btc || 0) * btcPriceForUsd).toFixed(2)), has_address: !!address },
       transactions: (recentTrades || []).map(t => ({ id: t.id, amount_btc: parseFloat(t.amount_btc || 0), amount_usd: parseFloat(t.amount_usd || 0), type: 'trade_completion', status: t.status, date: t.completed_at || t.created_at })),
     });
   } catch (error) {
@@ -12615,33 +12632,94 @@ app.post('/api/wallet/internal-transfer', verifyToken, requireNotBanned, async (
       });
     }
 
-    // ── Deduct from sender ─────────────────────────────────────────────────
+    // ── Deduct from sender (optimistic lock on wallets, the source of truth) ──
+    // Locked to the exact balance we just read — a concurrent request racing
+    // this same sender's balance makes this match 0 rows instead of debiting
+    // against a stale value. No RPC/migration used; this is the same lock
+    // idiom already proven elsewhere in this codebase (hdWalletRoutes.js send,
+    // hdWalletService.setWalletBalance).
     const newSenderBalance = parseFloat((available - amount).toFixed(8));
-    // wallets first (source of truth), then keep secondary tables in sync
-    await supabaseAdmin.from('wallets')
+    const { data: senderDeductRows, error: senderDeductErr } = await supabaseAdmin
+      .from('wallets')
       .update({ balance_btc: newSenderBalance, updated_at: new Date().toISOString() })
-      .eq('user_id', req.userId);
-    await supabaseAdmin.from('user_balances')
-      .update({ balance_btc: newSenderBalance, updated_at: new Date().toISOString() })
-      .eq('user_id', req.userId);
-    await supabaseAdmin.from('user_wallets')
-      .update({ balance_btc: newSenderBalance, updated_at: new Date().toISOString() })
-      .eq('user_id', req.userId);
+      .eq('user_id', req.userId)
+      .eq('balance_btc', available)
+      .select('balance_btc');
+    if (senderDeductErr) {
+      console.error('[InternalTransfer] sender debit failed:', senderDeductErr.message);
+      return res.status(500).json({ error: 'Transfer failed — please try again' });
+    }
+    if (!senderDeductRows || senderDeductRows.length === 0) {
+      return res.status(409).json({ error: 'Balance changed — please retry the transfer' });
+    }
 
-    // ── Credit recipient ───────────────────────────────────────────────────
-    const { data: recipWallet } = await supabaseAdmin
+    // Reverts the sender debit above if the recipient credit below can't be
+    // confirmed — locked to newSenderBalance so it only undoes the exact change
+    // this request just made, never an unrelated concurrent change. Never lets
+    // the transfer be reported successful; only makes the failure state visible
+    // instead of leaving the sender silently short.
+    const revertSenderDebit = async () => {
+      const { data: revertRows, error: revertErr } = await supabaseAdmin.from('wallets')
+        .update({ balance_btc: available, updated_at: new Date().toISOString() })
+        .eq('user_id', req.userId)
+        .eq('balance_btc', newSenderBalance)
+        .select('balance_btc');
+      if (revertErr || !revertRows || revertRows.length === 0) {
+        console.error(`🚨 [InternalTransfer] CRITICAL: sender debit revert FAILED for ${req.userId.slice(0,8)} — needs manual reconciliation:`, revertErr?.message || 'no row matched (balance already changed)');
+        await supabaseAdmin.from('reconciliation_flags').insert({
+          user_id: req.userId, currency: 'BTC', source_table: 'wallets',
+          authoritative_value: newSenderBalance, mirror_value: available, diff: amount,
+          reason: 'SYNC_FAILURE', status: 'RECONCILIATION_REQUIRED',
+          detail: { context: 'internal-transfer sender debit revert after recipient credit failure', error: revertErr?.message || 'no row matched' },
+        }).then(null, e => console.error('🚨 [InternalTransfer] also failed to write reconciliation_flags:', e.message));
+      }
+    };
+
+    // wallets already updated above (source of truth) — keep secondary tables in sync
+    const { error: ubSenderErr } = await supabaseAdmin.from('user_balances')
+      .update({ balance_btc: newSenderBalance, updated_at: new Date().toISOString() })
+      .eq('user_id', req.userId);
+    if (ubSenderErr) console.error(`🚨 [internal-transfer] user_balances mirror sync (sender) failed for ${req.userId.slice(0,8)}:`, ubSenderErr.message);
+    const { error: uwSenderErr } = await supabaseAdmin.from('user_wallets')
+      .update({ balance_btc: newSenderBalance, updated_at: new Date().toISOString() })
+      .eq('user_id', req.userId);
+    if (uwSenderErr) console.error(`🚨 [internal-transfer] user_wallets mirror sync (sender) failed for ${req.userId.slice(0,8)}:`, uwSenderErr.message);
+
+    // ── Credit recipient (read-then-conditional-update — same optimistic-lock
+    // pattern as hdWalletService.setWalletBalance()) ──────────────────────────
+    const { data: recipWallet, error: recipReadErr } = await supabaseAdmin
       .from('wallets').select('balance_btc').eq('user_id', recipientId).maybeSingle();
-    const newRecipientBalance = parseFloat((parseFloat(recipWallet?.balance_btc || 0) + amount).toFixed(8));
-    // wallets first (source of truth)
-    await supabaseAdmin.from('wallets')
+    if (recipReadErr || !recipWallet) {
+      await revertSenderDebit();
+      console.error('[InternalTransfer] recipient wallet read failed:', recipReadErr?.message || 'no wallet row');
+      return res.status(500).json({ error: 'Transfer failed — please try again' });
+    }
+    const recipientBalanceBeforeCredit = parseFloat(recipWallet.balance_btc || 0);
+    const newRecipientBalance = parseFloat((recipientBalanceBeforeCredit + amount).toFixed(8));
+    const { data: recipCreditRows, error: recipCreditErr } = await supabaseAdmin
+      .from('wallets')
       .update({ balance_btc: newRecipientBalance, updated_at: new Date().toISOString() })
-      .eq('user_id', recipientId);
+      .eq('user_id', recipientId)
+      .eq('balance_btc', recipientBalanceBeforeCredit)
+      .select('balance_btc');
+    if (recipCreditErr) {
+      await revertSenderDebit();
+      console.error('[InternalTransfer] recipient credit failed:', recipCreditErr.message);
+      return res.status(500).json({ error: 'Transfer failed — please try again' });
+    }
+    if (!recipCreditRows || recipCreditRows.length === 0) {
+      await revertSenderDebit();
+      return res.status(409).json({ error: 'Recipient balance changed — please retry the transfer' });
+    }
+
     // keep secondary tables in sync
-    await supabaseAdmin.from('user_balances')
+    const { error: ubRecipErr } = await supabaseAdmin.from('user_balances')
       .upsert({ user_id: recipientId, balance_btc: newRecipientBalance, updated_at: new Date().toISOString() });
-    await supabaseAdmin.from('user_wallets')
+    if (ubRecipErr) console.error(`🚨 [internal-transfer] user_balances mirror sync (recipient) failed for ${recipientId.slice(0,8)}:`, ubRecipErr.message);
+    const { error: uwRecipErr } = await supabaseAdmin.from('user_wallets')
       .update({ balance_btc: newRecipientBalance, updated_at: new Date().toISOString() })
       .eq('user_id', recipientId);
+    if (uwRecipErr) console.error(`🚨 [internal-transfer] user_wallets mirror sync (recipient) failed for ${recipientId.slice(0,8)}:`, uwRecipErr.message);
 
     // ── Generate transfer reference ────────────────────────────────────────
     const crypto = require('crypto');
@@ -12832,8 +12910,10 @@ app.post('/api/wallet/webhook', async (req, res) => {
           await supabaseAdmin.from('wallets').insert({ user_id: userId, balance_btc: newBal, locked_balance_btc: 0, updated_at: new Date().toISOString() });
         }
         // keep secondary tables in sync
-        await supabaseAdmin.from('user_balances').upsert({ user_id: userId, balance_btc: newBal, updated_at: new Date().toISOString() });
-        await supabaseAdmin.from('user_wallets').update({ balance_btc: newBal, updated_at: new Date().toISOString() }).eq('user_id', userId);
+        const { error: ubWebhookErr } = await supabaseAdmin.from('user_balances').upsert({ user_id: userId, balance_btc: newBal, updated_at: new Date().toISOString() });
+        if (ubWebhookErr) console.error(`🚨 [Webhook] user_balances mirror sync failed for ${userId.slice(0,8)}:`, ubWebhookErr.message);
+        const { error: uwWebhookErr } = await supabaseAdmin.from('user_wallets').update({ balance_btc: newBal, updated_at: new Date().toISOString() }).eq('user_id', userId);
+        if (uwWebhookErr) console.error(`🚨 [Webhook] user_wallets mirror sync failed for ${userId.slice(0,8)}:`, uwWebhookErr.message);
         await createNotification(userId, 'wallet', '💰 Bitcoin Received', `${btcAmt} BTC has been credited to your PRAQEN wallet.`, '/wallet');
       }
     }
@@ -13702,7 +13782,13 @@ app.post('/api/admin/hot-wallet/collect-fees', verifyToken, async (req, res) => 
         .update({ balance_usdt: companyBal, updated_at: new Date().toISOString() })
         .eq('user_id', COMPANY_WALLET_ID);
       if (restoreErr) {
-        console.error('[collect-fees] CRITICAL: company balance restore failed!', restoreErr.message, 'amount:', amount);
+        console.error('🚨 [collect-fees] CRITICAL: company balance restore failed!', restoreErr.message, 'amount:', amount);
+        await supabaseAdmin.from('reconciliation_flags').insert({
+          user_id: COMPANY_WALLET_ID, currency: 'USDT', source_table: 'wallets',
+          authoritative_value: companyBal, mirror_value: null, diff: amount,
+          reason: 'SYNC_FAILURE', status: 'RECONCILIATION_REQUIRED',
+          detail: { context: 'collect-fees restore-on-failure', error: restoreErr.message, amount },
+        }).then(null, e => console.error('🚨 [collect-fees] also failed to write reconciliation_flags:', e.message));
       }
       return res.status(500).json({ error: 'Could not queue fee collection for review. Please try again.' });
     }
@@ -13930,9 +14016,14 @@ app.listen(PORT, () => {
   reactivateReturnedSellers().catch(err => console.error('[startup] reactivateReturnedSellers:', err.message));
   setInterval(() => reactivateReturnedSellers().catch(err => console.error('[interval] reactivateReturnedSellers:', err.message)), 6 * 60 * 60 * 1000);
 
-  // PRAQEN Weekly Stars winners are admin-selected now (POST /api/admin/trader-of-week/select)
-  // — no automatic rotation cron here anymore, deliberately, so a CEO/admin pick is never
-  // silently overwritten. See services/traderOfWeekService.js.
+  // PRAQEN Weekly Stars: any UNPINNED slot auto-rotates to the next eligible,
+  // currently-online candidate every 48h (services/traderOfWeekService.js). A
+  // slot an admin hard-pinned (via POST /api/admin/trader-of-week/select or the
+  // pin_trader_of_week() SQL helper) is never touched by this — only slots
+  // nobody has manually pinned rotate.
+  traderOfWeekService.runAutoRotation().catch(err => console.error('[startup] traderOfWeek runAutoRotation:', err.message));
+  setInterval(() => traderOfWeekService.runAutoRotation().catch(err => console.error('[interval] traderOfWeek runAutoRotation:', err.message)), 10 * 60 * 1000);
+  console.log(`⭐ Trader-of-Week auto-rotation: unpinned slots rotate to next online candidate every ${traderOfWeekService.ROTATION_HOURS}h — checks every 10 min`);
 
   // Backfill missing country codes for existing users using phone/KYC data
   backfillCountriesFromPhone().catch(err => console.error('[startup] backfillCountries:', err.message));

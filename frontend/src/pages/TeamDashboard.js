@@ -5293,6 +5293,7 @@ function UsersSection() {
                 {[
                   { l: 'Status', v: (detail?.user?.account_status || selected.account_status) || 'active' },
                   { l: 'Joined', v: fmtDate(selected.created_at) },
+                  { l: 'Referred By', v: detail?.referredBy ? detail.referredBy.username : 'None (direct signup)' },
                   { l: 'KYC', v: (detail?.user?.is_id_verified || detail?.user?.kyc_status === 'approved') ? '✅ Verified' : (detail?.user?.kyc_status || 'Not verified') },
                   { l: 'Trades (completed)', v: fmt(detail?.user?.total_trades ?? selected.total_trades) },
                   { l: 'Trade Volume', v: detail ? `$${fmt(detail.tradeVolumeUsd, 0)}${detail.tradeVolumeCapped ? '+' : ''}` : '—' },

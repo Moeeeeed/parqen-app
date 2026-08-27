@@ -17,6 +17,15 @@ const authH = () => {
   return t ? { Authorization: `Bearer ${t}` } : {};
 };
 
+// ── Per-ticket "last seen" tracking for unread badges ───────────────────────
+// Purely local to this browser/agent — no backend column for it, so the badge
+// is a best-effort "has this ticket's updated_at moved since I last opened or
+// replied to it" signal, not a synced read-receipt across an agent's devices.
+const LAST_SEEN_KEY = 'agentTicketLastSeen';
+function loadLastSeenMap() {
+  try { return JSON.parse(localStorage.getItem(LAST_SEEN_KEY) || '{}'); } catch { return {}; }
+}
+
 // ── Color palette (matches TeamDashboard) ───────────────────────────────────
 const C = {
   forest: '#1B4332',
@@ -243,6 +252,20 @@ function AgentDashboardInner({ user }) {
   const [userTyping, setUserTyping] = useState(false);
   const [agentTyping, setAgentTyping] = useState(false);
   const [accessDenied, setAccessDenied] = useState(null);
+  const [lastSeen, setLastSeenState] = useState(() => loadLastSeenMap());
+  const markSeen = useCallback((ticketId) => {
+    setLastSeenState(prev => {
+      const next = { ...prev, [ticketId]: new Date().toISOString() };
+      try { localStorage.setItem(LAST_SEEN_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+  const isUnread = useCallback((t) => {
+    if (t.status === 'resolved' || t.status === 'closed') return false;
+    const seenAt = lastSeen[t.id];
+    if (!seenAt) return true;
+    return new Date(t.updated_at || t.created_at) > new Date(seenAt);
+  }, [lastSeen]);
   const chatEndRef = useRef(null);
   const replyRef = useRef(null);
   const pollRef = useRef(null);
@@ -339,6 +362,7 @@ function AgentDashboardInner({ user }) {
       // Load messages
       const { data } = await axios.get(`${API_URL}/agent/tickets/${ticket.id}/messages`, { headers: authH() });
       setMessages(data.messages || []);
+      markSeen(ticket.id);
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
     } catch (e) {
       toast.error('Failed to load chat');
@@ -356,13 +380,14 @@ function AgentDashboardInner({ user }) {
         const incoming = data.messages || [];
         setMessages(prev => {
           if (incoming.length <= prev.length) return prev;
+          markSeen(selectedTicket.id);
           return incoming;
         });
       } catch {}
     }, 3000);
 
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [selectedTicket]);
+  }, [selectedTicket, markSeen]);
 
   // ── Poll for typing indicators ─────────────────────────────────────────
   useEffect(() => {
@@ -402,6 +427,7 @@ function AgentDashboardInner({ user }) {
       const { data } = await axios.post(`${API_URL}/agent/tickets/${selectedTicket.id}/reply`, { message: msgText }, { headers: authH() });
       setMessages(prev => [...prev, data.message]);
       setTickets(prev => prev.map(t => t.id === selectedTicket.id ? { ...t, status: 'active', updated_at: new Date().toISOString() } : t));
+      markSeen(selectedTicket.id);
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
     } catch (e) {
       setReply(msgText);
@@ -444,7 +470,8 @@ function AgentDashboardInner({ user }) {
 
   // ── Filtered tickets ───────────────────────────────────────────────────
   const filtered = tickets.filter(t => {
-    if (statusFilter !== 'all' && t.status !== statusFilter) return false;
+    if (statusFilter === 'unread') { if (!isUnread(t)) return false; }
+    else if (statusFilter !== 'all' && t.status !== statusFilter) return false;
     if (deptFilter !== 'all' && (t.department || 'general') !== deptFilter) return false;
     if (searchQ.trim()) {
       const q = searchQ.toLowerCase();
@@ -458,6 +485,7 @@ function AgentDashboardInner({ user }) {
 
   const counts = {
     all: tickets.length,
+    unread: tickets.filter(isUnread).length,
     open: tickets.filter(t => t.status === 'open').length,
     active: tickets.filter(t => t.status === 'active').length,
     resolved: tickets.filter(t => t.status === 'resolved').length,
@@ -581,6 +609,7 @@ function AgentDashboardInner({ user }) {
             <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1">
               {[
                 { id: 'all', label: `All (${counts.all})` },
+                { id: 'unread', label: `Unread (${counts.unread})` },
                 { id: 'open', label: `Open (${counts.open})` },
                 { id: 'active', label: `Active (${counts.active})` },
                 { id: 'resolved', label: `Resolved (${counts.resolved})` },
@@ -589,7 +618,7 @@ function AgentDashboardInner({ user }) {
                   className="px-3 py-1.5 rounded-xl text-[11px] font-bold transition flex-shrink-0"
                   style={{
                     backgroundColor: statusFilter === f.id ? C.forest : 'white',
-                    color: statusFilter === f.id ? '#fff' : C.g500,
+                    color: statusFilter === f.id ? '#fff' : (f.id === 'unread' && counts.unread > 0 ? '#DC2626' : C.g500),
                     border: `1px solid ${statusFilter === f.id ? C.forest : C.g200}`,
                   }}>
                   {f.label}
@@ -630,28 +659,35 @@ function AgentDashboardInner({ user }) {
                 filtered.map(t => {
                   const isSelected = selectedTicket?.id === t.id;
                   const isAssigned = t.assigned_agent_id === user?.id;
+                  const unread = isUnread(t);
                   return (
                     <button key={t.id} onClick={() => openTicket(t)}
                       className="w-full text-left p-3 rounded-xl transition-all"
                       style={{
                         backgroundColor: isSelected ? '#F0FDF4' : '#fff',
-                        border: `1.5px solid ${isSelected ? C.forest : C.g200}`,
+                        border: `1.5px solid ${isSelected ? C.forest : (unread ? '#FCA5A5' : C.g200)}`,
                         boxShadow: isSelected ? `0 0 0 1px ${C.forest}20` : 'none',
                       }}>
                       <div className="flex items-start gap-2.5">
                         {/* Avatar */}
-                        <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                          style={{ backgroundColor: t.avatar_url ? 'transparent' : C.g100 }}>
-                          {t.avatar_url
-                            ? <img src={t.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover" />
-                            : <span className="text-xs font-black" style={{ color: C.g500 }}>
-                                {(t.username || t.full_name || '?')[0].toUpperCase()}
-                              </span>
-                          }
+                        <div className="relative flex-shrink-0">
+                          <div className="w-9 h-9 rounded-full flex items-center justify-center"
+                            style={{ backgroundColor: t.avatar_url ? 'transparent' : C.g100 }}>
+                            {t.avatar_url
+                              ? <img src={t.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover" />
+                              : <span className="text-xs font-black" style={{ color: C.g500 }}>
+                                  {(t.username || t.full_name || '?')[0].toUpperCase()}
+                                </span>
+                            }
+                          </div>
+                          {unread && (
+                            <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full border-2"
+                              style={{ backgroundColor: '#EF4444', borderColor: '#fff' }} />
+                          )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
-                            <p className="text-xs font-black truncate" style={{ color: C.g800 }}>
+                            <p className="text-xs font-black truncate" style={{ color: unread ? '#B91C1C' : C.g800 }}>
                               {t.full_name || t.username || 'User'}
                             </p>
                             <span className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full"

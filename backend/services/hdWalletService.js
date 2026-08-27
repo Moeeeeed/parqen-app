@@ -277,19 +277,32 @@ class HDWalletService {
   // ── upserts fail silently and were the actual cause of credits vanishing from `wallets` ──
   // ── while secondary tables (user_balances/user_wallets) still recorded them, producing ──
   // ── a stale/lower balance in `wallets` than what those mirror tables showed.
+  // Always resolves with { error } (never throws, error is null on success) — callers
+  // that don't check it keep working exactly as before; callers that do can now tell
+  // success from failure, which they couldn't before (the old version just returned
+  // the raw Supabase response and nobody inspected it).
   async setWalletBalance(userId, newBalanceBtc) {
     const nowIso = new Date().toISOString();
-    const { data: existing } = await supabaseAdmin
-      .from('wallets').select('user_id').eq('user_id', userId).maybeSingle();
+    const { data: existing, error: readErr } = await supabaseAdmin
+      .from('wallets').select('user_id, balance_btc').eq('user_id', userId).maybeSingle();
+    if (readErr) return { error: readErr };
 
     if (existing) {
-      return supabaseAdmin.from('wallets')
+      // Optimistic lock on the value just read — guards against a concurrent
+      // write landing between this read and this update.
+      const { data: updated, error: updateErr } = await supabaseAdmin.from('wallets')
         .update({ balance_btc: newBalanceBtc, updated_at: nowIso })
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .eq('balance_btc', existing.balance_btc)
+        .select('balance_btc');
+      if (updateErr) return { error: updateErr };
+      if (!updated || updated.length === 0) return { error: new Error(`setWalletBalance: balance changed concurrently for ${userId} — retry needed`) };
+      return { error: null };
     }
-    return supabaseAdmin.from('wallets').insert({
+    const { error: insertErr } = await supabaseAdmin.from('wallets').insert({
       user_id: userId, balance_btc: newBalanceBtc, locked_balance_btc: 0, updated_at: nowIso,
     });
+    return { error: insertErr || null };
   }
 
   getPraqenFeeAddress() {

@@ -394,7 +394,7 @@ router.post('/check-deposit', verifyToken, async (req, res) => {
 async function pauseSellOffersIfEmpty(sellerId) {
   try {
     const { data: bal } = await supabaseAdmin
-      .from('user_balances').select('balance_btc').eq('user_id', sellerId).single();
+      .from('wallets').select('balance_btc').eq('user_id', sellerId).maybeSingle();
     if (parseFloat(bal?.balance_btc || 0) > 0.000001) return;
 
     const { data: paused } = await supabaseAdmin
@@ -413,6 +413,27 @@ async function pauseSellOffersIfEmpty(sellerId) {
       });
     }
   } catch (err) { console.error('[pauseSellOffersIfEmpty withdrawal]', err.message); }
+}
+
+// Logs + flags (never throws) a failed BTC company-fee credit from the CEO
+// withdrawal-approve route. Shared by both call sites (force-approved/queued
+// and confirmed/broadcast) so the check can't drift out of sync between them.
+// Deliberately non-throwing — this always runs after the withdrawal itself has
+// already succeeded/broadcast, and a fee-crediting failure must never be able
+// to affect that already-committed outcome.
+async function flagCompanyFeeCreditFailureIfAny(walletFeeResult, mirrorFeeResult, newCompanyBalance, context) {
+  if (walletFeeResult?.error) {
+    console.error(`🚨 [${context}] company wallet fee credit FAILED — needs manual reconciliation:`, walletFeeResult.error.message);
+    await supabaseAdmin.from('reconciliation_flags').insert({
+      user_id: COMPANY_WALLET_ID, currency: 'BTC', source_table: 'wallets',
+      authoritative_value: newCompanyBalance, mirror_value: null, diff: null,
+      reason: 'SYNC_FAILURE', status: 'RECONCILIATION_REQUIRED',
+      detail: { context, error: walletFeeResult.error.message },
+    }).then(null, e => console.error(`🚨 [${context}] also failed to write reconciliation_flags:`, e.message));
+  }
+  if (mirrorFeeResult?.error) {
+    console.error(`🚨 [${context}] company fee mirror sync (user_balances) FAILED:`, mirrorFeeResult.error.message);
+  }
 }
 
 router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res) => {
@@ -649,10 +670,12 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
       return res.status(409).json({ error: 'Balance changed — please retry the withdrawal' });
     }
     deducted = true;
-    await Promise.all([
+    const [ubSync, uwSync] = await Promise.all([
       supabaseAdmin.from('user_balances').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
       supabaseAdmin.from('user_wallets').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
     ]);
+    if (ubSync?.error) console.error(`🚨 [hd-wallet/send] user_balances mirror sync failed for ${userId.slice(0,8)}:`, ubSync.error.message);
+    if (uwSync?.error) console.error(`🚨 [hd-wallet/send] user_wallets mirror sync failed for ${userId.slice(0,8)}:`, uwSync.error.message);
     // Immediately re-check this seller's gift-card listings against their new (lower)
     // balance — see GIFT_CARD_SAFETY_MIN_USD in offerStatusService.js. Best-effort; never
     // blocks the withdrawal itself.
@@ -742,10 +765,12 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
       if (restoreErr) {
         console.error('[hdWalletRoutes] CRITICAL: balance restore failed after send error!', restoreErr.message, 'user:', userId, 'amount:', amount);
       } else {
-        await Promise.all([
+        const [ubRestore, uwRestore] = await Promise.all([
           supabaseAdmin.from('user_balances').update({ balance_btc: available, updated_at: new Date().toISOString() }).eq('user_id', userId),
           supabaseAdmin.from('user_wallets').update({ balance_btc: available, updated_at: new Date().toISOString() }).eq('user_id', userId),
         ]);
+        if (ubRestore?.error) console.error(`🚨 [hd-wallet/send restore] user_balances mirror restore failed for ${userId.slice(0,8)}:`, ubRestore.error.message);
+        if (uwRestore?.error) console.error(`🚨 [hd-wallet/send restore] user_wallets mirror restore failed for ${userId.slice(0,8)}:`, uwRestore.error.message);
       }
     }
 
@@ -1510,10 +1535,11 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
         } else {
           const { data: cw } = await supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', COMPANY_WALLET_ID).maybeSingle();
           const ncb = parseFloat((parseFloat(cw?.balance_btc || 0) + platformFee).toFixed(8));
-          await Promise.all([
+          const [walletFeeResult, mirrorFeeResult] = await Promise.all([
             hdWallet.setWalletBalance(COMPANY_WALLET_ID, ncb),
             supabaseAdmin.from('user_balances').upsert({ user_id: COMPANY_WALLET_ID, balance_btc: ncb, updated_at: ts }, { onConflict: 'user_id' }),
           ]);
+          await flagCompanyFeeCreditFailureIfAny(walletFeeResult, mirrorFeeResult, ncb, 'CEO withdrawal-approve BTC company fee (force-approved/queued path)');
         }
         await supabaseAdmin.from('wallet_transactions').update({
           status: 'PENDING', reviewed_by: ceo.id, reviewed_at: ts,
@@ -1545,10 +1571,14 @@ router.post('/ceo-withdrawals/:id/approve', verifyToken, async (req, res) => {
     } else {
       const { data: companyWallet } = await supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', COMPANY_WALLET_ID).maybeSingle();
       const newCompanyBalance = parseFloat((parseFloat(companyWallet?.balance_btc || 0) + platformFee).toFixed(8));
-      await Promise.all([
+      const [walletFeeResult, mirrorFeeResult] = await Promise.all([
         hdWallet.setWalletBalance(COMPANY_WALLET_ID, newCompanyBalance),
         supabaseAdmin.from('user_balances').upsert({ user_id: COMPANY_WALLET_ID, balance_btc: newCompanyBalance, updated_at: ts }, { onConflict: 'user_id' }),
       ]);
+      // Never throws (see flagCompanyFeeCreditFailureIfAny below) — this runs after
+      // revertOnFailure = false above, so a fee-credit failure here must only be
+      // logged/flagged, never allowed to affect the already-broadcast withdrawal.
+      await flagCompanyFeeCreditFailureIfAny(walletFeeResult, mirrorFeeResult, newCompanyBalance, 'CEO withdrawal-approve BTC company fee (confirmed/broadcast path)');
     }
     await supabaseAdmin.from('wallet_transactions').update({
       status: 'CONFIRMED', tx_hash: result.txid, reviewed_by: ceo.id, reviewed_at: ts,

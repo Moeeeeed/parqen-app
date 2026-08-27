@@ -46,6 +46,14 @@ const RISING_RECENT_WINDOW_DAYS  = 14;   // rising trader needs a recent complet
 const GIFTCARD_MIN_TRADES     = 5;
 const GIFTCARD_MIN_COMPLETION = 20; // percent, gift-card-specific
 
+// ── Auto-rotation (unpinned slots only) ─────────────────────────────────────
+// A slot rotates to the next eligible, currently-online candidate every
+// ROTATION_HOURS — but only if nobody has hard-pinned it (pinned=true, set by
+// a manual admin pick via selectWinner/the select endpoint, or the
+// pin_trader_of_week() SQL helper). See runAutoRotation() below.
+const ROTATION_HOURS        = 48;
+const ONLINE_WITHIN_MINUTES = 5; // "online right now" gate, matches the online-badge threshold used elsewhere on the marketplace pages
+
 const COUNTRY_LOCAL_PAYMENT = { GH: 'mtn', KE: 'mpesa' }; // Ghana=MTN Mobile Money, Kenya=M-Pesa, per product decision
 
 // ── Data fetchers ────────────────────────────────────────────────────────────
@@ -214,6 +222,12 @@ function isActiveWithinDays(user, days) {
 
 function isBanned(user) {
   return !user || user.account_status === 'banned' || !!user.has_warning;
+}
+
+function isOnlineNow(user, minutes = ONLINE_WITHIN_MINUTES) {
+  const cutoff = Date.now() - minutes * 60 * 1000;
+  const last = new Date(user.last_seen_at || user.last_login || 0).getTime();
+  return last >= cutoff;
 }
 
 function isEligibleEstablished(user, recentCount) {
@@ -419,31 +433,10 @@ async function validateManualSelection(slot, username) {
 
 // ── Admin selects a winner for a slot ────────────────────────────────────────
 // Writes the current-winner row (what the public endpoint reads) AND an
-// append-only history row (never updated afterward). expiresInDays defaults
-// to the 7-day recognition period but is left renewable by simply selecting
-// again — this never runs automatically.
-//
-// Two ways to call this: pass `username` for a manual admin pick (bypasses
-// ranking thresholds entirely, still validates the account/listing are real —
-// see validateManualSelection), or pass `userId` to select from the ranked
-// getCandidates() list (used for Rising Trader, and still available for the
-// other 4 slots if you want a ranking-backed pick instead of typing a name).
-async function selectWinner({ slot, userId, username, adminId, adminUsername, expiresInDays = 7 }) {
-  if (!SLOTS.includes(slot)) throw new Error(`Unknown slot: ${slot}`);
-
-  let chosen, warning = null;
-  if (username) {
-    const result = await validateManualSelection(slot, username);
-    chosen = result.candidate;
-    warning = result.warning;
-  } else {
-    const candidates = await getCandidates(slot);
-    chosen = candidates.find(c => c.user_id === userId);
-    if (!chosen) {
-      throw new Error('Selected trader is not a currently eligible candidate for this slot. Re-check the candidate list — eligibility is computed live and may have changed.');
-    }
-  }
-
+// append-only history row (never updated afterward). Shared by selectWinner
+// (admin picks, always pinned=true) and runAutoRotation (algorithmic picks,
+// always pinned=false) — the only two writers of trader_of_week.
+async function persistWinner({ slot, chosen, adminId = null, adminUsername = null, expiresInDays = 7, pinned }) {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + expiresInDays * 24 * 60 * 60 * 1000).toISOString();
   const nowIso = now.toISOString();
@@ -457,7 +450,7 @@ async function selectWinner({ slot, userId, username, adminId, adminUsername, ex
     country: chosen.country,
     selected_at: nowIso,
     next_rotation_at: expiresAt,
-    pinned: true,
+    pinned,
     // selected_by / selected_by_username / score / reason already existed on this
     // table from an earlier, untracked manual schema change — reused here rather
     // than adding duplicate pinned_by/pinned_by_username columns.
@@ -484,7 +477,84 @@ async function selectWinner({ slot, userId, username, adminId, adminUsername, ex
   });
   if (histErr) console.error('[traderOfWeek] history insert failed (current winner was still saved):', histErr.message);
 
+  return row;
+}
+
+// expiresInDays defaults to the 7-day recognition period but is left renewable
+// by simply selecting again. Two ways to call this: pass `username` for a
+// manual admin pick (bypasses ranking thresholds entirely, still validates the
+// account/listing are real — see validateManualSelection), or pass `userId` to
+// select from the ranked getCandidates() list (used for Rising Trader, and
+// still available for the other 4 slots if you want a ranking-backed pick
+// instead of typing a name).
+async function selectWinner({ slot, userId, username, adminId, adminUsername, expiresInDays = 7 }) {
+  if (!SLOTS.includes(slot)) throw new Error(`Unknown slot: ${slot}`);
+
+  let chosen, warning = null;
+  if (username) {
+    const result = await validateManualSelection(slot, username);
+    chosen = result.candidate;
+    warning = result.warning;
+  } else {
+    const candidates = await getCandidates(slot);
+    chosen = candidates.find(c => c.user_id === userId);
+    if (!chosen) {
+      throw new Error('Selected trader is not a currently eligible candidate for this slot. Re-check the candidate list — eligibility is computed live and may have changed.');
+    }
+  }
+
+  // A manual admin pick is always a hard pin (pinned=true) — see runAutoRotation,
+  // which skips any slot with pinned=true so this is never silently overwritten.
+  const row = await persistWinner({ slot, chosen, adminId, adminUsername, expiresInDays, pinned: true });
   return { ...row, warning };
 }
 
-module.exports = { SLOTS, getCandidates, getCurrentWinners, selectWinner, validateManualSelection };
+// Highest-scoring eligible candidate for `slot` who is online right now
+// (isOnlineNow), or null if none of them are. getCandidates() already sorts by
+// score desc and already excludes anyone holding another slot's current
+// winner, so this just walks that list looking for the first one online.
+async function pickOnlineCandidate(slot) {
+  const candidates = await getCandidates(slot);
+  if (!candidates.length) return null;
+  const users = await fetchUsersByIds(candidates.map(c => c.user_id));
+  for (const c of candidates) {
+    const u = users[c.user_id];
+    if (u && isOnlineNow(u)) return c;
+  }
+  return null;
+}
+
+// Rotates every UNPINNED slot whose ROTATION_HOURS window has elapsed to the
+// next eligible, currently-online candidate. Called on a timer from
+// server.js. Any slot an admin has hard-pinned (pinned=true — via the select
+// endpoint or the pin_trader_of_week() SQL helper) is left completely alone,
+// so this never overrides a deliberate admin choice; it only fills in slots
+// nobody has claimed. If no eligible candidate is online on a given tick, the
+// existing winner (if any) is left in place and retried on the next tick,
+// rather than leaving the slot empty.
+async function runAutoRotation() {
+  const now = Date.now();
+  const currentWinners = await getCurrentWinners();
+
+  for (const slot of SLOTS) {
+    const winner = currentWinners[slot];
+    if (winner?.pinned) continue;
+
+    const dueAt = winner?.next_rotation_at ? new Date(winner.next_rotation_at).getTime() : 0;
+    if (winner && dueAt > now) continue;
+
+    try {
+      const candidate = await pickOnlineCandidate(slot);
+      if (!candidate) {
+        console.log(`[traderOfWeek] auto-rotation: no online eligible candidate for "${slot}" — leaving as-is, will retry`);
+        continue;
+      }
+      await persistWinner({ slot, chosen: candidate, expiresInDays: ROTATION_HOURS / 24, pinned: false, adminUsername: 'auto-rotation' });
+      console.log(`[traderOfWeek] auto-rotation: "${slot}" -> ${candidate.username} (next check in ${ROTATION_HOURS}h)`);
+    } catch (err) {
+      console.error(`[traderOfWeek] auto-rotation failed for "${slot}":`, err.message);
+    }
+  }
+}
+
+module.exports = { SLOTS, ROTATION_HOURS, getCandidates, getCurrentWinners, selectWinner, validateManualSelection, runAutoRotation };

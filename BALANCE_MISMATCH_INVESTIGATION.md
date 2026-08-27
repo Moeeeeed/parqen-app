@@ -194,3 +194,127 @@ Phase 8's DB-only reconciliation found: `trades.platform_fee_btc/usdt` summed ov
 - Fee rates (2%/3%/0.4%/2%/4%/free tiers) were not touched — none of the changed code computes or alters a fee rate, only where/how the resulting mutation is applied atomically.
 - `user_balances` and `user_wallets` were not dropped — kept as read/write mirrors for now per the "don't delete yet" instruction; the migration only adds a constraint and new tables/functions.
 - Nothing was committed, pushed, migrated (the `.sql` files exist on disk only — the user is applying them manually in Supabase SQL Editor per their own preference), or deployed.
+
+---
+
+## 2026-08-26 — Confirmed: the 2026-08-25 migration was never applied; deposit crediting is currently broken live
+
+Triggered by a user report ("swap refused, balance review needed") and a separate read-only check on user `kingkong79-pro`, who has 598.5 USDT sitting on-chain at their deposit address (`TRFDPKCVicFjXZyMZ9pQ2LzEngrZutVWuN`) that was never credited to their platform balance, despite the on-chain checkpoint (`user_wallets.last_onchain_usdt`) having been re-checked as recently as the day of this note.
+
+**Scope of this pass: investigation only, per explicit instruction. No code, schema, or balance was changed.**
+
+### A. Confirmed finding
+
+`database/2026-08-25_balance_integrity_fix.sql` — the migration that creates `praqen_credit_deposit` (and `praqen_internal_transfer`, `praqen_reject_withdrawal`) — was written and reviewed in the 2026-08-25 session but **was never actually run against the live database**. The application code was already switched that same day to depend on it unconditionally. Since then, every on-chain BTC and USDT deposit has been detected but has failed to credit, silently and repeatedly.
+
+### B. Exact code path causing the failure
+
+Two call sites, both identical in shape:
+- `backend/services/usdtDepositMonitor.js:249-270` (`checkUserDeposit`, USDT)
+- `backend/services/depositMonitor.js:413-434` (`checkUserDeposit`, BTC)
+
+Both run on the monitor's 90-second poll loop (`POLL_INTERVAL_MS = 90 * 1000`, `usdtDepositMonitor.js:29`, started at `server.js:13963` and `:13967`), **and** on a user-triggered "check now" path — `POST/GET /api/wallet/usdt/check` (`server.js:13403`) calls the exact same `usdtDepositMonitor.checkUserDeposit` directly.
+
+Flow when a deposit is detected:
+1. On-chain balance is compared to `user_wallets.last_onchain_btc`/`last_onchain_usdt` — if higher, a deposit is assumed.
+2. The monitor calls `supabaseAdmin.rpc('praqen_credit_deposit', { p_user_id, p_currency, p_amount, p_onchain_balance, p_idempotency_key, p_note })`.
+3. Supabase returns a `PGRST202` error ("Could not find the function... in the schema cache") because the function doesn't exist in the live DB.
+4. The `catch` block (`usdtDepositMonitor.js:259-270`, `depositMonitor.js:423-434`) checks the error message against `/duplicate|unique/i` and `/idempotency_key/i` — `PGRST202`'s message matches neither, so it falls to the `else` branch: logs `🚨 praqen_credit_deposit FAILED ... will retry automatically`, fires `alertOpsOfCreditFailure()` (emails `support@praqen.com`), and returns.
+5. Because the RPC call never ran, nothing was written — not the `wallet_transactions` row, not the balance credit, not the `user_wallets` checkpoint advance (all three were supposed to happen together, atomically, inside the RPC).
+6. **Since the checkpoint never advances, the exact same on-chain balance is detected as "a new deposit" again on the very next poll (90s later) or the next manual check — repeating steps 2-5 indefinitely.** This also means one stuck deposit generates a fresh alert email to `support@praqen.com` roughly every 90 seconds, indefinitely, until the migration is applied.
+
+### C. Evidence
+
+- Live diagnostic (read-only, zero side effects — confirmed by design: a bogus `p_user_id` makes the function's own logic raise an internal exception if it exists, rolling back everything; if it doesn't exist, Supabase never gets that far):
+  ```
+  supa.rpc('praqen_credit_deposit', { p_user_id: '00000000-0000-0000-0000-000000000000', ... })
+  → error: {
+      code: 'PGRST202',
+      message: 'Could not find the function public.praqen_credit_deposit(p_amount, p_currency, p_idempotency_key, p_note, p_onchain_balance, p_user_id) in the schema cache'
+    }
+  ```
+  Script: `backend/scripts/claude-check-migration-status.js` (left in place, matches this repo's existing convention of keeping one-off investigation scripts for the historical record).
+- Parameters sent by both call sites match the function signature in the migration file exactly (`p_user_id, p_currency, p_amount, p_onchain_balance, p_idempotency_key, p_note`) — this rules out a parameter-mismatch explanation; the function is simply absent.
+- `kingkong79-pro`: on-chain USDT balance 598.5 at their deposit address; `user_wallets.last_onchain_usdt` = 0, last updated the same day this was checked — consistent with the monitor having attempted and failed to credit this deposit repeatedly, exactly as traced in section B. Script: `backend/scripts/claude-check-kingkong79-pro.js`.
+- Both `depositMonitor.js` and `usdtDepositMonitor.js` contain the identical `praqen_credit_deposit` call and identical catch-and-retry-forever behavior — this is a systemic gap, not a one-user or one-currency issue.
+
+### D. What needs to be changed
+
+Nothing in application code — the code is correct *for a database that has the migration applied*. The only gap is that the migration itself was never run. No new code or design change is being proposed here beyond what the 2026-08-25 session already wrote and reviewed as additive-only/safe.
+
+### E. Whether a database migration is required
+
+**Yes.** `database/2026-08-25_balance_integrity_fix.sql` needs to be run against the live database (Supabase SQL Editor, per the user's own stated preference for applying these manually), followed by `database/tests/2026-08-25_balance_integrity_fix_test.sql` to verify. This is the same open item already listed at the top of this document under "Open items / next decisions needed" — this section confirms it is not just outstanding but actively causing live deposit-credit failures right now.
+
+**Not done in this pass, per instruction:** the migration was not run, no code was changed, no balance was touched, no user was manually credited. Stopped here for approval.
+
+---
+
+## 2026-08-26 (same day, continued) — Migration hardening, deep function-logic audit, local code fixes, and a real customer case (king888)
+
+Scope: a long continued session covering (1) security hardening of the pending migration, (2) a line-by-line financial-integrity audit of its RPC logic, (3) implementing a small, explicitly-approved set of code-level fund-safety fixes locally (not deployed), and (4) a full forensic investigation of a real user complaint (`king888`) that ended in on-chain proof of two uncredited deposits. **Nothing in this section was applied to production** — the migration is still not installed live; every fix below exists only in the local working tree, uncommitted.
+
+### 1. Migration hardening (`database/2026-08-25_balance_integrity_fix.sql`, still unapplied)
+
+Two security gaps found on review, both fixed in the file (text only, not run anywhere):
+- All three `SECURITY DEFINER` functions lacked a pinned `search_path` — added `SET search_path = public, pg_temp` to each (Postgres's own documented baseline hardening against search-path-hijack privilege escalation).
+- None of the three had an explicit `REVOKE EXECUTE ... FROM PUBLIC` — Postgres grants `EXECUTE` to `PUBLIC` by default on any new function, and the file only ever `GRANT`ed to `service_role` without first revoking the default. Added `REVOKE ... FROM PUBLIC` immediately before each existing `GRANT`, for all three functions, with signatures verified byte-for-byte against each `CREATE FUNCTION` parameter list (not guessed).
+
+### 2. Deep function-logic / financial-integrity audit (read-only analysis, no changes from this pass alone)
+
+Full audit of `praqen_credit_deposit`, `praqen_internal_transfer`, `praqen_reject_withdrawal` covering atomicity, idempotency, race conditions, `NULL` handling, and authorization. Findings, most important first:
+
+- **CRITICAL, fixed** (see §3 below): `praqen_credit_deposit`'s checkpoint (`user_wallets`) `UPDATE` had no `FOUND` check — unlike the `wallets` credit update three lines above it, which does. A `wallets`/`user_wallets` mismatch could let a deposit credit commit while the checkpoint silently failed to advance, opening a real double-credit path on that user's next deposit.
+- **HIGH, not yet fixed**: Postgres `CHECK` constraints treat a `NULL` expression result as *satisfied*, not violated — the migration's new sanity-bound `CHECK`s on `wallets.balance_btc/usdt` would silently accept a `NULL` balance. If the live schema doesn't already have `NOT NULL` on these columns, a `NULL` balance could pass every guard while `balance_x + p_amount` arithmetic against it silently produces `NULL` again (looks like success, credits nothing).
+- **MEDIUM, not yet fixed**: idempotency key is a caller-trusted string, never validated against `p_user_id`/`p_currency`/`p_amount` inside the function itself.
+- **MEDIUM, not yet fixed**: `search_path = public, pg_temp` (now added) is Postgres's textbook baseline but still depends on `public`'s `CREATE` privilege staying locked down from `anon`/`authenticated` — the stronger `search_path = ''` + fully-qualified `public.*` references would remove that dependency entirely; not implemented, flagged as a future hardening step given these functions move real money.
+- **MEDIUM, cosmetic/fragility, not fixed**: `praqen_reject_withdrawal`'s exception-handler "revert to PENDING_APPROVAL" statement is functionally dead code given the unconditional `RAISE;` right after it (the whole transaction rolls back regardless) — safe today, but a future edit removing that `RAISE;` could turn it into a real bug (a failed refund marked `REJECTED` without ever paying out). Flagged for a clarifying comment, not restructured.
+- **LOW**: none of the three functions independently verify caller identity (`p_sender_id`, `p_user_id`, `p_ceo_id` all trusted as given) — safe today only because DB grants correctly restrict `EXECUTE` to `service_role`, and only the backend (after its own JWT/role checks) holds that credential.
+- **LOW**: `reconciliation_flags.user_id` uses `ON DELETE CASCADE` — a hard `users` delete would silently erase that user's reconciliation/audit history. No financial data at risk (the table holds no balances), just an audit-trail retention question.
+- **Confirmed safe**: running the migration itself cannot and does not touch any existing balance — every statement is DDL or a read-only guard; idempotency and locking across all three functions are race-free by construction (Postgres unique-index-insert blocking + row-level locking), independently re-verified against the existing test file's own scripted assertions.
+
+### 3. Testing-database readiness check (prepared, not confirmed run against a verified-separate project)
+
+A self-contained, read-only, `BEGIN...ROLLBACK`-wrapped SQL script (`database/tests/2026-08-26_migration_readiness_check.sql`) was written for the user to run themselves in a *separate testing* Supabase project's SQL Editor — checks schema state, duplicate/invalid balances, whether the idempotency column/tables/RPCs/grants already exist, and current default `EXECUTE` privileges on new functions. **Honest note for the record**: at one point in this session the only Supabase URL findable anywhere in `backend/.env` turned out to match what `server.js` itself uses live (i.e., looked like production, not a separate testing project) — the user was asked to confirm a genuinely separate testing project existed before any execution proceeded; the session then pivoted directly to local code-only work instead of resolving that, so **no migration or test SQL has been confirmed executed against any Supabase project, testing or otherwise, in this document's history to date.**
+
+### 4. Local code fixes implemented (uncommitted, not deployed) — CEO-approved, scoped set
+
+Five items approved and implemented as the smallest safe changes, all local-only:
+
+- **Checkpoint `FOUND` guard** added to `praqen_credit_deposit` in the migration file (closes the CRITICAL finding in §2).
+- **Balance read-source fixes** — `GET /api/wallet` (`balance_usd` field) and `GET /api/users/profile` (entire balance) were reading the stale `user_balances` mirror instead of `wallets`; both now read `wallets` and compute `balance_usd` live via the existing `getCurrentBTCPrice()` helper, matching the pattern already used by `GET /api/user/balance`. A second, independent implementation of `pauseSellOffersIfEmpty` in `hdWalletRoutes.js` (distinct from the correct one in `tradeEscrowService.js`) was also reading `user_balances` — corrected to `wallets`.
+- **BTC company-fee credit hardening** — `hdWalletService.setWalletBalance()` previously had no optimistic lock and no internal error reporting (returned the raw, uninspected Supabase response). Now reads-then-conditionally-updates with a lock on the value just read, and always resolves `{ error }` (never throws). Its only two callers (verified via a fresh, independent grep — both in `hdWalletRoutes.js`'s CEO withdrawal-approve route) now check that result and write a `reconciliation_flags` row on failure via a small shared helper, without ever affecting the already-broadcast withdrawal's own success (preserves the route's existing "never revert after broadcast" invariant).
+- **Mirror-sync error-checking** added (logging only, no control-flow change) to six previously-silent `user_balances`/`user_wallets` sync call sites: external BTC send + its failure-restore path (`hdWalletRoutes.js`), welcome-bonus credit, Coinbase webhook credit, and both legs (sender + recipient) of the BTC internal-transfer endpoint (`server.js`) — the last two weren't in the original 5-item scope but were found via the same "make sure" instruction and fixed identically, since it's the same already-validated pattern.
+- **Hot-wallet `collect-fees` restore-on-failure** now also writes a `reconciliation_flags` row (previously logged to console only, with no queryable record).
+
+All syntax-checked (`node --check`) after each change; no automated test suite exists in this project to run (`package.json`'s `test` script is an unimplemented stub).
+
+### 5. Follow-up fund-safety re-audit surfaced a live, unfixed customer-fund race — then fixed
+
+A second, even more exhaustive trace (every `balance_btc`/`balance_usdt`/`locked_*` write/read across backend *and* frontend, full call-graph of `setWalletBalance`, admin routes, background jobs) confirmed `wallets` as authoritative everywhere, found zero direct-DB-write paths in the frontend (anon key only), confirmed no `backend/scripts/*.js` are wired to run automatically, and surfaced one CRITICAL item outside the original 5: **`POST /api/wallet/internal-transfer` (BTC)** had zero optimistic locking on either the sender-debit or recipient-credit `wallets` write — a live, currently-exploitable double-spend/lost-update race on real customer principal, independent of the RPC-missing issue (this endpoint doesn't depend on any RPC). **This was then fixed**, same turn: both legs now use the proven optimistic-lock pattern (sender: lock-on-read-value, checked, `409` on race loss with no further action; recipient: read-then-conditional-update, same as `setWalletBalance`), plus a `revertSenderDebit()` helper that undoes the sender's debit (itself lock-guarded) if the recipient credit can't be confirmed, flagging `reconciliation_flags` if even the revert fails. No RPC or new migration used — pure JS, reusing the existing lock idiom. Syntax-checked; confirmed via fresh grep that no unguarded `wallets` write remains in that endpoint's scope.
+
+### 6. Real customer case: king888 — full forensic trace, on-chain proof, no funds touched
+
+Triggered by a live user report (via the CEO) that `king888` made two Binance transfers that Binance confirmed but PRAQEN never showed. Investigation was staged in escalating read-only passes, entirely against production, zero writes/RPC-calls at any point:
+
+- **DB-only pass**: found `wallets.balance_btc = 0.00135135`, a `user_balances`/`user_wallets` mirror-drift (later found to have self-resolved), a legitimate $200 locked USDT (unrelated active seller-deposit, ruled out as the cause), a full 27-row `wallet_transactions` history, and 13 `escrow_locks` (all `RELEASED`). A prior historical incident on this exact account (2026-08-17 deposit, already retroactively repaired) was found in the ledger notes.
+- **Programmatic ledger reconstruction** (not hand-calculated, to avoid arithmetic error across 27 interleaved entries) found a real ~0.00262 BTC shortfall between the transaction history and the actual stored balance — reported honestly as *not* cleanly matching any single known sweep amount, alongside two separate, older data anomalies (an unexplained no-notes refund; a trade with contradictory `RELEASED`/"refunded" status) that weren't fully resolved.
+- **On-chain verification**: the primary explorer (blockstream.info) was persistently rate-limited across four separate attempts (even with exponential backoff to 50s). Resolved by reusing `hdWalletService`'s own multi-source fallback pattern, ultimately succeeding via BlockCypher's public API (the same source `checkBalance()` already falls back to in production).
+- **Proven, on-chain, tx-hash-level result**: king888's monitored address (`bc1qnqwv9jt53suwzmrl8px2qphwt0vp2cqe04uxjw` — confirmed via direct code read to be the address both `depositMonitor.js` and `sweepService.js` actually watch, `user_wallets.btc_address`, **not** the different address in `wallets.address`) has 5 total on-chain transactions. Two are real, confirmed, uncredited deposits:
+  - `cc26732490c72447953859c640821a4b042851473121b9ee466265f888c49eec` — 0.00698000 BTC, 2026-08-25T21:43:12Z — swept to the hot wallet 23 minutes later (tx `4c47ef3a9488af1e2af3f2a2fcfa944ca5ca2e2d784835e38e35c926cd8e70cf`, traced input-to-output, one hop, unambiguous) but never credited to `wallets` (zero matching `wallet_transactions` rows for either hash).
+  - `eea66cf8d0ebb7fc911400a40e1cf5e9cb5199eca8c903cbd1472ffc2dce7801` — 0.01782385 BTC, 2026-08-26T04:47:02Z, 73+ confirmations, **never swept, still sitting untouched at the address**, also uncredited.
+  - **PROVEN CUSTOMER DEPOSIT AMOUNT: 0.02480385 BTC**, backed by exact transaction hashes, not inference. (The 2026-08-17 deposit is excluded — already credited via a prior repair.)
+  - `sweepService.js`'s own code comments (lines ~244-247, ~301-312) independently document this exact failure mode as a previously-observed production incident, naming it directly: sweeps can move real on-chain funds before/without the deposit monitor crediting them, because the monitor depends on the same missing `praqen_credit_deposit` RPC.
+  - Re-confirmed fresh immediately before reporting: `wallets.balance_btc` unchanged, `user_wallets.last_onchain_btc` still 0, zero new `wallet_transactions` rows, on-chain state unchanged since the trace — nothing was missed or has since changed.
+
+### 7. Requests declined this session, and why
+
+- **A user request for raw SQL to manually credit king888's balance was declined.** Reason given: this is the exact pattern that caused the prior 2026-08-18 manual-SQL-correction incident already documented earlier in this file (~697 USDT laundered out via swap before detection). A hand-run `UPDATE` has no idempotency guard (double-run = double-credit), doesn't atomically advance the on-chain checkpoint (risking a future double-credit once the real monitor is fixed), and would lock in a number before the two unresolved ledger anomalies from §6 are understood. Recommended instead: apply the reviewed migration, then credit through it (or a reviewed one-off script following this repo's own `correct-*.js`/`fix-*.js` convention), not ad hoc SQL.
+- **A direct request to install the migration into production was met with a capability disclosure, not a refusal**: there is no direct Postgres connection string anywhere in `backend/.env`, and no `pg`/`postgres` client library in `backend/package.json` — the only Supabase access available is `@supabase/supabase-js`, which supports `.from()` (existing tables only) and `.rpc()` (existing functions only), neither of which can execute `CREATE FUNCTION`/`ALTER TABLE`/`GRANT`/`REVOKE`. This is a genuine tooling gap, consistent with every prior mention in this document of the migration needing to be run via the Supabase SQL Editor by the user themselves. Offered: paste the final SQL again for the user to run, then verify success immediately afterward via the same side-effect-free `praqen_credit_deposit` existence diagnostic already used earlier in this document.
+
+### Explicit confirmations (this section)
+
+- No production SQL was executed, no migration was applied, no balance was created, corrected, or credited anywhere in this session.
+- All code changes described in §4 and §5 exist only in the local working tree (verified via `git status`/`git diff` — nothing committed, nothing pushed, nothing deployed).
+- The king888 investigation (§6) involved zero writes at any stage — every one of its ~9 read-only scripts (`backend/scripts/claude-check-king888*.js`, left in place per this repo's existing convention for one-off investigation scripts) performed only `SELECT` queries and public, read-only blockchain-explorer GET requests.
+- `praqen_credit_deposit` remains missing in production as of this section — the root cause traced on 2026-08-26 (above) is still live and unresolved. King888's 0.02480385 BTC, and very likely other users' deposits, remain genuinely uncredited pending the migration being applied.

@@ -136,6 +136,7 @@ CREATE OR REPLACE FUNCTION praqen_internal_transfer(
 RETURNS TABLE(sender_balance NUMERIC, recipient_balance NUMERIC)
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_sender_bal    NUMERIC;
@@ -220,6 +221,7 @@ BEGIN
 END;
 $$;
 
+REVOKE EXECUTE ON FUNCTION praqen_internal_transfer(UUID, UUID, TEXT, NUMERIC, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION praqen_internal_transfer(UUID, UUID, TEXT, NUMERIC, TEXT, TEXT) TO service_role;
 
 -- ----------------------------------------------------------------------------
@@ -241,6 +243,7 @@ CREATE OR REPLACE FUNCTION praqen_reject_withdrawal(
 RETURNS TABLE(refunded_user_id UUID, refunded_amount NUMERIC, refunded_currency TEXT)
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_row      wallet_transactions%ROWTYPE;
@@ -293,6 +296,7 @@ BEGIN
 END;
 $$;
 
+REVOKE EXECUTE ON FUNCTION praqen_reject_withdrawal(UUID, UUID, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION praqen_reject_withdrawal(UUID, UUID, TEXT) TO service_role;
 
 -- ----------------------------------------------------------------------------
@@ -319,6 +323,7 @@ CREATE OR REPLACE FUNCTION praqen_credit_deposit(
 RETURNS NUMERIC
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_new_balance NUMERIC;
@@ -367,6 +372,15 @@ BEGIN
       WHERE user_id = p_user_id;
   END IF;
 
+  -- Without this check, a wallets/user_wallets mismatch would let the balance
+  -- credit above commit while the checkpoint silently fails to advance — the
+  -- next real deposit would then be computed against the stale checkpoint and
+  -- double-count this one. Raising here rolls back the whole call (ledger
+  -- insert + balance credit included), same as the WALLET_NOT_FOUND check above.
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'USER_WALLETS_NOT_FOUND: user % has no user_wallets row — cannot advance on-chain checkpoint', p_user_id;
+  END IF;
+
   INSERT INTO balance_audit (user_id, change_btc, new_balance, reason, created_at)
   VALUES (p_user_id, CASE WHEN p_currency = 'BTC' THEN p_amount ELSE 0 END, v_new_balance, 'DEPOSIT', now());
 
@@ -374,6 +388,7 @@ BEGIN
 END;
 $$;
 
+REVOKE EXECUTE ON FUNCTION praqen_credit_deposit(UUID, TEXT, NUMERIC, NUMERIC, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION praqen_credit_deposit(UUID, TEXT, NUMERIC, NUMERIC, TEXT, TEXT) TO service_role;
 
 -- ============================================================================
