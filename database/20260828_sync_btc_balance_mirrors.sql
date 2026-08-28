@@ -1,4 +1,4 @@
-﻿-- PRAQEN — 2026-08-28 — Sync BTC balance mirrors in praqen_credit_deposit
+-- PRAQEN � 2026-08-28 � Sync BTC balance mirrors in praqen_credit_deposit
 --
 -- Problem:
 --   praqen_credit_deposit updates wallets.balance_btc (authoritative) but
@@ -10,7 +10,7 @@
 --   Atomically synchronize the existing BTC mirrors inside the RPC.
 --   If a required mirror row is missing, the entire credit fails and rolls back.
 --
--- USDT is intentionally NOT mirrored here — the mirror tables have no
+-- USDT is intentionally NOT mirrored here � the mirror tables have no
 -- balance_usdt column, and wallets.balance_usdt remains authoritative.
 --
 -- This migration MUST be run AFTER 20260828_backfill_balance_mirrors.sql
@@ -30,7 +30,7 @@ CREATE OR REPLACE FUNCTION public.praqen_credit_deposit(
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_temp'
-AS $
+AS $function$
 DECLARE
   v_new_balance NUMERIC;
 BEGIN
@@ -89,7 +89,6 @@ BEGIN
     RETURNING balance_usdt INTO v_new_balance;
   END IF;
 
-  -- ── BTC mirror synchronization (NEW) ────────────────────────────────
   IF p_currency = 'BTC' THEN
     UPDATE user_balances
     SET balance_btc = v_new_balance,
@@ -112,7 +111,6 @@ BEGIN
     END IF;
   END IF;
 
-  -- ── On-chain checkpoint update ──────────────────────────────────────
   IF p_currency = 'BTC' THEN
     UPDATE user_wallets
     SET last_onchain_btc = p_onchain_balance,
@@ -147,4 +145,4 @@ BEGIN
 
   RETURN v_new_balance;
 END;
-$;
+$function$;
