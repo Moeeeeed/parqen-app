@@ -817,6 +817,37 @@ async function requireAdminOrCeo(req, res) {
   return u;
 }
 
+// CEO: add accounting-department emails here to grant Accountant Dashboard access without
+// needing the is_accountant migration/Admin Panel toggle run first. Once
+// database/add_accountant_role.sql has been applied and an admin flips is_accountant on a
+// user (same self-service pattern as the existing agent grant), that column takes over —
+// this array is just the zero-migration bootstrap path.
+const ACCOUNTANT_EMAIL_ALLOWLIST = [];
+
+// Read-only gate for the Accountant Dashboard: is_ceo/is_admin always pass (so the CEO can
+// always check this page, per their own requirement), plus a dedicated is_accountant flag
+// for non-admin accounting-department accounts. Tolerates is_accountant not existing yet —
+// same graceful-degradation shape as isAgent() in server.js — so this route never 500s just
+// because database/add_accountant_role.sql hasn't been run yet.
+async function requireAccountant(req, res) {
+  let u = null;
+  try {
+    const r = await supabaseAdmin.from('users')
+      .select('id, is_admin, is_ceo, is_accountant, email, is_email_verified').eq('id', req.userId).single();
+    u = r.data;
+  } catch {
+    try {
+      const r = await supabaseAdmin.from('users')
+        .select('id, is_admin, is_ceo, email, is_email_verified').eq('id', req.userId).single();
+      u = r.data;
+    } catch {}
+  }
+  const email = (u?.email || '').toLowerCase();
+  const ok = !!(u?.is_admin || u?.is_ceo || u?.is_accountant || (email === ADMIN_EMAIL && u?.is_email_verified) || ACCOUNTANT_EMAIL_ALLOWLIST.includes(email));
+  if (!ok) { res.status(403).json({ error: 'Accountant access required' }); return null; }
+  return u;
+}
+
 // GET /api/hd-wallet/ceo/treasury
 // One-shot overview for the CEO dashboard: BTC hot wallet, Tron gas + USDT hot
 // wallet, the company/master wallet's BTC & USDT balances, and swap fee revenue.
@@ -1174,6 +1205,137 @@ router.get('/ceo/pulse', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('[hdWalletRoutes GET /ceo/pulse]', error.message);
     res.status(500).json({ error: 'Failed to load company pulse.' });
+  }
+});
+
+// GET /api/hd-wallet/accountant/overview
+// Read-only solvency snapshot for the Accountant Dashboard: same treasury wallet balances as
+// /ceo/treasury (reused, not recomputed independently, so the two pages never quietly
+// disagree), plus the one number CEO treasury didn't need but an accountant does — total
+// user balances (platform liabilities) — and the current reconciliation_flags queue. This
+// route only ever reads; it has no write/RPC path anywhere in it.
+router.get('/accountant/overview', verifyToken, async (req, res) => {
+  const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
+  try {
+    const acct = await requireAccountant(req, res); if (!acct) return;
+
+    const [hotBtcR, reserveBtcR, tronR, companyR, walletsR, flagsR] = await Promise.allSettled([
+      hdWallet.getHotWalletBalance(),
+      hdWallet.getReserveWalletBalance(),
+      tronHotWallet.getStatus(),
+      supabaseAdmin.from('wallets')
+        .select('balance_btc, locked_balance_btc, balance_usdt, locked_balance_usdt')
+        .eq('user_id', COMPANY_WALLET_ID).maybeSingle(),
+      // Full-table scan to sum what the platform owes every user — same capped-scan pattern
+      // /ceo/treasury already uses for swap_transactions. ~1,500 rows today; revisit with a
+      // DB-side SUM() RPC if this table grows enough for 10,000 to become a real ceiling.
+      supabaseAdmin.from('wallets').select('balance_btc, balance_usdt').limit(10000),
+      supabaseAdmin.from('reconciliation_flags').select('*').order('created_at', { ascending: false }).limit(50),
+    ]);
+
+    const hotWalletBtc     = hotBtcR.status === 'fulfilled' ? hotBtcR.value : { error: hotBtcR.reason?.message || 'unavailable' };
+    const reserveWalletBtc = reserveBtcR.status === 'fulfilled' ? reserveBtcR.value : { error: reserveBtcR.reason?.message || 'unavailable' };
+    const tron             = tronR.status === 'fulfilled' ? tronR.value : { error: tronR.reason?.message || 'unavailable' };
+    const companyRow       = companyR.status === 'fulfilled' ? companyR.value.data : null;
+
+    let totalLiabilityBtc = 0, totalLiabilityUsdt = 0, walletRowCount = 0, liabilitiesTruncated = false;
+    if (walletsR.status === 'fulfilled') {
+      const rows = walletsR.value.data || [];
+      walletRowCount = rows.length;
+      liabilitiesTruncated = rows.length >= 10000;
+      for (const w of rows) {
+        totalLiabilityBtc  += parseFloat(w.balance_btc  || 0);
+        totalLiabilityUsdt += parseFloat(w.balance_usdt || 0);
+      }
+    }
+
+    res.json({
+      success: true,
+      hotWalletBtc,
+      reserveWalletBtc,
+      tron: tron?.error ? tron : {
+        usdt:          tron.hot_wallet_usdt,
+        trx:           tron.hot_wallet_trx,
+        trxStatus:     tron.trx_status,
+        minTrxReserve: tron.min_trx_reserve,
+      },
+      companyWallet: {
+        balance_btc:         parseFloat(companyRow?.balance_btc || 0),
+        locked_balance_btc:  parseFloat(companyRow?.locked_balance_btc || 0),
+        balance_usdt:        parseFloat(companyRow?.balance_usdt || 0),
+        locked_balance_usdt: parseFloat(companyRow?.locked_balance_usdt || 0),
+      },
+      liabilities: {
+        total_balance_btc:  parseFloat(totalLiabilityBtc.toFixed(8)),
+        total_balance_usdt: parseFloat(totalLiabilityUsdt.toFixed(6)),
+        user_wallet_rows:   walletRowCount,
+        truncated:          liabilitiesTruncated,
+      },
+      reconciliationFlags: flagsR.status === 'fulfilled' ? (flagsR.value.data || []) : [],
+      reconciliationTableMissing: flagsR.status === 'rejected',
+    });
+  } catch (error) {
+    console.error('[hdWalletRoutes GET /accountant/overview]', error.message);
+    res.status(500).json({ error: 'Failed to load accountant overview.' });
+  }
+});
+
+// GET /api/hd-wallet/accountant/ledger?from=&to=
+// Read-only transaction ledger for a date range, plus a by-type summary (revenue/cash-flow
+// building blocks) computed from the same fetched rows so the summary and the raw rows can
+// never disagree with each other. Defaults to the last 30 days. SELECT-only — no RPC calls.
+router.get('/accountant/ledger', verifyToken, async (req, res) => {
+  try {
+    const acct = await requireAccountant(req, res); if (!acct) return;
+
+    const toDate   = req.query.to   ? new Date(req.query.to)   : new Date();
+    const fromDate = req.query.from ? new Date(req.query.from) : new Date(toDate.getTime() - 30 * 86400000);
+    if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) return res.status(400).json({ error: 'Invalid from/to date' });
+    // Make "to" inclusive of the whole day it names.
+    const toInclusive = new Date(toDate.getTime());
+    toInclusive.setHours(23, 59, 59, 999);
+
+    const LEDGER_CAP = 5000;
+    const { data: rows, error } = await supabaseAdmin
+      .from('wallet_transactions')
+      .select('id, user_id, type, currency, amount_btc, amount_usdt, status, tx_hash, notes, created_at, platform_fee_btc, platform_fee_usdt')
+      .gte('created_at', fromDate.toISOString())
+      .lte('created_at', toInclusive.toISOString())
+      .order('created_at', { ascending: false })
+      .limit(LEDGER_CAP);
+    if (error) return res.status(400).json({ error: error.message });
+
+    // By-type summary — the accountant page derives its P&L/cash-flow cards from this
+    // instead of a second, separately-computed aggregate, so the two views can't drift apart.
+    const summary = {};
+    for (const r of (rows || [])) {
+      const key = r.type || 'UNKNOWN';
+      if (!summary[key]) summary[key] = { count: 0, btc: 0, usdt: 0, feeBtc: 0, feeUsdt: 0 };
+      summary[key].count++;
+      summary[key].btc     += parseFloat(r.amount_btc || 0);
+      summary[key].usdt    += parseFloat(r.amount_usdt || 0);
+      summary[key].feeBtc  += parseFloat(r.platform_fee_btc || 0);
+      summary[key].feeUsdt += parseFloat(r.platform_fee_usdt || 0);
+    }
+    for (const key of Object.keys(summary)) {
+      summary[key].btc     = parseFloat(summary[key].btc.toFixed(8));
+      summary[key].usdt    = parseFloat(summary[key].usdt.toFixed(6));
+      summary[key].feeBtc  = parseFloat(summary[key].feeBtc.toFixed(8));
+      summary[key].feeUsdt = parseFloat(summary[key].feeUsdt.toFixed(6));
+    }
+
+    res.json({
+      success: true,
+      from: fromDate.toISOString(),
+      to: toInclusive.toISOString(),
+      rowCount: (rows || []).length,
+      truncated: (rows || []).length >= LEDGER_CAP,
+      summary,
+      transactions: rows || [],
+    });
+  } catch (error) {
+    console.error('[hdWalletRoutes GET /accountant/ledger]', error.message);
+    res.status(500).json({ error: 'Failed to load accountant ledger.' });
   }
 });
 

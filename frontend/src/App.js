@@ -121,6 +121,7 @@ const BuyUSDT = lazyRetry(() => import('./pages/BuyUSDT'));
 const SellUSDT = lazyRetry(() => import('./pages/SellUSDT'));
 const SellGiftCardMarketplace = lazyRetry(() => import('./pages/SellGiftCardMarketplace'));
 const AgentDashboard = lazyRetry(() => import('./pages/AgentDashboard'));
+const AccountantDashboard = lazyRetry(() => import('./pages/AccountantDashboard'));
 const VerifyOTP = lazyRetry(() => import('./pages/VerifyOTP'));
 const ResetPassword = lazyRetry(() => import('./pages/ResetPassword'));
 const EmailConfirmation = lazyRetry(() => import('./pages/EmailConfirmation'));
@@ -485,6 +486,10 @@ function App() {
                   from the customer-facing /login page, so a support rep who isn't logged
                   into the main app at all can still sign in here directly. */}
               <Route path="/agent-dashboard" element={<AgentDashboard user={user} />} />
+              {/* Same standalone pattern as above — AccountantDashboard.js owns its own
+                  login, completely separate session, read-only by design (its backend
+                  routes have no write/RPC path at all, not just a hidden button). */}
+              <Route path="/accountant-dashboard" element={<AccountantDashboard user={user} />} />
 
               {/* ── ALL OTHER ROUTES — wrapped in main app chrome ── */}
               <Route path="*" element={

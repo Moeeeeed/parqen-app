@@ -11,6 +11,7 @@
 //   6. Email via Nodemailer
 
 require('dotenv').config();
+const axios       = require('axios');
 const nodemailer = require('nodemailer');
 const { sendSystemAlert } = require('./pushNotificationService');
 const { sendTelegramAlert } = require('./telegramService');
@@ -210,103 +211,193 @@ class USDTDepositMonitor {
     }
   }
 
-  // ── Check one Tron address for new USDT deposits ──────────────────────────
-  async checkUserDeposit({ userId, address, username, lastOnchainUsdt }) {
+  // ── Fetch confirmed incoming USDT TRC-20 transfers to this address ────────
+  // TronGrid's transfer-history endpoint — this is what makes transaction-hash
+  // tracking possible here, same reasoning as depositMonitor.js's
+  // _fetchAddressTxs: a balance-only read (getUSDTBalance) can tell us THAT the
+  // balance changed, never WHICH transfer(s) caused it. only_to:true excludes
+  // outgoing transfers — critical, since a sweep sends USDT OUT of this exact
+  // address and must never be mistaken for an incoming deposit.
+  async _fetchIncomingTransfers(address) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (process.env.TRONGRID_API_KEY) headers['TRON-PRO-API-KEY'] = process.env.TRONGRID_API_KEY;
+    const resp = await axios.get(`https://api.trongrid.io/v1/accounts/${address}/transactions/trc20`, {
+      headers,
+      params: {
+        contract_address: process.env.TRON_USDT_CONTRACT || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+        limit: 20,
+        only_confirmed: true,
+        only_to: true,
+      },
+      timeout: 14000,
+    });
+    return resp.data?.data || [];
+  }
+
+  // ── Check one Tron address for new USDT deposits (transaction-hash tracking) ──
+  // Replaces the old balance-snapshot comparison ("is the current balance
+  // higher than last time?"), which had the same permanent blind spot as the
+  // BTC monitor: if a sweep moved the USDT out before the next check ran, the
+  // balance returned to baseline and the deposit became invisible forever.
+  // Tracking by transaction hash instead (deposit_tracking_v2, shared with
+  // depositMonitor.js) means once a transfer's txid has been seen, it can
+  // never become invisible again, regardless of what a sweep does to the
+  // address's balance afterward.
+  async checkUserDeposit({ userId, address, username }) {
     try {
       if (!tronWallet.isValidTronAddress(address)) {
         console.log(`[USDTMonitor] ⚠️  Skipping invalid Tron address for ${userId.slice(0,8)}: ${address}`);
         return;
       }
 
-      // ── Step 1: Get current on-chain USDT balance ────────────────────────
-      const onchainUsdt = await tronWallet.getUSDTBalance(address);
+      // ── Step 1: Fetch this address's incoming USDT transfers ─────────────
+      const transfers = await this._fetchIncomingTransfers(address);
+      if (!transfers.length) return;
 
-      // ── Step 2: Compare with last known on-chain balance ─────────────────
-      // Small epsilon to avoid floating-point false positives
-      if (onchainUsdt <= lastOnchainUsdt + 0.0001) return;
+      // ── Step 2: Convert to candidates above dust ──────────────────────────
+      const candidates = [];
+      for (const t of transfers) {
+        if (!t.transaction_id) continue;
+        const amountUsdt = parseFloat((Number(t.value || 0) / 1e6).toFixed(6)); // USDT TRC-20: 6 decimals
+        if (amountUsdt < DUST_THRESHOLD) continue;
+        candidates.push({ txHash: t.transaction_id, amountUsdt });
+      }
+      if (!candidates.length) return;
 
-      const depositUsdt = parseFloat((onchainUsdt - lastOnchainUsdt).toFixed(6));
-      if (depositUsdt < DUST_THRESHOLD) return;
+      // ── Step 3: Skip anything already fully credited. Everything else (never
+      // seen before, or seen but not yet successfully credited) gets processed —
+      // this depends only on whether THIS transaction hash has been recorded,
+      // never on the address's current balance, which is the part a sweep can't
+      // defeat.
+      const { data: known } = await supabaseAdmin
+        .from('deposit_tracking_v2')
+        .select('tx_hash, credited')
+        .eq('address', address)
+        .in('tx_hash', candidates.map(c => c.txHash));
+      const creditedSet = new Set((known || []).filter(k => k.credited).map(k => k.tx_hash));
+      const seenSet     = new Set((known || []).map(k => k.tx_hash));
 
-      console.log(`\n💰 [USDTMonitor] New deposit detected for ${username}: ${depositUsdt} USDT`);
-      console.log(`   Address     : ${address}`);
-      console.log(`   On-chain now: ${onchainUsdt} USDT | Last: ${lastOnchainUsdt} USDT`);
-
-      // ── Step 3-5: Atomic deposit credit (ledger idempotency key + checkpoint
-      // advance + balance credit + balance_audit stamp, all in ONE Postgres
-      // transaction — see database/2026-08-25_balance_integrity_fix.sql,
-      // function praqen_credit_deposit). Replaces the old three-part
-      // orchestration (deposit_tracking insert -> last_onchain_usdt CAS claim
-      // -> wallets CAS credit), which had a real gap: a hard process crash
-      // between the claim and the credit advanced the checkpoint with no
-      // credit applied, and nothing reverted it. This can no longer land
-      // half-done — it either fully commits or fully rolls back, checkpoint
-      // included. The on-chain balance value is the idempotency key (no
-      // per-tx hash is available from this balance-delta detection method).
-      const usdtIdempotencyKey = `USDT:${userId}:${onchainUsdt.toFixed(6)}`;
-      let newUsdt;
-      try {
-        const { data: rpcBalance, error: creditErr } = await supabaseAdmin.rpc('praqen_credit_deposit', {
-          p_user_id:         userId,
-          p_currency:        'USDT',
-          p_amount:          depositUsdt,
-          p_onchain_balance: onchainUsdt,
-          p_idempotency_key: usdtIdempotencyKey,
-          p_note:            `USDT deposit to ${address.slice(0, 20)}…`,
-        });
-        if (creditErr) throw creditErr;
-        newUsdt = parseFloat(rpcBalance);
-      } catch (creditErr) {
-        if (/duplicate|unique/i.test(creditErr.message || '') || /idempotency_key/i.test(creditErr.message || '')) {
-          console.log(`[USDTMonitor] This on-chain balance for ${username} was already credited — skipping duplicate.`);
-          return;
-        }
-        // Nothing was committed (the RPC is one transaction) — the checkpoint was
-        // NOT advanced, so the next poll will naturally retry this deposit on its
-        // own. Just alert ops loudly.
-        console.error(`🚨 [USDTMonitor] praqen_credit_deposit FAILED for ${username} — will retry automatically on next check: ${creditErr.message}`);
-        this.alertOpsOfCreditFailure(username, userId, depositUsdt, 'USDT', creditErr.message).catch(() => {});
-        return;
+      for (const { txHash, amountUsdt } of candidates) {
+        if (creditedSet.has(txHash)) continue;
+        await this.creditConfirmedDeposit({ userId, username, address, txHash, depositUsdt: amountUsdt, alreadySeen: seenSet.has(txHash) });
       }
 
-      // ── Step 7: In-app notification ───────────────────────────────────────
-      await supabaseAdmin.from('notifications').insert({
-        user_id:    userId,
-        type:       'wallet',
-        title:      '💵 USDT Received!',
-        message:    `$${depositUsdt.toFixed(2)} USDT credited to your wallet. Balance: $${newUsdt.toFixed(2)} USDT`,
-        action:     '/wallet',
-        is_read:    false,
-        created_at: new Date().toISOString(),
-      });
-
-      // ── Step 8: Push notification (fire-and-forget) ───────────────────────
-      sendSystemAlert(
-        userId,
-        '💵 USDT Received!',
-        `$${depositUsdt.toFixed(2)} USDT deposited to your PRAQEN wallet`,
-        'https://praqen.com/wallet'
-      ).catch(err => console.error('[USDTMonitor] Push error:', err.message));
-
-      // ── Step 8b: Telegram notification ──────────────────────────────────────
-      sendTelegramAlert(userId, `✅ Deposit received! $${depositUsdt.toFixed(2)} USDT credited to your wallet. Balance: $${newUsdt.toFixed(2)} USDT`).catch(() => {});
-
-      // ── Step 9: Email (fire-and-forget) ──────────────────────────────────
-      this.sendDepositEmail(userId, username, depositUsdt, newUsdt, address)
-          .catch(err => console.error('[USDTMonitor] Email error:', err.message));
-
-      console.log(`✅ [USDTMonitor] Credited $${depositUsdt} USDT to ${username} | New balance: $${newUsdt.toFixed(2)} USDT`);
-
-      // ── Step 10: Sweep deposit → hot wallet (non-fatal, fire-and-forget) ──
-      // User's internal balance is already safe in the DB (Step 5).
-      // Sweep consolidates on-chain USDT into hot wallet for future withdrawals.
-      tronHotWallet.sweepFromUserAddress(userId, address, depositUsdt)
-        .then(r => { if (r?.deferred) console.log(`[USDTMonitor] Sweep queued for ${username}: ${r.reason}`); })
-        .catch(e => console.error(`[USDTMonitor] Sweep trigger error (non-fatal): ${e.message}`));
+      // Best-effort: keep last_onchain_usdt roughly in sync for anything else
+      // that still reads it for display/diagnostics. It is no longer used to
+      // DECIDE whether a deposit is new — deposit_tracking_v2 is — so a stale
+      // value here can no longer cause a missed or duplicate credit.
+      try {
+        const onchainUsdt = await tronWallet.getUSDTBalance(address);
+        supabaseAdmin.from('user_wallets').update({ last_onchain_usdt: onchainUsdt }).eq('user_id', userId).then(null, () => {});
+      } catch (_) {}
 
     } catch (err) {
       console.error(`[USDTMonitor] Error for ${address?.slice(0, 12)}…:`, err.message);
     }
+  }
+
+  // ── Credit one specific confirmed transfer, exactly once, ever ────────────
+  // Records the txid in deposit_tracking_v2 BEFORE attempting the credit (the
+  // idempotency gate — same "claim, then act" shape the old checkpoint design
+  // used, just keyed on a permanent txid instead of a balance value that a
+  // sweep can quietly erase), then calls the exact same atomic
+  // praqen_credit_deposit RPC this monitor has always used. This function
+  // changes WHEN a deposit is recognized as new — it does not change HOW it is
+  // credited, and it never moves or sends any funds itself.
+  async creditConfirmedDeposit({ userId, username, address, txHash, depositUsdt, alreadySeen }) {
+    if (!alreadySeen) {
+      const { error: insErr } = await supabaseAdmin.from('deposit_tracking_v2').insert({
+        tx_hash: txHash, address, user_id: userId, currency: 'USDT', amount: depositUsdt,
+        credited: false, detected_by: 'realtime_monitor',
+      });
+      if (insErr) {
+        // Unique violation means another concurrent check already claimed this
+        // txid first — let that one proceed, this one backs off cleanly.
+        if (/duplicate|unique/i.test(insErr.message || '')) {
+          console.log(`[USDTMonitor] ${txHash.slice(0, 12)}… already claimed by a concurrent check — skipping.`);
+          return;
+        }
+        console.error(`[USDTMonitor] Failed to record ${txHash.slice(0, 12)}… in deposit_tracking_v2:`, insErr.message);
+        return; // don't credit without a recorded claim — same fail-safe spirit as the old checkpoint-first design
+      }
+    }
+
+    console.log(`\n💰 [USDTMonitor] New deposit detected for ${username}: ${depositUsdt} USDT`);
+    console.log(`   Address : ${address}`);
+    console.log(`   TX hash : ${txHash}`);
+
+    // ── Atomic deposit credit — unchanged RPC, unchanged guarantees. Only the
+    // idempotency key changed: a txid instead of an on-chain balance value,
+    // since the txid is what's actually permanent now.
+    const usdtIdempotencyKey = `USDT:${userId}:${txHash}`;
+    let newUsdt;
+    try {
+      const { data: rpcBalance, error: creditErr } = await supabaseAdmin.rpc('praqen_credit_deposit', {
+        p_user_id:         userId,
+        p_currency:        'USDT',
+        p_amount:          depositUsdt,
+        p_onchain_balance: depositUsdt, // informational only now — deposit_tracking_v2 gates re-processing, not this figure
+        p_idempotency_key: usdtIdempotencyKey,
+        p_note:            `USDT deposit ${txHash.slice(0, 16)}… to ${address.slice(0, 20)}…`,
+      });
+      if (creditErr) throw creditErr;
+      newUsdt = parseFloat(rpcBalance);
+    } catch (creditErr) {
+      if (/duplicate|unique/i.test(creditErr.message || '') || /idempotency_key/i.test(creditErr.message || '')) {
+        console.log(`[USDTMonitor] ${txHash.slice(0, 12)}… was already credited under this idempotency key — marking as credited.`);
+        await supabaseAdmin.from('deposit_tracking_v2')
+          .update({ credited: true, credited_at: new Date().toISOString() })
+          .eq('tx_hash', txHash).eq('address', address);
+        return;
+      }
+      // Nothing was committed (the RPC is one transaction). Leave credited=false
+      // so the next poll retries this exact txid automatically — it's already
+      // recorded, so it can't be double-counted, only retried until it succeeds.
+      console.error(`🚨 [USDTMonitor] praqen_credit_deposit FAILED for ${username} (tx ${txHash.slice(0, 12)}…) — will retry automatically on next check: ${creditErr.message}`);
+      await supabaseAdmin.from('deposit_tracking_v2').update({ credit_error: creditErr.message }).eq('tx_hash', txHash).eq('address', address);
+      this.alertOpsOfCreditFailure(username, userId, depositUsdt, 'USDT', creditErr.message).catch(() => {});
+      return;
+    }
+
+    await supabaseAdmin.from('deposit_tracking_v2')
+      .update({ credited: true, credited_at: new Date().toISOString() })
+      .eq('tx_hash', txHash).eq('address', address);
+
+    // ── In-app notification ─────────────────────────────────────────────────
+    await supabaseAdmin.from('notifications').insert({
+      user_id:    userId,
+      type:       'wallet',
+      title:      '💵 USDT Received!',
+      message:    `$${depositUsdt.toFixed(2)} USDT credited to your wallet. Balance: $${newUsdt.toFixed(2)} USDT`,
+      action:     '/wallet',
+      is_read:    false,
+      created_at: new Date().toISOString(),
+    });
+
+    // ── Push notification (fire-and-forget) ─────────────────────────────────
+    sendSystemAlert(
+      userId,
+      '💵 USDT Received!',
+      `$${depositUsdt.toFixed(2)} USDT deposited to your PRAQEN wallet`,
+      'https://praqen.com/wallet'
+    ).catch(err => console.error('[USDTMonitor] Push error:', err.message));
+
+    // ── Telegram notification ───────────────────────────────────────────────
+    sendTelegramAlert(userId, `✅ Deposit received! $${depositUsdt.toFixed(2)} USDT credited to your wallet. Balance: $${newUsdt.toFixed(2)} USDT`).catch(() => {});
+
+    // ── Email (fire-and-forget) ─────────────────────────────────────────────
+    this.sendDepositEmail(userId, username, depositUsdt, newUsdt, address)
+        .catch(err => console.error('[USDTMonitor] Email error:', err.message));
+
+    console.log(`✅ [USDTMonitor] Credited $${depositUsdt} USDT to ${username} | New balance: $${newUsdt.toFixed(2)} USDT | TX: ${txHash.slice(0, 16)}…`);
+
+    // ── Sweep deposit → hot wallet (non-fatal, fire-and-forget) ─────────────
+    // Unchanged from before — this line already existed and already triggers a
+    // real fund movement (address → hot wallet) as a side effect of a credited
+    // deposit. Nothing about this step's behavior changes here.
+    tronHotWallet.sweepFromUserAddress(userId, address, depositUsdt)
+      .then(r => { if (r?.deferred) console.log(`[USDTMonitor] Sweep queued for ${username}: ${r.reason}`); })
+      .catch(e => console.error(`[USDTMonitor] Sweep trigger error (non-fatal): ${e.message}`));
   }
 
   // ── Critical alert: a real on-chain deposit failed to credit the user's balance ──
