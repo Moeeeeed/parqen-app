@@ -1538,6 +1538,11 @@ export default function SellBitcoin({user}) {
         </div>
       </div>
 
+      {/* PRAQEN Weekly Stars — admin-selected recognition, pinned to the top of
+          the Sell Bitcoin page. Auto-rotates every ROTATION_HOURS (24h) for any
+          slot an admin hasn't hard-pinned. */}
+      <WeeklyStarsSection />
+
       {/* ══ 2. TAB NAVIGATION ══════════════════════════════════ */}
       <div className="bg-white border-b sticky z-30 flex-shrink-0" style={{top:'var(--navbar-h)',borderColor:C.g200}}>
         <div className="flex w-full">
@@ -1615,9 +1620,6 @@ export default function SellBitcoin({user}) {
         </div>
       </div>
 
-      {/* PRAQEN Weekly Stars — admin-selected recognition (replaces the old
-          per-country auto-picked pinned-offer banner). */}
-      <WeeklyStarsSection />
       {user && userBtcBalance * btcPrice < 10 && <GettingStartedSteps userId={user.id} />}
 
       {/* ══ 3. FILTER BAR ══════════════════════════════════════ */}

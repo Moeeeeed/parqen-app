@@ -51,7 +51,7 @@ const GIFTCARD_MIN_COMPLETION = 20; // percent, gift-card-specific
 // ROTATION_HOURS — but only if nobody has hard-pinned it (pinned=true, set by
 // a manual admin pick via selectWinner/the select endpoint, or the
 // pin_trader_of_week() SQL helper). See runAutoRotation() below.
-const ROTATION_HOURS        = 48;
+const ROTATION_HOURS        = 24; // rotate unpinned slots once a day (was 48)
 const ONLINE_WITHIN_MINUTES = 5; // "online right now" gate, matches the online-badge threshold used elsewhere on the marketplace pages
 
 const COUNTRY_LOCAL_PAYMENT = { GH: 'mtn', KE: 'mpesa' }; // Ghana=MTN Mobile Money, Kenya=M-Pesa, per product decision
@@ -374,10 +374,37 @@ function rankPool(ids, users, tradeStatsMap, role, eligibilityFn, dedupe = true)
 }
 
 // ── Current winners (what's actually displayed publicly right now) ──────────
+// The trader_of_week row's total_trades/average_rating are a snapshot from when
+// the winner was chosen, and it has no feedback columns at all — so the public
+// banner used to show 0 / 0 feedback and a stale trade count. Re-read those
+// four numbers live from `users` so the badge always matches the trader's
+// profile (feedback = total_feedback_count, which includes verified P2P-migrated
+// reputation, falling back to positive_feedback).
 async function getCurrentWinners() {
   const { data, error } = await supabaseAdmin.from('trader_of_week').select('*').in('category', SLOTS);
   if (error) return {};
-  return Object.fromEntries((data || []).map(r => [r.category, r]));
+  const rows = data || [];
+
+  const ids = [...new Set(rows.map(r => r.user_id).filter(Boolean))];
+  let liveById = {};
+  if (ids.length) {
+    const { data: us } = await supabaseAdmin.from('users')
+      .select('id, total_trades, average_rating, positive_feedback, negative_feedback, total_feedback_count')
+      .in('id', ids);
+    liveById = Object.fromEntries((us || []).map(u => [u.id, u]));
+  }
+
+  return Object.fromEntries(rows.map(r => {
+    const u = liveById[r.user_id] || {};
+    return [r.category, {
+      ...r,
+      total_trades:         u.total_trades ?? r.total_trades ?? 0,
+      average_rating:       u.average_rating ?? r.average_rating ?? 0,
+      positive_feedback:    u.positive_feedback ?? 0,
+      negative_feedback:    u.negative_feedback ?? 0,
+      total_feedback_count: u.total_feedback_count ?? u.positive_feedback ?? 0,
+    }];
+  }));
 }
 
 // ── Validate a manual (admin-chosen) selection ───────────────────────────────

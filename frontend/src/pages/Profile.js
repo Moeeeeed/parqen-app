@@ -593,6 +593,12 @@ export default function Profile({ userId: propUserId }) {
   const earned = BADGE_DEFS.filter(b => badges.some(badge => badge.badge_name === b.label && badge.is_unlocked) || b.check(user));
   const trades = parseInt(user.total_trades || 0); const rating = parseFloat(user.average_rating || 0);
   const posPct = reviews.length ? Math.round(reviews.filter(r => r.rating >= 4).length / reviews.length * 100) : 100;
+  // Feedback count shown in the UI: on-platform review rows OR the verified count
+  // carried over from a P2P migration (Noones / Binance P2P / other), whichever is
+  // higher. A migrated trader can have thousands of verified feedback and zero
+  // on-platform review rows yet — without this the tab/badge would show 0.
+  const migratedFeedback = parseInt(user.total_feedback_count || user.positive_feedback || 0, 10) || 0;
+  const displayFeedbackCount = Math.max(reviews.length, migratedFeedback);
   const status = trades >= 50 ? 'Active Trader' : trades >= 5 ? 'Growing Trader' : trades >= 1 ? 'New Trader' : 'Unverified';
   const countryName = user.country_name || COUNTRY_NAMES[userCC] || userCC || null;
   const city = user.city || user.last_seen_location?.split('(')[1]?.replace(')', '') || null;
@@ -601,7 +607,7 @@ export default function Profile({ userId: propUserId }) {
     { id: 'overview', label: 'Overview', icon: Users, count: null },
     { id: 'offers', label: 'Offers', icon: Tag, count: offers.length },
     { id: 'verification', label: 'Verification', icon: BadgeCheck, count: verifPct < 100 ? `${verifPct}%` : null },
-    { id: 'reputation', label: 'Feedback', icon: Star, count: reviews.length },
+    { id: 'reputation', label: 'Feedback', icon: Star, count: displayFeedbackCount || null },
     { id: 'badges', label: 'Badges', icon: Award, count: `${earned.length}/${BADGE_DEFS.length}` },
   ];
 
@@ -801,7 +807,8 @@ export default function Profile({ userId: propUserId }) {
                       <BadgeCheck size={12} />
                       Verified {MIGRATION_PLATFORM_LABELS[user.p2p_migrated_platform] || 'P2P'} Trader
                       {user.p2p_migrated_username && ` · @${user.p2p_migrated_username}`}
-                      {user.p2p_migrated_feedback && ` · ${user.p2p_migrated_feedback}`}
+                      {(user.p2p_migrated_feedback || migratedFeedback > 0) &&
+                        ` · ${user.p2p_migrated_feedback || `${migratedFeedback.toLocaleString()} feedback`}`}
                     </div>
                   )}
 
@@ -1135,7 +1142,16 @@ export default function Profile({ userId: propUserId }) {
                         </div>
                       </div>
                     ))}
-                    {reviews.length === 0 && (
+                    {reviews.length === 0 && migratedFeedback > 0 && (
+                      <div style={{ textAlign: 'center', padding: '32px 0' }}>
+                        <BadgeCheck size={32} style={{ color: '#92400E', margin: '0 auto 8px' }} />
+                        <p style={{ fontSize: 12, color: C.g500, fontWeight: 700 }}>
+                          {migratedFeedback.toLocaleString()} verified feedback imported from {MIGRATION_PLATFORM_LABELS[user.p2p_migrated_platform] || 'another P2P platform'}.
+                        </p>
+                        <p style={{ fontSize: 11, color: C.g400, marginTop: 4 }}>New on-platform reviews will appear here as trades complete.</p>
+                      </div>
+                    )}
+                    {reviews.length === 0 && migratedFeedback === 0 && (
                       <div style={{ textAlign: 'center', padding: '32px 0' }}>
                         <MessageCircle size={32} style={{ color: C.g300, margin: '0 auto 8px' }} />
                         <p style={{ fontSize: 12, color: C.g400 }}>No feedback yet. Complete trades to get feedback.</p>
@@ -1415,14 +1431,25 @@ export default function Profile({ userId: propUserId }) {
                   );
                 })}
               </div>
+              {migratedFeedback > 0 && (
+                <div style={{ background: '#FFFBEB', borderRadius: 16, padding: '14px 18px', border: '1px solid #FDE68A', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <BadgeCheck size={18} style={{ color: '#92400E', flexShrink: 0 }} />
+                  <p style={{ fontSize: 12.5, fontWeight: 700, color: '#92400E' }}>
+                    {migratedFeedback.toLocaleString()} verified feedback imported from {MIGRATION_PLATFORM_LABELS[user.p2p_migrated_platform] || 'another P2P platform'}
+                    {user.p2p_migrated_username && ` (@${user.p2p_migrated_username})`}. On-platform reviews below are additional.
+                  </p>
+                </div>
+              )}
               <div style={{ background: 'white', borderRadius: 20, overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', border: `1.5px solid ${C.g100}` }}>
                 <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.g100}` }}>
-                  <p style={{ fontWeight: 900, fontSize: 14, color: C.forest }}>All Reviews ({reviews.length})</p>
+                  <p style={{ fontWeight: 900, fontSize: 14, color: C.forest }}>On-platform reviews ({reviews.length})</p>
                 </div>
                 {reviews.length === 0 ? (
                   <div style={{ padding: 40, textAlign: 'center' }}>
                     <MessageCircle size={32} style={{ color: C.g300, margin: '0 auto 8px' }} />
-                    <p style={{ fontSize: 12, color: C.g400 }}>No feedback yet. Complete trades to get feedback.</p>
+                    <p style={{ fontSize: 12, color: C.g400 }}>
+                      {migratedFeedback > 0 ? 'No on-platform reviews yet — verified imported feedback is shown above.' : 'No feedback yet. Complete trades to get feedback.'}
+                    </p>
                   </div>
                 ) : (
                   <>

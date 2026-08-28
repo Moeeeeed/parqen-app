@@ -308,7 +308,7 @@ app.use((req, res, next) => {
 
 // ── Rate Limiters ──────────────────────────────────────────────────────────
 const rateLimit = require('express-rate-limit');
-
+rateLimit.validations = {};
 // Auth endpoints: 10 attempts per 15 minutes per IP (brute-force protection)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

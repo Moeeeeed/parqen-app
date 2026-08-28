@@ -63,7 +63,7 @@ export default function WeeklyStarsSection() {
         username: w.username,
         verified: false,
         trades: w.total_trades || 0,
-        positive: w.positive_feedback ?? 0,
+        positive: w.total_feedback_count ?? w.positive_feedback ?? 0,
         negative: w.negative_feedback ?? 0,
         rateLabel: `${parseFloat(w.average_rating || 0).toFixed(1)} ★ Rating`,
         volumeLabel: null, // "Volume: ..." doesn't fit a recognition badge — skip it
@@ -76,7 +76,7 @@ export default function WeeklyStarsSection() {
 
   return (
     <div>
-      <PinnedOfferBanner slides={slides} dismissKey="praqen_pinned_offers" intervalMs={5 * 60 * 1000} title="🏆 PRAQEN Pinned Offers" />
+      <PinnedOfferBanner slides={slides} dismissKey="praqen_pinned_offers" intervalMs={5 * 60 * 1000} title="🏆 Traders of the Week" />
       <p className="text-center text-[11px] font-semibold -mt-1 pb-1" style={{ color: '#94A3B8' }}>
         Trusted offers selected by the PRAQEN team.
       </p>
