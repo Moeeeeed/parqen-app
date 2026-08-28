@@ -1,4 +1,4 @@
-﻿-- PRAQEN — 2026-08-28 — Back-fill missing balance mirror rows
+-- PRAQEN � 2026-08-28 � Back-fill missing balance mirror rows
 --
 -- Problem:
 --   ~90 users are missing user_balances rows.
@@ -7,7 +7,7 @@
 --   all mirrors must exist.
 --
 -- This migration ONLY inserts missing rows. It NEVER overwrites existing data.
--- Checkpoint fields (last_onchain_*) are initialized to 0 — safe because
+-- Checkpoint fields (last_onchain_*) are initialized to 0 � safe because
 -- deposit_tracking_v2 is the actual idempotency source, not these checkpoints.
 --
 -- Run ONCE in Supabase SQL Editor.
@@ -15,7 +15,7 @@
 
 BEGIN;
 
--- ── Step 1: Back-fill missing user_balances ──────────────────────────────
+-- Step 1: Back-fill missing user_balances
 INSERT INTO public.user_balances (user_id, balance_btc, balance_usd, updated_at, last_onchain_btc)
 SELECT
   w.user_id,
@@ -27,7 +27,7 @@ FROM public.wallets w
 LEFT JOIN public.user_balances ub ON ub.user_id = w.user_id
 WHERE ub.user_id IS NULL;
 
--- ── Step 2: Back-fill missing user_wallets ───────────────────────────────
+-- Step 2: Back-fill missing user_wallets
 INSERT INTO public.user_wallets (
   user_id,
   btc_address,
@@ -55,8 +55,8 @@ FROM public.wallets w
 LEFT JOIN public.user_wallets uw ON uw.user_id = w.user_id
 WHERE uw.user_id IS NULL;
 
--- ── Step 3: Post-migration assertion ─────────────────────────────────────
-DO $
+-- Step 3: Post-migration assertion
+DO $verify$
 DECLARE
   v_missing_balances integer;
   v_missing_wallets integer;
@@ -78,6 +78,6 @@ BEGIN
       'Mirror backfill incomplete: user_balances=%, user_wallets=%',
       v_missing_balances, v_missing_wallets;
   END IF;
-END $;
+END $verify$;
 
 COMMIT;
