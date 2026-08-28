@@ -370,6 +370,7 @@ const tradeEscrowService = require('./services/tradeEscrowService');
 const actionCodeService = require('./services/actionCodeService');
 const { getClientIp, logSecurityEvent, isLockedOut } = require('./services/securityLogService');
 const balanceIntegrity = require('./services/balanceIntegrityService');
+const depositReconciliation = require('./services/depositReconciliationService');
 const { checkAndAwardBadges } = require('./services/badgeService');
 const { syncAllOfferStatuses, deactivateStaleOffers, reactivateReturnedSellers, setCacheBuster, setBtcPriceGetter, updateOfferStatus } = require('./services/offerStatusService');
 const traderOfWeekService = require('./services/traderOfWeekService');
@@ -14065,6 +14066,8 @@ if (
 
     // ── Daily balance integrity check ───────────────────────────────────────
     balanceIntegrity.start();
+    depositReconciliation.start();
+    console.log('??? Deposit Reconciliation: MAINNET � hourly read-only detection + flagging');
   } else {
     console.log('⏸  Live mainnet services (deposit monitor, sweep, balance integrity) skipped — NODE_ENV is not "production"');
   }
