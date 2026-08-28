@@ -14067,7 +14067,7 @@ if (
     // ── Daily balance integrity check ───────────────────────────────────────
     balanceIntegrity.start();
     depositReconciliation.start();
-    console.log('??? Deposit Reconciliation: MAINNET � hourly read-only detection + flagging');
+            console.log('[DepositReconciliation] MAINNET - hourly read-only detection + flagging');
   } else {
     console.log('⏸  Live mainnet services (deposit monitor, sweep, balance integrity) skipped — NODE_ENV is not "production"');
   }
