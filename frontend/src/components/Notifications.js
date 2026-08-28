@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -1099,10 +1099,97 @@ export default function Notifications({ user }) {
   const errCountRef    = useRef(0);    // consecutive error count for backoff
   const [justArrivedIds, setJustArrivedIds] = useState(() => new Set()); // briefly highlights newly-arrived cards at the top
 
+  // ── Notification sound ────────────────────────────────────────────────────
+  const hasInteractedRef = useRef(false); // browser autoplay policy: only play after user click
+  const audioCtxRef     = useRef(null);
+  const soundPlayedIdsRef = useRef(new Set()); // IDs of notifications that already triggered a sound
+
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 640);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Track first user interaction (click/tap) so we can play audio later.
+  useEffect(() => {
+    const markInteracted = () => { hasInteractedRef.current = true; };
+    document.addEventListener('click', markInteracted, { once: true, capture: true });
+    return () => document.removeEventListener('click', markInteracted, { capture: true });
+  }, []);
+
+  // Multi-tone notification chime via Web Audio API (no external files needed).
+  // Three rising notes (E6 → G#6 → B6) with bell-like harmonic overtone,
+  // each with its own crisp attack/decay envelope. Total ~0.65s.
+  const playNotifSound = useCallback(() => {
+    try {
+      if (!hasInteractedRef.current) return; // respect autoplay policy
+      if (typeof window === 'undefined' || (!window.AudioContext && !window.webkitAudioContext)) return;
+
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') { ctx.resume(); }
+
+      const now = ctx.currentTime;
+      const TONE_DURATION = 0.12;   // each note plays for 120ms
+      const GAP            = 0.035; // 35ms gap between notes
+      const PEAK           = 0.55;  // loud but below clipping
+
+      // [frequency, startOffset]
+      const notes = [
+        [1318.51, 0],           // E6
+        [1661.22, TONE_DURATION + GAP],  // G#6
+        [1975.53, 2 * (TONE_DURATION + GAP)], // B6
+      ];
+
+      notes.forEach(([freq, offset], idx) => {
+        const t = now + offset;
+        const isLast = idx === notes.length - 1;
+        const noteEnd = t + TONE_DURATION;
+
+        // ── Primary tone: triangle for a softer, bell-like attack ──
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, t);
+
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(PEAK, t + 0.012);        // 12ms attack
+        if (isLast) {
+          // Last note: let it ring and fade out gently
+          gain.gain.exponentialRampToValueAtTime(PEAK * 0.7, noteEnd);
+          gain.gain.exponentialRampToValueAtTime(0.001, noteEnd + 0.18);
+        } else {
+          gain.gain.exponentialRampToValueAtTime(0.001, noteEnd);   // quick decay
+        }
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(t);
+        osc.stop(isLast ? noteEnd + 0.2 : noteEnd + 0.005);
+
+        // ── Overtone: sine one octave up, quieter — adds shimmer/bell timbre ──
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(freq * 2, t);
+
+        gain2.gain.setValueAtTime(0, t);
+        gain2.gain.linearRampToValueAtTime(PEAK * 0.22, t + 0.01);
+        if (isLast) {
+          gain2.gain.exponentialRampToValueAtTime(PEAK * 0.15, noteEnd);
+          gain2.gain.exponentialRampToValueAtTime(0.001, noteEnd + 0.15);
+        } else {
+          gain2.gain.exponentialRampToValueAtTime(0.001, noteEnd);
+        }
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.start(t);
+        osc2.stop(isLast ? noteEnd + 0.16 : noteEnd + 0.005);
+      });
+    } catch (e) {
+      // Silently ignore — never block the UI for a sound.
+    }
   }, []);
 
   // Detect virtual keyboard height so chat input stays above it on mobile
@@ -1169,6 +1256,13 @@ export default function Notifications({ user }) {
             showToast(n);
           }
         });
+
+        // ── Play a single "ding" for the batch of genuinely new unread notifications ──
+        const newUnreadForSound = freshUnread.filter(n => !soundPlayedIdsRef.current.has(n.id));
+        if (newUnreadForSound.length > 0) {
+          playNotifSound();
+          newUnreadForSound.forEach(n => soundPlayedIdsRef.current.add(n.id));
+        }
       }
       seenIdsRef.current = new Set(incoming.map(n => n.id));
       setNotifs(incoming);

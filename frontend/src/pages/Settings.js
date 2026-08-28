@@ -6,7 +6,8 @@ import axios from 'axios';
 import {
   requestNotificationPermission,
   getNotificationPermission,
-  isPushSupported
+  isPushSupported,
+  identifyUser
 } from '../utils/notifications';
 import {
   User, Lock, Mail, Phone, CreditCard, Bell,
@@ -181,10 +182,15 @@ function PushEnableCard() {
               try {
                 const granted = await requestNotificationPermission();
                 setPermission(granted ? "granted" : "denied");
-                if (granted)
+                if (granted) {
                   toast.success("Trade alerts enabled! You'll never miss a trade.");
-                else
+                  // Re-link user to OneSignal after permission grant
+                  if (user?.id) {
+                    identifyUser(user.id).catch(() => {});
+                  }
+                } else {
                   toast.info("Notifications not enabled. You can turn them on later.");
+                }
               } catch (e) {
                 console.error('[Push] Permission request error:', e);
                 setPermission("denied");

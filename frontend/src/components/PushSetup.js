@@ -4,7 +4,7 @@
 // 3. IOSInstallGuide      — iOS Safari "Add to Home Screen" guide
 
 import React, { useState, useEffect } from 'react';
-import { requestNotificationPermission } from '../utils/notifications';
+import { requestNotificationPermission, identifyUser } from '../utils/notifications';
 import { Bell, Zap, DollarSign, CheckCircle, Share, Plus, Smartphone } from 'lucide-react';
 
 const C = {
@@ -44,7 +44,16 @@ export function NotificationPrompt({ userId }) {
   const allow = async () => {
     localStorage.setItem(`prq_notif_prompted_${userId}`, '1');
     setVisible(false);
-    await requestNotificationPermission();
+    const granted = await requestNotificationPermission();
+    // After permission is granted, re-run identifyUser to ensure the new
+    // push subscription is linked to this user's external ID in OneSignal.
+    // This is the critical step that makes browser push actually deliver.
+    if (granted && userId) {
+      console.log('[Push] Permission granted — re-linking user to OneSignal subscription');
+      identifyUser(userId).catch(e =>
+        console.warn('[Push] identifyUser after permission grant failed:', e.message)
+      );
+    }
   };
 
   const dismiss = () => {

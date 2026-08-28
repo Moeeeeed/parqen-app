@@ -212,32 +212,58 @@
         }
     </script>
 
-    <!-- ── ✅ FIXED: OneSignal Web Push - Environment Auto-Detect ─────────── -->
+    <!-- ── OneSignal Web Push - Environment Auto-Detect ──────────────────── -->
+    <!-- Polyfill: the OneSignal v16 SDK internally references `Notifications` (plural,
+         e.g. Notifications.permission) during init, but the browser global is `Notification`
+         (singular). Without this shim the SDK throws ReferenceError: Notifications is not
+         defined, which kills the deferred callback before `onesignal:ready` is ever dispatched. -->
+    <script>
+        if (typeof Notifications === 'undefined') {
+            window.Notifications = window.Notification || {};
+        }
+    </script>
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
     <script>
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         OneSignalDeferred.push(async function(OneSignal) {
-            // ✅ Auto-detect environment
-            const isLocal = window.location.hostname === 'localhost' ||
-                window.location.hostname === '127.0.0.1' ||
-                window.location.hostname === '0.0.0.0';
+            try {
+                const isLocalhost = window.location.hostname === 'localhost'
+                    || window.location.hostname === '127.0.0.1'
+                    || window.location.hostname === '0.0.0.0';
+                const ONESIGNAL_APP_ID = isLocalhost
+                    ? 'fb043c82-e1f5-4d84-b88f-1cb9fb6bec64'   // Local testing
+                    : '5fc11b99-516c-4178-8443-b06c08865b99';  // Production
 
-            const appId = isLocal
-                ? "6bfba397-b0b1-4718-abde-6ecb375c4f40"   // Local testing
-                : "5fc11b99-516c-4178-8443-b06c08865b99";  // Production
+                console.log('[OneSignal] Initializing with App ID:', ONESIGNAL_APP_ID);
 
-            console.log(`[OneSignal] Initializing with App ID: ${appId} (${isLocal ? 'LOCAL' : 'PRODUCTION'})`);
+                await OneSignal.init({
+                    appId: ONESIGNAL_APP_ID,
+                    notifyButton: { enable: false },
+                    allowLocalhostAsSecureOrigin: true,
+                    serviceWorkerPath: "/OneSignalSDKWorker.js",
+                });
 
-            await OneSignal.init({
-                appId: appId,
-                notifyButton: { enable: false },
-                allowLocalhostAsSecureOrigin: true,
-                serviceWorkerPath: "/OneSignalSDKWorker.js",
-            });
-
-            window.OneSignal = OneSignal;
-            window.dispatchEvent(new CustomEvent('onesignal:ready'));
-            console.log('✅ OneSignal initialized! App:', appId);
+                window.OneSignal = OneSignal;
+                console.log('[OneSignal] ✅ Initialized successfully');
+                // Only signal ready on SUCCESSFUL init — this tells waitForOS()
+                // that the SDK is fully bootstrapped and login()/User work.
+                window.dispatchEvent(new CustomEvent('onesignal:ready'));
+            } catch (e) {
+                const msg = e.message || String(e);
+                console.error('[OneSignal] Init error:', msg);
+                if (msg.includes('Can only be used on')) {
+                    console.error(
+                        '[OneSignal] ⚠️ The current origin (' + window.location.origin + ') is NOT in the allowed origins list for this App ID.',
+                        'Go to OneSignal Dashboard → Settings → Platforms → Web Push → Allowed Origins and add ' + window.location.origin
+                    );
+                }
+                // Signal error so waitForOS() resolves with null instead of
+                // hanging for the full timeout and then resolving with an
+                // uninitialized SDK.
+                window.dispatchEvent(new CustomEvent('onesignal:error', { detail: { message: msg } }));
+            }
+            // Always expose the SDK reference for debugging, even if init failed.
+            window.OneSignal = window.OneSignal || OneSignal;
         });
     </script>
 
