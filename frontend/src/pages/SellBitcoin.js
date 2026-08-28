@@ -1210,17 +1210,13 @@ export default function SellBitcoin({user}) {
     }
 
     // 2. Fallback: IP-based detection for guests
-    fetch('https://ipapi.co/json/')
+    fetch(`${API_URL.replace('/api','')}/api/geo/detect`)
       .then(r => r.json())
       .then(data => {
-        if (data?.country_code) {
-          const cc = data.country_code.toUpperCase();
+        const cc = (data.countryCode || '').toUpperCase();
+        if (cc) {
           const matched = COUNTRIES.find(c => c.code === cc);
-          if (matched && matched.code !== 'ALL') {
-            setSelCountry(matched);
-            const cur = CURRENCIES.find(c => c.code === (data.currency || matched.currency));
-            if (cur) setSelCurrency(cur);
-          }
+          if (matched && matched.code !== 'ALL') setSelCountry(matched);
         }
       })
       .catch(() => {});

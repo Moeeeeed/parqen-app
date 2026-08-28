@@ -697,9 +697,9 @@ export default function CreateOffer({ user }) {
     };
     const profileCode = user?.country_code || (user?.country?.length === 2 ? user.country : null);
     if (applyCountry(profileCode)) return;
-    fetch('https://ipapi.co/json/')
+    fetch(`${API_URL.replace('/api','')}/api/geo/detect`)
       .then(r => r.json())
-      .then(data => { if (data?.country_code) applyCountry(data.country_code); })
+      .then(data => { if (data.countryCode) applyCountry(data.countryCode); })
       .catch(() => {});
   }, []);
 

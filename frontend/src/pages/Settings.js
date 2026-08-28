@@ -103,7 +103,7 @@ function Toggle({ checked, onChange, disabled = false, label }) {
 }
 
 // ─── Push Enable Card ──────────────────────────────────────────────────────────
-function PushEnableCard() {
+function PushEnableCard({ user }) {
   const [permission, setPermission] = React.useState("default");
   const [requesting, setRequesting] = React.useState(false);
 
@@ -2564,7 +2564,7 @@ export default function Settings({ user, setUser }) {
                   <div className="bg-white rounded-2xl shadow-sm border p-6" style={{ borderColor: C.g200 }}>
                     <h2 className="text-lg font-black mb-5" style={{ color: C.forest }}>Notification Preferences</h2>
                     <div className="space-y-4">
-                      <PushEnableCard />
+                      <PushEnableCard user={user} />
                       <TelegramCard />
 
                       {[

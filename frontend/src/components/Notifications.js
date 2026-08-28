@@ -86,7 +86,9 @@ export function resolveCountryCode(entity) {
   );
 }
 
-const CUR_SYM = { GHS:'₵', NGN:'₦', KES:'KSh', ZAR:'R', USD:'$', GBP:'£', EUR:'€', UGX:'USh', TZS:'TSh', XAF:'CFA', XOF:'CFA' };
+
+
+
 const fmt    = n => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(n || 0);
 const fmtBtc = n => parseFloat(n || 0).toFixed(6);
 
@@ -398,7 +400,6 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
   const cp = cpRaw || (msgActorName ? { username: msgActorName } : null);
   const local    = parseFloat(trade.amount_local || 0);
   const cur      = trade.local_currency || 'USD';
-  const sym      = trade.currency_symbol || CUR_SYM[cur] || '';
   const btcRaw   = parseFloat(trade.amount_btc || 0);
   const btcStr   = btcRaw.toFixed(8);
   const gcBrand  = resolveGiftCardBrand(n, trade);
@@ -423,7 +424,12 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
   // USD equivalent of BTC (from amount_usd field, already in DB)
   const usdRaw       = parseFloat(trade.amount_usd || 0);
   const usdEqStr     = usdRaw > 0 ? `≈ $${usdRaw.toFixed(2)} USD` : null;
-  const fiatStr      = local > 0 ? `${sym}${local.toFixed(2)} ${cur}` : null;
+  const fiatStr      = local > 0 ? `${local.toFixed(2)} ${cur}` : null;
+  // Market-rate fiat equivalent of BTC amount (offer price / (1 + margin%))
+  // This matches the trade chat page formula: btcValueInLocal = userPays / (1 + margin / 100)
+  const margin       = parseFloat(trade.margin || trade.listing?.margin || 0);
+  const btcValueInLocal = margin !== 0 ? local / (1 + margin / 100) : local;
+  const btcValueStr  = btcValueInLocal > 0 ? `${btcValueInLocal.toFixed(2)} ${cur}` : null;
   // True receive value — saved at trade creation as btc_amount × market_rate
   const receiveRaw   = parseFloat(trade.amount_receive_usd || 0);
   const receiveStr   = receiveRaw > 0 ? `$${receiveRaw.toFixed(2)} USD` : null;
@@ -451,14 +457,14 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
       leftStr     = fiatPrimary;
       leftSubStr  = null;
       rightLabel  = baseReceive;
-      rightStr    = `${btcStr} BTC`;
-      rightSubStr = fiatStr ? `≈ ${fiatStr}` : null;
+      rightStr    = btcValueStr || `${btcStr} BTC`;
+      rightSubStr = btcValueStr ? `${btcStr} BTC` : null;
     } else {
       // Gift card seller (selling BTC to receive gift card):
       // LEFT: You pay/paid (BTC primary, fiat equiv secondary)  |  RIGHT: You receive/received (card value)
       leftLabel   = basePay;
-      leftStr     = `${btcStr} BTC`;
-      leftSubStr  = fiatStr ? `≈ ${fiatStr}` : null;
+      leftStr     = btcValueStr || `${btcStr} BTC`;
+      leftSubStr  = btcValueStr ? `${btcStr} BTC` : null;
       rightLabel  = baseReceive;
       rightStr    = fiatPrimary;
       rightSubStr = null;
@@ -470,16 +476,16 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
       leftStr     = fiatStr || receiveStr || '—';
       leftSubStr  = null;
       rightLabel  = basePay;
-      rightStr    = `${btcStr} BTC`;
-      rightSubStr = fiatStr ? `≈ ${fiatStr}` : null;
+      rightStr    = btcValueStr || `${btcStr} BTC`;
+      rightSubStr = btcValueStr ? `${btcStr} BTC` : null;
     } else {
       // BTC buyer  →  LEFT: what they PAY (fiat)  |  RIGHT: what they RECEIVE (BTC primary, fiat equiv secondary)
       leftLabel   = basePay;
       leftStr     = fiatStr || '—';
       leftSubStr  = null;
       rightLabel  = baseReceive;
-      rightStr    = `${btcStr} BTC`;
-      rightSubStr = fiatStr ? `≈ ${fiatStr}` : null;
+      rightStr    = btcValueStr || `${btcStr} BTC`;
+      rightSubStr = btcValueStr ? `${btcStr} BTC` : null;
     }
   }
 
@@ -544,19 +550,18 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
 
       <NDivider />
 
-      {/* Left | → | Right  (label + amount + optional secondary below) */}
-      <div style={{ padding: '11px 16px 14px', display: 'flex', alignItems: 'center' }}>
+      {/* Left | → | Right  (label + amount + optional secondary below) */}        <div style={{ padding: '11px 16px 14px', display: 'flex', alignItems: 'flex-start' }}>
         <div style={{ flex: 1 }}>
-          <p style={{ margin: 0, fontSize: 12, color: T.g500, fontWeight: 400, marginBottom: 3 }}>{leftLabel}</p>
-          <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>{leftStr}</p>
+          <p style={{ margin: 0, fontSize: 12, color: T.g500, fontWeight: 400 }}>{leftLabel}</p>
+          <p style={{ margin: '3px 0 0', fontSize: 14, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>{leftStr}</p>
           {leftSubStr && <p style={{ margin: '2px 0 0', fontSize: 12, fontWeight: 400, color: T.g400 }}>{leftSubStr}</p>}
         </div>
         <div style={{ padding: '0 10px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
           <ArrowRight size={18} strokeWidth={2.5} color={T.g500} />
         </div>
         <div style={{ flex: 1, textAlign: 'right' }}>
-          <p style={{ margin: 0, fontSize: 12, color: T.g500, fontWeight: 400, marginBottom: 3 }}>{rightLabel}</p>
-          <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>{rightStr}</p>
+          <p style={{ margin: 0, fontSize: 12, color: T.g500, fontWeight: 400 }}>{rightLabel}</p>
+          <p style={{ margin: '3px 0 0', fontSize: 14, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>{rightStr}</p>
           {rightSubStr && <p style={{ margin: '2px 0 0', fontSize: 12, fontWeight: 400, color: T.g400 }}>{rightSubStr}</p>}
         </div>
       </div>
@@ -672,10 +677,18 @@ function BasicCard({ n, userId, onNavigate }) {
     const fiatM = msg.match(/([\d,]+(?:\.\d+)?)\s*(GHS|NGN|KES|ZAR|USD|GBP|EUR|UGX|TZS|XAF|XOF)\b/i);
     const parsedLocalAmt = fiatM ? fiatM[1].replace(/,/g, '') : null;
     const parsedLocalCur = fiatM ? fiatM[2].toUpperCase() : null;
-    const parsedLocalSym = parsedLocalCur ? (CUR_SYM[parsedLocalCur] || '') : '';
+
     const parsedLocalStr = parsedLocalAmt
-      ? `${parsedLocalSym}${fmt(parsedLocalAmt)} ${parsedLocalCur}`
+      ? `${fmt(parsedLocalAmt)} ${parsedLocalCur}`
       : null;
+
+    // Market-rate fiat equivalent of BTC (offer price / (1 + margin%))
+    // Matches TradeNotifCard logic — parsedLocalStr is the offer fiat total,
+    // not the live-market-rate value of the BTC amount.
+    const basicMargin = parseFloat(n.trade?.margin || n.trade?.listing?.margin || 0);
+    const basicParsedLocalAmt = parsedLocalAmt ? parseFloat(parsedLocalAmt) : 0;
+    const basicBtcValue = basicMargin !== 0 ? basicParsedLocalAmt / (1 + basicMargin / 100) : basicParsedLocalAmt;
+    const btcValueStr = basicBtcValue > 0 ? `${fmt(basicBtcValue)} ${parsedLocalCur || ''}` : null;
 
     // Gift card detection for BasicCard (uses parsed payment method from message)
     const GIFT_BRANDS_RE = /amazon|itunes|apple|google.?play|steam|walmart|ebay|target|playstation|xbox|netflix|spotify|visa gift|mastercard gift|best buy/i;
@@ -724,14 +737,14 @@ function BasicCard({ n, userId, onNavigate }) {
         bLeftStr     = bFiatPrimary;
         bLeftSubStr  = null;
         bRightLabel  = baseReceive2;
-        bRightStr    = btcAmtStr || bFiatPrimary;
-        bRightSubStr = parsedLocalStr && btcAmtStr ? `≈ ${parsedLocalStr}` : null;
+        bRightStr    = (btcValueStr && btcAmtStr) ? btcValueStr : (btcAmtStr || bFiatPrimary);
+        bRightSubStr = (btcValueStr && btcAmtStr) ? btcAmtStr : null;
       } else {
         // Gift card seller (selling BTC to receive gift card):
         // LEFT: You pay/paid (BTC primary, fiat equiv secondary)  |  RIGHT: You receive/received (card value)
         bLeftLabel   = basePay2;
-        bLeftStr     = btcAmtStr || bFiatPrimary;
-        bLeftSubStr  = parsedLocalStr && btcAmtStr ? `≈ ${parsedLocalStr}` : null;
+        bLeftStr     = (btcValueStr && btcAmtStr) ? btcValueStr : (btcAmtStr || bFiatPrimary);
+        bLeftSubStr  = (btcValueStr && btcAmtStr) ? btcAmtStr : null;
         bRightLabel  = baseReceive2;
         bRightStr    = bFiatPrimary;
         bRightSubStr = null;
@@ -742,16 +755,16 @@ function BasicCard({ n, userId, onNavigate }) {
       bLeftStr     = parsedLocalStr || '—';
       bLeftSubStr  = null;
       bRightLabel  = basePay2;
-      bRightStr    = btcAmtStr || parsedLocalStr || 'BTC';
-      bRightSubStr = parsedLocalStr && btcAmtStr ? `≈ ${parsedLocalStr}` : null;
+      bRightStr    = (btcValueStr && btcAmtStr) ? btcValueStr : (btcAmtStr || parsedLocalStr || 'BTC');
+      bRightSubStr = (btcValueStr && btcAmtStr) ? btcAmtStr : null;
     } else {
       // BTC buyer: LEFT = what they PAY (fiat)  |  RIGHT = what they RECEIVE (BTC primary, fiat equiv secondary)
       bLeftLabel   = basePay2;
       bLeftStr     = parsedLocalStr || btcAmtStr || 'BTC';
       bLeftSubStr  = null;
       bRightLabel  = baseReceive2;
-      bRightStr    = btcAmtStr || parsedLocalStr || 'BTC';
-      bRightSubStr = parsedLocalStr && btcAmtStr ? `≈ ${parsedLocalStr}` : null;
+      bRightStr    = (btcValueStr && btcAmtStr) ? btcValueStr : (btcAmtStr || parsedLocalStr || 'BTC');
+      bRightSubStr = (btcValueStr && btcAmtStr) ? btcAmtStr : null;
     }
 
     // Actor: use enriched n.actor first, then parse username from message as fallback for letter avatar
@@ -830,18 +843,18 @@ function BasicCard({ n, userId, onNavigate }) {
         <NDivider />
 
         {/* Left | → | Right  (label + amount + optional secondary below) */}
-        <div style={{ padding: '11px 16px 14px', display: 'flex', alignItems: 'center' }}>
+        <div style={{ padding: '11px 16px 14px', display: 'flex', alignItems: 'flex-start' }}>
           <div style={{ flex: 1 }}>
-            <p style={{ margin: 0, fontSize: 12, color: T.g500, fontWeight: 400, marginBottom: 3 }}>{bLeftLabel}</p>
-            <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>{bLeftStr}</p>
+            <p style={{ margin: 0, fontSize: 12, color: T.g500, fontWeight: 400 }}>{bLeftLabel}</p>
+            <p style={{ margin: '3px 0 0', fontSize: 14, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>{bLeftStr}</p>
             {bLeftSubStr && <p style={{ margin: '2px 0 0', fontSize: 12, fontWeight: 400, color: T.g400 }}>{bLeftSubStr}</p>}
           </div>
           <div style={{ padding: '0 10px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <ArrowRight size={18} strokeWidth={2.5} color={T.g500} />
           </div>
           <div style={{ flex: 1, textAlign: 'right' }}>
-            <p style={{ margin: 0, fontSize: 12, color: T.g500, fontWeight: 400, marginBottom: 3 }}>{bRightLabel}</p>
-            <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>{bRightStr}</p>
+            <p style={{ margin: 0, fontSize: 12, color: T.g500, fontWeight: 400 }}>{bRightLabel}</p>
+            <p style={{ margin: '3px 0 0', fontSize: 14, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>{bRightStr}</p>
             {bRightSubStr && <p style={{ margin: '2px 0 0', fontSize: 12, fontWeight: 400, color: T.g400 }}>{bRightSubStr}</p>}
           </div>
         </div>
@@ -1072,6 +1085,16 @@ function matchFilter(n, filter) {
   return true;
 }
 
+// ── Shared single AudioContext instance for the application ──────────────────
+let sharedAudioCtx = null;
+function getSharedAudioContext() {
+  if (typeof window === 'undefined' || (!window.AudioContext && !window.webkitAudioContext)) return null;
+  if (!sharedAudioCtx) {
+    sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return sharedAudioCtx;
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 export default function Notifications({ user }) {
   const navigate  = useNavigate();
@@ -1101,7 +1124,6 @@ export default function Notifications({ user }) {
 
   // ── Notification sound ────────────────────────────────────────────────────
   const hasInteractedRef = useRef(false); // browser autoplay policy: only play after user click
-  const audioCtxRef     = useRef(null);
   const soundPlayedIdsRef = useRef(new Set()); // IDs of notifications that already triggered a sound
 
   useEffect(() => {
@@ -1112,24 +1134,59 @@ export default function Notifications({ user }) {
 
   // Track first user interaction (click/tap) so we can play audio later.
   useEffect(() => {
-    const markInteracted = () => { hasInteractedRef.current = true; };
-    document.addEventListener('click', markInteracted, { once: true, capture: true });
-    return () => document.removeEventListener('click', markInteracted, { capture: true });
+    const resumeAudio = () => {
+      const ctx = getSharedAudioContext();
+      if (ctx && ctx.state === 'suspended') {
+        const prevState = ctx.state;
+        ctx.resume()
+          .then(() => {
+            // eslint-disable-next-line no-console
+            console.log(`[Notifications] AudioContext state: ${prevState} → ${ctx.state}`);
+          })
+          .catch((err) => {
+            // eslint-disable-next-line no-console
+            console.warn('[Notifications] Failed to resume AudioContext:', err);
+          });
+      }
+      hasInteractedRef.current = true;
+    };
+
+    const events = ['click', 'touchstart', 'keydown'];
+    events.forEach(e => document.addEventListener(e, resumeAudio, { once: true, capture: true }));
+    return () => {
+      events.forEach(e => document.removeEventListener(e, resumeAudio, { capture: true }));
+    };
   }, []);
 
   // Multi-tone notification chime via Web Audio API (no external files needed).
   // Three rising notes (E6 → G#6 → B6) with bell-like harmonic overtone,
   // each with its own crisp attack/decay envelope. Total ~0.65s.
-  const playNotifSound = useCallback(() => {
+  const playNotifSound = useCallback(async () => {
     try {
-      if (!hasInteractedRef.current) return; // respect autoplay policy
-      if (typeof window === 'undefined' || (!window.AudioContext && !window.webkitAudioContext)) return;
+      const ctx = getSharedAudioContext();
+      if (!ctx) return;
 
-      if (!audioCtxRef.current) {
-        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      // If the context is suspended (autoplay policy), await resume before
+      // checking state — ctx.resume() is async, so a synchronous state check
+      // right after calling it would always see 'suspended'.
+      if (ctx.state === 'suspended') {
+        const prevState = ctx.state;
+        try {
+          await ctx.resume();
+          // eslint-disable-next-line no-console
+          console.log(`[Notifications] AudioContext state (on-play): ${prevState} → ${ctx.state}`);
+        } catch {
+          // eslint-disable-next-line no-console
+          console.warn('[Notifications] Failed to resume AudioContext before playing chime.');
+          return;
+        }
+        // If still suspended after await (no user gesture yet), skip gracefully
+        if (ctx.state === 'suspended') {
+          // eslint-disable-next-line no-console
+          console.warn('[Notifications] AudioContext still suspended after resume attempt — skipping chime.');
+          return;
+        }
       }
-      const ctx = audioCtxRef.current;
-      if (ctx.state === 'suspended') { ctx.resume(); }
 
       const now = ctx.currentTime;
       const TONE_DURATION = 0.12;   // each note plays for 120ms
