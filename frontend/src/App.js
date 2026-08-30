@@ -16,9 +16,9 @@ import 'react-toastify/dist/ReactToastify.css';
 import CustomToastContainer from './components/CustomToastContainer';
 import Navbar from './components/Navbar';
 import BottomNav from './components/BottomNav';
-import WelcomeModal from './components/WelcomeModal';
-import WelcomeBonusModal from './components/WelcomeBonusModal';
-import SuggestionsPanel from './components/SuggestionsPanel';
+const WelcomeModal = lazyRetry(() => import('./components/WelcomeModal'));
+const WelcomeBonusModal = lazyRetry(() => import('./components/WelcomeBonusModal'));
+const SuggestionsPanel = lazyRetry(() => import('./components/SuggestionsPanel'));
 import { NotificationPrompt, AndroidInstallBanner, IOSInstallGuide } from './components/PushSetup';
 import ErrorBoundary from './components/ErrorBoundary';
 
