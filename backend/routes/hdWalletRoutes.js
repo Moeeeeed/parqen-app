@@ -76,12 +76,12 @@ async function getLiveBtcPrice() {
     return _btcPriceCache.price; // return last known price rather than hard-coded fallback
 }
 
-// ── Withdrawal fee — flat 4% — returns { feeUsd, feeBtc, label } ─────────────
+// ── Withdrawal fee — flat 1.2% — returns { feeUsd, feeBtc, label } ─────────────
 function calcWithdrawalFee(amountBtc, btcPrice) {
   const amountUsd = Math.round(amountBtc * btcPrice * 100) / 100;
-  const feeUsd = amountUsd * 0.04;
+  const feeUsd = amountUsd * 0.012;
   const feeBtc = parseFloat((feeUsd / btcPrice).toFixed(8));
-  return { feeUsd: parseFloat(feeUsd.toFixed(2)), feeBtc, label: '4% fee' };
+  return { feeUsd: parseFloat(feeUsd.toFixed(2)), feeBtc, label: '1.2% fee' };
 }
 
 // ============================================================
