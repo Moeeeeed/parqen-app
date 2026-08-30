@@ -1672,6 +1672,26 @@ async function requireEmailVerified(req, res, next) {
 
 app.get('/api/health', (req, res) => res.json({ status: 'OK', time: new Date() }));
 
+// ── Geo-detect endpoint (proxies ipapi.co to avoid client-side CORS) ────────
+app.get('/api/geo/detect', async (req, res) => {
+  try {
+    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+      || req.headers['x-real-ip']
+      || req.socket?.remoteAddress
+      || '';
+    const skipPrivate = !ip || ip === '::1' || ip.startsWith('127.') || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('::ffff:');
+    if (skipPrivate) return res.json({ countryCode: null, city: null });
+    const geoRes = await fetch(`https://ipapi.co/${ip}/json/`, { signal: AbortSignal.timeout(4000) });
+    const geo = await geoRes.json();
+    if (geo?.country_code && geo.country_code.length === 2 && !geo.error) {
+      return res.json({ countryCode: geo.country_code.toUpperCase(), city: geo.city || null });
+    }
+    return res.json({ countryCode: null, city: null });
+  } catch {
+    return res.json({ countryCode: null, city: null });
+  }
+});
+
 app.post('/api/test-notify', async (req, res) => {
   const { userId, phone } = req.body;
   const results = {};
@@ -8596,7 +8616,7 @@ app.post('/api/messages', verifyToken, async (req, res) => {
     const useSystem = isSystem && isParticipant;
     const { data, error } = await supabaseAdmin.from('messages').insert([{
       trade_id: tradeId,
-      sender_id: useSystem ? null : req.userId,
+      sender_id: req.userId,
       recipient_id: useSystem ? null : recipientId,
       message_text: message,
       message_type: useSystem ? 'SYSTEM' : 'CHAT',
@@ -9688,7 +9708,7 @@ app.get('/api/notifications', verifyToken, async (req, res) => {
     const tradeSelect = `id, status, trade_type, amount_btc, amount_usd, amount_local,
                  local_currency, currency_symbol, currency, amount_usdt, payment_method, gift_card_brand, trade_ref,
                  buyer_id, seller_id, created_at, completed_at, cancelled_at, cancel_reason,
-                 listing:listing_id(id, listing_type, gift_card_brand, payment_method),
+                 listing:listing_id(id, listing_type, gift_card_brand, payment_method, margin),
                  buyer:buyer_id(id, username, avatar_url, country),
                  seller:seller_id(id, username, avatar_url, country)`;
 

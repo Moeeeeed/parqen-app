@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_URL } from '../App';
 import { BadgeChip, SafetyBadge } from '../lib/badge';
 
 function ProfileFlag({ user }) {
@@ -6,19 +7,15 @@ function ProfileFlag({ user }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    fetch('https://ipapi.co/json/')
+    fetch(`${API_URL.replace('/api','')}/api/geo/detect`)
       .then(res => res.json())
       .then(data => {
-        setCountryData({
-          code: data.country_code?.toLowerCase(),
-          name: data.country_name
-        });
+        if (data.countryCode) {
+          setCountryData({ code: data.countryCode.toLowerCase(), name: data.city || data.countryCode });
+        }
         setIsLoading(false);
       })
-      .catch(err => {
-        console.error('Error fetching location:', err);
-        setIsLoading(false);
-      });
+      .catch(() => { setIsLoading(false); });
   }, []);
 
   // Use emoji flag for country

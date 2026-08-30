@@ -1305,13 +1305,15 @@ export default function BuyBitcoin({user}) {
     }
     const geoController = new AbortController();
     const geoTimeout = setTimeout(() => geoController.abort(), 3000);
-    fetch('https://ipapi.co/json/', { signal: geoController.signal })
+    fetch(`${API_URL.replace('/api','')}/api/geo/detect`, { signal: geoController.signal })
       .then(r => r.json())
       .then(data => {
-        const countryCode = (data.country_code || '').toUpperCase();
-        sessionStorage.setItem('praqen_geo', JSON.stringify({ countryCode }));
-        const match = COUNTRIES.find(c => c.code === countryCode);
-        if (match && match.code !== 'ALL') setSelCountry(match);
+        const countryCode = (data.countryCode || '').toUpperCase();
+        if (countryCode) {
+          sessionStorage.setItem('praqen_geo', JSON.stringify({ countryCode }));
+          const match = COUNTRIES.find(c => c.code === countryCode);
+          if (match && match.code !== 'ALL') setSelCountry(match);
+        }
       })
       .catch(() => {})
       .finally(() => clearTimeout(geoTimeout));
