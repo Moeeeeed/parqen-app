@@ -16,11 +16,14 @@ import 'react-toastify/dist/ReactToastify.css';
 import CustomToastContainer from './components/CustomToastContainer';
 import Navbar from './components/Navbar';
 import BottomNav from './components/BottomNav';
-const WelcomeModal = lazyRetry(() => import('./components/WelcomeModal'));
-const WelcomeBonusModal = lazyRetry(() => import('./components/WelcomeBonusModal'));
-const SuggestionsPanel = lazyRetry(() => import('./components/SuggestionsPanel'));
 import { NotificationPrompt, AndroidInstallBanner, IOSInstallGuide } from './components/PushSetup';
 import ErrorBoundary from './components/ErrorBoundary';
+// eslint-disable-next-line import/first
+const WelcomeModal = lazyRetry(() => import('./components/WelcomeModal'));
+// eslint-disable-next-line import/first
+const WelcomeBonusModal = lazyRetry(() => import('./components/WelcomeBonusModal'));
+// eslint-disable-next-line import/first
+const SuggestionsPanel = lazyRetry(() => import('./components/SuggestionsPanel'));
 
 // Resets the ErrorBoundary on every route change, so a crash on one page
 // doesn't leave every subsequent page stuck on the fallback screen.
@@ -88,43 +91,81 @@ function lazyRetry(importer) {
   );
 }
 
+// eslint-disable-next-line import/first
 const GiftCardMarketplace = lazyRetry(() => import('./pages/GiftCardMarketplace'));
+// eslint-disable-next-line import/first
 const Blog = lazyRetry(() => import('./pages/Blog'));
+// eslint-disable-next-line import/first
 const BlogPost = lazyRetry(() => import('./pages/BlogPost'));
+// eslint-disable-next-line import/first
 const PrivacyPolicy = lazyRetry(() => import('./pages/PrivacyPolicy'));
+// eslint-disable-next-line import/first
 const TermsOfService = lazyRetry(() => import('./pages/TermsOfService'));
+// eslint-disable-next-line import/first
 const LandingPage = lazyRetry(() => import('./pages/LandingPage'));
+// eslint-disable-next-line import/first
 const Register = lazyRetry(() => import('./pages/Register'));
+// eslint-disable-next-line import/first
 const Login = lazyRetry(() => import('./pages/Login'));
+// eslint-disable-next-line import/first
 const CreateListing = lazyRetry(() => import('./pages/CreateListing'));
+// eslint-disable-next-line import/first
 const CreateOffer = lazyRetry(() => import('./pages/CreateOffer'));
+// eslint-disable-next-line import/first
 const ListingDetail = lazyRetry(() => import('./pages/ListingDetail'));
+// eslint-disable-next-line import/first
 const MyTrades = lazyRetry(() => import('./pages/MyTrades'));
+// eslint-disable-next-line import/first
 const TradeDetail = lazyRetry(() => import('./pages/TradeDetail'));
+// eslint-disable-next-line import/first
 const Profile = lazyRetry(() => import('./pages/Profile'));
+// eslint-disable-next-line import/first
 const AdminDashboard = lazyRetry(() => import('./pages/AdminDashboard'));
+// eslint-disable-next-line import/first
 const ModeratorDashboard = lazyRetry(() => import('./pages/ModeratorDashboard'));
+// eslint-disable-next-line import/first
 const TeamDashboard = lazyRetry(() => import('./pages/TeamDashboard'));
+// eslint-disable-next-line import/first
 const CeoDashboard = lazyRetry(() => import('./pages/CeoDashboard'));
+// eslint-disable-next-line import/first
 const EscrowVerification = lazyRetry(() => import('./pages/EscrowVerification'));
+// eslint-disable-next-line import/first
 const WalletPage = lazyRetry(() => import('./pages/Wallet'));
+// eslint-disable-next-line import/first
 const Dashboard = lazyRetry(() => import('./pages/Dashboard'));
+// eslint-disable-next-line import/first
 const Settings = lazyRetry(() => import('./pages/Settings'));
+// eslint-disable-next-line import/first
 const MyListings = lazyRetry(() => import('./pages/MyListings'));
+// eslint-disable-next-line import/first
 const EditListing = lazyRetry(() => import('./pages/EditListing'));
+// eslint-disable-next-line import/first
 const ForgotPassword = lazyRetry(() => import('./pages/ForgotPassword'));
+// eslint-disable-next-line import/first
 const Feedback = lazyRetry(() => import('./pages/Feedback'));
+// eslint-disable-next-line import/first
 const TradeChat = lazyRetry(() => import('./pages/TradeChat'));
+// eslint-disable-next-line import/first
 const BuyBitcoin = lazyRetry(() => import('./pages/BuyBitcoin'));
+// eslint-disable-next-line import/first
 const SellBitcoin = lazyRetry(() => import('./pages/SellBitcoin'));
+// eslint-disable-next-line import/first
 const BuyUSDT = lazyRetry(() => import('./pages/BuyUSDT'));
+// eslint-disable-next-line import/first
 const SellUSDT = lazyRetry(() => import('./pages/SellUSDT'));
+// eslint-disable-next-line import/first
 const SellGiftCardMarketplace = lazyRetry(() => import('./pages/SellGiftCardMarketplace'));
+// eslint-disable-next-line import/first
 const AgentDashboard = lazyRetry(() => import('./pages/AgentDashboard'));
+// eslint-disable-next-line import/first
 const AccountantDashboard = lazyRetry(() => import('./pages/AccountantDashboard'));
+// eslint-disable-next-line import/first
 const VerifyOTP = lazyRetry(() => import('./pages/VerifyOTP'));
+// eslint-disable-next-line import/first
 const ResetPassword = lazyRetry(() => import('./pages/ResetPassword'));
+// eslint-disable-next-line import/first
 const EmailConfirmation = lazyRetry(() => import('./pages/EmailConfirmation'));
+// eslint-disable-next-line import/first
 const CheckEmail = lazyRetry(() => import('./pages/CheckEmail'));
 
 // ── Page Loader ──────────────────────────────────────────────────────────────
