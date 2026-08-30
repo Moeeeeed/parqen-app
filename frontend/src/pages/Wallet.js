@@ -82,11 +82,11 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
     ? parseFloat((parseFloat(usdAmount || 0) / price).toFixed(8))
     : parseFloat(amount || 0);
 
-  // Flat 4% withdrawal fee — mirrors backend calcWithdrawalFee()
+  // Flat 1.2% withdrawal fee — mirrors backend calcWithdrawalFee()
   // Use raw USD input when in USD mode to avoid BTC round-trip floating-point boundary errors
   const calcFeeByUsd = (usd) => {
     if (usd <= 0) return { feeUsd: 0, feeBtc: 0, label: '' };
-    return { feeUsd: usd * 0.04, feeBtc: (usd * 0.04) / price, label: '4% fee' };
+    return { feeUsd: usd * 0.012, feeBtc: (usd * 0.012) / price, label: '1.2% fee' };
   };
   const calcFee = (btc) => {
     // Round to nearest cent before tier comparison to avoid floating-point boundary mismatches
