@@ -5,12 +5,10 @@ import { useRates } from '../contexts/RatesContext';
 import {
   Landmark, Wallet, Bitcoin, Fuel, Shield, AlertTriangle, LogOut, RefreshCw,
   Download, ScrollText, Flag, ArrowDownCircle, ArrowUpCircle, ShieldCheck, ShieldAlert,
+  Search,
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
-// Dedicated accountantToken (own login, below) takes priority — falls back to the main
-// site's token only so an admin/CEO already logged into the main app can still open this
-// page without a second login, same fallback pattern AgentDashboard/CeoDashboard use.
 const authH = () => {
   const t = localStorage.getItem('accountantToken') || localStorage.getItem('token');
   return t ? { Authorization: `Bearer ${t}` } : {};
@@ -27,9 +25,7 @@ const C = {
   g400: '#94A3B8', g500: '#64748B', g600: '#475569', g700: '#334155', g800: '#1E293B',
 };
 
-// ── Accountant-only login screen — its own page, separate session from the customer-facing
-// /login, same password → email-OTP → (optional) 2FA flow as CeoLogin/AgentLogin, hitting
-// the exact same /api/auth/* endpoints, just checking is_accountant/is_admin/is_ceo.
+// ── Accountant-only login screen ────────────────────────────────────────
 function AccountantLogin({ onAuth }) {
   const [step, setStep]           = useState('password');
   const [email, setEmail]         = useState('');
@@ -179,6 +175,118 @@ function StatCard({ icon, label, color, bg, primary, secondary, footer }) {
   );
 }
 
+// ── NEW: Revenue Trend Chart ────────────────────────────────────────────
+function RevenueTrendChart({ data }) {
+  if (!data || data.length === 0) return null;
+  
+  const maxVal = Math.max(...data.map(d => d.value), 1);
+  const width = 600;
+  const height = 150;
+  const padding = 10;
+  
+  const points = data.map((d, i) => {
+    const x = padding + (i * (width - 2*padding)) / (data.length - 1);
+    const y = height - padding - (d.value / maxVal) * (height - 2*padding);
+    return `${x},${y}`;
+  }).join(' ');
+  
+  return (
+    <div style={{ background: '#fff', borderRadius: 12, padding: 16, marginTop: 16, border: `1px solid ${C.g200}` }}>
+      <h3 style={{ fontSize: 13, fontWeight: 800, color: C.g800, marginBottom: 12 }}>
+        📊 Fee Revenue Trend (30 Days)
+      </h3>
+      <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ overflow: 'visible' }}>
+        <line x1={padding} y1={height-padding} x2={width-padding} y2={height-padding} stroke="#CBD5E1" strokeWidth="1" />
+        <line x1={padding} y1={padding} x2={padding} y2={height-padding} stroke="#CBD5E1" strokeWidth="1" />
+        <polyline
+          points={points}
+          fill="none"
+          stroke="#059669"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {data.map((d, i) => {
+          const x = padding + (i * (width - 2*padding)) / (data.length - 1);
+          const y = height - padding - (d.value / maxVal) * (height - 2*padding);
+          return (
+            <circle key={i} cx={x} cy={y} r="3" fill="#059669">
+              <title>{`${d.date}: $${d.value.toFixed(2)}`}</title>
+            </circle>
+          );
+        })}
+      </svg>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.g400, marginTop: 4 }}>
+        <span>{data[0]?.date}</span>
+        <span>{data[data.length-1]?.date}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── NEW: Search Bar ─────────────────────────────────────────────────────
+function SearchBar({ onSearch }) {
+  const [query, setQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState('ALL');
+  
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => { setQuery(e.target.value); onSearch(e.target.value, typeFilter); }}
+        placeholder="🔍 Search user, email, or tx hash..."
+        style={{
+          flex: 1, minWidth: 200, padding: '8px 12px', borderRadius: 8,
+          border: `1px solid ${C.g200}`, fontSize: 12, outline: 'none'
+        }}
+      />
+      <select
+        value={typeFilter}
+        onChange={(e) => { setTypeFilter(e.target.value); onSearch(query, e.target.value); }}
+        style={{
+          padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.g200}`,
+          fontSize: 12, outline: 'none', background: 'white'
+        }}
+      >
+        <option value="ALL">All Types</option>
+        <option value="DEPOSIT">Deposits</option>
+        <option value="WITHDRAWAL">Withdrawals</option>
+        <option value="FEE">Fees</option>
+        <option value="ESCROW_LOCK">Escrow Locks</option>
+        <option value="ESCROW_RELEASE">Escrow Releases</option>
+        <option value="TRANSFER_IN">Transfers In</option>
+        <option value="TRANSFER_OUT">Transfers Out</option>
+        <option value="SWAP">Swaps</option>
+      </select>
+    </div>
+  );
+}
+
+// ── NEW: Top Users Stats ────────────────────────────────────────────────
+function TopUsersStats({ users }) {
+  if (!users || users.length === 0) return null;
+  
+  return (
+    <div style={{ background: '#fff', borderRadius: 12, padding: 16, marginTop: 16, border: `1px solid ${C.g200}` }}>
+      <h3 style={{ fontSize: 13, fontWeight: 800, color: C.g800, marginBottom: 12 }}>
+        🏆 Top Traders (Real Trade Count)
+      </h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {users.slice(0, 5).map((u, i) => (
+          <div key={u.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: C.g50, borderRadius: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 16, fontWeight: 800, color: i === 0 ? '#D97706' : C.g500 }}>#{i+1}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.g800 }}>{u.username}</span>
+            </div>
+            <span style={{ fontSize: 12, color: '#059669', fontWeight: 700 }}>{u.total_trades} trades</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const RANGE_PRESETS = [
   { id: '7d',  label: '7 Days',  days: 7 },
   { id: '30d', label: '30 Days', days: 30 },
@@ -217,6 +325,10 @@ function AccountantDashboardInner({ user }) {
   const [ledger, setLedger]       = useState(null);
   const [loadingLedger, setLoadingLedger] = useState(true);
 
+  const [revenueTrend, setRevenueTrend] = useState([]);
+  const [topUsers, setTopUsers] = useState([]);
+  const [filteredTx, setFilteredTx] = useState(null);
+
   const loadOverview = useCallback(async () => {
     try {
       const { data } = await axios.get(`${API_URL}/hd-wallet/accountant/overview`, { headers: authH() });
@@ -235,15 +347,30 @@ function AccountantDashboardInner({ user }) {
         headers: authH(), params: { from: fromDate, to: toDate },
       });
       setLedger(data);
+      setFilteredTx(null);
     } catch (e) {
       toast.error(e.response?.data?.error || 'Failed to load ledger');
     } finally { setLoadingLedger(false); }
   }, [fromDate, toDate]);
 
+  const loadTrend = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API_URL}/hd-wallet/accountant/revenue-trend`, { headers: authH() });
+      setRevenueTrend(data || []);
+    } catch (e) { console.log('Trend load error:', e.message); }
+  }, []);
+
+  const loadTopUsers = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API_URL}/hd-wallet/accountant/top-users`, { headers: authH() });
+      setTopUsers(data || []);
+    } catch (e) { console.log('Top users load error:', e.message); }
+  }, []);
+
   useEffect(() => { loadOverview(); }, [loadOverview]);
   useEffect(() => { loadLedger(); }, [loadLedger]);
+  useEffect(() => { loadTrend(); loadTopUsers(); }, [loadTrend, loadTopUsers]);
 
-  // Keep the solvency snapshot fresh without a manual refresh, same idea as CEO/Agent dashboards.
   useEffect(() => {
     const iv = setInterval(() => loadOverview(), 60000);
     return () => clearInterval(iv);
@@ -262,11 +389,12 @@ function AccountantDashboardInner({ user }) {
   };
 
   const exportCsv = () => {
-    if (!ledger?.transactions?.length) { toast.error('Nothing to export for this range'); return; }
+    const rows = filteredTx || ledger?.transactions || [];
+    if (!rows.length) { toast.error('Nothing to export for this range'); return; }
     const cols = ['created_at', 'type', 'currency', 'amount_btc', 'amount_usdt', 'platform_fee_btc', 'platform_fee_usdt', 'status', 'tx_hash', 'notes'];
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = [cols.join(',')].concat(
-      ledger.transactions.map(t => cols.map(c => esc(t[c])).join(','))
+      rows.map(t => cols.map(c => esc(t[c])).join(','))
     );
     const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -277,6 +405,19 @@ function AccountantDashboardInner({ user }) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handleSearch = (query, typeFilter) => {
+    const allTx = ledger?.transactions || [];
+    const filtered = allTx.filter(tx => {
+      const matchesQuery = !query || 
+        (tx.username?.toLowerCase().includes(query.toLowerCase()) ||
+         tx.tx_hash?.toLowerCase().includes(query.toLowerCase()) ||
+         tx.type?.toLowerCase().includes(query.toLowerCase()));
+      const matchesType = typeFilter === 'ALL' || tx.type === typeFilter;
+      return matchesQuery && matchesType;
+    });
+    setFilteredTx(filtered);
   };
 
   if (accessDenied) {
@@ -313,6 +454,7 @@ function AccountantDashboardInner({ user }) {
   const feeRevenueUsdt = (s.FEE?.feeUsdt || 0) || Object.values(s).reduce((sum, v) => sum + (v.feeUsdt || 0), 0);
   const depositsBtc  = s.DEPOSIT?.btc || 0,  depositsUsdt  = s.DEPOSIT?.usdt || 0;
   const withdrawBtc  = Math.abs(s.WITHDRAWAL?.btc || 0), withdrawUsdt = Math.abs(s.WITHDRAWAL?.usdt || 0);
+  const displayTx = filteredTx || ledger?.transactions || [];
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#F8FAFC' }}>
@@ -329,7 +471,7 @@ function AccountantDashboardInner({ user }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => { loadOverview(); loadLedger(); }}
+            <button onClick={() => { loadOverview(); loadLedger(); loadTrend(); loadTopUsers(); }}
               className="p-2 rounded-xl border hover:bg-gray-50 transition" style={{ borderColor: C.g200 }} title="Refresh">
               <RefreshCw size={15} style={{ color: C.g500 }} />
             </button>
@@ -386,6 +528,18 @@ function AccountantDashboardInner({ user }) {
           )}
         </div>
 
+        {/* ── NEW: Search Bar ─────────────────────────────────────────── */}
+        <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.g200 }}>
+          <p className="text-[11px] font-black uppercase tracking-wide mb-3" style={{ color: C.g500 }}>🔍 Search & Filter</p>
+          <SearchBar onSearch={handleSearch} />
+        </div>
+
+        {/* ── NEW: Revenue Trend ───────────────────────────────────────── */}
+        {revenueTrend.length > 0 && <RevenueTrendChart data={revenueTrend} />}
+
+        {/* ── NEW: Top Users ──────────────────────────────────────────── */}
+        <TopUsersStats users={topUsers} />
+
         {/* ── Date range ───────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-2">
           {RANGE_PRESETS.map(p => (
@@ -408,7 +562,7 @@ function AccountantDashboardInner({ user }) {
           </button>
         </div>
 
-        {/* ── Revenue / cash flow for the selected range ──────────────────── */}
+        {/* ── Revenue / cash flow ──────────────────────────────────────── */}
         <div>
           <h2 className="text-sm font-black uppercase tracking-wide mb-3" style={{ color: C.g500 }}>Revenue &amp; Cash Flow — {fromDate} to {toDate}</h2>
           {loadingLedger ? (
@@ -423,12 +577,7 @@ function AccountantDashboardInner({ user }) {
                 <StatCard icon={<ArrowUpCircle size={16} />} label="Withdrawals Out" color="#DC2626" bg="#FEF2F2"
                   primary={`$${fmtUsd(usdOf(withdrawBtc, withdrawUsdt))}`} secondary={`₿${fmtBtc(withdrawBtc)} + ₮${fmtUsdt(withdrawUsdt)}`} />
                 <StatCard icon={<ScrollText size={16} />} label="Transactions" color="#64748B" bg="#F1F5F9"
-                  primary={ledger?.rowCount ?? 0} secondary={ledger?.truncated ? '⚠ capped at 5,000 — narrow the range' : `${Object.keys(s).length} types`} />
-              </div>
-              <div className="rounded-xl p-3 text-[11px]" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E' }}>
-                <strong>Known open item:</strong> trade fee revenue recorded here (from wallet_transactions FEE rows) has a
-                documented, unresolved gap against trades.platform_fee_btc/usdt totals — see BALANCE_MISMATCH_INVESTIGATION.md.
-                Treat "Fee Revenue" above as a lower bound, not a final number, until that's root-caused.
+                  primary={displayTx.length} secondary={ledger?.truncated ? '⚠ capped at 5,000' : `${Object.keys(s).length} types`} />
               </div>
             </>
           )}
@@ -471,7 +620,7 @@ function AccountantDashboardInner({ user }) {
 
         {/* ── Transaction ledger ───────────────────────────────────────── */}
         <div>
-          <h2 className="text-sm font-black uppercase tracking-wide mb-3" style={{ color: C.g500 }}>Transaction Ledger</h2>
+          <h2 className="text-sm font-black uppercase tracking-wide mb-3" style={{ color: C.g500 }}>Transaction Ledger {filteredTx && `(${filteredTx.length} filtered)`}</h2>
           <div className="bg-white rounded-2xl border overflow-x-auto" style={{ borderColor: C.g200, maxHeight: 480, overflowY: 'auto' }}>
             <table className="w-full text-xs">
               <thead className="sticky top-0" style={{ backgroundColor: '#fff' }}><tr className="text-left" style={{ color: C.g400 }}>
@@ -481,7 +630,7 @@ function AccountantDashboardInner({ user }) {
                 <th className="px-3 py-2 font-bold">Status</th>
               </tr></thead>
               <tbody>
-                {(ledger?.transactions || []).map((tx, i) => (
+                {displayTx.map((tx, i) => (
                   <tr key={tx.id || i} className="border-t" style={{ borderColor: C.g100 }}>
                     <td className="px-3 py-2 whitespace-nowrap" style={{ color: C.g600 }}>{new Date(tx.created_at).toLocaleString()}</td>
                     <td className="px-3 py-2 font-bold" style={{ color: C.g800 }}>{tx.type}</td>
@@ -492,7 +641,7 @@ function AccountantDashboardInner({ user }) {
                     <td className="px-3 py-2" style={{ color: C.g600 }}>{tx.status}</td>
                   </tr>
                 ))}
-                {!loadingLedger && !(ledger?.transactions || []).length && (
+                {!loadingLedger && !displayTx.length && (
                   <tr><td colSpan={7} className="px-3 py-8 text-center" style={{ color: C.g400 }}>No transactions in this range.</td></tr>
                 )}
               </tbody>
