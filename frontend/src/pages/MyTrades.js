@@ -804,8 +804,10 @@ export default function MyTrades({user}) {
             <div className="pt-2 mt-1 border-t space-y-3" style={{borderColor:C.g100}}>
               {/* Trade type */}
               <div>
-                <p className="text-xs font-black uppercase tracking-wide mb-1.5" style={{color:C.g400}}>Trade Type</p>
-                <div className="flex gap-1 flex-wrap">
+                <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide mb-1.5" style={{color:C.g400}}>
+                  <span className="inline-flex items-center justify-center" style={{width:14,height:14}}><Filter size={12} /></span>Trade Type
+                </p>
+                <div className="flex gap-1.5 flex-wrap">
                   {[
                     ['all',     'All Types',     null],
                     ['buying',  'Buying',        ShoppingCart],
@@ -813,12 +815,12 @@ export default function MyTrades({user}) {
                     ['gift',    'Gift Cards',    Gift],
                   ].map(([val,lbl,TypeIcon])=>(
                     <button key={val} onClick={()=>setTypeFilter(val)}
-                      className="px-3 py-1.5 rounded-xl text-xs font-bold transition"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition"
                       style={{
                         backgroundColor:typeFilter===val?C.forest:C.g50,
                         color:typeFilter===val?C.white:C.g600,
                       }}>
-                      {TypeIcon && <TypeIcon size={10} className="inline mr-1"/>}
+                      {TypeIcon && <span className="inline-flex items-center justify-center flex-shrink-0" style={{width:14,height:14}}><TypeIcon size={12} /></span>}
                       {lbl}
                     </button>
                   ))}
@@ -827,8 +829,8 @@ export default function MyTrades({user}) {
 
               {/* Sort by */}
               <div>
-                <p className="text-xs font-black uppercase tracking-wide mb-1.5" style={{color:C.g400}}>
-                  <ArrowUpDown size={10} className="inline mr-1"/>Sort By
+                <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide mb-1.5" style={{color:C.g400}}>
+                  <span className="inline-flex items-center justify-center" style={{width:14,height:14}}><ArrowUpDown size={12} /></span>Sort By
                 </p>
                 <div className="flex gap-1 flex-wrap">
                   {[
@@ -852,8 +854,8 @@ export default function MyTrades({user}) {
               {/* Date range + amount range */}
               <div className="grid sm:grid-cols-2 gap-3">
                 <div>
-                  <p className="text-xs font-black uppercase tracking-wide mb-1.5" style={{color:C.g400}}>
-                    <Calendar size={10} className="inline mr-1"/>Date Range
+                  <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide mb-1.5" style={{color:C.g400}}>
+                    <span className="inline-flex items-center justify-center" style={{width:14,height:14}}><Calendar size={12} /></span>Date Range
                   </p>
                   <div className="flex items-center gap-1.5">
                     <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}
@@ -866,8 +868,8 @@ export default function MyTrades({user}) {
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs font-black uppercase tracking-wide mb-1.5" style={{color:C.g400}}>
-                    <Bitcoin size={10} className="inline mr-1"/>BTC Amount Range
+                  <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide mb-1.5" style={{color:C.g400}}>
+                    <span className="inline-flex items-center justify-center" style={{width:14,height:14}}><Bitcoin size={12} /></span>BTC Amount Range
                   </p>
                   <div className="flex items-center gap-1.5">
                     <input type="number" step="0.00000001" min="0" value={amountMin} onChange={e=>setAmountMin(e.target.value)}

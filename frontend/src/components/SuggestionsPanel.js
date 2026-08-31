@@ -683,10 +683,10 @@ export default function SuggestionsPanel({ user }) {
   const [talkToHumanLoading, setTalkToHumanLoading] = useState(false);
   const [selectedDepartment, setSelectedDepartment] = useState('tech');
   const DEPARTMENTS = [
-    { id: 'tech', label: 'Tech', icon: '🔧' },
-    { id: 'billing', label: 'Billing', icon: '💳' },
-    { id: 'compliance', label: 'Compliance', icon: '📋' },
-    { id: 'general', label: 'General', icon: '💬' },
+    { id: 'tech', label: 'Tech', icon: <Settings size={12} /> },
+    { id: 'billing', label: 'Billing', icon: <CreditCard size={12} /> },
+    { id: 'compliance', label: 'Compliance', icon: <Shield size={12} /> },
+    { id: 'general', label: 'General', icon: <MessageCircle size={12} /> },
   ];
 
   const MIN_TYPING_MS = 700;
@@ -1143,14 +1143,15 @@ export default function SuggestionsPanel({ user }) {
                 {/* Department selector */}
                 <div className="flex items-center gap-2 mt-2 px-1">
                   <span className="text-[10px] font-bold" style={{ color: '#94A3B8' }}>Department:</span>
-                  <div className="flex gap-1.5 overflow-x-auto">
+                  <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
                     {DEPARTMENTS.map(d => (
                       <button key={d.id} onClick={() => setSelectedDepartment(d.id)}
-                        className="px-2 py-1 rounded-lg text-[10px] font-bold transition flex-shrink-0"
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition flex-shrink-0"
                         style={{
                           backgroundColor: selectedDepartment === d.id ? '#1B4332' : '#fff',
                           color: selectedDepartment === d.id ? '#fff' : '#64748B',
                           border: `1px solid ${selectedDepartment === d.id ? '#1B4332' : '#E2E8F0'}`,
+                          boxShadow: selectedDepartment === d.id ? '0 1px 3px rgba(27,67,50,0.15)' : 'none',
                         }}>
                         {d.icon} {d.label}
                       </button>
