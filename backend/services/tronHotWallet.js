@@ -34,7 +34,7 @@ const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
 const TRONGRID_KEY      = process.env.TRONGRID_API_KEY || '';
 const MIN_TRX_RESERVE   = parseInt(process.env.HOT_WALLET_MIN_TRX   || '100',  10);
 const TRX_PER_SWEEP     = parseInt(process.env.HOT_WALLET_TRX_SWEEP || '20',   10);
-const USDT_WITHDRAWAL_FEE = parseFloat(process.env.USDT_WITHDRAWAL_FEE || '1.0'); // flat fee per withdrawal
+const USDT_WITHDRAWAL_FEE_RATE = 0.008; // 0.8% per withdrawal
 
 function tronHeaders() {
   const h = { 'Content-Type': 'application/json' };
@@ -422,7 +422,7 @@ class TronHotWallet {
       company_wallet_usdt:  parseFloat(companyRow?.data?.balance_usdt || 0),
       pending_sweeps:       pendingCount?.count || 0,
       swept_today_usdt:     todayVolume,
-      withdrawal_fee_usdt:  USDT_WITHDRAWAL_FEE,
+      withdrawal_fee_usdt:  USDT_WITHDRAWAL_FEE_RATE,
     };
   }
 
@@ -539,7 +539,7 @@ class TronHotWallet {
       console.log('\n🔥 PRAQEN USDT Hot Wallet Service');
       console.log(`   Hot wallet address  : ${hotAddr}`);
       console.log(`   Company Tron address: ${companyAddr}`);
-      console.log(`   Withdrawal fee      : ₮${USDT_WITHDRAWAL_FEE} per withdrawal`);
+      console.log(`   Withdrawal fee      : ₮${USDT_WITHDRAWAL_FEE_RATE} per withdrawal`);
       console.log(`   Min TRX reserve     : ${MIN_TRX_RESERVE} TRX`);
       console.log(`   ⚠️  Fund hot wallet with TRX (min ${MIN_TRX_RESERVE}) and USDT before withdrawals go live\n`);
     } catch (e) {

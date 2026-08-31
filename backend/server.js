@@ -10332,11 +10332,11 @@ app.get('/api/admin/users/:id/detail', verifyToken, async (req, res) => {
     ]);
 
     const completedRows = completedR.data || [];
-    const realTotalTrades = Math.max(completedR.count ?? completedRows.length, user.total_trades || 0);
+    const realTotalTrades = (completedR.count ?? completedRows.length);
     const tradeVolumeUsd = completedRows.reduce((s, t) => s + parseFloat(t.amount_usd || 0), 0);
 
     const reviewRows = reviewsR.data || [];
-    const realPositive = Math.max(reviewRows.filter(r => r.rating >= 4).length, user.positive_feedback || 0);
+    const realPositive = (reviewRows.filter(r => r.rating >= 4).length);
     const realNegative = Math.max(reviewRows.filter(r => r.rating <= 2).length, user.negative_feedback || 0);
 
     const activeTrades = (activeR.data || []).map(t => ({ ...t, role: t.buyer_id === id ? 'buyer' : 'seller' }));
@@ -13196,7 +13196,7 @@ app.post('/api/wallet/usdt/send', verifyToken, requireNotBanned, async (req, res
       code: 'USDT_SENDS_DISABLED',
     });
   }
-  const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.02'); // flat 2% — no flat-dollar floor
+  const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.008'); // 0.8% — no flat-dollar floor
   const MIN_SEND = parseFloat(process.env.USDT_MIN_SEND || '5.0');  // minimum $5
 
   // ── Fee calculator: straight percentage, no flat-dollar floor ─────────────

@@ -1662,7 +1662,7 @@ function UsdtWithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoF
 
   // Fee = flat 2% of amount, no flat-dollar floor — mirrors backend calcFee()
   // in POST /api/wallet/usdt/send.
-  const FEE_PERCENT = 0.02;
+  const FEE_PERCENT = 0.008;
   const MIN_SEND    = 5.00;
 
   const calcFee = (amt) => parseFloat((amt * FEE_PERCENT).toFixed(2));
