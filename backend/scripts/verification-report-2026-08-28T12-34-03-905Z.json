@@ -1,0 +1,304 @@
+{
+  "generated_at": "2026-08-28T12:34:03.904Z",
+  "total_candidates": 49,
+  "verified": 49,
+  "stale": 0,
+  "missing": 0,
+  "verified_list": [
+    {
+      "user_id": "cb9e02d4-0adb-44b7-b6ea-cd97d674bf0a",
+      "current_wallet_mirror": 0.02692882,
+      "proposed_wallet_mirror": 0.00690471,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "c4eac002-346e-4fc2-a851-45e6e69004e3",
+      "current_wallet_mirror": 0.0002413,
+      "proposed_wallet_mirror": 0.01570389,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "22756fe7-83ac-4c6a-890f-eb360cf6a96d",
+      "current_wallet_mirror": 0.00482149,
+      "proposed_wallet_mirror": 0.00001878,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "4e96b9ed-d708-4513-8af2-1fdb74d23579",
+      "current_wallet_mirror": 0.00427472,
+      "proposed_wallet_mirror": 0.00000385,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "167f5fad-8c14-4f9d-ad66-3812e2353f64",
+      "current_wallet_mirror": 0.00400141,
+      "proposed_wallet_mirror": 0.00013673,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "70911b12-9b78-49a7-b556-58382a3f653b",
+      "current_wallet_mirror": 0.00368042,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "cb69d316-bb63-4db3-94d1-62a8c24df848",
+      "current_wallet_mirror": 0.00339535,
+      "proposed_wallet_mirror": 0.00000126,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "164b46ad-f251-48d4-bb71-4461232e88e4",
+      "current_wallet_mirror": 0.00001423,
+      "proposed_wallet_mirror": 0.00332447,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "a60da341-df37-45c2-8f78-d9789c9808ba",
+      "current_wallet_mirror": 0.00306903,
+      "proposed_wallet_mirror": 0.0000329,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "4946e386-c63e-4f57-ab06-4ade6e79ece0",
+      "current_wallet_mirror": 0.00129878,
+      "proposed_wallet_mirror": 0.00000523,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "8bb53431-7a02-40f2-a74d-26fa10b06a11",
+      "current_wallet_mirror": 0.00127622,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "ac62848f-6427-4ca2-ad72-a7a4bd3dd475",
+      "current_wallet_mirror": 0.00117491,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "9b79803b-fd2d-4666-bb70-83fc6dd9e6e6",
+      "current_wallet_mirror": 0.00115488,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "1e9c7a7b-1dbf-4078-9429-1a0118cdcd46",
+      "current_wallet_mirror": 0.00115214,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "4bb919ca-d9e7-4253-8600-3388faba3860",
+      "current_wallet_mirror": 0.00003181,
+      "proposed_wallet_mirror": 0.00112394,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "f2802e50-eca8-4587-a0cd-bde32c0f0eee",
+      "current_wallet_mirror": 0.00110591,
+      "proposed_wallet_mirror": 0.00002645,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "0ed70b14-65cd-4714-8e57-0c0102e741ec",
+      "current_wallet_mirror": 0.00098537,
+      "proposed_wallet_mirror": 8.8e-7,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "6bb2ef92-74c6-46db-b707-9b70bf32d3d1",
+      "current_wallet_mirror": 0.00095734,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "55db724c-0aa5-4c1c-985e-c393cf601c31",
+      "current_wallet_mirror": 0.00080948,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "688be226-244a-4a43-a6a1-caf7c5df543b",
+      "current_wallet_mirror": 0.0006635,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "f56e3bfa-630f-4370-8733-2e84449d6be2",
+      "current_wallet_mirror": 0.00066111,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "a6622bd9-0a22-4ac4-820e-fe4b64efa881",
+      "current_wallet_mirror": 0.00001834,
+      "proposed_wallet_mirror": 0.00064794,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "18137100-0ca3-412d-a5bb-7adcec0f0b1b",
+      "current_wallet_mirror": 0.00059509,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "0ae63cd7-dcf7-4866-bd33-12a9a1f67556",
+      "current_wallet_mirror": 0.00058889,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "a76658d4-ddef-41a4-8812-0136e1c10c55",
+      "current_wallet_mirror": 0.00057466,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "169bf33c-8a8c-45ca-a43b-62cd2782e09d",
+      "current_wallet_mirror": 0.00057293,
+      "proposed_wallet_mirror": 7.6e-7,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "e74f2d87-8f57-4dc6-bdc3-5cfc19ff67b6",
+      "current_wallet_mirror": 0.0005513,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "0121fb9c-6062-451c-bd6e-4012da23b2b2",
+      "current_wallet_mirror": 0.00054228,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "8869b588-0c30-4256-a870-90767a8c683b",
+      "current_wallet_mirror": 0.00053918,
+      "proposed_wallet_mirror": 3.8e-7,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "d2a03afe-8b06-441f-997b-a81167c7a7ba",
+      "current_wallet_mirror": 0.00052353,
+      "proposed_wallet_mirror": 0.00000392,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "e3377b9a-4e76-4e38-936d-24a94e3c7637",
+      "current_wallet_mirror": 0.00000238,
+      "proposed_wallet_mirror": 0.00048447,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "00b0a551-888d-4b97-8f19-fc6c4bc5d3cc",
+      "current_wallet_mirror": 0.00038707,
+      "proposed_wallet_mirror": 8.8e-7,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "54e8c750-84b8-4835-90fe-954f60d79038",
+      "current_wallet_mirror": 0.00034731,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "92c91c0e-b993-4530-b72f-5889cc30b000",
+      "current_wallet_mirror": 0,
+      "proposed_wallet_mirror": 0.00027921,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "e2e00819-a089-4c34-9648-8c6caa482f92",
+      "current_wallet_mirror": 0.00027715,
+      "proposed_wallet_mirror": 0.0005543,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "d30a80c2-304c-4ba6-88c3-1cb115bd6c36",
+      "current_wallet_mirror": 0.00129061,
+      "proposed_wallet_mirror": 0.00102638,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "3a231695-420c-4cc7-898d-865c8b6f06ca",
+      "current_wallet_mirror": 0.00024551,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "2af3a00b-d3a7-41f3-b9a5-f7dc601bdd39",
+      "current_wallet_mirror": 0.00115889,
+      "proposed_wallet_mirror": 0.00091636,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "80b750b8-b2a2-4c4d-bc98-0f87923ee902",
+      "current_wallet_mirror": 0.00025132,
+      "proposed_wallet_mirror": 0.00001311,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "a328ea85-8fd2-4375-af88-b36750e701ec",
+      "current_wallet_mirror": 0.00024173,
+      "proposed_wallet_mirror": 0.00000491,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "6c238a2a-e908-464d-a9a3-c92b11498ade",
+      "current_wallet_mirror": 0.00046636,
+      "proposed_wallet_mirror": 0.00024302,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "139be266-6a9f-48f1-a51e-9f3b1cf11af2",
+      "current_wallet_mirror": 0.00021829,
+      "proposed_wallet_mirror": 0.00000343,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "ab71df1b-176a-4af5-bd21-fd2946bfeed8",
+      "current_wallet_mirror": 0.00019802,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "937b60e0-3cfe-4a3e-a311-1c9b11b10444",
+      "current_wallet_mirror": 0.00015787,
+      "proposed_wallet_mirror": 0.00031574,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "72547477-0929-452c-8d39-2b3832d5d989",
+      "current_wallet_mirror": 0.00015528,
+      "proposed_wallet_mirror": 5.9e-7,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "6cec7fc5-5d98-4158-9a31-af2a3f8fd774",
+      "current_wallet_mirror": 0,
+      "proposed_wallet_mirror": 0.00012998,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "f7091160-5254-456d-b9cf-e9a7f8f2296d",
+      "current_wallet_mirror": 0.0000791,
+      "proposed_wallet_mirror": 0,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "eaf89325-8205-4d16-81ea-d8a6c4c727da",
+      "current_wallet_mirror": 0.00006336,
+      "proposed_wallet_mirror": 0.00012672,
+      "verification": "PASSED"
+    },
+    {
+      "user_id": "2569b808-04dc-48af-8288-698c66e7a4e3",
+      "current_wallet_mirror": 0,
+      "proposed_wallet_mirror": 0.00000585,
+      "verification": "PASSED"
+    }
+  ],
+  "stale_list": []
+}

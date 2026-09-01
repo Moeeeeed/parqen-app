@@ -1,0 +1,34 @@
+{
+  "started": "2026-08-28T00:00:56.916Z",
+  "mode": "APPLY",
+  "batchSize": 2,
+  "onShortfall": "skip",
+  "users": [
+    {
+      "username": "messi_10",
+      "userId": "c4eac002-346e-4fc2-a851-45e6e69004e3",
+      "expectedPhantomBtc": 0.01570389,
+      "approx": false,
+      "suggestedDupRowIds": [],
+      "pinnedRowIds": [
+        "26c57104-c586-475e-8ecb-11b4b0d7385b"
+      ],
+      "computedPhantomBtc": 0.01570389,
+      "result": "APPLIED",
+      "detail": {
+        "status": "APPLIED",
+        "phantom": 0.01570389,
+        "debitAmt": 0.01570389,
+        "residual": 0,
+        "preBtc": 0.03140778,
+        "postBtc": 0.01570389,
+        "rows": [
+          "26c57104-c586-475e-8ecb-11b4b0d7385b"
+        ],
+        "mirrorSkipped": []
+      }
+    }
+  ],
+  "finished": "2026-08-28T00:01:00.375Z",
+  "aborted": false
+}

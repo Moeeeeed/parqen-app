@@ -1,0 +1,128 @@
+{
+  "started": "2026-08-27T23:59:01.393Z",
+  "mode": "DRYRUN",
+  "batchSize": 2,
+  "onShortfall": "skip",
+  "users": [
+    {
+      "username": "king888",
+      "userId": "3c4f8383-85b4-4099-9bae-c67ed9345cd9",
+      "expectedPhantomBtc": 0.03478385,
+      "approx": false,
+      "suggestedDupRowIds": [
+        "cbfa94e9-b39d-480b-bb55-f430ed7a2d32",
+        "96203355-d021-40b6-867a-88407ad12981"
+      ],
+      "pinnedRowIds": [
+        "cbfa94e9-b39d-480b-bb55-f430ed7a2d32",
+        "96203355-d021-40b6-867a-88407ad12981",
+        "fc238cfb-5dd0-432c-8544-3445e667ae6a"
+      ],
+      "computedPhantomBtc": 0.03478385,
+      "result": "DRY_OK"
+    },
+    {
+      "username": "ukbuyer2022",
+      "userId": "19563f83-e4dd-468e-8bfe-47220cc23bb0",
+      "expectedPhantomBtc": 0.0352,
+      "approx": true,
+      "suggestedDupRowIds": [
+        "8358bd87-c3a0-4ca5-932a-f7e6ec0a22fd"
+      ],
+      "pinnedRowIds": [
+        "4b3bc554-0f86-4a60-8036-757ccd941687",
+        "248b57ca-e3d8-4000-b62d-445ae950824a",
+        "8358bd87-c3a0-4ca5-932a-f7e6ec0a22fd",
+        "628f99ab-df4a-48f9-9689-b9f91235762d",
+        "43a6caa5-a4c5-4e3f-9d32-38e66d9f593c",
+        "2cd184cc-1896-4d78-a4cc-97678252db6d"
+      ],
+      "computedPhantomBtc": 0.03518138,
+      "result": "DRY_OK"
+    },
+    {
+      "username": "messi_10",
+      "userId": "c4eac002-346e-4fc2-a851-45e6e69004e3",
+      "expectedPhantomBtc": 0.01570389,
+      "approx": false,
+      "suggestedDupRowIds": [],
+      "pinnedRowIds": [
+        "26c57104-c586-475e-8ecb-11b4b0d7385b"
+      ],
+      "computedPhantomBtc": 0.01570389,
+      "result": "DRY_OK"
+    },
+    {
+      "username": "thetraderx",
+      "userId": "da5d1c27-c714-4eff-8d0f-7a729144c0b5",
+      "expectedPhantomBtc": 0.007671,
+      "approx": false,
+      "suggestedDupRowIds": [],
+      "pinnedRowIds": [
+        "37092caa-b1c2-4d10-8d3a-7b7503b7a966"
+      ],
+      "computedPhantomBtc": 0.007671,
+      "result": "DRY_OK"
+    },
+    {
+      "username": "yornnguyen",
+      "userId": "695d7e05-999f-4264-9952-5ae6730de32a",
+      "expectedPhantomBtc": 0.00769245,
+      "approx": false,
+      "suggestedDupRowIds": [],
+      "pinnedRowIds": [
+        "5e8d516b-fd59-4238-8dd1-57d3517284ce",
+        "052cf7b8-89f9-45fc-8854-28458d39ed24"
+      ],
+      "computedPhantomBtc": 0.00769245,
+      "result": "DRY_OK"
+    },
+    {
+      "username": "topboy1",
+      "userId": "3f769be8-7dde-4520-b0e0-1d9e8a997a04",
+      "expectedPhantomBtc": 0.01014756,
+      "approx": true,
+      "suggestedDupRowIds": [],
+      "pinnedRowIds": [
+        "04c2db01-8a95-4d91-a42c-bd699349e9d6",
+        "b985ede6-bb54-411d-ab40-66114bedcbba"
+      ],
+      "computedPhantomBtc": 0.01014756,
+      "result": "DRY_OK"
+    },
+    {
+      "username": "donrex",
+      "userId": "a1a39e28-cd97-4e2a-b6a3-1ec5175fc332",
+      "expectedPhantomBtc": 0.00347007,
+      "approx": false,
+      "suggestedDupRowIds": [],
+      "pinnedRowIds": [
+        "9e64c5dd-3a7c-4eef-b8a1-1bae6605f1b2"
+      ],
+      "computedPhantomBtc": 0.00347007,
+      "result": "DRY_OK"
+    },
+    {
+      "username": "kingkong79-Pro",
+      "userId": "e8d3d037-554b-4b09-b8f7-373f03de10de",
+      "expectedPhantomBtc": 0.01074039,
+      "approx": true,
+      "suggestedDupRowIds": [
+        "c1662ff1-de67-4456-9f3b-61d44f29f2b6"
+      ],
+      "pinnedRowIds": [
+        "c1662ff1-de67-4456-9f3b-61d44f29f2b6",
+        "b8371833-5182-460a-ad85-f474bb8619cf",
+        "eb52a6b8-66ff-4448-a11a-17e0b3a45073",
+        "499e747b-6d93-46c3-aea1-f4f86fbaa1cb",
+        "9f5fbf36-9952-4917-9167-6163c785793f",
+        "b2a04122-ddf0-4d90-a3f2-2041bfca8d0b",
+        "ac79fb22-47b6-4ac9-9ab4-244307243b6a"
+      ],
+      "computedPhantomBtc": 0.01074039,
+      "result": "DRY_OK"
+    }
+  ],
+  "finished": "2026-08-27T23:59:16.620Z",
+  "aborted": false
+}
