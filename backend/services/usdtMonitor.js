@@ -6,7 +6,7 @@
 const axios = require('axios');
 
 // Configuration - REDUCED FREQUENCY
-const MONITOR_INTERVAL = 300000; // 5 minutes (was 1.5 min)
+const MONITOR_INTERVAL = 600000; // 10 minutes (was 5 min)
 const BATCH_SIZE = 10;
 const BATCH_DELAY = 2000; // 2 seconds between batches
 const MAX_RETRIES = 3;

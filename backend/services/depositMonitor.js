@@ -18,6 +18,7 @@ const { updateOfferStatus }  = require('./offerStatusService');
 const { sendSystemAlert }    = require('./pushNotificationService');
 const { sendTelegramAlert }  = require('./telegramService');
 const { createClient }       = require('@supabase/supabase-js');
+const btcApiGateway          = require('./btcApiGateway');
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -25,7 +26,7 @@ const supabaseAdmin = createClient(
 );
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const POLL_INTERVAL_MS    = 15 * 60 * 1000; // 15 minutes — WebSocket handles real-time; this is safety net only
+const POLL_INTERVAL_MS    = 30 * 60 * 1000; // 30 minutes — WebSocket handles real-time; this is safety net only
 const DUST_THRESHOLD_SATS = 546;           // ignore sub-dust outputs
 
 // ── Email transporter (Gmail) ─────────────────────────────────────────────────
@@ -142,64 +143,24 @@ class DepositMonitor {
     ];
   }
 
-  // ── Fetch address data with automatic fallback ────────────────────────────
+  // ── Fetch address data — routed through the shared gateway ───────────────
+  // See services/btcApiGateway.js. Deposit polling runs on the LOW-priority lane
+  // (behind customer withdrawals) and uses the gateway's short GET response
+  // cache, so a reconciliation pass that checks the same address seconds later
+  // reuses this result instead of making a second call. Endpoint rotation and
+  // 429 cooldown — which this method used to do by hand — now live in the
+  // gateway, shared with every other blockchain caller so their combined request
+  // rate stays under the free-tier limit.
   async _fetchAddress(address) {
-    let lastErr;
-    for (const api of this._apiFallbacks) {
-      try {
-        const resp = await axios.get(`${api}/address/${address}`, { timeout: 14000 });
-        if (this.apiBase !== api) {
-          console.log(`[DepositMonitor] Using API: ${api}`);
-          this.apiBase = api; // switch primary to the one that's working
-        }
-        return resp.data;
-      } catch (err) {
-        lastErr = err;
-        // No HTTP response at all — timeout (including axios's own ECONNABORTED
-        // client-side timeout, previously missed by an error-code allowlist here),
-        // DNS failure, connection refused/reset — means we never reached this API,
-        // so always worth rotating to the next fallback.
-        // 429 also belongs here even though it IS a response: mempool.space and
-        // blockstream.info enforce independent rate limits, so a 429 from one
-        // says nothing about whether the other will accept the request. Treating
-        // it like a hard rejection (old behavior: throw immediately) meant a
-        // throttled primary API silently starved every deposit check for the
-        // rest of that poll cycle — this is what let real on-chain deposits sit
-        // uncredited for hours in production. Only a genuine non-429 4xx/5xx
-        // (bad address, malformed request) means the API IS reachable and
-        // rejected the request for a reason a different API won't fix.
-        if (err.response && err.response.status !== 429) throw err;
-        if (err.response?.status === 429) await this.sleep(1500); // brief cooldown before hitting the next API
-        // rotate: put the failed API at the back so the next one is tried first
-        this._apiFallbacks.push(this._apiFallbacks.shift());
-      }
-    }
-    throw lastErr;
+    return btcApiGateway.get(`/address/${address}`, { priority: 'low' });
   }
 
-  // ── Fetch an address's transaction list (esplora /address/{addr}/txs — up to
-  // 25 most recent, confirmed + unconfirmed), same automatic fallback as
-  // _fetchAddress. This is what makes transaction-hash tracking possible — a
-  // balance-only endpoint can tell us THAT the balance changed, never WHICH
-  // transaction(s) caused it.
+  // Transaction list (esplora /address/{addr}/txs — 25 most recent, confirmed +
+  // unconfirmed). This is what makes tx-hash tracking possible: a balance-only
+  // read tells us THAT the balance changed, never WHICH transaction caused it.
   async _fetchAddressTxs(address) {
-    let lastErr;
-    for (const api of this._apiFallbacks) {
-      try {
-        const resp = await axios.get(`${api}/address/${address}/txs`, { timeout: 14000 });
-        if (this.apiBase !== api) {
-          console.log(`[DepositMonitor] Using API: ${api}`);
-          this.apiBase = api;
-        }
-        return resp.data || [];
-      } catch (err) {
-        lastErr = err;
-        if (err.response && err.response.status !== 429) throw err;
-        if (err.response?.status === 429) await this.sleep(1500);
-        this._apiFallbacks.push(this._apiFallbacks.shift());
-      }
-    }
-    throw lastErr;
+    const txs = await btcApiGateway.get(`/address/${address}/txs`, { priority: 'low' });
+    return txs || [];
   }
 
   // ── Start background polling ───────────────────────────────────────────────

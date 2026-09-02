@@ -35,11 +35,9 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
-
-const RECONCILE_INTERVAL_MS = 60 * 60 * 1000; // hourly, per the approved spec
+const RECONCILE_INTERVAL_MS = 120 * 60 * 1000; // 2 hours, reduced to save API calls
 const DUST_THRESHOLD_SATS   = 546;
 const DUST_THRESHOLD_USDT   = 0.01;
-
 class DepositReconciliationService {
   constructor() {
     this.isRunning        = false;

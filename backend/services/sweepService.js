@@ -26,8 +26,7 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
-
-const SWEEP_INTERVAL_MS = 30 * 60 * 1000; // every 30 minutes
+const SWEEP_INTERVAL_MS = 60 * 60 * 1000; // every 60 minutes (1 hour)
 const SWEEP_MIN_SATS    = 10000;           // 0.0001 BTC minimum — never sweep dust
 const FEE_RATE_SATS     = 5;              // 5 sat/vbyte — economical, reliable
 

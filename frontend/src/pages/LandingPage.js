@@ -161,7 +161,6 @@ export default function LandingPage({ user }) {
               <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold mb-6 ${heroOn ? 'anim-up' : ''}`}
                 style={{ opacity: heroOn ? 1 : 0, background: 'rgba(244,164,34,.15)', border: '1px solid rgba(244,164,34,.35)', color: C.gold }}>
                 <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: C.online }} />
-                Trusted by 2.4M+ traders across 180+ countries
               </div>
 
               {/* headline */}
@@ -326,8 +325,6 @@ export default function LandingPage({ user }) {
         <div className="relative border-t" style={{ borderColor: 'rgba(255,255,255,.1)' }}>
           <div className="max-w-5xl mx-auto px-4 py-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { v: '2.4M+', l: 'Active Traders' },
-              { v: '$1.2B+', l: 'Volume Traded' },
               { v: '180+', l: 'Countries' },
               { v: '0.5%', l: 'Flat Fee Only' },
             ].map(({ v, l }) => (
@@ -675,7 +672,6 @@ style={{background:`${color}12`}}>{React.createElement(icon, {size:15, style:{co
             style={{ opacity: countriesOn ? 1 : 0, animationDelay: '.2s' }}>
             {[
               {icon:Globe,        v:'180+',  l:'Countries'},
-{icon:ArrowLeftRight,v:'$1.2B+',l:'Volume Traded'},
 {icon:Shield,        v:'99.8%', l:'Dispute Resolution'},
 {icon:Zap,           v:'8 min', l:'Average Trade Time'},
             ].map(({ icon: Icon, v, l }) => (
@@ -940,7 +936,6 @@ style={{background:`${color}12`}}>{React.createElement(icon, {size:15, style:{co
           </div>
           <h2 className="text-2xl md:text-4xl font-black text-white mb-4"
             style={{ fontFamily: "'Syne',sans-serif" }}>
-            {user ? 'Keep Trading. Keep Growing.' : 'Join 2.4M+ Traders Today.'}<br />
             <span className="grad-text">Start in 30 Seconds.</span>
           </h2>
           <p className="text-white/60 mb-7 max-w-md mx-auto text-sm md:text-base">
@@ -979,7 +974,6 @@ style={{background:`${color}12`}}>{React.createElement(icon, {size:15, style:{co
           </div>
           <div className="flex flex-wrap justify-center gap-6 pt-6 border-t" style={{ borderColor: 'rgba(255,255,255,.1)' }}>
             {[
-              { icon: Users, label: '2.4M+ Active Traders' },
               { icon: Globe, label: '180+ Countries' },
               { icon: HeadphonesIcon, label: '24/7 Live Support' },
               { icon: Lock, label: 'SSL Encrypted' },

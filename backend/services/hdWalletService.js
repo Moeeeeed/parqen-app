@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const axios  = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 const tronWalletService = require('./tronWalletService');
+const btcApiGateway = require('./btcApiGateway');
 
 const ECPair = ECPairFactory(ecc);
 
@@ -128,53 +129,28 @@ class HDWalletService {
     };
   }
 
-  // ── Try request against primary API then fallbacks ────────────────────────
-  // Remembers whichever API actually answered, and demotes a failing one to the
-  // back of the rotation — otherwise every call re-tries a dead primary and eats
-  // its full timeout before falling back, every single time (confirmed: this was
-  // silently adding ~15s to every balance check / UTXO fetch while mempool.space
-  // was unreachable, which is what made the sweep cycle crawl).
+  // ── Bitcoin explorer access — routed through the shared gateway ───────────
+  // Every BTC REST call in the app now goes through btcApiGateway: one
+  // process-wide queue, a global minimum gap between requests, per-endpoint
+  // 429/503 cooldown + rotation, and a short GET response cache. That is what
+  // stops the "all APIs 429" bursts that were leaving withdrawals stuck at
+  // "Broadcast to Blockchain — PENDING".
+  //
+  // hdWalletService calls run on the HIGH-priority lane and skip the cache, so a
+  // withdrawal always builds its transaction from live UTXOs and never waits
+  // behind a background monitor cycle. (SweepService reaches the network through
+  // these same two methods, so its hourly hot->reserve scan also runs
+  // high-priority — acceptable: low volume, already throttled to 1 addr / 2.5s.)
+  //
+  // On total failure the gateway throws the same message strings this method
+  // always did ('All blockchain APIs unreachable' / 'Broadcast failed on all
+  // APIs'), so every existing caller's error handling still works unchanged.
   async apiGet(path) {
-    const apis = [this.apiBase, ...this.apiFallbacks];
-    let lastError;
-    for (const base of apis) {
-      try {
-        const r = await axios.get(`${base}${path}`, { timeout: 15000 });
-        if (this.apiBase !== base) {
-          console.log(`[hdWalletService] Switching primary API to: ${base}`);
-          this.apiFallbacks = [this.apiBase, ...this.apiFallbacks.filter(a => a !== base)];
-          this.apiBase = base;
-        }
-        return r.data;
-      } catch (err) {
-        console.warn(`[apiGet] ${base}${path} failed: ${err.message}`);
-        lastError = err;
-      }
-    }
-    throw new Error(`All blockchain APIs unreachable: ${lastError.message}`);
+    return btcApiGateway.get(path, { priority: 'high', skipCache: true });
   }
 
   async apiPost(path, data) {
-    const apis = [this.apiBase, ...this.apiFallbacks];
-    let lastError;
-    for (const base of apis) {
-      try {
-        const r = await axios.post(`${base}${path}`, data, {
-          headers: { 'Content-Type': 'text/plain' },
-          timeout: 30000,
-        });
-        if (this.apiBase !== base) {
-          console.log(`[hdWalletService] Switching primary API to: ${base}`);
-          this.apiFallbacks = [this.apiBase, ...this.apiFallbacks.filter(a => a !== base)];
-          this.apiBase = base;
-        }
-        return r.data;
-      } catch (err) {
-        console.warn(`[apiPost] ${base}${path} failed: ${err.message}`);
-        lastError = err;
-      }
-    }
-    throw new Error(`Broadcast failed on all APIs: ${lastError.message}`);
+    return btcApiGateway.post(path, data, { priority: 'high' });
   }
 
   // ── Convenience methods ───────────────────────────────────────────────────
@@ -446,10 +422,14 @@ class HDWalletService {
       console.warn(`[checkBalance] Primary APIs failed for ${address}: ${primaryError.message}`);
     }
 
-    // Secondary: BlockCypher (different API schema)
+    // Secondary: BlockCypher (different API schema). Send the token when one is
+    // configured so this isn't the tokenless call that trips BlockCypher's
+    // anonymous rate limit while the gateway's own BlockCypher fallback (which
+    // does use the token) is otherwise working.
     try {
+      const bcToken = process.env.BLOCKCYPHER_TOKEN;
       const r = await axios.get(
-        `https://api.blockcypher.com/v1/btc/main/addrs/${address}/balance`,
+        `https://api.blockcypher.com/v1/btc/main/addrs/${address}/balance${bcToken ? `?token=${bcToken}` : ''}`,
         { timeout: 10000 }
       );
       const d = r.data;

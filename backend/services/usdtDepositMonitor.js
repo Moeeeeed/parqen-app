@@ -27,7 +27,7 @@ const supabaseAdmin = createClient(
 // USDT has no real-time push feed (unlike BTC's mempool.space websocket), so this poll
 // interval IS the deposit-detection latency users experience. Kept short — TronGrid is
 // called with an API key (TRONGRID_API_KEY, higher rate limit) and batched 5-at-a-time.
-const POLL_INTERVAL_MS = 90 * 1000; // 90 seconds
+const POLL_INTERVAL_MS = 300 * 1000; // 5 minutes — raised from 90s to cut TronGrid 429s. NOTE: USDT has no push feed, so this IS the worst-case USDT deposit-detection latency. Lower it (e.g. 180000) if 5 min is too slow, or fix the 429s at the source by confirming TRONGRID_API_KEY is set.
 const DUST_THRESHOLD   = 0.01;            // ignore deposits < $0.01 USDT
 
 const emailTransporter = nodemailer.createTransport({
