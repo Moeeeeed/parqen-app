@@ -75,7 +75,7 @@ async function logEmail({ userId, email, subject, type, status, messageId, error
 // The DB log write is intentionally not awaited — it's a fire-and-forget audit
 // trail with its own internal try/catch, so it should never add its own
 // round-trip to a caller waiting on the actual send result.
-async function sendEmail({ userId, to, subject, html, text, type, metadata }) {
+async function sendEmail({ userId, to, subject, html, type, metadata }) {
   // ── Attempt 1: Resend API ────────────────────────────────────────────────
   const resendKey  = process.env.RESEND_API_KEY;
   const resendFrom = process.env.RESEND_FROM || 'PraQen <onboarding@resend.dev>';
@@ -84,7 +84,7 @@ async function sendEmail({ userId, to, subject, html, text, type, metadata }) {
       const response = await fetch('https://api.resend.com/emails', {
         method:  'POST',
         headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: resendFrom, to, subject, html }),
+        body: JSON.stringify({ from: resendFrom, to: [to], subject, html }),
         signal:  AbortSignal.timeout(8000),
       });
       const data = await response.json();
@@ -114,7 +114,7 @@ async function sendEmail({ userId, to, subject, html, text, type, metadata }) {
       // strand a fire-and-forget send (e.g. forgot-password) with no visible
       // failure to the user or the logs.
       const info = await Promise.race([
-        transporter.sendMail({ from: FROM_ADDRESS, to, subject, html, text: text || '' }),
+        transporter.sendMail({ from: FROM_ADDRESS, to, subject, html }),
         new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP send timed out after 15s')), 15000)),
       ]);
       console.log(`[Email] ✅ Brevo SMTP fallback ${type} → ${to} (${info.messageId})`);

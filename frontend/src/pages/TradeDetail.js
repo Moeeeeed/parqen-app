@@ -402,6 +402,66 @@ function DisputeModal({onClose,onSubmit,submitting}){
   );
 }
 
+// ─── Report Problem modal ─────────────────────────────────────────────────────
+function ReportProblemModal({trade, shortId, user, onClose}){
+  const [description, setDescription] = useState('');
+  const canSubmit = description.trim().length > 4;
+  const handleSubmit = () => {
+    if(!canSubmit) return;
+    const reason = description.trim();
+    const sub = encodeURIComponent(`Trade Report: #${shortId}`);
+    const body = encodeURIComponent(`Trade ID: ${trade.id}\nOffer: ${trade.listing_id||'—'}\nProblem: ${reason}\nUser: ${user?.username||'—'}`);
+    window.open(`mailto:hello@praqen.com?subject=${sub}&body=${body}`, '_blank');
+    toast.info('Email opened to report trade');
+    onClose();
+  };
+  return(
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
+      style={{backgroundColor:'rgba(0,0,0,0.65)',backdropFilter:'blur(4px)'}} onClick={onClose}>
+      <div className="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-2xl overflow-hidden shadow-2xl max-h-[90vh] overflow-y-auto"
+        style={{animation:'slideUp .3s ease'}} onClick={e=>e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-5 pt-5 pb-4 flex items-start justify-between"
+          style={{background:'linear-gradient(135deg,#FEF2F2,#FFF7F7)',borderBottom:'1px solid #FEE2E2'}}>
+          <div>
+            <div className="flex items-center gap-2 mb-0.5">
+              <Flag size={15} style={{color:'#DC2626'}}/>
+              <h3 className="font-black text-sm" style={{color:'#991B1B'}}>Report a Problem</h3>
+            </div>
+            <p className="text-xs" style={{color:'#B91C1C'}}>Describe the issue — we'll open your email to send the report.</p>
+          </div>
+          <button onClick={onClose} className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ml-3" style={{backgroundColor:'#FEE2E2'}}>
+            <X size={13} style={{color:'#DC2626'}}/>
+          </button>
+        </div>
+        {/* Textarea */}
+        <div className="px-5 pt-4 pb-2">
+          <p className="text-xs font-bold mb-2" style={{color:'#334155'}}>Describe the problem:</p>
+          <textarea value={description} onChange={e=>setDescription(e.target.value)}
+            placeholder="What went wrong? Be as specific as possible…"
+            rows={4}
+            className="w-full border rounded-xl px-3.5 py-2.5 text-xs resize-none outline-none"
+            style={{borderColor:'#E2E8F0',color:'#334155'}} autoFocus/>
+        </div>
+        {/* Buttons */}
+        <div className="px-5 pb-5 flex gap-3">
+          <button onClick={onClose}
+            className="flex-1 py-3 rounded-2xl border text-xs font-bold"
+            style={{borderColor:'#E2E8F0',color:'#64748B'}}>
+            Cancel
+          </button>
+          <button onClick={handleSubmit}
+            disabled={!canSubmit}
+            className="flex-1 py-3 rounded-2xl text-xs font-black transition"
+            style={{backgroundColor:canSubmit?'#DC2626':'#E2E8F0',color:canSubmit?'#fff':'#94A3B8'}}>
+            Send Report
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── User profile popup ───────────────────────────────────────────────────────
 function ProfilePopup({user, label, trade, onClose}) {
   const [tab,        setTab]        = useState('overview');
@@ -906,6 +966,7 @@ export default function TradeDetail({user}) {
   const toastShown  = useRef(false);
   const [infoOpen,  setInfoOpen]  = useState(false);
   const [showDisputeModal,  setShowDisputeModal]  = useState(false);
+  const [showReportModal,   setShowReportModal]   = useState(false);
   const [disputeSubmitting, setDisputeSubmitting] = useState(false);
   const [disputeCountdownLeft, setDisputeCountdownLeft] = useState(null);
   const [cpTyping,  setCpTyping]  = useState(false);
@@ -1734,14 +1795,7 @@ export default function TradeDetail({user}) {
                         </button>
 
                         <button
-                          onClick={()=>{
-                            const reason=window.prompt('Describe the problem:');
-                            if(!reason?.trim())return;
-                            const sub=encodeURIComponent(`Trade Report: #${shortId}`);
-                            const body=encodeURIComponent(`Trade ID: ${trade.id}\nOffer: ${trade.listing_id||'—'}\nProblem: ${reason}\nUser: ${user?.username||'—'}`);
-                            window.open(`mailto:hello@praqen.com?subject=${sub}&body=${body}`,'_blank');
-                            toast.info('Email opened to report trade');
-                          }}
+                          onClick={()=>setShowReportModal(true)}
                           className="w-full flex items-center gap-2 p-2.5 rounded-xl hover:bg-red-50 transition text-left border"
                           style={{borderColor:C.g100}}>
                           <Flag size={12} style={{color:C.danger}}/>
@@ -2484,6 +2538,7 @@ export default function TradeDetail({user}) {
       {showCancel && <CancelModal onClose={()=>setShowCancel(false)} onConfirm={cancelTrade} submitting={submitting}/>}
       {imgSrc && <ImgModal src={imgSrc} onClose={()=>setImgSrc(null)}/>}
       {showDisputeModal && <DisputeModal onClose={()=>setShowDisputeModal(false)} onSubmit={submitDispute} submitting={disputeSubmitting}/>}
+      {showReportModal && <ReportProblemModal trade={trade} shortId={shortId} user={user} onClose={()=>setShowReportModal(false)}/>}
 
       {/* ── Pay confirmation modal ───────────────────────────────────── */}
       {showPayConfirm && (
