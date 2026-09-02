@@ -280,24 +280,7 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
     </div>
  
       {/* Create Offer — deliberately outside the track so it reads as an action, not a tab */}
-      <div style={{ position: 'relative' }}
-        onMouseEnter={() => handleGuideEnter('nav_create_offer')} onMouseLeave={handleGuideLeave}>
-        {activeGuide === 'nav_create_offer' && (
-          <div style={{
-            position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 10000,
-            width: 'min(215px, calc(100vw - 24px))',
-            maxWidth: 'calc(100vw - 24px)',
-            background: 'linear-gradient(135deg, #1E40AF 0%, #2563EB 100%)',
-            borderRadius: 12, padding: '8px 9px',
-            boxShadow: '0 10px 36px rgba(37,99,235,0.35)', pointerEvents: 'none',
-            color: '#fff', boxSizing: 'border-box',
-          }}>
-            <p style={{ margin: '0 0 2px', fontWeight: 800, fontSize: 10.5 }}>+ Create Offer</p>
-            <p style={{ margin: 0, fontSize: 9.5, color: 'rgba(255,255,255,0.9)', lineHeight: 1.4 }}>
-              Create a new P2P buy or sell offer to trade Bitcoin, USDT, or Gift Cards on your terms.
-            </p>
-          </div>
-        )}
+      <div style={{ position: 'relative' }}>
         <Link to="/create-offer"
           style={{
             display: 'flex', alignItems: 'center', gap: 6,
