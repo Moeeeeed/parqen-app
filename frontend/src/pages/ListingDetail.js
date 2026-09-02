@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRates } from '../contexts/RatesContext';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -119,6 +119,7 @@ export default function ListingDetail({ user }) {
   const [quoteFetching,     setQuoteFetching]     = useState(false);
   const [showSellerProfile, setShowSellerProfile] = useState(false);
   const [popupOpen,         setPopupOpen]         = useState(!!_cached);
+  const [visitorBtcBalance, setVisitorBtcBalance] = useState(null);
 
   // Must be declared before the useEffect that depends on it
 const loadAll = useCallback(async (isBackground = false) => {
@@ -191,6 +192,15 @@ const loadAll = useCallback(async (isBackground = false) => {
     const regions = Array.isArray(listing?.gift_card_currencies) ? listing.gift_card_currencies : [];
     if (regions.length === 1 && !selectedGcRegion) setSelectedGcRegion(regions[0]);
   }, [listing, selectedGcRegion]);
+
+  // Fetch the visitor's wallet balance so MAX can cap to their real holdings
+  useEffect(() => {
+    if (!user) return;
+    const h = { Authorization: `Bearer ${localStorage.getItem('token')}` };
+    axios.get(`${API_URL}/user/balance`, { headers: h })
+      .then(r => setVisitorBtcBalance(parseFloat(r.data?.balance_btc || 0)))
+      .catch(() => setVisitorBtcBalance(-1));
+  }, [user]);
 
   // Debounce quote fetch whenever the user changes the amount
   useEffect(() => {
@@ -306,6 +316,30 @@ const loadAll = useCallback(async (isBackground = false) => {
   // Backend flags this when the seller's live balance can't cover the listing's own minimum —
   // in that case maxLocal can end up below minLocal (e.g. MIN $50 / MAX $10), which is untradeable.
   const sellerCantFulfillMin = listing.seller_can_fulfill_min === false || maxLocal < minLocal;
+
+  // Fiat equivalent of the visitor's BTC balance (only meaningful when isVisitorSelling)
+  const walletFiat = (isVisitorSelling && user && visitorBtcBalance !== null && visitorBtcBalance >= 0 && sellerRateLocal > 0)
+    ? visitorBtcBalance * sellerRateLocal : null;
+
+  // Visitor's balance is below the offer's minimum — trade is not possible
+  const visitorInsufficientBalance = isVisitorSelling && user && walletFiat !== null && walletFiat < minLocal;
+
+  // MAX button: when the visitor is selling, cap to their actual wallet balance in fiat
+  let maxClickAmount = maxLocal;
+  let maxClickDisabled = false;
+  if (isVisitorSelling && user) {
+    if (walletFiat !== null) {
+      if (visitorInsufficientBalance) {
+        maxClickAmount = maxLocal;
+        maxClickDisabled = true;
+      } else {
+        maxClickAmount = Math.min(maxLocal, walletFiat);
+        maxClickDisabled = false;
+      }
+    } else {
+      maxClickDisabled = true;
+    }
+  }
 
   const payAmtNum = parseFloat(payAmt) || 0;
 
@@ -826,28 +860,32 @@ const loadAll = useCallback(async (isBackground = false) => {
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button
                       type="button"
-                      onClick={() => { setPayAmt(String(Math.ceil(minLocal))); setTradeError(''); }}
+                      disabled={visitorInsufficientBalance}
+                      onClick={() => { if (!visitorInsufficientBalance) { setPayAmt(String(Math.ceil(minLocal))); setTradeError(''); } }}
                       style={{
-                        fontSize: 11, fontWeight: 800, cursor: 'pointer',
-                        color: T.primary, background: T.mist,
-                        border: `1.5px solid ${T.border}`,
+                        fontSize: 11, fontWeight: 800, cursor: visitorInsufficientBalance ? 'not-allowed' : 'pointer',
+                        color: visitorInsufficientBalance ? C.g400 : T.primary, background: visitorInsufficientBalance ? C.g100 : T.mist,
+                        border: `1.5px solid ${visitorInsufficientBalance ? C.g200 : T.border}`,
                         borderRadius: 7, padding: '4px 10px', lineHeight: 1,
                         transition: 'all 0.15s',
+                        opacity: visitorInsufficientBalance ? 0.5 : 1,
                       }}>
                       MIN {sym}{fmt(minLocal, 0)}
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setPayAmt(String(Math.floor(maxLocal))); setTradeError(''); }}
+                      disabled={maxClickDisabled}
+                      onClick={() => { if (!maxClickDisabled) { setPayAmt(String(Math.floor(maxClickAmount))); setTradeError(''); } }}
                       style={{
-                        fontSize: 11, fontWeight: 900, cursor: 'pointer',
-                        color: '#fff', background: T.grad,
+                        fontSize: 11, fontWeight: 900, cursor: maxClickDisabled ? 'not-allowed' : 'pointer',
+                        color: '#fff', background: maxClickDisabled ? C.g400 : T.grad,
                         border: 'none',
                         borderRadius: 7, padding: '4px 10px', lineHeight: 1,
-                        boxShadow: `0 2px 8px ${T.shadow}`,
+                        boxShadow: maxClickDisabled ? 'none' : `0 2px 8px ${T.shadow}`,
                         transition: 'all 0.15s',
+                        opacity: maxClickDisabled ? 0.5 : 1,
                       }}>
-                      MAX {sym}{fmt(maxLocal, 0)}
+                      MAX {sym}{fmt(maxClickAmount, 0)}
                     </button>
                   </div>
                 </div>
@@ -868,7 +906,8 @@ const loadAll = useCallback(async (isBackground = false) => {
                   />
                   <span style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 11, fontWeight: 800, color: C.g500, background: C.g100, padding: '3px 7px', borderRadius: 6 }}>{cur}</span>
                 </div>
-                {payAmtNum > 0 && payAmtNum < minLocal && <p style={{ fontSize: 11, color: C.danger, marginTop: 6, fontWeight: 700 }}>Minimum is {sym}{fmt(minLocal, 0)}</p>}
+                {visitorInsufficientBalance && <p style={{ fontSize: 11, color: C.danger, marginTop: 6, fontWeight: 700 }}>Insufficient balance — you need at least {sym}{fmt(minLocal, 0)} {cur} to use this offer, but your wallet only has {sym}{fmt(walletFiat, 0)} {cur} available.</p>}
+                {!visitorInsufficientBalance && payAmtNum > 0 && payAmtNum < minLocal && <p style={{ fontSize: 11, color: C.danger, marginTop: 6, fontWeight: 700 }}>Minimum is {sym}{fmt(minLocal, 0)}</p>}
                 {payAmtNum > maxLocal && <p style={{ fontSize: 11, color: C.danger, marginTop: 6, fontWeight: 700 }}>Maximum is {sym}{fmt(maxLocal, 0)}</p>}
               </div>
 
@@ -947,6 +986,11 @@ const loadAll = useCallback(async (isBackground = false) => {
                 <div style={{ padding:'14px', borderRadius:14, background:'#FEF2F2', border:'2px solid #FCA5A5', textAlign:'center' }}>
                   <p style={{ fontSize:14, fontWeight:900, color:'#B91C1C', margin:'0 0 4px' }}><AlertTriangle size={14} className="inline-block align-text-bottom" /> Offer unavailable</p>
                   <p style={{ fontSize:12, color:'#B91C1C', margin:0 }}>The seller's available balance can't currently cover this offer's minimum amount. Try another offer.</p>
+                </div>
+              ) : visitorInsufficientBalance ? (
+                <div style={{ padding:'14px', borderRadius:14, background:'#FEF2F2', border:'2px solid #FCA5A5', textAlign:'center' }}>
+                  <p style={{ fontSize:14, fontWeight:900, color:'#B91C1C', margin:'0 0 4px' }}><AlertTriangle size={14} className="inline-block align-text-bottom" /> Insufficient balance</p>
+                  <p style={{ fontSize:12, color:'#B91C1C', margin:0 }}>You need at least {sym}{fmt(minLocal, 0)} {cur} worth of BTC to use this offer, but your wallet only has {sym}{fmt(walletFiat, 0)} {cur} available.</p>
                 </div>
               ) : (
               <button
