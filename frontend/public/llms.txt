@@ -1,0 +1,17 @@
+# PRAQEN - P2P Bitcoin Trading Platform
+
+> Peer-to-peer crypto payments give you access to bank accounts and mobile wallets worldwide.
+
+## Features
+- **Buy & Sell Bitcoin:** P2P marketplace with real-time rates.
+- **Escrow Protection:** Bitcoin locked until payment is confirmed.
+- **Multiple Payment Methods:** MTN Mobile Money, Vodafone Cash, Bank Transfer, and more.
+- **Dispute Resolution:** Moderator system for fair trade resolution.
+- **User Ratings & Reviews:** Build trust through trading history.
+- **Real-time Chat:** Communicate directly with trading partners.
+- **Mobile Responsive:** Works on all devices.
+
+## Main Links
+- [Home](https://praqen.com/)
+- [Blog](https://praqen.com/blog)
+- [Privacy Policy](https://praqen.com/privacy)
