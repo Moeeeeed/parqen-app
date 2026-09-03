@@ -357,13 +357,22 @@ class TronHotWallet {
 
         const sweepAmt = parseFloat(row.amount_usdt);
 
-        if (onchain < sweepAmt - 0.001) {
-          // Balance confirmed reachable but lower than expected — already swept or spent
+        // 2.6: the amount actually swept is whatever is on-chain RIGHT NOW, not
+        // the figure recorded when the sweep was queued. If a little less is
+        // there (a fee, rounding, a second sweep row for the same funds), sweep
+        // what's there instead of stranding it as STALE. Only mark STALE when the
+        // address is genuinely (near-)empty — nothing left to move.
+        const MIN_RECOVERABLE = 0.5; // USDT
+        if (onchain < MIN_RECOVERABLE) {
           await supabase.from('hot_wallet_sweeps')
-            .update({ status: 'STALE', error: `On-chain (${onchain.toFixed(2)}) < expected (${sweepAmt.toFixed(2)})`, updated_at: new Date().toISOString() })
+            .update({ status: 'STALE', error: `On-chain (${onchain.toFixed(2)}) below recoverable floor (${MIN_RECOVERABLE}) — nothing to sweep`, updated_at: new Date().toISOString() })
             .eq('id', row.id);
-          console.log(`[HotWallet] Sweep ${row.id} marked STALE (on-chain balance changed)`);
+          console.log(`[HotWallet] Sweep ${row.id} marked STALE (address effectively empty)`);
           continue;
+        }
+        const actualAmt = Math.min(sweepAmt, onchain);
+        if (actualAmt < sweepAmt - 0.001) {
+          console.warn(`[HotWallet] Sweep ${row.id}: on-chain ${onchain.toFixed(2)} < queued ${sweepAmt.toFixed(2)} — sweeping the ${actualAmt.toFixed(2)} that is actually there.`);
         }
 
         // Fund TRX if needed
@@ -374,15 +383,15 @@ class TronHotWallet {
         }
 
         // Sweep
-        const tx   = await tronWallet.sendUSDT(`user_${row.user_id}`, hotAddr, sweepAmt);
+        const tx   = await tronWallet.sendUSDT(`user_${row.user_id}`, hotAddr, actualAmt);
         const txid = tx.txid;
 
         await supabase.from('hot_wallet_sweeps')
-          .update({ status: 'COMPLETED', txid, error: null, updated_at: new Date().toISOString() })
+          .update({ status: 'COMPLETED', txid, error: actualAmt < sweepAmt - 0.001 ? `swept actual on-chain ${actualAmt.toFixed(2)} (queued ${sweepAmt.toFixed(2)})` : null, updated_at: new Date().toISOString() })
           .eq('id', row.id);
-        await this._decrementOnchainCheckpoint(row.user_id, sweepAmt);
+        await this._decrementOnchainCheckpoint(row.user_id, actualAmt);
 
-        console.log(`✅ [HotWallet] Retry sweep OK: ₮${sweepAmt} from ${row.from_address} | txid: ${txid}`);
+        console.log(`✅ [HotWallet] Retry sweep OK: ₮${actualAmt} from ${row.from_address} | txid: ${txid}`);
 
       } catch (e) {
         const msg = e.message?.slice(0, 300) || 'unknown error';

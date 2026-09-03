@@ -417,7 +417,7 @@ const BLOG_POSTS = [
         to: '/register'
       }
     ]
-  } 
+  },
   {
     slug: 'how-to-sell-bitcoin-instantly-in-nigeria',
     title: 'How to Sell Bitcoin Instantly in Nigeria',
@@ -470,7 +470,8 @@ const BLOG_POSTS = [
           { q: 'Is it safe to sell Bitcoin via P2P?', a: 'Yes, escrow ensures that buyers cannot receive your crypto until you have successfully confirmed your fiat payment.' }
         ]
       }
-      }
+    ]
+  }
 ];
 
 module.exports = { BLOG_POSTS };

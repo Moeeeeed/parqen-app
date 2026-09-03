@@ -12,12 +12,13 @@
 
 require('dotenv').config();
 const axios       = require('axios');
-const nodemailer = require('nodemailer');
 const { sendSystemAlert } = require('./pushNotificationService');
 const { sendTelegramAlert } = require('./telegramService');
 const { createClient }    = require('@supabase/supabase-js');
 const tronWallet          = require('./tronWalletService');
 const tronHotWallet       = require('./tronHotWallet');
+const emailService        = require('./emailService');            // working transport: Resend → Brevo SMTP (+ email_logs)
+const { isDepositTooOld, MAX_DEPOSIT_AGE_HOURS } = require('./depositAgeGuard'); // containment guard, see depositAgeGuard.js
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -30,13 +31,10 @@ const supabaseAdmin = createClient(
 const POLL_INTERVAL_MS = 300 * 1000; // 5 minutes — raised from 90s to cut TronGrid 429s. NOTE: USDT has no push feed, so this IS the worst-case USDT deposit-detection latency. Lower it (e.g. 180000) if 5 min is too slow, or fix the 429s at the source by confirming TRONGRID_API_KEY is set.
 const DUST_THRESHOLD   = 0.01;            // ignore deposits < $0.01 USDT
 
-const emailTransporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+// Email is sent via emailService (Resend → Brevo SMTP), required above. The old
+// nodemailer 'gmail' transport here used EMAIL_USER/EMAIL_PASS, which are not
+// configured in this environment, so every alert/notification it sent was
+// silently dropped — removed 2026-09-03.
 
 // ── Email HTML for USDT deposit ───────────────────────────────────────────────
 function depositEmailHtml(username, depositUsdt, newBalance, address) {
@@ -103,6 +101,7 @@ class USDTDepositMonitor {
     this.isRunning       = false;
     this.intervalId      = null;
     this.cycleInProgress = false;
+    this._coldCursor     = 0; // round-robin position through the cold address set (2.3b)
   }
 
   // ── Start background polling ───────────────────────────────────────────────
@@ -193,14 +192,53 @@ class USDTDepositMonitor {
     const nameMap = {};
     for (const u of (users || [])) nameMap[u.id] = u.username;
 
-    console.log(`[USDTMonitor] Scanning ${wallets.length} Tron address(es)...`);
+    // ── 2.3b — don't scan all ~1,600 addresses every 5-minute cycle (a full
+    // sequential pass took ~15 min and overran the timer). Split into:
+    //   HOT  — users who received a USDT deposit recently or have an open
+    //          reconciliation flag → scanned EVERY cycle (near-real-time).
+    //   COLD — everyone else → 1/USDT_SCAN_SHARDS per cycle, round-robin, so
+    //          every cold address is still covered within a few cycles.
+    // Set USDT_SCAN_ALL=true to revert to "scan everything every cycle".
+    const SHARDS   = Math.max(1, parseInt(process.env.USDT_SCAN_SHARDS || '6', 10));
+    const HOT_DAYS = Math.max(1, parseInt(process.env.USDT_HOT_LOOKBACK_DAYS || '10', 10));
+    const SCAN_ALL = process.env.USDT_SCAN_ALL === 'true';
 
-    // Sequential, one request at a time — this TronGrid key's actual sustainable
-    // rate is ~2 req/sec; firing several requests concurrently (the old batch-of-5
-    // approach) got almost every request 429'd. A full pass over many addresses
-    // now takes longer, but actually succeeds instead of mostly failing.
+    let toScan;
+    if (SCAN_ALL) {
+      toScan = wallets;
+    } else {
+      const sinceISO = new Date(Date.now() - HOT_DAYS * 864e5).toISOString();
+      const [{ data: recentDep }, { data: recentDtv }, { data: openFlags }] = await Promise.all([
+        supabaseAdmin.from('wallet_transactions').select('user_id')
+          .eq('type', 'DEPOSIT').eq('currency', 'USDT').gte('created_at', sinceISO),
+        supabaseAdmin.from('deposit_tracking_v2').select('user_id')
+          .eq('currency', 'USDT').gte('created_at', sinceISO),
+        supabaseAdmin.from('reconciliation_flags').select('user_id')
+          .eq('currency', 'USDT').eq('status', 'RECONCILIATION_REQUIRED'),
+      ]);
+      const hotIds = new Set([
+        ...(recentDep || []).map(r => r.user_id),
+        ...(recentDtv || []).map(r => r.user_id),
+        ...(openFlags || []).map(r => r.user_id),
+      ]);
+      const hot  = wallets.filter(w => hotIds.has(w.user_id));
+      const cold = wallets.filter(w => !hotIds.has(w.user_id));
+
+      const shardSize = Math.ceil(cold.length / SHARDS) || cold.length;
+      const start = (this._coldCursor % SHARDS) * shardSize;
+      const coldSlice = cold.slice(start, start + shardSize);
+      this._coldCursor = (this._coldCursor + 1) % SHARDS;
+
+      toScan = [...hot, ...coldSlice];
+      console.log(`[USDTMonitor] 2.3b — scanning ${toScan.length} (hot ${hot.length} + cold slice ${coldSlice.length} of ${cold.length}) this cycle`);
+    }
+    if (SCAN_ALL) console.log(`[USDTMonitor] Scanning ${toScan.length} Tron address(es) (USDT_SCAN_ALL)...`);
+
+    // Sequential, one request at a time — this TronGrid key's sustainable rate is
+    // low; concurrency previously got almost every request 429'd. Kept sequential;
+    // 2.3b just shrinks how many addresses each cycle touches.
     const REQUEST_SPACING_MS = 550;
-    for (const w of wallets) {
+    for (const w of toScan) {
       await this.checkUserDeposit({
         userId:          w.user_id,
         address:         w.tron_address,
@@ -258,27 +296,58 @@ class USDTDepositMonitor {
       const candidates = [];
       for (const t of transfers) {
         if (!t.transaction_id) continue;
+        // CONTAINMENT GUARD (2026-09-03): never treat a transfer older than
+        // MAX_DEPOSIT_AGE_HOURS as new. TronGrid returns the 20 most-recent
+        // incoming transfers every poll, so for a low-volume address the SAME
+        // historic (already-swept, already-credited) transfers reappear on every
+        // cycle — that is exactly what got several users credited a second time
+        // once deposit_tracking_v2 shipped (see depositAgeGuard.js). block_timestamp
+        // is ms-epoch from TronGrid.
+        if (isDepositTooOld(t.block_timestamp)) {
+          console.warn(`[USDTMonitor] ⏸  Skipping transfer ${String(t.transaction_id).slice(0, 12)}… for ${username} — confirmed ${MAX_DEPOSIT_AGE_HOURS}h+ ago; will NOT auto-credit. If genuinely missed, credit via the reviewed back-fill. addr=${address}`);
+          continue;
+        }
         const amountUsdt = parseFloat((Number(t.value || 0) / 1e6).toFixed(6)); // USDT TRC-20: 6 decimals
         if (amountUsdt < DUST_THRESHOLD) continue;
         candidates.push({ txHash: t.transaction_id, amountUsdt });
       }
       if (!candidates.length) return;
 
-      // ── Step 3: Skip anything already fully credited. Everything else (never
-      // seen before, or seen but not yet successfully credited) gets processed —
-      // this depends only on whether THIS transaction hash has been recorded,
-      // never on the address's current balance, which is the part a sweep can't
-      // defeat.
-      const { data: known } = await supabaseAdmin
-        .from('deposit_tracking_v2')
-        .select('tx_hash, credited')
-        .eq('address', address)
-        .in('tx_hash', candidates.map(c => c.txHash));
-      const creditedSet = new Set((known || []).filter(k => k.credited).map(k => k.tx_hash));
-      const seenSet     = new Set((known || []).map(k => k.tx_hash));
+      // ── Step 3: Skip anything already credited. Checked against BOTH ledgers:
+      //   • deposit_tracking_v2 — the txid tracker (rows since ~2026-08).
+      //   • wallet_transactions — the real credit ledger, matched on the
+      //     deterministic idempotency key `USDT:<userId>:<txHash>`. Deposits
+      //     credited before deposit_tracking_v2 existed have no tracker row, but
+      //     once back-filled (scripts/backfill-deposit-idempotency-keys.js +
+      //     scripts/backfill-deposit-tracking-v2.js) they carry this key — so an
+      //     old, already-credited transfer re-delivered here can never be credited
+      //     twice, independent of the age guard. This check only ever PREVENTS a
+      //     credit; a key match is unambiguous, so it cannot cause a false skip.
+      const txHashes = candidates.map(c => c.txHash);
+      const idemKeys = txHashes.map(h => `USDT:${userId}:${h}`);
+      const [{ data: known }, { data: ledgerHits }] = await Promise.all([
+        supabaseAdmin.from('deposit_tracking_v2')
+          .select('tx_hash, credited').eq('address', address).in('tx_hash', txHashes),
+        supabaseAdmin.from('wallet_transactions')
+          .select('idempotency_key, tx_hash').eq('user_id', userId).eq('type', 'DEPOSIT')
+          .in('idempotency_key', idemKeys),
+      ]);
+      const ledgerTxids = new Set(
+        (ledgerHits || []).map(r => (r.idempotency_key || '').split(':').pop() || r.tx_hash).filter(Boolean)
+      );
+      const creditedSet = new Set([
+        ...(known || []).filter(k => k.credited).map(k => k.tx_hash),
+        ...ledgerTxids,
+      ]);
+      const seenSet = new Set((known || []).map(k => k.tx_hash));
 
       for (const { txHash, amountUsdt } of candidates) {
-        if (creditedSet.has(txHash)) continue;
+        if (creditedSet.has(txHash)) {
+          if (!seenSet.has(txHash) && ledgerTxids.has(txHash)) {
+            console.log(`[USDTMonitor] tx ${String(txHash).slice(0, 12)}… already credited (ledger key match), no tracker row — skipping. Run the deposit_tracking_v2 back-fill to record the marker.`);
+          }
+          continue;
+        }
         await this.creditConfirmedDeposit({ userId, username, address, txHash, depositUsdt: amountUsdt, alreadySeen: seenSet.has(txHash) });
       }
 
@@ -406,10 +475,14 @@ class USDTDepositMonitor {
   // from the user's perspective until support intervenes.
   async alertOpsOfCreditFailure(username, userId, amount, currency, errMsg) {
     try {
-      await emailTransporter.sendMail({
-        from:    '"PRAQEN Alerts" <support@praqen.com>',
-        to:      'support@praqen.com',
+      // Routed through emailService (Resend → Brevo SMTP, logged to email_logs).
+      // The old nodemailer 'gmail' transport used EMAIL_USER/EMAIL_PASS, which are
+      // not set here, so every one of these fund-safety alerts was silently
+      // dropped (BALANCE_MISMATCH_INVESTIGATION.md / remediation SEC-4).
+      await emailService.sendEmail({
+        to:      process.env.OPS_ALERT_EMAIL || 'support@praqen.com',
         subject: `🚨 Deposit credit FAILED — ${currency} — manual review needed`,
+        type:    'deposit_credit_failure_alert',
         html: `<p><strong>A confirmed on-chain deposit could not be credited to a user's wallet.</strong></p>
                <p>User: ${username} (${userId})<br/>
                Amount: ${amount} ${currency}<br/>
@@ -431,10 +504,14 @@ class USDTDepositMonitor {
       if (!user?.email) return;
 
       const displayName = user.username || username;
-      await emailTransporter.sendMail({
-        from:    '"PRAQEN" <support@praqen.com>',
+      // Routed through emailService (Resend → Brevo SMTP) — the old nodemailer
+      // 'gmail' transport's creds are unset here, so this user-facing "deposit
+      // received" email was never actually sending.
+      await emailService.sendEmail({
+        userId,
         to:      user.email,
         subject: `💵 $${depositUsdt.toFixed(2)} USDT received — PRAQEN`,
+        type:    'deposit_confirmed_usdt',
         html:    depositEmailHtml(displayName, depositUsdt, newBalance, address),
       });
       console.log(`📧 [USDTMonitor] Email sent to user ${userId.slice(0, 8)} (${user.email})`);

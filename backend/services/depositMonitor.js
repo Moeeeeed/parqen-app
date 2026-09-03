@@ -13,12 +13,13 @@
 
 require('dotenv').config();
 const axios      = require('axios');
-const nodemailer = require('nodemailer');
 const { updateOfferStatus }  = require('./offerStatusService');
 const { sendSystemAlert }    = require('./pushNotificationService');
 const { sendTelegramAlert }  = require('./telegramService');
 const { createClient }       = require('@supabase/supabase-js');
 const btcApiGateway          = require('./btcApiGateway');
+const emailService           = require('./emailService');            // working transport: Resend → Brevo SMTP (+ email_logs)
+const { isDepositTooOld, MAX_DEPOSIT_AGE_HOURS } = require('./depositAgeGuard'); // containment guard, see depositAgeGuard.js
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -29,14 +30,10 @@ const supabaseAdmin = createClient(
 const POLL_INTERVAL_MS    = 30 * 60 * 1000; // 30 minutes — WebSocket handles real-time; this is safety net only
 const DUST_THRESHOLD_SATS = 546;           // ignore sub-dust outputs
 
-// ── Email transporter (Gmail) ─────────────────────────────────────────────────
-const emailTransporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+// Email is sent via emailService (Resend → Brevo SMTP), required above. The old
+// nodemailer 'gmail' transport here used EMAIL_USER/EMAIL_PASS, which are not
+// configured in this environment, so every alert/notification it sent was
+// silently dropped — removed 2026-09-03.
 
 // ── Twilio client (lazy init — won't crash if creds are missing) ──────────────
 let twilioClient = null;
@@ -307,6 +304,9 @@ class DepositMonitor {
         if (i + BATCH < valid.length) await this.sleep(1200);
       }
 
+      // 2.3a: retry any addresses parked by a previous failed cycle.
+      await this._drainRecheckQueue();
+
     } catch (err) {
       console.error('[DepositMonitor] checkAllUserDeposits error:', err.message);
     }
@@ -349,6 +349,15 @@ class DepositMonitor {
       const candidates = [];
       for (const tx of txs) {
         if (!tx.status?.confirmed) continue;
+        // CONTAINMENT GUARD (2026-09-03): never treat a deposit older than
+        // MAX_DEPOSIT_AGE_HOURS as new. Historic, already-credited deposits were
+        // being re-processed and credited a second time (see depositAgeGuard.js).
+        // A genuine new deposit is always recent the first time it is seen here;
+        // a genuinely missed old one must go through the reviewed back-fill.
+        if (isDepositTooOld(tx.status.block_time)) {
+          console.warn(`[DepositMonitor] ⏸  Skipping tx ${String(tx.txid).slice(0, 12)}… for ${username} — confirmed ${MAX_DEPOSIT_AGE_HOURS}h+ ago; will NOT auto-credit. If this is a genuinely missed deposit, credit it via the reviewed back-fill. addr=${address}`);
+          continue;
+        }
         const receivedSats = (tx.vout || [])
           .filter(o => o.scriptpubkey_address === address)
           .reduce((s, o) => s + (o.value || 0), 0);
@@ -357,21 +366,42 @@ class DepositMonitor {
       }
       if (!candidates.length) return;
 
-      // ── Step 3: Skip anything already fully credited. Everything else (never
-      // seen before, or seen but not yet successfully credited) gets processed —
-      // this depends only on whether THIS transaction hash has been recorded,
-      // never on the address's current balance, which is the part a sweep can't
-      // defeat.
-      const { data: known } = await supabaseAdmin
-        .from('deposit_tracking_v2')
-        .select('tx_hash, credited')
-        .eq('address', address)
-        .in('tx_hash', candidates.map(c => c.txHash));
-      const creditedSet = new Set((known || []).filter(k => k.credited).map(k => k.tx_hash));
-      const seenSet     = new Set((known || []).map(k => k.tx_hash));
+      // ── Step 3: Skip anything already credited. Checked against BOTH ledgers:
+      //   • deposit_tracking_v2 — the txid tracker (rows since ~2026-08).
+      //   • wallet_transactions — the real credit ledger, matched on the
+      //     deterministic idempotency key `BTC:<userId>:<txHash>`. Deposits
+      //     credited before deposit_tracking_v2 existed have no tracker row, but
+      //     once back-filled (scripts/backfill-deposit-idempotency-keys.js +
+      //     scripts/backfill-deposit-tracking-v2.js) they carry this key — so an
+      //     old, already-credited deposit re-delivered here can never be credited
+      //     twice, independent of the age guard. This check only ever PREVENTS a
+      //     credit; a key match is unambiguous (written once, for this exact
+      //     user+txid), so it cannot cause a false skip.
+      const txHashes = candidates.map(c => c.txHash);
+      const idemKeys = txHashes.map(h => `BTC:${userId}:${h}`);
+      const [{ data: known }, { data: ledgerHits }] = await Promise.all([
+        supabaseAdmin.from('deposit_tracking_v2')
+          .select('tx_hash, credited').eq('address', address).in('tx_hash', txHashes),
+        supabaseAdmin.from('wallet_transactions')
+          .select('idempotency_key, tx_hash').eq('user_id', userId).eq('type', 'DEPOSIT')
+          .in('idempotency_key', idemKeys),
+      ]);
+      const ledgerTxids = new Set(
+        (ledgerHits || []).map(r => (r.idempotency_key || '').split(':').pop() || r.tx_hash).filter(Boolean)
+      );
+      const creditedSet = new Set([
+        ...(known || []).filter(k => k.credited).map(k => k.tx_hash),
+        ...ledgerTxids,
+      ]);
+      const seenSet = new Set((known || []).map(k => k.tx_hash));
 
       for (const { txHash, amountBTC } of candidates) {
-        if (creditedSet.has(txHash)) continue;
+        if (creditedSet.has(txHash)) {
+          if (!seenSet.has(txHash) && ledgerTxids.has(txHash)) {
+            console.log(`[DepositMonitor] tx ${String(txHash).slice(0, 12)}… already credited (ledger key match), no tracker row — skipping. Run the deposit_tracking_v2 back-fill to record the marker.`);
+          }
+          continue;
+        }
         await this.creditConfirmedDeposit({ userId, username, address, txHash, depositBTC: amountBTC, alreadySeen: seenSet.has(txHash) });
       }
 
@@ -385,17 +415,62 @@ class DepositMonitor {
         supabaseAdmin.from('user_wallets').update({ last_onchain_btc: onchainBal }).eq('user_id', userId).then(null, () => {});
       }
 
+      // 2.3a: this address checked cleanly — drop any pending retry marker.
+      this._dequeueRecheck(address);
+
     } catch (err) {
-      if (err.response?.status === 429) {
-        console.warn(`[DepositMonitor] Rate limited — will retry next cycle`);
+      const status = err.response?.status;
+      const isTimeout = ['ETIMEDOUT', 'ECONNREFUSED', 'ENOTFOUND', 'ECONNRESET'].includes(err.code)
+        || /unreachable|timed out|timeout/i.test(err.message || '');
+      if (status === 429 || status === 503 || isTimeout) {
+        // 2.3a: transient — park the address so the NEXT cycle retries it
+        // instead of just re-reading everything from scratch and possibly
+        // losing this one again.
+        const reason = status ? `HTTP ${status}` : (err.code || 'unreachable');
+        console.warn(`[DepositMonitor] transient failure for ${address.slice(0, 12)}… (${reason}) — queued for recheck next cycle`);
+        this._enqueueRecheck(userId, address, reason);
       } else {
-        const isTimeout = ['ETIMEDOUT','ECONNREFUSED','ENOTFOUND','ECONNRESET'].includes(err.code);
-        if (isTimeout) {
-          console.warn(`[DepositMonitor] All APIs unreachable for ${address.slice(0, 12)}… — will retry next cycle`);
-        } else {
-          console.error(`[DepositMonitor] Error checking ${address.slice(0, 12)}…:`, err.message || err.code || String(err));
-        }
+        console.error(`[DepositMonitor] Error checking ${address.slice(0, 12)}…:`, err.message || err.code || String(err));
       }
+    }
+  }
+
+  // ── 2.3a — persistent recheck queue ──────────────────────────────────────
+  // A poll that failed transiently (explorer 429 / timeout / DNS) is parked in
+  // deposit_recheck_queue and retried at the top of the next cycle, so a bad API
+  // window during a deposit's arrival→sweep gap is no longer a permanent miss.
+  // All best-effort: if the table is absent the monitor behaves exactly as before.
+  async _enqueueRecheck(userId, address, reason) {
+    try {
+      const { data: existing } = await supabaseAdmin.from('deposit_recheck_queue')
+        .select('attempts').eq('address', address).eq('currency', 'BTC').maybeSingle();
+      await supabaseAdmin.from('deposit_recheck_queue').upsert({
+        address, currency: 'BTC', user_id: userId, reason,
+        attempts: (existing?.attempts || 0) + 1,
+        last_attempt: new Date().toISOString(),
+      }, { onConflict: 'address,currency' });
+    } catch (_) { /* table absent or write failed — non-fatal */ }
+  }
+
+  _dequeueRecheck(address) {
+    supabaseAdmin.from('deposit_recheck_queue')
+      .delete().eq('address', address).eq('currency', 'BTC').then(null, () => {});
+  }
+
+  async _drainRecheckQueue() {
+    let queued;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('deposit_recheck_queue').select('user_id, address').eq('currency', 'BTC').limit(200);
+      if (error) return; // table not present yet — nothing to do
+      queued = data || [];
+    } catch (_) { return; }
+    if (!queued.length) return;
+    console.log(`[DepositMonitor] 2.3a — retrying ${queued.length} queued address(es) from a previous failed cycle`);
+    for (const q of queued) {
+      if (!this.isValidMainnetAddress(q.address)) { this._dequeueRecheck(q.address); continue; }
+      await this.checkUserDeposit({ userId: q.user_id, address: q.address, username: null });
+      await this.sleep(1200);
     }
   }
 
@@ -539,10 +614,14 @@ class DepositMonitor {
   // from the user's perspective until support intervenes.
   async alertOpsOfCreditFailure(username, userId, amount, currency, errMsg) {
     try {
-      await emailTransporter.sendMail({
-        from:    '"PRAQEN Alerts" <support@praqen.com>',
-        to:      'support@praqen.com',
+      // Routed through emailService (Resend → Brevo SMTP, logged to email_logs).
+      // The old nodemailer 'gmail' transport used EMAIL_USER/EMAIL_PASS, which are
+      // not set in this environment, so every one of these alerts was silently
+      // dropped (see BALANCE_MISMATCH_INVESTIGATION.md / remediation SEC-4).
+      await emailService.sendEmail({
+        to:      process.env.OPS_ALERT_EMAIL || 'support@praqen.com',
         subject: `🚨 Deposit credit FAILED — ${currency} — manual review needed`,
+        type:    'deposit_credit_failure_alert',
         html: `<p><strong>A confirmed on-chain deposit could not be credited to a user's wallet.</strong></p>
                <p>User: ${username} (${userId})<br/>
                Amount: ${amount} ${currency}<br/>
@@ -579,10 +658,14 @@ class DepositMonitor {
     if (!user?.email) return;
 
     const displayName = user.username || username;
-    await emailTransporter.sendMail({
-      from:    '"PRAQEN" <support@praqen.com>',
+    // Routed through emailService (Resend → Brevo SMTP) — the old nodemailer
+    // 'gmail' transport's creds are unset here, so this user-facing "deposit
+    // received" email was never actually sending.
+    await emailService.sendEmail({
+      userId,
       to:      user.email,
       subject: `₿ ${depositBTC.toFixed(8)} BTC received — PRAQEN`,
+      type:    'deposit_confirmed_btc',
       html:    depositEmailHtml(displayName, depositBTC, newBalance, address),
     });
     console.log(`📧 [DepositMonitor] Email sent to user ${userId.slice(0, 8)} (${user.email})`);

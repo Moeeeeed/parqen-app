@@ -371,6 +371,8 @@ const actionCodeService = require('./services/actionCodeService');
 const { getClientIp, logSecurityEvent, isLockedOut } = require('./services/securityLogService');
 const balanceIntegrity = require('./services/balanceIntegrityService');
 const depositReconciliation = require('./services/depositReconciliationService');
+const depositHealthMonitor = require('./services/depositHealthMonitor'); // read-only heartbeat / alerting for the deposit pipeline
+const walletProvisioningReconciler = require('./services/walletProvisioningReconciler'); // fills missing BTC/Tron deposit addresses
 const { checkAndAwardBadges } = require('./services/badgeService');
 const { syncAllOfferStatuses, deactivateStaleOffers, reactivateReturnedSellers, setCacheBuster, setBtcPriceGetter, updateOfferStatus } = require('./services/offerStatusService');
 const traderOfWeekService = require('./services/traderOfWeekService');
@@ -2367,12 +2369,28 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
     const { data } = await supabaseAdmin.from('users').select('*').eq('id', record.userId).single();
     if (!data) return res.status(404).json({ error: 'User not found' });
 
-    // 2FA at login is enforced for privileged accounts only (CEO/admin/moderator) with
-    // 2FA actually turned on — regular trader login is unchanged from before. This is what
-    // makes the CeoLogin UI's existing requires2FA/tempToken handling (previously dead code,
-    // since nothing ever triggered it) actually fire.
+    // Support Dashboard (/agent-dashboard) requires a 2FA code on EVERY sign-in.
+    // AgentLogin (frontend/src/pages/AgentDashboard.js) sends agentPortal:true. Any
+    // account with a Support Dashboard role (agent/admin/moderator) must have 2FA
+    // configured — if not, block here and tell them to enrol; if they do, force the
+    // 2FA step below even for a plain is_agent (who isn't otherwise "privileged").
+    const agentPortal    = req.body.agentPortal === true;
+    const hasSupportRole  = !!(data.is_agent || data.is_admin || data.is_moderator);
+    const forceTwoFA     = agentPortal && hasSupportRole;
+    if (forceTwoFA && !(data.two_factor_enabled && data.two_factor_method)) {
+      logSecurityEvent({ userId: data.id, email: data.email, eventType: 'LOGIN_2FA_SETUP_REQUIRED', ip: clientIp, userAgent });
+      return res.status(403).json({
+        error: 'Two-factor authentication is required to sign in to the Support Dashboard. Turn on 2FA in your account security settings, then sign in again.',
+        require2FASetup: true,
+      });
+    }
+
+    // 2FA at login is enforced for privileged accounts (CEO/admin/moderator) with
+    // 2FA actually turned on, and — via forceTwoFA above — for every Support
+    // Dashboard sign-in. Regular trader login is unchanged from before. This is what
+    // makes the CeoLogin/AgentLogin requires2FA/tempToken handling actually fire.
     const isPrivileged = !!(data.is_ceo || data.is_admin || data.is_moderator);
-    if (isPrivileged && data.two_factor_enabled && data.two_factor_method) {
+    if ((isPrivileged || forceTwoFA) && data.two_factor_enabled && data.two_factor_method) {
       const tempToken = jwt.sign({ userId: data.id, pending2FA: true }, JWT_SECRET, { expiresIn: '10m' });
       const method = data.two_factor_method;
 
@@ -14047,11 +14065,11 @@ app.listen(PORT, () => {
   reactivateReturnedSellers().catch(err => console.error('[startup] reactivateReturnedSellers:', err.message));
   setInterval(() => reactivateReturnedSellers().catch(err => console.error('[interval] reactivateReturnedSellers:', err.message)), 6 * 60 * 60 * 1000);
 
-  // PRAQEN Weekly Stars: any UNPINNED slot auto-rotates to the next eligible,
-  // currently-online candidate every 48h (services/traderOfWeekService.js). A
-  // slot an admin hard-pinned (via POST /api/admin/trader-of-week/select or the
-  // pin_trader_of_week() SQL helper) is never touched by this — only slots
-  // nobody has manually pinned rotate.
+  // PRAQEN Weekly Stars: every UNPINNED slot auto-rotates every ROTATION_HOURS
+  // (24h) to the next eligible real trader, cycling through the whole pool so the
+  // badge "goes around" (services/traderOfWeekService.js). A manual admin pick
+  // (POST /api/admin/trader-of-week/select) locks that trader in for 7 days via
+  // pin_expires_at; once that lock lapses the slot rejoins the rotation.
   traderOfWeekService.runAutoRotation().catch(err => console.error('[startup] traderOfWeek runAutoRotation:', err.message));
   setInterval(() => traderOfWeekService.runAutoRotation().catch(err => console.error('[interval] traderOfWeek runAutoRotation:', err.message)), 10 * 60 * 1000);
   console.log(`⭐ Trader-of-Week auto-rotation: unpinned slots rotate to next online candidate every ${traderOfWeekService.ROTATION_HOURS}h — checks every 10 min`);
@@ -14088,6 +14106,15 @@ if (
     balanceIntegrity.start();
     depositReconciliation.start();
             console.log('[DepositReconciliation] MAINNET - hourly read-only detection + flagging');
+
+    // ── Deposit-pipeline heartbeat (read-only) — alerts ops if BTC/USDT
+    //    crediting stalls, reconciliation stops, a credit gets stuck, or a
+    //    sweep goes STALE. Never writes, never credits. See depositHealthMonitor.js.
+    depositHealthMonitor.start();
+
+    // ── Wallet-address provisioning reconciler — fills any user missing a
+    //    BTC / Tron deposit address (signup provisioning is fire-and-forget).
+    walletProvisioningReconciler.start();
   } else {
     console.log('⏸  Live mainnet services (deposit monitor, sweep, balance integrity) skipped — NODE_ENV is not "production"');
   }

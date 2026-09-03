@@ -22,6 +22,7 @@ const { createClient } = require('@supabase/supabase-js');
 const depositMonitor   = require('./depositMonitor');
 const { sendSystemAlert } = require('./pushNotificationService');
 const { sendTelegramAlert } = require('./telegramService');
+const { isDepositTooOld, MAX_DEPOSIT_AGE_HOURS } = require('./depositAgeGuard'); // containment guard, see depositAgeGuard.js
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -43,6 +44,41 @@ class RealtimeDepositService {
     this.pingTimer      = null;
     this.pendingTxs     = new Set();  // "txid:userId" — prevents duplicate pending alerts
     this.confirmedTxs   = new Set();  // "txid:userId" — prevents the same confirmed tx re-triggering a credit check
+    this._dedupeCleanupTimer = null;
+  }
+
+  // ── Step 2.3c — persist the dedupe sets so a restart / reconnect cannot
+  // replay historic confirmed txs as new. In-memory Sets stay the fast path;
+  // this table is the restart-survival backup. Best-effort throughout: if the
+  // table doesn't exist yet or a write fails, the service still works exactly as
+  // before (the Set + the age guard in processTx still apply).
+  async _loadPersistedDedupe() {
+    try {
+      const cutoff = new Date(Date.now() - PENDING_TTL_MS).toISOString();
+      const { data, error } = await supabaseAdmin
+        .from('realtime_tx_dedupe').select('dedupe_key, kind').gt('created_at', cutoff);
+      if (error) { console.warn('[RealtimeDeposit] dedupe table not available — running in-memory only:', error.message); return; }
+      for (const r of (data || [])) {
+        if (r.kind === 'confirmed') this.confirmedTxs.add(r.dedupe_key);
+        else this.pendingTxs.add(r.dedupe_key);
+      }
+      console.log(`[RealtimeDeposit] restored ${data ? data.length : 0} dedupe key(s) from realtime_tx_dedupe`);
+    } catch (e) {
+      console.warn('[RealtimeDeposit] _loadPersistedDedupe failed (non-fatal):', e.message);
+    }
+  }
+
+  _persistDedupe(key, kind) {
+    supabaseAdmin.from('realtime_tx_dedupe').insert({ dedupe_key: key, kind }).then(null, () => {}); // unique PK => idempotent
+  }
+
+  _startDedupeCleanup() {
+    if (this._dedupeCleanupTimer) return;
+    const sweep = () => {
+      const cutoff = new Date(Date.now() - PENDING_TTL_MS).toISOString();
+      supabaseAdmin.from('realtime_tx_dedupe').delete().lt('created_at', cutoff).then(null, () => {});
+    };
+    this._dedupeCleanupTimer = setInterval(sweep, 60 * 60 * 1000); // hourly
   }
 
   // ── Public: start the service ─────────────────────────────────────────────
@@ -51,6 +87,8 @@ class RealtimeDepositService {
     this.isRunning = true;
 
     await this.loadAllAddresses();
+    await this._loadPersistedDedupe();
+    this._startDedupeCleanup();
     this.connect();
 
     console.log(`\n⚡ [RealtimeDeposit] Service started`);
@@ -186,6 +224,18 @@ class RealtimeDepositService {
   async processTx(tx, isConfirmed) {
     if (!tx?.vout) return;
 
+    // CONTAINMENT GUARD (2026-09-03): on reconnect, the WebSocket can replay
+    // historic confirmed transactions for a subscribed address. checkAddressNow()
+    // then re-scans the whole address history — one of the ways old, already-
+    // credited deposits got credited a second time. Ignore any confirmed tx whose
+    // block time is older than MAX_DEPOSIT_AGE_HOURS; a real new deposit is always
+    // recent here. (depositMonitor.checkUserDeposit carries the same guard as a
+    // second line of defence.) Unconfirmed (mempool) events are never affected.
+    if (isConfirmed && isDepositTooOld(tx.status?.block_time)) {
+      console.warn(`[RealtimeDeposit] ⏸  Ignoring confirmed tx ${String(tx.txid || '').slice(0, 12)}… — block time ${MAX_DEPOSIT_AGE_HOURS}h+ ago (containment guard against re-crediting historic deposits).`);
+      return;
+    }
+
     for (const vout of tx.vout) {
       const addr   = vout.scriptpubkey_address;
       if (!addr) continue;
@@ -211,6 +261,7 @@ class RealtimeDepositService {
         const confirmedKey = `${txid}:${userId}`;
         if (this.confirmedTxs.has(confirmedKey)) continue;
         this.confirmedTxs.add(confirmedKey);
+        this._persistDedupe(confirmedKey, 'confirmed'); // survives a restart (2.3c)
         setTimeout(() => this.confirmedTxs.delete(confirmedKey), PENDING_TTL_MS);
 
         console.log(`\n⚡ [RealtimeDeposit] CONFIRMED ${amountBTC} BTC for user ${userId.slice(0, 8)}`);
@@ -229,6 +280,7 @@ class RealtimeDepositService {
         const dedupeKey = `${txid}:${userId}`;
         if (this.pendingTxs.has(dedupeKey)) continue;
         this.pendingTxs.add(dedupeKey);
+        this._persistDedupe(dedupeKey, 'pending'); // survives a restart (2.3c)
         setTimeout(() => this.pendingTxs.delete(dedupeKey), PENDING_TTL_MS);
 
         console.log(`\n⏳ [RealtimeDeposit] UNCONFIRMED ${amountBTC} BTC for user ${userId.slice(0, 8)}`);
@@ -298,6 +350,7 @@ class RealtimeDepositService {
   stop() {
     this.isRunning = false;
     this.stopPing();
+    if (this._dedupeCleanupTimer) { clearInterval(this._dedupeCleanupTimer); this._dedupeCleanupTimer = null; }
     this.ws?.terminate();
     this.ws = null;
     console.log('[RealtimeDeposit] Stopped');

@@ -115,7 +115,9 @@ function AgentLogin({ onAuth }) {
     if (emailOtp.length !== 6) { setErr('Enter the full 6-digit code'); return; }
     setErr(''); setLoading(true);
     try {
-      const { data } = await axios.post(`${API_URL}/auth/verify-login-otp`, { email, code: emailOtp });
+      // agentPortal:true tells the backend this is the Support Dashboard sign-in,
+      // where a 2FA code is required on every login (see /api/auth/verify-login-otp).
+      const { data } = await axios.post(`${API_URL}/auth/verify-login-otp`, { email, code: emailOtp, agentPortal: true });
       if (data.requires2FA) {
         setTempToken(data.tempToken);
         setNotice(`Enter the code from your ${data.twoFactorMethod === 'totp' ? 'authenticator app' : data.twoFactorMethod === 'sms' ? 'phone' : 'email'}`);
@@ -125,8 +127,13 @@ function AgentLogin({ onAuth }) {
         finish(data.user, data.token);
       }
     } catch (e) {
-      setErr(e.response?.data?.error || 'Invalid code. Please try again.');
-      setEmailOtp('');
+      const d = e.response?.data;
+      if (d?.require2FASetup) {
+        setErr(d.error || 'Two-factor authentication is required for the Support Dashboard. Enable 2FA on your account, then sign in again.');
+      } else {
+        setErr(d?.error || 'Invalid code. Please try again.');
+        setEmailOtp('');
+      }
     } finally { setLoading(false); }
   };
 
@@ -202,6 +209,10 @@ function AgentLogin({ onAuth }) {
             </button>
           </form>
         )}
+
+        <p className="text-[11px] text-center mt-5" style={{ color: C.g400 }}>
+          Need help signing in? <a href="mailto:support@praqen.com" style={{ color: C.forestLight, fontWeight: 700 }}>support@praqen.com</a>
+        </p>
       </div>
     </div>
   );

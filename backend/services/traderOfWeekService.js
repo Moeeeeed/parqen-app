@@ -468,6 +468,14 @@ async function persistWinner({ slot, chosen, adminId = null, adminUsername = nul
   const expiresAt = new Date(now.getTime() + expiresInDays * 24 * 60 * 60 * 1000).toISOString();
   const nowIso = now.toISOString();
 
+  // Recent holders of THIS slot, kept as a small ring buffer on the row itself so
+  // auto-rotation can walk the whole eligible pool before repeating anyone — even
+  // if the separate trader_of_week_history table write fails.
+  const { data: prevRows, error: prevErr } = await supabaseAdmin
+    .from('trader_of_week').select('history').eq('category', slot).limit(1);
+  if (prevErr) throw prevErr;
+  const priorHistory = Array.isArray(prevRows?.[0]?.history) ? prevRows[0].history : [];
+
   const row = {
     category: slot,
     user_id: chosen.user_id,
@@ -487,10 +495,24 @@ async function persistWinner({ slot, chosen, adminId = null, adminUsername = nul
     reason: chosen.reason,
     pin_expires_at: expiresAt,
     stats_snapshot: chosen,
+    history: [...priorHistory, { user_id: chosen.user_id, username: chosen.username, at: nowIso }].slice(-10),
   };
 
-  const { error: upsertErr } = await supabaseAdmin.from('trader_of_week').upsert(row, { onConflict: 'category' });
-  if (upsertErr) throw upsertErr;
+  // Select-then-update/insert keyed by `category`. The old code used
+  // upsert({ onConflict: 'category' }), which Postgres rejects unless there is a
+  // UNIQUE constraint on that column — this DB has none, so every write threw and
+  // NOTHING ever rotated (an empty trader_of_week_history was the proof).
+  const { data: existing, error: selErr } = await supabaseAdmin
+    .from('trader_of_week').select('category').eq('category', slot).limit(1);
+  if (selErr) throw selErr;
+
+  if (existing && existing.length) {
+    const { error } = await supabaseAdmin.from('trader_of_week').update(row).eq('category', slot);
+    if (error) throw error;
+  } else {
+    const { error } = await supabaseAdmin.from('trader_of_week').insert(row);
+    if (error) throw error;
+  }
 
   const { error: histErr } = await supabaseAdmin.from('trader_of_week_history').insert({
     category: slot,
@@ -536,18 +558,41 @@ async function selectWinner({ slot, userId, username, adminId, adminUsername, ex
   return { ...row, warning };
 }
 
-// Highest-scoring eligible candidate for `slot` who is online right now
-// (isOnlineNow), or null if none of them are. getCandidates() already sorts by
-// score desc and already excludes anyone holding another slot's current
-// winner, so this just walks that list looking for the first one online.
-async function pickOnlineCandidate(slot) {
+// Pick the next winner for `slot` so the badge genuinely "goes around" the
+// eligible pool instead of freezing on the single top scorer.
+//   • getCandidates() is already score-sorted and already excludes anyone
+//     holding another slot's current winner.
+//   • Preference tiers, first non-empty wins — every tier is still score-sorted
+//     so the pick is always a genuine top performer:
+//       1. not the current holder, not featured in this slot recently, online now
+//       2. not the current holder, not recently featured, active within ACTIVE_WITHIN_DAYS
+//       3. any non-current holder, online now
+//       4. any non-current holder, active recently
+//       5. any non-current holder
+//       6. (only current holder left) keep them if still active
+//       7. last resort — keep whoever is top
+async function pickRotationCandidate(slot, currentWinnerId = null, recentIds = []) {
   const candidates = await getCandidates(slot);
   if (!candidates.length) return null;
-  const users = await fetchUsersByIds(candidates.map(c => c.user_id));
-  for (const c of candidates) {
-    const u = users[c.user_id];
-    if (u && isOnlineNow(u)) return c;
-  }
+
+  const users  = await fetchUsersByIds(candidates.map(c => c.user_id));
+  const recent = new Set((recentIds || []).filter(Boolean));
+
+  const online         = c => { const u = users[c.user_id]; return !!u && isOnlineNow(u); };
+  const activeRecently = c => { const u = users[c.user_id]; return !!u && isActiveWithinDays(u, ACTIVE_WITHIN_DAYS); };
+  const notCurrent     = c => c.user_id !== currentWinnerId;
+  const notRecent      = c => !recent.has(c.user_id);
+
+  const tiers = [
+    candidates.filter(c => notCurrent(c) && notRecent(c) && online(c)),
+    candidates.filter(c => notCurrent(c) && notRecent(c) && activeRecently(c)),
+    candidates.filter(c => notCurrent(c) && online(c)),
+    candidates.filter(c => notCurrent(c) && activeRecently(c)),
+    candidates.filter(c => notCurrent(c)),
+    candidates.filter(c => activeRecently(c)),
+    candidates,
+  ];
+  for (const tier of tiers) if (tier.length) return tier[0];
   return null;
 }
 
@@ -565,19 +610,31 @@ async function runAutoRotation() {
 
   for (const slot of SLOTS) {
     const winner = currentWinners[slot];
-    if (winner?.pinned) continue;
+
+    // A pin is honored only WHILE it is still in force. selectWinner() (a manual
+    // admin pick) sets pin_expires_at = now + 7 days, so a hand-picked trader
+    // stays locked in and featured for a full week, then rejoins the rotation. A
+    // pinned row with no / past pin_expires_at (older seed data) is treated as an
+    // expired lock and is allowed to rotate like any other slot.
+    const pinInForce = winner?.pinned && winner.pin_expires_at
+      && new Date(winner.pin_expires_at).getTime() > now;
+    if (pinInForce) continue;
 
     const dueAt = winner?.next_rotation_at ? new Date(winner.next_rotation_at).getTime() : 0;
-    if (winner && dueAt > now) continue;
+    if (winner && dueAt > now) continue; // 24h window not elapsed yet
+
+    const recentIds = Array.isArray(winner?.history)
+      ? winner.history.map(h => h && h.user_id).filter(Boolean)
+      : [];
 
     try {
-      const candidate = await pickOnlineCandidate(slot);
+      const candidate = await pickRotationCandidate(slot, winner?.user_id || null, recentIds);
       if (!candidate) {
-        console.log(`[traderOfWeek] auto-rotation: no online eligible candidate for "${slot}" — leaving as-is, will retry`);
+        console.log(`[traderOfWeek] auto-rotation: no eligible candidate for "${slot}" — leaving as-is, will retry`);
         continue;
       }
       await persistWinner({ slot, chosen: candidate, expiresInDays: ROTATION_HOURS / 24, pinned: false, adminUsername: 'auto-rotation' });
-      console.log(`[traderOfWeek] auto-rotation: "${slot}" -> ${candidate.username} (next check in ${ROTATION_HOURS}h)`);
+      console.log(`[traderOfWeek] auto-rotation: "${slot}" -> ${candidate.username} (score ${candidate.score}; next rotation in ${ROTATION_HOURS}h)`);
     } catch (err) {
       console.error(`[traderOfWeek] auto-rotation failed for "${slot}":`, err.message);
     }
