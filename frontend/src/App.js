@@ -216,11 +216,47 @@ function RefRedirect() {
 }
 
 // ── App Shell ─────────────────────────────────────────────────────────────────
+const AUTH_ROUTES = ['/login', '/register', '/signup', '/forgot-password'];
+
 function AppShell({ children }) {
   return (
     <div className="min-h-screen pb-nav-mobile"
       style={{ overflowX: 'hidden', maxWidth: '100vw', paddingTop: 'var(--navbar-h)' }}>
       {children}
+    </div>
+  );
+}
+
+function AuthAwareShell({ children, user, onLogout, showBonusModal, setShowBonusModal, showWelcome, setShowWelcome }) {
+  const location = useLocation();
+  const isAuthPage = AUTH_ROUTES.includes(location.pathname);
+  return (
+    <div className={isAuthPage ? 'auth-shell' : 'min-h-screen pb-nav-mobile'}
+      style={{ overflowX: 'hidden', maxWidth: '100vw', paddingTop: isAuthPage ? 0 : 'var(--navbar-h)', position: 'relative' }}>
+      {!isAuthPage && <Navbar user={user} onLogout={onLogout} />}
+
+      {showBonusModal && user && (
+        <WelcomeBonusModal user={user} onClose={() => {
+          localStorage.setItem(`prq_bonus_shown_${user.id}`, '1');
+          setShowBonusModal(false);
+          if (!localStorage.getItem(`prq_welcomed_${user.id}`)) {
+            setShowWelcome(true);
+          }
+        }} />
+      )}
+
+      {showWelcome && user && !showBonusModal && (
+        <WelcomeModal user={user} onClose={() => setShowWelcome(false)} />
+      )}
+
+      {user && <NotificationPrompt userId={user.id} />}
+      <AndroidInstallBanner />
+      <IOSInstallGuide />
+
+      {children}
+
+      <BottomNav user={user} />
+      <SuggestionsPanel user={user} />
     </div>
   );
 }
@@ -232,7 +268,6 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [showWelcome, setShowWelcome] = useState(false);
   const [showBonusModal, setShowBonusModal] = useState(false);
-
   // ── ✅ OneSignal Init on Mount ────────────────────────────────────────────
   useEffect(() => {
     if (token && user?.id) {
@@ -534,26 +569,9 @@ function App() {
 
               {/* ── ALL OTHER ROUTES — wrapped in main app chrome ── */}
               <Route path="*" element={
-                <AppShell>
-                  <Navbar user={user} onLogout={logout} />
-
-                  {showBonusModal && user && (
-                    <WelcomeBonusModal user={user} onClose={() => {
-                      localStorage.setItem(`prq_bonus_shown_${user.id}`, '1');
-                      setShowBonusModal(false);
-                      if (!localStorage.getItem(`prq_welcomed_${user.id}`)) {
-                        setShowWelcome(true);
-                      }
-                    }} />
-                  )}
-
-                  {showWelcome && user && !showBonusModal && (
-                    <WelcomeModal user={user} onClose={() => setShowWelcome(false)} />
-                  )}
-
-                  {user && <NotificationPrompt userId={user.id} />}
-                  <AndroidInstallBanner />
-                  <IOSInstallGuide />
+                <AuthAwareShell user={user} onLogout={logout}
+                  showBonusModal={showBonusModal} setShowBonusModal={setShowBonusModal}
+                  showWelcome={showWelcome} setShowWelcome={setShowWelcome}>
 
                   <RouteErrorBoundary>
                   <Routes>
@@ -597,10 +615,7 @@ function App() {
                     <Route path="*" element={<Navigate to="/" />} />
                   </Routes>
                   </RouteErrorBoundary>
-
-                  <BottomNav user={user} />
-                  <SuggestionsPanel user={user} />
-                </AppShell>
+                </AuthAwareShell>
               } />
             </Routes>
           </Suspense>

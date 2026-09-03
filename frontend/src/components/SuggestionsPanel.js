@@ -191,6 +191,7 @@ function StepBar({ step, total, labels }) {
 export default function SuggestionsPanel({ user }) {
   const location = useLocation();
   const isTradeChatPage = location.pathname.startsWith('/trade/') || location.pathname.startsWith('/trade-chat/');
+  const isAuthPage = ['/login', '/register', '/signup', '/forgot-password'].includes(location.pathname);
   // mode: 'home' | 'topic-selected' | 'ticket-form' | 'ticket-priority'
   //       | 'ticket-attachments' | 'ticket-review' | 'submitting'
   //       | 'ticket-created' | 'chat' | 'suggest'
@@ -870,9 +871,11 @@ export default function SuggestionsPanel({ user }) {
       {/* ── Floating button — hidden on mobile when panel is open ── */}
       {!(open && isMobile) && !isTradeChatPage && (
         <button onClick={openPanel}
-          className="fixed flex items-center justify-center shadow-2xl transition-all hover:scale-110 active:scale-95"
+          className={`${isAuthPage ? 'absolute' : 'fixed'} flex items-center justify-center shadow-2xl transition-all hover:scale-110 active:scale-95`}
           style={{
-            bottom: isMobile
+            bottom: isAuthPage
+              ? 20
+              : isMobile
               ? 'calc(60px + env(safe-area-inset-bottom, 0px) + 14px)'
               : 24,
             right: isMobile ? 16 : 24,

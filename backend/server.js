@@ -1068,6 +1068,14 @@ async function generateUniqueReferralCode(username) {
   throw new Error('Could not generate a unique referral code. Please try again.');
 }
 
+// The account handle is deterministic across password and Google signups.
+// Separators in the email local-part become underscores (john.doe → john_doe).
+function usernameFromEmail(email) {
+  const localPart = String(email || '').split('@')[0].toLowerCase();
+  const username = localPart.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return username.length >= 3 ? username : 'user';
+}
+
 function encryptCode(code, key = 'mock-encryption-key') {
   const cipher = crypto.createCipher('aes-256-cbc', key);
   return cipher.update(code, 'utf8', 'hex') + cipher.final('hex');
@@ -1825,8 +1833,7 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
       }
     } else {
       // 3. New user registration
-      let baseUsername = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '');
-      if (baseUsername.length < 3) baseUsername = 'user';
+      let baseUsername = usernameFromEmail(normalizedEmail);
       let username = baseUsername;
 
       const { data: uCheck } = await supabaseAdmin
@@ -1969,10 +1976,10 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
 
 app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
-    const { email, phone, password, username, fullName, referralCode } = req.body;
+    const { email, password, referralCode } = req.body;
 
     // ── Validate inputs ────────────────────────────────────────────────────
-    if ((!email && !phone) || !password || !username) {
+    if (!email || !password) {
       return res.status(400).json({ error: E.MISSING_FIELDS });
     }
     if (password.length < 6) {
@@ -1980,25 +1987,17 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     }
 
     // ── Email format + disposable domain + MX validation ───────────────────
-    if (email) {
-      const emailCheck = await validateEmailForRegistration(email.toLowerCase().trim());
-      if (!emailCheck.valid) {
-        return res.status(400).json({ error: emailCheck.error });
-      }
+    const normalizedEmail = email.toLowerCase().trim();
+    const emailCheck = await validateEmailForRegistration(normalizedEmail);
+    if (!emailCheck.valid) {
+      return res.status(400).json({ error: emailCheck.error });
     }
+    const username = usernameFromEmail(normalizedEmail);
 
     // ── Check uniqueness (fast DB lookups) ─────────────────────────────────
-    if (email) {
-      const { data: existingUser } = await supabaseAdmin
-        .from('users').select('email').eq('email', email.toLowerCase().trim()).single();
-      if (existingUser) return res.status(400).json({ error: E.EMAIL_TAKEN });
-    }
-
-    if (phone) {
-      const { data: existingPhone } = await supabaseAdmin
-        .from('users').select('id').eq('phone', phone.trim()).single();
-      if (existingPhone) return res.status(400).json({ error: 'An account with this phone number already exists. Try logging in or use a different number.' });
-    }
+    const { data: existingUser } = await supabaseAdmin
+      .from('users').select('email').eq('email', normalizedEmail).single();
+    if (existingUser) return res.status(400).json({ error: E.EMAIL_TAKEN });
 
     const { data: existingUsername } = await supabaseAdmin
       .from('users').select('id').eq('username', username.trim()).single();
@@ -2023,11 +2022,11 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     const referralCodeValue = await generateUniqueReferralCode(username);
 
     const { data, error } = await supabaseAdmin.from('users').insert([{
-      email: email ? email.toLowerCase().trim() : null,
-      phone: phone ? phone.trim() : null,
+      email: normalizedEmail,
+      phone: null,
       password_hash: passwordHash,
       username: username.trim(),
-      full_name: fullName || username.trim(),
+      full_name: username.trim(),
       bitcoin_wallet_address: null,       // HD address generated async below
       is_email_verified: false,
       average_rating: 0,
@@ -2070,16 +2069,6 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         verification_code: emailVerifyCode,
         verification_code_expires: new Date(Date.now() + 10 * 60 * 1000),
       }).eq('id', newUser.id);
-    }
-
-    let phoneOtpCode = null;
-    let phoneE164 = null;
-    if (phone) {
-      phoneE164 = phone.trim().startsWith('+') ? phone.trim() : `+${phone.trim().replace(/^0+/, '')}`;
-      phoneOtpCode = Math.floor(100000 + Math.random() * 900000).toString();
-      // Same in-memory store used by /api/auth/verify-otp and
-      // /api/users/verify-phone-otp, so verification works via either endpoint.
-      otpStore.set(phoneE164, { otp: phoneOtpCode, expires: Date.now() + 10 * 60 * 1000 });
     }
 
     // ── Sign JWT ───────────────────────────────────────────────────────────
@@ -2142,14 +2131,6 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         .catch(e => console.error('[Register] Verification email failed:', e.message));
       emailService.sendWelcomeEmail({ id: newUser.id, email, username })
         .catch(e => console.error('[Register] Welcome email failed:', e.message));
-    }
-
-    if (phone && phoneOtpCode && phoneE164) {
-      sendSmsOtp(phoneE164, `${phoneOtpCode} is your PRAQEN verification code. Valid for 10 minutes. Don't share this with anyone.`)
-        .then(() => console.log(`[Register] SMS OTP sent to ${phoneE164}`))
-        .catch(e => console.error('[Register] SMS OTP send failed:', e.message));
-      storeOtp(phoneE164, phoneOtpCode)
-        .catch(e => console.warn('[Register] SMS OTP DB backup failed:', e.message));
     }
 
     // 2. Generate a real HD wallet address for this user and mirror it to every
