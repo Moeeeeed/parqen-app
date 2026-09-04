@@ -7856,7 +7856,7 @@ app.get('/api/my-trades', verifyToken, async (req, res) => {
 
     let query = supabaseAdmin.from('trades')
       .select(
-        `id, status, trade_type, trade_ref, amount_btc, amount_usd, amount_local,
+        `id, status, trade_type, trade_ref, listing_id, amount_btc, amount_usd, amount_local,
          local_currency, currency_symbol, payment_method, gift_card_brand,
          buyer_id, seller_id, created_at, expires_at, completed_at, cancelled_at,
          buyer_confirmed, cancel_reason,

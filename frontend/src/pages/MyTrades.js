@@ -34,15 +34,22 @@ const fmtAge = d => {
   if(s<86400)return`${~~(s/3600)}h ago`;
   return`${~~(s/86400)}d ago`;
 };
-// Country flags are emoji, so render the ISO country code as a small chip instead
-const flag = code => (code && code.length===2) ? code.toUpperCase() : '';
+// Convert 2-letter ISO country code to emoji flag (e.g. 'GH' → 🇬🇭)
+const codeToFlag = code => {
+  if (!code || code.length !== 2) return null;
+  const cc = code.toUpperCase();
+  if (!/^[A-Z]{2}$/.test(cc)) return null;
+  return String.fromCodePoint(...[...cc].map(c => 0x1F1E6 - 65 + c.charCodeAt(0)));
+};
+const flag = code => codeToFlag(code) || '';
 function CountryBadge({ code }) {
+  const emoji = codeToFlag(code);
   const c = (code||'').toUpperCase();
   const ok = /^[A-Z]{2}$/.test(c);
   return (
-    <span className="inline-flex items-center align-middle rounded-md px-1.5 py-px mr-0.5 text-[9px] font-black tracking-wider"
-      style={{ backgroundColor:C.g100, color:C.g600, border:`1px solid ${C.g200}` }}>
-      {ok ? c : <Globe size={9} style={{display:'block'}}/>}
+    <span className="inline-flex items-center align-middle mr-0.5"
+      style={{ fontSize: 13, lineHeight: 1 }}>
+      {emoji || (ok ? c : <Globe size={9} style={{display:'block'}}/>)}
     </span>
   );
 }
@@ -108,7 +115,7 @@ function ActiveAlert({trade, userId, onDismiss, onExpire}) {
   const isDisputed = trade.status?.toUpperCase()==='DISPUTED';
   const isGift     = tradeTypeOf(trade)==='gift';
   const typeColor  = isDisputed ? C.danger : isGift ? C.purple : isBuyer ? C.amber : C.green;
-  const cpFlag     = flag(cp?.country_code||trade.listing?.country_code||'');
+  const cpCountry  = cp?.country||trade.listing?.country||'';
 
   // Countdown — use expires_at from DB (authoritative). Fallback to created_at + 30 min.
   const [timeLeft, setTimeLeft] = React.useState(null);
@@ -218,7 +225,7 @@ function ActiveAlert({trade, userId, onDismiss, onExpire}) {
               {isBuyer?'Seller':'Buyer'}
             </p>
             <p className="text-xs font-black" style={{color:C.forest}}>
-              {<CountryBadge code={cpFlag}/>} {cp?.username||'—'}
+              {<CountryBadge code={cpCountry}/>} {cp?.username||'—'}
             </p>
           </div>
           <div className="px-3 py-2.5 text-center border-r" style={{borderColor:C.g100}}>
@@ -280,7 +287,7 @@ function TradeCard({trade, userId}) {
   const lamount  = parseFloat(trade.amount_local||trade.local_amount||0);
   const btcAmt   = parseFloat(trade.amount_btc||0);
   const btcNet   = btcAmt * 0.995;
-  const cpFlag   = flag(cp?.country_code||trade.listing?.country_code||'');
+  const cpCountry  = cp?.country||trade.listing?.country||'';
 
   const payDisplay = (lamount&&lcur)
     ? `${lsym}${lamount.toLocaleString()} ${lcur}`
@@ -314,7 +321,7 @@ function TradeCard({trade, userId}) {
             <User size={10} className="inline mr-1"/>{isBuyer?'Seller':'Buyer'}
           </span>
           <span className="font-bold text-sm" style={{color:C.forest}}>
-            {<CountryBadge code={cpFlag}/>} {cp?.username||'—'}
+            {<CountryBadge code={cpCountry}/>} {cp?.username||'—'}
           </span>
         </div>
         <div className="flex justify-between items-center">
@@ -382,7 +389,7 @@ function ActiveTradeModal({ trades, userId, onClose }) {
             const st       = getStatus(trade.status, trade.cancel_reason);
             const cp       = isBuyer ? trade.seller : trade.buyer;
             const cpName   = cp?.username||(isBuyer?trade.seller_name:trade.buyer_name)||'—';
-            const cpFlag   = flag(cp?.country_code||trade.listing?.country_code||'');
+            const cpCountry = cp?.country||trade.listing?.country||'';
             const isGift   = tradeTypeOf(trade)==='gift';
             const typeColor= isGift ? C.purple : isBuyer ? C.amber : C.green;
             const typeLabel = isGift ? <><Gift size={10} className="inline mr-1"/>GIFT CARD</>
@@ -410,7 +417,7 @@ function ActiveTradeModal({ trades, userId, onClose }) {
                 <div className="px-4 py-3 space-y-2 bg-white">
                   <div className="flex justify-between text-xs">
                     <span style={{color:C.g500}}><User size={10} className="inline mr-1"/>{isBuyer?'Seller':'Buyer'}</span>
-                    <span className="font-bold" style={{color:C.forest}}>{<CountryBadge code={cpFlag}/>} {cpName}</span>
+                    <span className="font-bold" style={{color:C.forest}}>{<CountryBadge code={cpCountry}/>} {cpName}</span>
                   </div>
                   <div className="flex justify-between text-xs">
                     <span style={{color:C.g500}}><CreditCard size={10} className="inline mr-1"/>Payment</span>
