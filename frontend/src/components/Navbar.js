@@ -3,10 +3,13 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { useRates } from '../contexts/RatesContext';
 import Notifications from './Notifications';
+import ProfileDropdownPanel from './ProfileDropdownPanel';
 import {
-  Wallet, User, Settings, LogOut, ChevronDown,
-  BarChart3, Gift, List, Eye, EyeOff, ShoppingCart, Tag, TrendingUp,
-  Plus, LayoutDashboard,
+  Wallet, ChevronDown,
+  Gift, Eye, EyeOff, TrendingUp,
+  Plus, LayoutDashboard, ShoppingCart, Tag, List,
+  Menu, Search, X, Home, ArrowRightLeft, Globe,
+  HelpCircle, MessageCircle, CreditCard, Users,
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -29,6 +32,8 @@ export default function Navbar({ user, onLogout }) {
   const { rates: USD_RATES, btcUsd } = useRates();
   const [profileDrop,     setProfileDrop]     = useState(false);
   const [marketDrop,      setMarketDrop]      = useState(false);
+  const [mobileMenuOpen,  setMobileMenuOpen]  = useState(false);
+  const [expandedSections, setExpandedSections] = useState({});
   const [hdBalance,       setHdBalance]       = useState(() => parseFloat(localStorage.getItem('praqen_btc_balance') || 0));
   const [balanceUsd,      setBalanceUsd]      = useState(() => parseFloat(localStorage.getItem('praqen_usd_balance') || 0));
   const [lockedBtc,       setLockedBtc]       = useState(() => parseFloat(localStorage.getItem('praqen_locked_btc') || 0));
@@ -62,6 +67,24 @@ useEffect(() => {
 }, []);
 
 useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
+
+  // Lock body scroll when hamburger menu or profile overlay is open
+  useEffect(() => {
+    const shouldLock = mobileMenuOpen || profileDrop;
+    const html = document.documentElement;
+    const body = document.body;
+    if (shouldLock) {
+      html.style.overflow = 'hidden';
+      body.style.overflow = 'hidden';
+    } else {
+      html.style.overflow = '';
+      body.style.overflow = '';
+    }
+    return () => {
+      html.style.overflow = '';
+      body.style.overflow = '';
+    };
+  }, [mobileMenuOpen, profileDrop]);
 
 
 
@@ -311,7 +334,17 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
       paddingRight: 'env(safe-area-inset-right, 0px)',
     }}>      <div className="max-w-[1280px] mx-auto px-4 md:px-8">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64, gap: 12 }}>
-          <Link to="/" style={{ textDecoration: 'none', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 9 }}>
+          {/* Mobile hamburger + search (hidden on desktop) */}
+          <div className="prq-main-nav-hamburger" style={{ display: 'none', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+            <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Menu size={20} color={C.g700} />
+            </button>
+            <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Search size={20} color={C.g700} />
+            </button>
+          </div>
+
+          <Link to="/" className="prq-main-nav-logo" style={{ textDecoration: 'none', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 9 }}>
             <div style={{
               width: 30, height: 30, borderRadius: 9, background: C.gold,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -344,7 +377,8 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
 
   // ── Authenticated Navbar ────────────────────────────────────────────────────
   return (
-    <nav style={{
+    <>
+    <nav className={mobileMenuOpen ? 'prq-hamburger-nav-hidden' : ''} style={{
       background: '#ffffff',
       position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000,
       borderBottom: `1px solid ${C.g200}`,
@@ -360,19 +394,42 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
         /* Brand name always stays visible — just runs a bit smaller on narrow phones
            so there's still room for the wallet balance, avatar and bell. */
         @media (max-width: 400px) { .prq-logo-wordmark { font-size: 16px !important; } }
-        /* Below ~380px the wallet pill's show/hide toggle and the avatar's chevron
-           are the least essential pixels — drop them first so the bell never gets
-           pushed off the edge of the screen. */
+        /* Below ~380px the avatar's chevron is the least essential pixel —
+           drop it so the bell never gets pushed off the edge of the screen.
+           The balance eye toggle is always visible. */
         @media (max-width: 380px) {
-          .prq-bal-toggle { display: none !important; }
           .prq-avatar-chevron { display: none !important; }
+        }
+        /* Hide PRAQEN logo on mobile — replaced by hamburger+search */
+        @media (max-width: 767px) {
+          .prq-main-nav-logo { display: none !important; }
+          .prq-main-nav-desktop-cluster { display: none !important; }
+          .prq-main-nav-hamburger { display: flex !important; }
+          .prq-hamburger-nav-hidden { display: none !important; }
+        }
+        @media (min-width: 768px) {
+          .prq-main-nav-hamburger { display: none !important; }
+          .prq-nav-avatar-bell-group { display: flex !important; }
         }
       `}</style>
       <div className="max-w-[1400px] mx-auto px-4 md:px-10">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64, gap: 6 }}>
 
-          {/* Logo */}
-          <Link to="/" style={{ textDecoration: 'none', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Mobile hamburger + search (hidden on desktop) */}
+          <div className="prq-main-nav-hamburger" style={{ display: 'none', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+            <button
+              onClick={() => setMobileMenuOpen(p => !p)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {mobileMenuOpen ? <X size={20} color={C.g700} /> : <Menu size={20} color={C.g700} />}
+            </button>
+            <button
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Search size={20} color={C.g700} />
+            </button>
+          </div>
+
+          {/* Logo (hidden on mobile via CSS) */}
+          <Link to="/" className="prq-main-nav-logo" style={{ textDecoration: 'none', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{
               width: 30, height: 30, borderRadius: 9, background: C.gold,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -387,188 +444,278 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
           {/* Center Nav */}
           <DesktopNavLinks />
 
-          {/* Right: Wallet (desktop) · Avatar · Bell */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+          {/* Right: Profile cluster (username + balance + avatar + bell) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flexShrink: 0 }}>
 
-            {/* Wallet — compact mobile pill. Balance text is never truncated. */}
-            <div className="flex md:hidden items-center" style={{ background: C.mist, border: `1px solid #c8e6d4`, borderRadius: 8, overflow: 'hidden', flexShrink: 0 }}>
-              <Link to="/wallet"
-                style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '5px 6px', textDecoration: 'none' }}>
-                <Wallet size={11} color={C.forest} style={{ flexShrink: 0 }} />
-                <span style={{ fontSize: 10.5, fontWeight: 900, color: C.forest, whiteSpace: 'nowrap' }}>
-                  {showBal ? `${localCode} ${sym}${fmt(totalLocal, 2)}` : '•••'}
-                </span>
-              </Link>
-              <button
-                onClick={() => setShowBal(!showBal)}
-                className="prq-bal-toggle"
-                style={{ background: 'none', border: 'none', borderLeft: `1px solid #c8e6d4`, cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '5px 4px', flexShrink: 0 }}>
-                {showBal ? <Eye size={10} color={C.green} /> : <EyeOff size={10} color={C.g400} />}
-              </button>
-            </div>
-
-            {/* Wallet balance pill — desktop only */}
-            <div className="hidden md:flex items-center"
-              style={{ gap: 6, borderRadius: 8, padding: '6px 10px', flexShrink: 0 }}>
-              <button onClick={() => setShowBal(!showBal)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0 }}
-                title={showBal ? 'Hide balance' : 'Show balance'}>
-                {showBal
-                  ? <Eye size={14} color={C.g400} />
-                  : <EyeOff size={14} color={C.g400} />}
-              </button>
-              <Link to="/wallet" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, whiteSpace: 'nowrap' }}>
-                <Wallet size={13} color={C.g500} style={{ flexShrink: 0 }} />
-                <span style={{ fontSize: 13, fontWeight: 800, color: C.g700, whiteSpace: 'nowrap' }}>
-                  {showBal ? `${localCode} ${sym}${fmt(totalLocal, 2)}` : '••••••'}
-                </span>
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: C.mint, display: 'inline-block', animation: 'prqPulseDot 2s ease-in-out infinite', flexShrink: 0 }} />
-              </Link>
-            </div>
-
-            {/* Divider */}
-            <div className="hidden md:block" style={{ width: 1, height: 24, background: C.g200 }} />
-
-            {/* Avatar + dropdown — flexShrink:0 so it's never squeezed out on narrow phones */}
-            <div style={{ position: 'relative', flexShrink: 0 }} ref={dropRef}>
-              <button
-                onClick={() => setProfileDrop(!profileDrop)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  background: C.g100, border: `1px solid ${C.g200}`,
-                  borderRadius: 10, padding: '5px 7px 5px 5px',
-                  cursor: 'pointer', transition: 'all 0.2s',
-                }}>
-                <div style={{ position: 'relative', flexShrink: 0 }}>
-                  <div style={{
-                    width: 30, height: 30, borderRadius: 8, overflow: 'hidden',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontWeight: 900, fontSize: 13, color: '#fff',
-                    background: `linear-gradient(135deg, ${C.gold}, #FBBF24)`,
-                  }}>
-                    {displayUser?.avatar_url
-                      ? <img src={displayUser.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : <span style={{ color: C.dark }}>{displayUser?.username?.charAt(0)?.toUpperCase() || 'U'}</span>}
-                  </div>
-                  {/* Online status dot — you're viewing this navbar, so the heartbeat is live */}
-                  <span style={{
-                    position: 'absolute', bottom: -2, right: -2, width: 9, height: 9,
-                    borderRadius: '50%', background: '#22C55E', border: '2px solid #fff',
-                  }} />
-                </div>
-                <span className="hidden md:block" style={{ fontSize: 13, fontWeight: 800, color: C.g800, maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {/* Mobile profile cluster — username above balance, right-aligned, plain text */}
+            <div className="flex md:hidden items-center prq-main-nav-mobile-cluster" style={{ flexShrink: 0, display: mobileMenuOpen ? 'none' : undefined }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: C.g500, lineHeight: 1.1, maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {displayUser?.username || 'User'}
                 </span>
-                <ChevronDown size={13} color={C.g400} className="prq-avatar-chevron"
-                  style={{ transform: profileDrop ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-              </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Link to="/wallet" style={{ textDecoration: 'none', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: C.g800 }}>
+                      {showBal ? `${fmt(totalLocal, 2)} ${localCode}` : '•••'}
+                    </span>
+                  </Link>
+                  <button
+                    onClick={() => setShowBal(!showBal)}
+                    className="prq-bal-toggle"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0 }}
+                    title={showBal ? 'Hide balance' : 'Show balance'}>
+                    {showBal ? <Eye size={12} color={C.g400} /> : <EyeOff size={12} color={C.g400} />}
+                  </button>
+                </div>
+              </div>
+            </div>
 
-              {/* Dropdown */}
-              {profileDrop && (
-                <div className="prq-dropdown" style={{
-                  position: 'absolute', top: 'calc(100% + 8px)', right: 0,
-                  transformOrigin: 'top right',
-                  width: 240, background: '#fff', borderRadius: 16,
-                  boxShadow: '0 20px 60px rgba(0,0,0,0.18)', border: `1px solid ${C.g100}`,
-                  overflow: 'hidden', zIndex: 50,
-                }}>
-                  {/* User header */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${C.g100}`, background: C.mist }}>
+            {/* Desktop profile cluster — NoOnes style: username on top, balance + eye toggle
+                right below it (plain text, no boxed pill), then avatar, then bell — all
+                grouped as one cluster, right-aligned. */}
+            <div className="hidden md:flex items-center prq-main-nav-desktop-cluster" style={{ gap: 10, flexShrink: 0 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                {/* Username */}
+                <span style={{ fontSize: 12, fontWeight: 700, color: C.g500, lineHeight: 1.2, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {displayUser?.username || 'User'}
+                </span>
+                {/* Balance + eye toggle — plain, no pill/border, wallet click still goes to /wallet */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                  <Link to="/wallet" style={{ textDecoration: 'none', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: C.g800 }}>
+                      {showBal ? `${fmt(totalLocal, 2)} ${localCode}` : '•••• ••'}
+                    </span>
+                  </Link>
+                  <button
+                    onClick={() => setShowBal(!showBal)}
+                    className="prq-bal-toggle"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0 }}
+                    title={showBal ? 'Hide balance' : 'Show balance'}>
+                    {showBal
+                      ? <Eye size={14} color={C.g400} />
+                      : <EyeOff size={14} color={C.g400} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Avatar + bell — hidden on mobile when hamburger menu is open */}
+            <div className="prq-nav-avatar-bell-group" style={{ display: mobileMenuOpen ? 'none' : 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              {/* Avatar + dropdown trigger — plain circular avatar, no chevron/extra label,
+                  shared between mobile and desktop */}
+              <div style={{ position: 'relative', flexShrink: 0 }} ref={dropRef}>
+                <button
+                  onClick={() => setProfileDrop(p => !p)}
+                  style={{
+                    display: 'flex', alignItems: 'center',
+                    background: 'none', border: 'none', padding: 0,
+                    cursor: 'pointer', flexShrink: 0,
+                  }}>
+                  <div style={{ position: 'relative', flexShrink: 0 }}>
                     <div style={{
-                      width: 36, height: 36, borderRadius: 10, overflow: 'hidden', flexShrink: 0,
+                      width: 34, height: 34, borderRadius: '50%', overflow: 'hidden',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontWeight: 900, fontSize: 14,
+                      fontWeight: 900, fontSize: 13, color: '#fff',
                       background: `linear-gradient(135deg, ${C.gold}, #FBBF24)`,
                     }}>
                       {displayUser?.avatar_url
                         ? <img src={displayUser.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         : <span style={{ color: C.dark }}>{displayUser?.username?.charAt(0)?.toUpperCase() || 'U'}</span>}
                     </div>
-                    <div style={{ minWidth: 0 }}>
-                      <p style={{ margin: 0, fontWeight: 900, fontSize: 13, color: C.forest, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {displayUser?.username || 'User'}
-                      </p>
-                      <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: C.g400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {displayUser?.email || ''}
-                      </p>
-                    </div>
+                    {/* Online status dot */}
+                    <span style={{
+                      position: 'absolute', bottom: -1, right: -1, width: 9, height: 9,
+                      borderRadius: '50%', background: '#22C55E', border: '2px solid #fff',
+                    }} />
                   </div>
+                </button>
 
-                  {/* P2P Trade — was a single link hardcoded to /buy-bitcoin, so Sell
-                      Bitcoin, Buy USDT, and Sell USDT were unreachable from this menu
-                      on mobile even though the desktop dropdown links to all four. */}
-                  <p style={{ margin: 0, padding: '10px 16px 4px', fontSize: 10, fontWeight: 800, letterSpacing: '0.6px', color: C.g400, textTransform: 'uppercase' }}>P2P Trade</p>
-                  <div style={{ paddingBottom: 6, borderBottom: `1px solid ${C.g100}` }}>
-                    {[
-                      { to: '/buy-bitcoin', icon: ShoppingCart, label: 'Buy Bitcoin',  color: '#16A34A' },
-                      { to: '/sell-bitcoin', icon: Tag,          label: 'Sell Bitcoin', color: C.goldDark },
-                      { to: '/buy-usdt',    icon: null,          label: 'Buy USDT',    color: '#0D9488' },
-                      { to: '/sell-usdt',   icon: null,          label: 'Sell USDT',   color: C.goldDark },
-                    ].map(({ to, icon: Icon, label, color }) => (
-                      <Link key={to} to={to} onClick={() => setProfileDrop(false)}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 10,
-                          padding: '9px 16px', textDecoration: 'none',
-                          background: isActive(to) ? C.mist : '#fff',
-                          transition: 'background 0.15s',
-                        }}
-                        onMouseEnter={e => { if (!isActive(to)) e.currentTarget.style.background = C.g100; }}
-                        onMouseLeave={e => { if (!isActive(to)) e.currentTarget.style.background = '#fff'; }}>
-                        {Icon
-                          ? <Icon size={14} color={isActive(to) ? C.forest : color} style={{ flexShrink: 0 }} />
-                          : <span style={{ width: 14, textAlign: 'center', fontSize: 12, fontWeight: 900, color: isActive(to) ? C.forest : color, flexShrink: 0 }}>₮</span>}
-                        <span style={{ fontSize: 13, fontWeight: 800, color: isActive(to) ? C.forest : C.g800 }}>{label}</span>
-                      </Link>
-                    ))}
-                  </div>
+                {/* Desktop dropdown panel */}
+                {profileDrop && (
+                  <ProfileDropdownPanel
+                    user={displayUser}
+                    onLogout={handleLogout}
+                    onClose={() => setProfileDrop(false)}
+                    balance={totalLocal}
+                    showBal={showBal}
+                    onToggleBal={() => setShowBal(p => !p)}
+                    localCode={localCode}
+                  />
+                )}
+              </div>
 
-                  {/* Nav links */}
-                  <div style={{ padding: '6px 0' }}>
-                    {[
-                      { to: '/profile',     icon: User,     label: 'My Profile',    color: C.green },
-                      { to: '/my-trades',   icon: List,     label: 'My Trades',     color: C.green },
-                      { to: '/my-listings', icon: BarChart3, label: 'My Offers',    color: C.green },
-                      { to: '/gift-cards',  icon: Gift,     label: 'Gift Cards',    color: C.purple },
-                      { to: '/settings',    icon: Settings, label: 'Settings',      color: C.green },
-                    ].map(({ to, icon: Icon, label, color }) => (
-                      <Link key={to} to={to} onClick={() => setProfileDrop(false)}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 10,
-                          padding: '9px 16px', textDecoration: 'none',
-                          background: isActive(to) ? C.mist : '#fff',
-                          transition: 'background 0.15s',
-                        }}
-                        onMouseEnter={e => { if (!isActive(to)) e.currentTarget.style.background = C.g100; }}
-                        onMouseLeave={e => { if (!isActive(to)) e.currentTarget.style.background = '#fff'; }}>
-                        <Icon size={14} color={isActive(to) ? C.forest : color} style={{ flexShrink: 0 }} />
-                        <span style={{ fontSize: 13, fontWeight: 800, color: isActive(to) ? C.forest : C.g800 }}>{label}</span>
-                      </Link>
-                    ))}
-                  </div>
-
-                  <div style={{ borderTop: `1px solid ${C.g100}`, margin: '2px 12px' }} />
-                  <button onClick={() => { setProfileDrop(false); handleLogout(); }}
-                    style={{
-                      width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '10px 16px', background: 'none', border: 'none',
-                      cursor: 'pointer', textAlign: 'left', marginBottom: 4,
-                      transition: 'background 0.15s',
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#FEF2F2'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'none'}>
-                    <LogOut size={14} color="#EF4444" style={{ flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, fontWeight: 800, color: '#DC2626' }}>Log out</span>
-                  </button>
-                </div>
-              )}
+              {/* Notifications bell */}
+              <Notifications user={displayUser} />
             </div>
-
-            {/* Notifications */}
-            <Notifications user={displayUser} />
           </div>
         </div>
       </div>
       <div style={{ height: 2, background: `linear-gradient(90deg, ${C.forest}, ${C.mint}, ${C.gold})`, opacity: 0.6 }} />
     </nav>
+
+    {/* Mobile hamburger menu drawer — outside <nav> so it replaces the nav on mobile */}
+    {mobileMenuOpen && (
+      <>
+        {/* Backdrop */}
+        <div
+          onClick={() => setMobileMenuOpen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 998 }}
+        />
+        {/* Drawer panel */}
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            width: '100vw', maxWidth: '100vw', background: '#fff', zIndex: 999,
+            overflowY: 'auto', WebkitOverflowScrolling: 'touch', display: 'flex', flexDirection: 'column',
+          }}>
+            {/* Top bar: X + Search left, Language pill right */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: `1px solid ${C.g100}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button
+                  onClick={() => setMobileMenuOpen(false)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <X size={20} color={C.g700} />
+                </button>
+                <button
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Search size={20} color={C.g700} />
+                </button>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 12px', borderRadius: 99, border: `1px solid ${C.g200}`, background: C.g50 }}>
+                <Globe size={13} color={C.g500} />
+                <span style={{ fontSize: 12, fontWeight: 700, color: C.g700 }}>English</span>
+              </div>
+            </div>
+
+            {/* Menu items */}
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {/* Main */}
+              <Link to="/dashboard" onClick={() => setMobileMenuOpen(false)}
+                style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', textDecoration: 'none', borderBottom: `1px solid ${C.g100}` }}>
+                <Home size={18} color={C.g500} />
+                <span style={{ fontSize: 14, fontWeight: 700, color: C.g800 }}>Main</span>
+              </Link>
+
+              {/* Trade — expandable */}
+              <div>
+                <button
+                  onClick={() => setExpandedSections(p => ({ ...p, trade: !p.trade }))}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', background: 'none', border: 'none', borderBottom: `1px solid ${C.g100}`, cursor: 'pointer', textAlign: 'left' }}>
+                  <TrendingUp size={18} color={C.g500} />
+                  <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: C.g800 }}>Trade</span>
+                  <ChevronDown size={16} color={C.g400} style={{ transform: expandedSections.trade ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                </button>
+                {expandedSections.trade && (
+                  <div style={{ background: C.g50 }}>
+                    <Link to="/buy-bitcoin" onClick={() => setMobileMenuOpen(false)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px 12px 48px', textDecoration: 'none', borderBottom: `1px solid ${C.g100}` }}>
+                      <ShoppingCart size={16} color={C.green} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: C.g800 }}>P2P Trading</span>
+                          <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 99, background: '#DCFCE7', color: '#16A34A' }}>LOW FEES</span>
+                        </div>
+                        <p style={{ margin: '2px 0 0', fontSize: 11, color: C.g400 }}>Trade OTC bank and Mobile money</p>
+                      </div>
+                    </Link>
+                    <Link to="/my-listings" onClick={() => setMobileMenuOpen(false)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px 12px 48px', textDecoration: 'none' }}>
+                      <Tag size={16} color={C.gold} />
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: C.g800 }}>My offers</span>
+                        <p style={{ margin: '2px 0 0', fontSize: 11, color: C.g400 }}>View your created offers</p>
+                      </div>
+                    </Link>
+                  </div>
+                )}
+              </div>
+
+              {/* Wallet — expandable */}
+              <div>
+                <button
+                  onClick={() => setExpandedSections(p => ({ ...p, wallet: !p.wallet }))}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', background: 'none', border: 'none', borderBottom: `1px solid ${C.g100}`, cursor: 'pointer', textAlign: 'left' }}>
+                  <Wallet size={18} color={C.g500} />
+                  <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: C.g800 }}>Wallet</span>
+                  <ChevronDown size={16} color={C.g400} style={{ transform: expandedSections.wallet ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                </button>
+                {expandedSections.wallet && (
+                  <div style={{ background: C.g50 }}>
+                    <Link to="/wallet" onClick={() => setMobileMenuOpen(false)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px 12px 48px', textDecoration: 'none', margin: '4px 8px', borderRadius: 12, background: C.forest }}>
+                      <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Wallet size={15} color="#fff" />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>Assets</span>
+                        <p style={{ margin: '2px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>My assets in the PraQen wallet</p>
+                      </div>
+                    </Link>
+                    <Link to="/swap" onClick={() => setMobileMenuOpen(false)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px 12px 48px', textDecoration: 'none', borderBottom: `1px solid ${C.g100}` }}>
+                      <ArrowRightLeft size={16} color={C.purple} />
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: C.g800 }}>Swap</span>
+                        <p style={{ margin: '2px 0 0', fontSize: 11, color: C.g400 }}>Exchange between your assets</p>
+                      </div>
+                    </Link>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px 12px 48px', opacity: 0.5 }}>
+                      <CreditCard size={16} color={C.g400} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: C.g800 }}>Visa card</span>
+                          <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 99, background: '#FEF3C7', color: '#92400E' }}>Coming soon</span>
+                        </div>
+                        <p style={{ margin: '2px 0 0', fontSize: 11, color: C.g400 }}>Spend crypto anywhere</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Partner program */}
+              <Link to="/partner" onClick={() => setMobileMenuOpen(false)}
+                style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', textDecoration: 'none', borderBottom: `1px solid ${C.g100}` }}>
+                <Users size={18} color={C.g500} />
+                <div>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: C.g800 }}>Partner program</span>
+                  <p style={{ margin: '2px 0 0', fontSize: 11, color: C.g400 }}>Collaborate with us</p>
+                </div>
+              </Link>
+
+              {/* Support — expandable */}
+              <div>
+                <button
+                  onClick={() => setExpandedSections(p => ({ ...p, support: !p.support }))}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', background: 'none', border: 'none', borderBottom: `1px solid ${C.g100}`, cursor: 'pointer', textAlign: 'left' }}>
+                  <HelpCircle size={18} color={C.g500} />
+                  <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: C.g800 }}>Support</span>
+                  <ChevronDown size={16} color={C.g400} style={{ transform: expandedSections.support ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                </button>
+                {expandedSections.support && (
+                  <div style={{ background: C.g50 }}>
+                    <Link to="/faq" onClick={() => setMobileMenuOpen(false)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px 12px 48px', textDecoration: 'none', borderBottom: `1px solid ${C.g100}` }}>
+                      <HelpCircle size={16} color={C.paid} />
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: C.g800 }}>Help center</span>
+                        <p style={{ margin: '2px 0 0', fontSize: 11, color: C.g400 }}>Frequently asked questions</p>
+                      </div>
+                    </Link>
+                    <a href="#" target="_blank" rel="noopener noreferrer"
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px 12px 48px', textDecoration: 'none' }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="#5865F2"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.095 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.095 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: C.g800 }}>Discord</span>
+                        <p style={{ margin: '2px 0 0', fontSize: 11, color: C.g400 }}>Stay updated with PraQen</p>
+                      </div>
+                    </a>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </>
   );
 }

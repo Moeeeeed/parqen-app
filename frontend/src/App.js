@@ -156,6 +156,8 @@ const SellUSDT = lazyRetry(() => import('./pages/SellUSDT'));
 // eslint-disable-next-line import/first
 const SellGiftCardMarketplace = lazyRetry(() => import('./pages/SellGiftCardMarketplace'));
 // eslint-disable-next-line import/first
+const MenuPage = lazyRetry(() => import('./pages/MenuPage'));
+// eslint-disable-next-line import/first
 const AgentDashboard = lazyRetry(() => import('./pages/AgentDashboard'));
 // eslint-disable-next-line import/first
 const AccountantDashboard = lazyRetry(() => import('./pages/AccountantDashboard'));
@@ -581,6 +583,7 @@ function App() {
                     <Route path="/dashboard" element={user ? <Dashboard user={user} /> : <Navigate to="/login" />} />
                     <Route path="/wallet" element={user ? <WalletPage user={user} /> : <Navigate to="/login" />} />
                     <Route path="/settings" element={user ? <Settings user={user} setUser={setUser} /> : <Navigate to="/login" />} />
+                    <Route path="/menu" element={user ? <MenuPage user={user} /> : <Navigate to="/login" />} />
                     <Route path="/profile/:id" element={<Profile />} />
                     <Route path="/profile" element={user ? <Profile userId={user.id} /> : <Navigate to="/login" />} />
                     <Route path="/create-listing" element={user ? <CreateListing user={user} /> : <Navigate to="/login" />} />
