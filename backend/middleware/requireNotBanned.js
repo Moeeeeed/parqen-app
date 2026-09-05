@@ -21,11 +21,21 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
 
+// 2026-09-05: 'FROZEN' is a real account_status value set from the admin panel (distinct
+// from 'banned') that was never actually checked anywhere in the backend — every gate here
+// only ever looked for the literal string 'banned', so a frozen account could still log in,
+// open trades, swap, and submit/have-approved withdrawals exactly like an unrestricted
+// account. The only thing actually stopping a frozen account from moving funds was whatever
+// wallet-level hold (locked_balance_btc) happened to already be in place — nothing tied to
+// the status itself. Blocking both values here closes it everywhere this function is used
+// (trade creation, swap, withdrawal requests, and the CEO approve-route's re-check).
+const BLOCKED_STATUSES = ['banned', 'FROZEN'];
+
 async function isUserBanned(userId) {
   const { data, error } = await supabaseAdmin
     .from('users').select('account_status').eq('id', userId).maybeSingle();
   if (error) throw new Error(`isUserBanned: lookup failed — ${error.message}`);
-  return data?.account_status === 'banned';
+  return BLOCKED_STATUSES.includes(data?.account_status);
 }
 
 async function requireNotBanned(req, res, next) {
@@ -33,7 +43,7 @@ async function requireNotBanned(req, res, next) {
     if (await isUserBanned(req.userId)) {
       return res.status(403).json({
         error: 'ACCOUNT_BANNED',
-        message: 'Your account is banned and wallet withdrawals are disabled.',
+        message: 'Your account is banned or frozen. Trading, offers, and wallet transfers are disabled.',
       });
     }
     next();

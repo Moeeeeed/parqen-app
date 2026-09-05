@@ -1490,11 +1490,27 @@ function referralCommissionRate(totalReferrals) {
 // one payout is made (no double-dipping). Each referrer's own tier — not the
 // trader's — sets their rate, so two referrers on the same trade can be paid
 // differently.
-async function payReferralCommissions(tradeId, buyerId, sellerId, amountBtc, amountUsd) {
+async function payReferralCommissions(tradeId, buyerId, sellerId, amountBtc, amountUsd, currency = 'BTC') {
   try {
-    const grossBtc = parseFloat(amountBtc || 0);
+    let grossBtc = parseFloat(amountBtc || 0);
     const grossUsd = parseFloat(amountUsd || 0);
     if (grossBtc <= 0) return;
+
+    // 2026-09-05: `amountBtc` here is `trades.amount_btc`, which trade creation populates
+    // with the trade's native-asset quantity regardless of currency — for a USDT trade that
+    // number is a USDT quantity, not BTC. This function used to multiply it by the commission
+    // rate unconditionally, inflating referral payouts by the full BTC/USDT price ratio
+    // (~79,753x) whenever the underlying trade was USDT-denominated. Real incident: a 369.10
+    // USDT trade paid a 0.55367235 BTC (~$44k) commission instead of a sub-cent amount.
+    // Convert to a true BTC-equivalent value first so commission_btc is always actually BTC.
+    if (currency === 'USDT') {
+      const btcPrice = await getCurrentBTCPrice({ allowCached: true }).catch(() => null);
+      if (!btcPrice || btcPrice <= 0) {
+        console.error(`[referral] Could not get BTC price to convert USDT trade ${tradeId} for commission — refusing to compute rather than risk a currency-unit error.`);
+        return;
+      }
+      grossBtc = grossBtc / btcPrice;
+    }
 
     const { data: traders } = await supabaseAdmin
       .from('users')
@@ -2250,7 +2266,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       }
       if (!data) return res.status(404).json({ error: 'No account found for this phone number. Please register first.' });
 
-      if (data.account_status === 'banned') {
+      if (['banned', 'FROZEN'].includes(data.account_status)) {
         logSecurityEvent({ userId: data.id, email: data.email, eventType: 'LOGIN_BLOCKED_BANNED', ip: getClientIp(req), userAgent: req.headers['user-agent'], details: { via: 'phone' } });
         return res.status(403).json({ error: 'This account has been suspended. Contact support if you believe this is a mistake.' });
       }
@@ -2292,7 +2308,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     // Banned accounts must never get a token — this used to only be enforced downstream
     // on individual routes (e.g. withdrawals), so a banned account could still log in and
     // use the rest of the app. Blocked at the door now, for every account.
-    if (data.account_status === 'banned') {
+    if (['banned', 'FROZEN'].includes(data.account_status)) {
       logSecurityEvent({ userId: data.id, email: normalizedLoginEmail, eventType: 'LOGIN_BLOCKED_BANNED', ip: clientIp, userAgent });
       return res.status(403).json({ error: 'This account has been suspended. Contact support if you believe this is a mistake.' });
     }
@@ -8461,7 +8477,8 @@ app.post('/api/trades/:id/release', tradeLimiter, verifyToken, async (req, res) 
             releasedTrade.buyer_id,
             releasedTrade.seller_id,
             releasedTrade.amount_btc,
-            releasedTrade.amount_usd
+            releasedTrade.amount_usd,
+            releasedTrade.currency
           ).catch(() => { });
           sendTradeAlert(releasedTrade.buyer_id, releasedTrade, 'btc_released').catch(() => { });
           // Fetch buyer and seller with emails, then send role-specific completion emails in parallel
