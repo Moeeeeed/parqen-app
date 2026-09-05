@@ -496,7 +496,7 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
       // function praqen_internal_transfer. This replaces the old unguarded
       // read-JS-compute-write pattern (no optimistic lock on either leg), which
       // was a real double-spend/lost-update race under concurrent requests.
-      let newSenderBalance;
+      let newSenderBalance, newRecipientBalance;
       try {
         const { data: rpcRows, error: transferErr } = await supabaseAdmin.rpc('praqen_internal_transfer', {
           p_sender_id:        userId,
@@ -509,6 +509,7 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
         if (transferErr) throw transferErr;
         const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
         newSenderBalance = parseFloat(row.sender_balance);
+        newRecipientBalance = parseFloat(row.recipient_balance);
       } catch (transferErr) {
         if (/INSUFFICIENT_BALANCE/.test(transferErr.message || '')) {
           return res.status(400).json({ error: `Insufficient balance. Requested: ${amount.toFixed(8)} BTC` });
@@ -516,6 +517,19 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
         console.error('[InternalTransfer BTC] praqen_internal_transfer failed:', transferErr.message);
         return res.status(500).json({ error: 'Transfer failed — please try again' });
       }
+
+      // Keep swapService._assertLedgerTrueBtc's reference current for both sides — without
+      // this, an internal BTC transfer drifts wallets.balance_btc away from the last
+      // escrow/swap-stamped figure and falsely blocks the next BTC->USDT swap for whichever
+      // account isn't re-stamped (praqen_internal_transfer itself has no balance_audit insert).
+      supabaseAdmin.from('balance_audit').insert({
+        user_id: userId, change_btc: -amount, new_balance: newSenderBalance,
+        reason: 'TRANSFER_OUT', created_at: new Date().toISOString(),
+      }).then(null, e => console.error('[InternalTransfer BTC] sender ledger stamp failed:', e.message));
+      supabaseAdmin.from('balance_audit').insert({
+        user_id: recipientId, change_btc: amount, new_balance: newRecipientBalance,
+        reason: 'TRANSFER_IN', created_at: new Date().toISOString(),
+      }).then(null, e => console.error('[InternalTransfer BTC] recipient ledger stamp failed:', e.message));
 
       const [{ data: recip }, { data: senderUser }] = await Promise.all([
         supabaseAdmin.from('users').select('id, email, username').eq('id', recipientId).single(),
@@ -676,6 +690,13 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
     ]);
     if (ubSync?.error) console.error(`🚨 [hd-wallet/send] user_balances mirror sync failed for ${userId.slice(0,8)}:`, ubSync.error.message);
     if (uwSync?.error) console.error(`🚨 [hd-wallet/send] user_wallets mirror sync failed for ${userId.slice(0,8)}:`, uwSync.error.message);
+    // Keep swapService._assertLedgerTrueBtc's reference current — without this, a BTC
+    // withdrawal drifts wallets.balance_btc away from the last escrow/swap-stamped figure
+    // and falsely blocks this account's next BTC->USDT swap attempt.
+    supabaseAdmin.from('balance_audit').insert({
+      user_id: userId, change_btc: -amount, new_balance: newBalance,
+      reason: 'WITHDRAWAL', created_at: new Date().toISOString(),
+    }).then(null, e => console.error('[hd-wallet/send] ledger stamp failed:', e.message));
     // Immediately re-check this seller's gift-card listings against their new (lower)
     // balance — see GIFT_CARD_SAFETY_MIN_USD in offerStatusService.js. Best-effort; never
     // blocks the withdrawal itself.
@@ -771,6 +792,10 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
         ]);
         if (ubRestore?.error) console.error(`🚨 [hd-wallet/send restore] user_balances mirror restore failed for ${userId.slice(0,8)}:`, ubRestore.error.message);
         if (uwRestore?.error) console.error(`🚨 [hd-wallet/send restore] user_wallets mirror restore failed for ${userId.slice(0,8)}:`, uwRestore.error.message);
+        supabaseAdmin.from('balance_audit').insert({
+          user_id: userId, change_btc: amount, new_balance: available,
+          reason: 'WITHDRAWAL_REVERT', created_at: new Date().toISOString(),
+        }).then(null, e => console.error('[hd-wallet/send restore] ledger stamp failed:', e.message));
       }
     }
 
@@ -1844,6 +1869,21 @@ router.post('/ceo-withdrawals/:id/reject', verifyToken, async (req, res) => {
       if (rejectErr) throw rejectErr;
       const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
       refundAmount = parseFloat(row.refunded_amount);
+
+      // Keep swapService._assertLedgerTrueBtc's reference current — praqen_reject_withdrawal
+      // has no balance_audit insert of its own, so without this a BTC withdrawal reject
+      // drifts wallets.balance_btc away from the last escrow/swap-stamped figure and falsely
+      // blocks this account's next BTC->USDT swap attempt. USDT side already covered by the
+      // 'WITHDRAWAL' stamp taken when the withdrawal was first requested.
+      if (row.refunded_currency !== 'USDT') {
+        const { data: postWal } = await supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', row.refunded_user_id).maybeSingle();
+        if (postWal) {
+          supabaseAdmin.from('balance_audit').insert({
+            user_id: row.refunded_user_id, change_btc: refundAmount, new_balance: parseFloat(postWal.balance_btc),
+            reason: 'WITHDRAWAL_REJECTED', created_at: new Date().toISOString(),
+          }).then(null, e => console.error('[ceo-withdrawals/reject] ledger stamp failed:', e.message));
+        }
+      }
     } catch (rejectErr) {
       if (/ALREADY_REVIEWED/.test(rejectErr.message || '')) {
         return res.status(404).json({ error: 'No pending withdrawal found with that ID — it may have already been reviewed.' });
