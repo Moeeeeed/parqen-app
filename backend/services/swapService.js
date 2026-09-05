@@ -108,6 +108,21 @@ class SwapService {
   // BTC balance was compared against a leftover USDT dollar figure, which of
   // course never matched. This was the actual cause of swaps failing for most
   // users, not real balance drift.
+  //
+  // 2026-09-05: the check was `Math.abs(walletBtc - audited) > EPSILON` — it
+  // blocked in BOTH directions. A DEFICIT (walletBtc < audited) is not an
+  // exploit: it just means the user spent BTC since their last credit event —
+  // opened a trade (ESCROW_LOCK), withdrew, or transferred out — and none of
+  // those debit paths stamp a change_btc != 0 balance_audit row, so the "last
+  // verified balance" is a stale pre-spend figure. On a trade-heavy platform
+  // that is the normal state for most active users, and the two-directional
+  // check silently killed BTC→USDT swaps platform-wide (measured: ~58% of
+  // recently-active users blocked, zero BTC→USDT swaps completed in 5+ days).
+  // Only a SURPLUS (walletBtc materially ABOVE the last verified figure, with
+  // no ledger row to explain it) is the inflation signature this guard exists
+  // for — keep refusing that. The real overdraw protection is the caller's
+  // `ledgerBtc < amount` check plus the optimistic lock on the UPDATE, both of
+  // which use the TRUE current balance this now returns (never the stale audit).
   async _assertLedgerTrueBtc(userId, walletBtc) {
     const { data: lastAudit, error } = await supabaseAdmin
       .from('balance_audit')
@@ -122,14 +137,24 @@ class SwapService {
 
     const audited = parseFloat(lastAudit.new_balance);
     const EPSILON = 0.0000001; // 10 sats — rounding tolerance
-    if (Math.abs(walletBtc - audited) > EPSILON) {
+
+    if (walletBtc > audited + EPSILON) {
       throw new Error(
-        `Swap refused: your wallet balance (₿${walletBtc.toFixed(8)}) does not match your last verified ` +
+        `Swap refused: your wallet balance (₿${walletBtc.toFixed(8)}) is higher than your last verified ` +
         `balance (₿${audited.toFixed(8)} as of ${lastAudit.created_at}). This needs a balance review before ` +
         `swapping — please contact support.`
       );
     }
-    return audited;
+
+    if (walletBtc < audited - EPSILON) {
+      console.warn(
+        `[SwapService] BTC ledger note for ${userId.slice(0, 8)}: wallet ₿${walletBtc.toFixed(8)} < last audit ` +
+        `₿${audited.toFixed(8)} (${lastAudit.created_at}) — normal post-spend drift (ESCROW_LOCK / withdrawal / ` +
+        `transfer since last credit), allowing swap.`
+      );
+    }
+
+    return walletBtc; // always the TRUE current balance, never the stale audit figure
   }
 
   // ── Ledger-true USDT balance check ────────────────────────────────────────
@@ -155,6 +180,13 @@ class SwapService {
   // TRANSFER_OUT and a $100 WITHDRAWAL, both confirmed and legitimate, left the ledger
   // reference frozen 2 days stale). Both call sites now stamp balance_audit themselves
   // (TRANSFER_OUT/TRANSFER_IN/WITHDRAWAL reasons) — added to the whitelist below.
+  //
+  // 2026-09-05: same one-directional fix as _assertLedgerTrueBtc above. A DEFICIT
+  // (walletUsdt below the last verified figure) is normal spending — an ESCROW_LOCK
+  // on a USDT-currency trade, a USDT withdrawal or transfer that didn't stamp
+  // balance_audit — not an exploit. Block only on an unexplained SURPLUS, and
+  // return the TRUE current balance so the caller's `ledgerUsdt < amount` check
+  // and the optimistic lock operate on real numbers.
   async _assertLedgerTrueUsdt(userId, walletUsdt) {
     const { data: lastAudit, error } = await supabaseAdmin
       .from('balance_audit')
@@ -170,14 +202,23 @@ class SwapService {
 
     const audited = parseFloat(lastAudit.new_balance);
     const EPSILON = 0.00001; // rounding tolerance across chained 6-decimal operations
-    if (Math.abs(walletUsdt - audited) > EPSILON) {
+
+    if (walletUsdt > audited + EPSILON) {
       throw new Error(
-        `Swap refused: your USDT balance ($${walletUsdt.toFixed(6)}) does not match your last verified ` +
+        `Swap refused: your USDT balance ($${walletUsdt.toFixed(6)}) is higher than your last verified ` +
         `balance ($${audited.toFixed(6)} as of ${lastAudit.created_at}). This needs a balance review before ` +
         `swapping — please contact support.`
       );
     }
-    return audited;
+
+    if (walletUsdt < audited - EPSILON) {
+      console.warn(
+        `[SwapService] USDT ledger note for ${userId.slice(0, 8)}: wallet $${walletUsdt.toFixed(6)} < last audit ` +
+        `$${audited.toFixed(6)} (${lastAudit.created_at}) — normal post-spend drift, allowing swap.`
+      );
+    }
+
+    return walletUsdt; // always the TRUE current balance, never the stale audit figure
   }
 
   // ── Stamp a trusted USDT snapshot after a swap ────────────────────────────
