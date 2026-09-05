@@ -1,4 +1,4 @@
-﻿// src/pages/Settings.js - COMPLETE CLEAN FILE
+// src/pages/Settings.js - COMPLETE CLEAN FILE
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -1628,7 +1628,7 @@ export default function Settings({ user, setUser }) {
                             value={bioEditing ? bioDraft : (accountForm.bio || '')}
                             onChange={e => {
                               const val = e.target.value;
-                              if (val.length <= 180) setBioDraft(val);
+                              if (val.length <= 150) setBioDraft(val);
                             }}
                             readOnly={!bioEditing}
                             placeholder="Tell traders a bit about yourself…"
@@ -1642,7 +1642,7 @@ export default function Settings({ user, setUser }) {
                               fontFamily: "'DM Sans',sans-serif",
                             }} />
                         <div className="flex items-center justify-between mt-2.5">
-                          <p className="text-xs" style={{ color: (bioDraft || '').length >= 180 ? C.danger : C.g400 }}>Maximum 180 characters</p>
+                          <p className="text-xs" style={{ color: (bioDraft || '').length >= 150 ? C.danger : C.g400 }}>Maximum 150 characters</p>
                           <div className="flex gap-2">
                             <button type="button"
                                     onClick={() => { if (bioEditing) { setBioDraft(accountForm.bio || ''); setBioEditing(false); } else { setBioDraft(accountForm.bio || ''); setBioEditing(true); } }}

@@ -287,7 +287,7 @@ const offerTypeOf = l => {
 };
 const OFFER_TYPE_CFG = {
   sell: { label: 'Selling BTC', color: '#2D6A4F', bg: '#ECFDF5' },
-  buy: { label: 'Buying BTC', color: '#3B82F6', bg: '#EFF6FF' },
+  buy: { label: 'Buying BTC', color: C.g800, bg: C.g100 },
   gift: { label: 'Gift Card', color: '#8B5CF6', bg: '#F5F3FF' },
 };
 const fmt = (n, d = 0) => new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: d }).format(n || 0);
@@ -317,7 +317,7 @@ const trustLvl = (s) => s >= 71 ? { label: 'High Trust', color: C.success, bg: '
 
 const TIERS = [
   { label: 'Basic', limit: 500, color: C.g400, requires: [] },
-  { label: 'Standard', limit: 2000, color: C.paid, requires: ['email', 'phone'] },
+  { label: 'Standard', limit: 2000, color: C.g800, requires: ['email', 'phone'] },
   { label: 'Advanced', limit: 10000, color: C.success, requires: ['email', 'phone', 'kyc'] },
   { label: 'VIP', limit: 50000, color: C.gold, requires: ['email', 'phone', 'kyc', '50trades'] },
 ];
@@ -383,7 +383,7 @@ function ProfileOfferCard({ listing, navigate, btcUsd }) {
         </div>
         <div className="bg-white px-3.5 sm:px-4 py-2.5 min-w-0 overflow-hidden">
           <p className="text-xs font-bold uppercase" style={{ color: C.g400, letterSpacing: '0.04em' }}>Payment</p>
-          <p className="font-black text-sm mt-0.5 truncate" style={{ color: C.paid }}>{listing.payment_method || '—'}</p>
+          <p className="font-black text-sm mt-0.5 truncate" style={{ color: C.g800 }}>{listing.payment_method || '—'}</p>
           {listing.time_limit && <p className="text-xs" style={{ color: C.g400 }}>{listing.time_limit} min window</p>}
         </div>
       </div>
@@ -423,10 +423,8 @@ export default function Profile({ userId: propUserId }) {
   const [offerFilter, setOfferFilter] = useState('all'); const [offerSort, setOfferSort] = useState('newest');
   const [loading, setLoading] = useState(true); const [loadError, setLoadError] = useState(false);
   const [tab, setTab] = useState('overview');
-  const [uploading, setUploading] = useState(false); const [own, setOwn] = useState(false);
-  const [editing, setEditing] = useState(false); const [saving, setSaving] = useState(false);
+  const [own, setOwn] = useState(false);
   const [badges, setBadges] = useState([]);
-  const [form, setForm] = useState({ username: '', full_name: '', bio: '', location: '', website: '' });
   const [visibleCount, setVisibleCount] = useState(5);
   const [isTrusted, setIsTrusted] = useState(false);
   const [trustCount, setTrustCount] = useState(0);
@@ -464,7 +462,6 @@ export default function Profile({ userId: propUserId }) {
         if (!u || !u.id) throw new Error('profile_empty');
         setUser(u); setTrustCount(u.trusted_by_count || u.trust_count || 0);
         try { localStorage.setItem('user', JSON.stringify(u)); } catch { }
-        setForm({ username: u.username || '', full_name: u.full_name || '', bio: u.bio || '', location: u.location || '', website: u.website || '' });
         setOffersLoading(true);
         const [rvRes, badgeRes, offRes] = await Promise.allSettled([
           axios.get(`${API_URL}/users/${u.id}/reviews`),
@@ -502,51 +499,7 @@ export default function Profile({ userId: propUserId }) {
     } finally { setLoading(false); }
   };
 
-  // Avatars only ever render at ~36-60px in the UI, but the raw file was being uploaded
-  // as-is (just capped at 2MB) — a normal phone photo at full resolution, base64-encoded,
-  // easily ran 1-3MB and got embedded in EVERY listing that seller has, which is what made
-  // the Buy/Sell/Gift Card marketplace pages so slow to load. Downscale to a small square
-  // thumbnail before upload instead.
-  const compressAvatar = (file, maxPx = 400, quality = 0.85) =>
-    new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => {
-        const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
-        const w = Math.round(img.width * scale);
-        const h = Math.round(img.height * scale);
-        const canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        URL.revokeObjectURL(url);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image load failed')); };
-      img.src = url;
-    });
 
-  const upload = async (e) => {
-    const f = e.target.files[0]; if (!f || !f.type.startsWith('image/')) return;
-    if (f.size > 8 * 1024 * 1024) { toast.error('Image must be under 8MB'); return; }
-    setUploading(true);
-    try {
-      const b64 = await compressAvatar(f);
-      const tk = localStorage.getItem('token');
-      const r = await axios.post(`${API_URL}/users/upload-avatar`, { image: b64, userId }, { headers: { Authorization: `Bearer ${tk}` } });
-      if (r.data.success) { const url = r.data.avatar_url; if (url) { setUser(p => ({ ...p, avatar_url: url })); const cu = JSON.parse(localStorage.getItem('user') || '{}'); cu.avatar_url = url; localStorage.setItem('user', JSON.stringify(cu)); window.dispatchEvent(new Event('userUpdated')); } toast.success('Photo updated!'); }
-    } catch (err) { toast.error('Upload failed'); }
-    finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
-  };
-
-  const saveProfile = async (e) => {
-    e.preventDefault(); setSaving(true);
-    try {
-      const tk = localStorage.getItem('token');
-      const r = await axios.put(`${API_URL}/users/profile`, form, { headers: { Authorization: `Bearer ${tk}` } });
-      if (r.data.success) { const u = r.data.user || { ...user, ...form }; setUser(u); const cu = JSON.parse(localStorage.getItem('user') || '{}'); Object.assign(cu, form); localStorage.setItem('user', JSON.stringify(cu)); window.dispatchEvent(new Event('userUpdated')); toast.success('Profile updated!'); setEditing(false); }
-    } catch (err) { toast.error(err?.response?.data?.error || 'Update failed'); }
-    finally { setSaving(false); }
-  };
 
   const handleToggleTrust = async () => {
     const tk = localStorage.getItem('token');
@@ -647,15 +600,8 @@ export default function Profile({ userId: propUserId }) {
         isTrusted={isTrusted}
         trustLoading={trustLoading}
         onToggleTrust={handleToggleTrust}
-        onAvatarUpload={upload}
-        uploading={uploading}
-        fileRef={fileRef}
-        editing={editing}
-        setEditing={setEditing}
-        form={form}
-        setForm={setForm}
-        saving={saving}
-        saveProfile={saveProfile}
+        onEditProfile={() => navigate('/settings?tab=account')}
+        onEditBio={() => navigate('/settings?tab=account')}
       />
     );
   }
@@ -684,11 +630,8 @@ export default function Profile({ userId: propUserId }) {
       isTrusted={isTrusted}
       trustLoading={trustLoading}
       onToggleTrust={handleToggleTrust}
-      onAvatarUpload={upload}
-      uploading={uploading}
-      fileRef={fileRef}
-      onEditProfile={() => setEditing(true)}
-      onEditBio={() => setEditing(true)}
+      onEditProfile={() => navigate('/settings?tab=account')}
+      onEditBio={() => navigate('/settings?tab=account')}
     />
   );
 }

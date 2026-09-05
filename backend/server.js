@@ -5733,12 +5733,88 @@ app.get('/api/users/:userId/avatar', async (req, res) => {
 
 app.get('/api/users/:userId/reviews', async (req, res) => {
   try {
-    const { data, error } = await supabaseAdmin.from('reviews')
-      .select('*, reviewer:reviewer_id(username)').eq('reviewee_id', req.params.userId)
+    const revieweeId = req.params.userId;
+
+    // 1) Fetch reviews — no FK join to avoid PostgREST id-column collision.
+    //    reviewer_id IS the reviewer's user ID.
+    const { data: rawReviews, error } = await supabaseAdmin.from('reviews')
+      .select('*')
+      .eq('reviewee_id', revieweeId)
       .order('created_at', { ascending: false });
     if (error) return res.json({ reviews: [] });
-    res.json({ reviews: data || [] });  // ← FIXED: was `reviews` (undefined), now `data`
-  } catch { res.json({ reviews: [] }); }
+    const reviews = rawReviews || [];
+    if (reviews.length === 0) return res.json({ reviews: [] });
+
+    // 2) Batch-fetch reviewer profiles (username, avatar_url, country)
+    const reviewerIds = [...new Set(reviews.map(r => r.reviewer_id).filter(Boolean))];
+    let reviewerMap = {};
+    if (reviewerIds.length > 0) {
+      const { data: reviewers } = await supabaseAdmin.from('users')
+        .select('id, username, avatar_url, country')
+        .in('id', reviewerIds);
+      (reviewers || []).forEach(u => { reviewerMap[u.id] = u; });
+    }
+
+    // 3) Batch-fetch trade data for each linked trade_id
+    const tradeIds = [...new Set(reviews.map(r => r.trade_id).filter(Boolean))];
+    let tradeMap = {};
+    if (tradeIds.length > 0) {
+      const { data: trades } = await supabaseAdmin.from('trades')
+        .select('id, amount_usd, local_currency, currency_symbol, listing_id, buyer_id, seller_id')
+        .in('id', tradeIds);
+      (trades || []).forEach(t => { tradeMap[t.id] = t; });
+    }
+
+    // 4) Batch-compute trade counts between each unique reviewer and the reviewee
+    const tradeCounts = {};
+    if (reviewerIds.length > 0) {
+      const [asBuyer, asSeller] = await Promise.allSettled([
+        supabaseAdmin.from('trades')
+          .select('buyer_id, seller_id')
+          .eq('status', 'COMPLETED')
+          .in('buyer_id', reviewerIds).eq('seller_id', revieweeId),
+        supabaseAdmin.from('trades')
+          .select('buyer_id, seller_id')
+          .eq('status', 'COMPLETED')
+          .in('seller_id', reviewerIds).eq('buyer_id', revieweeId),
+      ]);
+      const allTrades = [
+        ...(asBuyer.status === 'fulfilled' ? asBuyer.value.data || [] : []),
+        ...(asSeller.status === 'fulfilled' ? asSeller.value.data || [] : []),
+      ];
+      allTrades.forEach(t => {
+        const otherId = t.buyer_id === revieweeId ? t.seller_id : t.buyer_id;
+        tradeCounts[otherId] = (tradeCounts[otherId] || 0) + 1;
+      });
+    }
+
+    // 5) Enrich reviews with reviewer profile, trade data, and trade count
+    const enriched = reviews.map(r => {
+      const profile = reviewerMap[r.reviewer_id] || {};
+      const trade = tradeMap[r.trade_id] || {};
+      return {
+        ...r,
+        reviewer: {
+          id: r.reviewer_id,
+          username: profile.username || null,
+          avatar_url: profile.avatar_url || null,
+          country: profile.country || null,
+        },
+        trade: {
+          amount_usd: trade.amount_usd || null,
+          local_currency: trade.local_currency || null,
+          currency_symbol: trade.currency_symbol || null,
+          listing_id: trade.listing_id || null,
+        },
+        trade_count: tradeCounts[r.reviewer_id] || 0,
+      };
+    });
+
+    res.json({ reviews: enriched });
+  } catch (err) {
+    console.error('[reviews] Error:', err.message);
+    res.json({ reviews: [] });
+  }
 });
 
 // GET /api/users/:userId/listings — public: a user's ACTIVE marketplace offers, for their profile page
