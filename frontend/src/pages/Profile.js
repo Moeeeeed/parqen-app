@@ -429,6 +429,10 @@ export default function Profile({ userId: propUserId }) {
   const [isTrusted, setIsTrusted] = useState(false);
   const [trustCount, setTrustCount] = useState(0);
   const [trustLoading, setTrustLoading] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [blockedCount, setBlockedCount] = useState(0);
+  const [blockLoading, setBlockLoading] = useState(false);
+  const [sharedTrades, setSharedTrades] = useState([]);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
 
   useEffect(() => {
@@ -460,7 +464,7 @@ export default function Profile({ userId: propUserId }) {
         const r = await axios.get(`${API_URL}/users/profile`, { headers: { Authorization: `Bearer ${tk}` } });
         const u = r.data.user || r.data;
         if (!u || !u.id) throw new Error('profile_empty');
-        setUser(u); setTrustCount(u.trusted_by_count || u.trust_count || 0);
+        setUser(u); setTrustCount(Number(u.trusted_by_count || u.trust_count || 0));
         try { localStorage.setItem('user', JSON.stringify(u)); } catch { }
         setOffersLoading(true);
         const [rvRes, badgeRes, offRes] = await Promise.allSettled([
@@ -476,7 +480,7 @@ export default function Profile({ userId: propUserId }) {
         const r = await axios.get(`${API_URL}/users/${userId}`);
         const u = r.data.user;
         if (!u || !u.id) throw new Error('profile_empty');
-        setUser(u); setTrustCount(u.trusted_by_count || u.trust_count || 0);
+        setUser(u); setTrustCount(Number(u.trusted_by_count || u.trust_count || 0)); setBlockedCount(Number(u.blocked_by_count || 0));
         const tk2 = localStorage.getItem('token');
         setOffersLoading(true);
         const [rvRes, relRes, offRes] = await Promise.allSettled([
@@ -485,9 +489,20 @@ export default function Profile({ userId: propUserId }) {
           axios.get(`${API_URL}/users/${u.id}/listings`),
         ]);
         setReviews(rvRes.status === 'fulfilled' ? rvRes.value.data.reviews || [] : r.data.reviews || []);
-        if (relRes.status === 'fulfilled' && relRes.value?.data) setIsTrusted(relRes.value.data.is_trusted || false);
+        if (relRes.status === 'fulfilled' && relRes.value?.data) {
+          setIsTrusted(relRes.value.data.is_trusted || false);
+          setIsBlocked(relRes.value.data.is_blocked || false);
+        }
         setOffers(offRes.status === 'fulfilled' ? offRes.value.data.listings || [] : []);
         setOffersLoading(false);
+        // Fetch shared trade history between logged-in user and viewed user
+        const tk3 = localStorage.getItem('token');
+        if (tk3) {
+          try {
+            const stRes = await axios.get(`${API_URL}/users/${u.id}/shared-trades`, { headers: { Authorization: `Bearer ${tk3}` } });
+            setSharedTrades(stRes.data.trades || []);
+          } catch { setSharedTrades([]); }
+        }
       }
     } catch (e) {
       console.error('[Profile] load error:', e?.response?.status, e?.response?.data || e?.message);
@@ -501,15 +516,41 @@ export default function Profile({ userId: propUserId }) {
 
 
 
+  const handleToggleBlock = async () => {
+    const tk = localStorage.getItem('token');
+    if (!tk) { navigate('/login'); return; }
+    setBlockLoading(true);
+    try {
+      const prevBlocked = isBlocked;
+      const r = await axios.post(`${API_URL}/users/${user.id}/block`, {}, { headers: { Authorization: `Bearer ${tk}` } });
+      const newBlocked = typeof r.data.blocked === 'boolean' ? r.data.blocked : !prevBlocked;
+      setIsBlocked(newBlocked);
+      // Re-fetch full user data to ensure counts are accurate (not just relying on API response)
+      const userRes = await axios.get(`${API_URL}/users/${user.id}`);
+      const updatedUser = userRes.data.user;
+      setUser(updatedUser);
+      setBlockedCount(Number(updatedUser.blocked_by_count || 0));
+      setTrustCount(Number(updatedUser.trusted_by_count || updatedUser.trust_count || 0));
+      toast.success(newBlocked ? 'User blocked' : 'User unblocked');
+    } catch (err) { toast.error(err?.response?.data?.error || 'Failed to update block status'); }
+    finally { setBlockLoading(false); }
+  };
+
   const handleToggleTrust = async () => {
     const tk = localStorage.getItem('token');
     if (!tk) { navigate('/login'); return; }
     setTrustLoading(true);
     try {
+      const prevTrusted = isTrusted;
       const r = await axios.post(`${API_URL}/users/${user.id}/trust`, {}, { headers: { Authorization: `Bearer ${tk}` } });
-      setIsTrusted(r.data.trusted);
-      setTrustCount(r.data.trusted_by_count ?? (r.data.trusted ? trustCount + 1 : Math.max(0, trustCount - 1)));
-      toast.success(r.data.trusted ? 'User added to your trusted list' : 'Trust removed');
+      const newTrusted = typeof r.data.trusted === 'boolean' ? r.data.trusted : !prevTrusted;
+      setIsTrusted(newTrusted);
+      // Re-fetch full user data to ensure counts are accurate (not just relying on API response)
+      const userRes = await axios.get(`${API_URL}/users/${user.id}`);
+      const updatedUser = userRes.data.user;
+      setUser(updatedUser);
+      setTrustCount(Number(updatedUser.trusted_by_count || updatedUser.trust_count || 0));
+      toast.success(newTrusted ? 'User added to your trusted list' : 'Trust removed');
     } catch (err) { toast.error(err?.response?.data?.error || 'Failed to update trust'); }
     finally { setTrustLoading(false); }
   };
@@ -600,6 +641,12 @@ export default function Profile({ userId: propUserId }) {
         isTrusted={isTrusted}
         trustLoading={trustLoading}
         onToggleTrust={handleToggleTrust}
+        isBlocked={isBlocked}
+        blockedCount={blockedCount}
+        onToggleBlock={handleToggleBlock}
+        blockLoading={blockLoading}
+        sharedTrades={sharedTrades}
+        onSendCrypto={() => navigate('/wallet?send=1&to=' + encodeURIComponent(user.username))}
         onEditProfile={() => navigate('/settings?tab=account')}
         onEditBio={() => navigate('/settings?tab=account')}
       />
@@ -630,6 +677,12 @@ export default function Profile({ userId: propUserId }) {
       isTrusted={isTrusted}
       trustLoading={trustLoading}
       onToggleTrust={handleToggleTrust}
+      isBlocked={isBlocked}
+      blockedCount={blockedCount}
+      onToggleBlock={handleToggleBlock}
+      blockLoading={blockLoading}
+      sharedTrades={sharedTrades}
+      onSendCrypto={() => navigate('/wallet?send=1&to=' + encodeURIComponent(user.username))}
       onEditProfile={() => navigate('/settings?tab=account')}
       onEditBio={() => navigate('/settings?tab=account')}
     />
