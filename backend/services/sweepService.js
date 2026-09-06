@@ -232,32 +232,55 @@ class SweepService {
     this._inProgress.add(fromAddress);
 
     try {
-      // Step 1 — Get UTXOs at this address
-      const utxos = await hdWallet.getUTXOs(fromAddress);
+      // Step 1 — Get UTXOs at this address. throwOnError so a provider failure
+      // (rate limit, timeout) is distinguishable from a genuinely empty address.
+      // getUTXOs() silently swallows failures into [] by default, which made a
+      // stuck check (all blockchain APIs 429ing) look identical in every log to
+      // "nothing to sweep here" — no way to tell the two apart. Mirrors the same
+      // transient-error detection depositMonitor.js's checkUserDeposit() already
+      // uses. Sweeping already retries this address next cycle regardless, so
+      // this doesn't change behavior — it just makes a stuck check visible
+      // instead of indistinguishable from an empty address.
+      let utxos;
+      try {
+        utxos = await hdWallet.getUTXOs(fromAddress, { throwOnError: true });
+      } catch (utxoErr) {
+        const status = utxoErr.response?.status;
+        const isTransient = status === 429 || status === 503
+          || ['ETIMEDOUT', 'ECONNREFUSED', 'ENOTFOUND', 'ECONNRESET'].includes(utxoErr.code)
+          || /unreachable|timed out|timeout/i.test(utxoErr.message || '');
+        if (isTransient) {
+          console.warn(`[SweepService] ${fromAddress.slice(0, 20)}… UTXO check failed (${status ? `HTTP ${status}` : (utxoErr.code || 'unreachable')}) — NOT swept this cycle, will retry next cycle. This is a provider outage, not an empty address.`);
+        } else {
+          console.error(`[SweepService] ${fromAddress.slice(0, 20)}… UTXO check error:`, utxoErr.message);
+        }
+        return 0;
+      }
       if (!utxos || utxos.length === 0) return 0;
 
-      // Step 1b — Never sweep BTC that DepositMonitor hasn't credited to the user's
-      // wallets balance yet. Sweeping moves the UTXOs off this address, so once swept
-      // the on-chain balance drops back down and DepositMonitor's "new deposit"
-      // comparison (blockchainBTC vs last_onchain_btc) can never see it again — the
-      // deposit is credited nowhere. This raced in production: SweepService's
-      // independent 30-min cycle swept a user's deposit before DepositMonitor's own
-      // cycle had credited it, leaving the on-chain BTC safely in the hot wallet but
-      // the user's wallets.balance_btc permanently at 0 until manually corrected.
+      // Step 1b — Never sweep an address while ANY UTXO on it is not yet credited.
+      // sendBitcoin() below always drains every UTXO at the address in one
+      // transaction (see hdWalletService.js _sendBitcoinLocked — it has no concept
+      // of "only these inputs"), so partially sweeping just the credited UTXOs isn't
+      // possible without changing the shared send path. Blocking the whole address
+      // until every UTXO on it is credited is what actually prevents an uncredited
+      // deposit from leaving early. Checked per-UTXO by its own txid against
+      // deposit_tracking_v2.credited — NOT by comparing the address's on-chain
+      // balance to the user's all-time credited total, which is what the old guard
+      // did and which passes almost always once a user has any deposit history
+      // (that gap is exactly what let ukbuyer2022's 2026-09-04 deposit sit swept-
+      // eligible before it was credited).
       const totalSatsOnChain = utxos.reduce((sum, u) => sum + u.value, 0);
       const onChainBtc       = parseFloat((totalSatsOnChain / 1e8).toFixed(8));
-      let creditedBtc = lastOnchainBtc;
-      if (creditedBtc === null || creditedBtc === undefined) {
-        const { data: dtxs } = await supabaseAdmin
-          .from('wallet_transactions')
-          .select('amount_btc')
-          .eq('user_id', userId)
-          .eq('type', 'DEPOSIT');
-        creditedBtc = (dtxs || []).reduce((s, t) => s + parseFloat(t.amount_btc || 0), 0);
-      }
-      creditedBtc = parseFloat((creditedBtc || 0).toFixed(8));
-      if (onChainBtc > creditedBtc + 0.000000009) {
-        console.log(`[SweepService] ${fromAddress.slice(0, 20)}… has ₿${onChainBtc} on-chain but only ₿${creditedBtc} credited — waiting for DepositMonitor to credit before sweeping`);
+      const { data: creditedTxs } = await supabaseAdmin
+        .from('deposit_tracking_v2')
+        .select('tx_hash')
+        .eq('address', fromAddress)
+        .eq('credited', true);
+      const creditedHashes  = new Set((creditedTxs || []).map(t => t.tx_hash));
+      const uncreditedUtxos = utxos.filter(u => !creditedHashes.has(u.txid));
+      if (uncreditedUtxos.length > 0) {
+        console.log(`[SweepService] ${fromAddress.slice(0, 20)}… has ${uncreditedUtxos.length} uncredited UTXO(s) (${uncreditedUtxos.map(u => u.txid.slice(0, 12)).join(', ')}) — waiting for DepositMonitor to credit before sweeping this address`);
         return 0;
       }
 
