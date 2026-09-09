@@ -12,7 +12,7 @@
 const BLOG_POSTS = [
   {
     slug: 'how-to-buy-bitcoin-in-ghana-mobile-money',
-    title: 'How to Buy Bitcoin in Ghana with Mobile Money (MTN, Vodafone & AirtelTigo)',
+    title: 'Buy Bitcoin in Ghana with Mobile Money (Insatant MTN, Vodafone & AirtelTigo 0.5% fee)',
     metaTitle: "How to Buy Bitcoin in Ghana with Mobile Money (MTN, Vodafone, AirtelTigo) — PRAQEN",
     metaDescription: 'Learn how to buy Bitcoin in Ghana instantly using MTN MoMo, Vodafone Cash, or AirtelTigo. 100% escrow-protected trading with low 0.5% fees on PRAQEN.',
     ogTitle: 'How to Buy Bitcoin in Ghana with Mobile Money — PRAQEN',
