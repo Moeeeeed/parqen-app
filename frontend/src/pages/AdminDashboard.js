@@ -550,6 +550,25 @@ function UsersSection() {
     finally { setActing(false); }
   };
 
+  // Ban/unban must go through the dedicated /ban and /unban endpoints, never the
+  // generic account_status field-update above — only those endpoints also pause
+  // the user's active listings (and send the ban notification/email). Routing
+  // through `act` here used to leave a banned user's offers ACTIVE.
+  const toggleBan = async (u) => {
+    setActing(true);
+    const isBanned = u.account_status === 'banned';
+    const endpoint = isBanned ? 'unban' : 'ban';
+    const label = isBanned ? 'Unban' : 'Ban';
+    try {
+      await axios.put(`${API_URL}/admin/users/${u.id}/${endpoint}`, {}, { headers: authH() });
+      toast.success(`${label} successful`);
+      load();
+      const updates = { account_status: isBanned ? 'active' : 'banned' };
+      if (selected?.id === u.id) setSelected(s => ({ ...s, ...updates }));
+    } catch (e) { toast.error(e.response?.data?.error || 'Action failed'); }
+    finally { setActing(false); }
+  };
+
   const toggleWarning = async (u) => {
     setActing(true);
     try {
@@ -619,6 +638,7 @@ function UsersSection() {
           className="bg-white border rounded-xl px-3 py-2 text-sm font-semibold outline-none" style={{ borderColor: C.g200, color: C.g700 }}>
           <option value="">All status</option>
           <option value="active">Active</option>
+          <option value="frozen">Frozen</option>
           <option value="suspended">Suspended</option>
           <option value="banned">Banned</option>
           <option value="phone_pending">Phone Pending</option>
@@ -670,8 +690,8 @@ function UsersSection() {
                       <td className="px-4 py-3">
                         <div className="flex gap-1 flex-wrap">
                           <Pill label={u.account_status || 'active'}
-                            color={u.account_status === 'banned' ? '#991B1B' : u.account_status === 'suspended' ? '#92400E' : '#166534'}
-                            bg={u.account_status === 'banned' ? '#FEF2F2' : u.account_status === 'suspended' ? '#FFFBEB' : '#F0FDF4'} />
+                            color={u.account_status === 'banned' ? '#991B1B' : u.account_status === 'frozen' ? '#1D4ED8' : u.account_status === 'suspended' ? '#92400E' : '#166534'}
+                            bg={u.account_status === 'banned' ? '#FEF2F2' : u.account_status === 'frozen' ? '#EFF6FF' : u.account_status === 'suspended' ? '#FFFBEB' : '#F0FDF4'} />
                           {u.has_warning && <Pill label="warning" color="#92400E" bg="#FFFBEB" />}
                         </div>
                       </td>
@@ -690,7 +710,7 @@ function UsersSection() {
                       <td className="px-4 py-3 text-xs" style={{ color: C.g400 }}>{fmtDate(u.created_at)}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1">
-                          <button onClick={e => { e.stopPropagation(); act(u.id, { account_status: u.account_status === 'banned' ? 'active' : 'banned' }, u.account_status === 'banned' ? 'Unban' : 'Ban'); }}
+                          <button onClick={e => { e.stopPropagation(); toggleBan(u); }}
                             className="p-1.5 rounded-lg hover:bg-gray-100 transition" title={u.account_status === 'banned' ? 'Unban' : 'Ban'}>
                             <Ban size={13} style={{ color: u.account_status === 'banned' ? C.success : C.danger }} />
                           </button>
@@ -1006,6 +1026,31 @@ function UsersSection() {
                 style={{ backgroundColor: selected.account_status === 'banned' ? '#F0FDF4' : '#FEF2F2', color: selected.account_status === 'banned' ? '#166534' : '#991B1B' }}>
                 <Ban size={12} /> {selected.account_status === 'banned' ? 'Unban User' : 'Ban User'}
               </button>
+              {/* Freeze / Unfreeze — temporary, reversible full lock. Hidden while the
+                  account is banned (unban first). */}
+              {selected.account_status !== 'banned' && (
+                <button disabled={acting} onClick={async () => {
+                  const isFrozen = selected.account_status === 'frozen';
+                  let reason = '';
+                  if (!isFrozen) {
+                    reason = window.prompt('Reason for freezing this account (the user will see it):') || '';
+                    if (!reason.trim()) { toast.error('A reason is required to freeze.'); return; }
+                  }
+                  setActing(true);
+                  const endpoint = isFrozen ? 'unfreeze' : 'freeze';
+                  try {
+                    await axios.put(`${API_URL}/admin/users/${selected.id}/${endpoint}`, isFrozen ? {} : { reason }, { headers: authH() });
+                    toast.success(isFrozen ? 'Account unfrozen' : 'Account frozen');
+                    load();
+                    setSelected(s => ({ ...s, account_status: isFrozen ? 'active' : 'frozen' }));
+                  } catch (e) { toast.error(e.response?.data?.error || 'Action failed'); }
+                  finally { setActing(false); }
+                }}
+                  className="w-full py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5"
+                  style={{ backgroundColor: selected.account_status === 'frozen' ? '#F0FDF4' : '#EFF6FF', color: selected.account_status === 'frozen' ? '#166534' : '#1D4ED8' }}>
+                  <Ban size={12} /> {selected.account_status === 'frozen' ? 'Unfreeze Account' : 'Freeze Account'}
+                </button>
+              )}
               {/* KYC toggle */}
               <button disabled={acting} onClick={async () => {
                 setActing(true);
