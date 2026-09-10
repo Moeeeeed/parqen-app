@@ -6,9 +6,11 @@ import {
   TrendingUp, Clock, CheckCircle, XCircle, AlertTriangle, ChevronRight,
   ChevronDown, Filter, Download, Search, Globe, Banknote, ShoppingCart,
   Gift, Activity, Zap, User, ArrowUpDown, Calendar, X,
-  ThumbsUp, Copy,
+  ThumbsUp, Copy, FileSpreadsheet, FileText,
 } from 'lucide-react';
 import { getStatusStyle } from '../components/Notifications';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -162,6 +164,61 @@ function FilterDropdown({ label, options, selected, onChange, multi = false }) {
               </button>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Export Dropdown Component ────────────────────────────────────────
+function ExportDropdown({ onExport, compact = false }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  const options = [
+    { id: 'csv', label: 'Export as CSV', icon: FileSpreadsheet },
+    { id: 'pdf', label: 'Export as PDF', icon: FileText },
+  ];
+
+  return (
+    <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: compact ? '7px 14px' : '8px 14px', borderRadius: 10, border: `1px solid ${C.g200}`,
+          background: '#fff', cursor: 'pointer', fontSize: compact ? 12 : 13, fontWeight: 700,
+          color: C.g700, whiteSpace: 'nowrap', width: 'fit-content',
+        }}>
+        <Download size={compact ? 12 : 13} />
+        Export
+        <ChevronDown size={compact ? 12 : 13} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 100,
+          minWidth: 160, background: '#fff', borderRadius: 12,
+          boxShadow: '0 10px 40px rgba(0,0,0,0.12)', border: `1px solid ${C.g100}`,
+          padding: '6px 0',
+        }}>
+          {options.map(o => (
+            <button key={o.id} onClick={() => { onExport(o.id); setOpen(false); }}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                padding: '8px 14px', background: 'transparent',
+                border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                color: C.g700, textAlign: 'left',
+              }}>
+              <o.icon size={14} style={{ color: C.green, flexShrink: 0 }} />
+              {o.label}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -577,26 +634,29 @@ export default function TraderSettings({ user }) {
     return true;
   });
 
+  // Export helpers (shared by CSV & PDF)
+  const EXPORT_HEADERS = ['ID', 'Status', 'Type', 'Payment Method', 'Amount BTC', 'Amount Local', 'Currency', 'Created At', 'Counterparty'];
+  const buildExportRows = () => filteredTrades.map(t => {
+    const isBuyer = String(user?.id) === String(t.buyer_id);
+    const cp = isBuyer ? t.seller : t.buyer;
+    return [
+      String(t.id).slice(0, 8).toUpperCase(),
+      t.status,
+      isBuyer ? 'Buy' : 'Sell',
+      t.payment_method || '',
+      fmtBtc(t.amount_btc),
+      t.amount_local || '',
+      t.local_currency || t.currency || '',
+      t.created_at || '',
+      cp?.username || '',
+    ];
+  });
+
   // Export to CSV
-  const handleExport = () => {
+  const handleExportCSV = () => {
     if (!filteredTrades.length) return;
-    const headers = ['ID', 'Status', 'Type', 'Payment Method', 'Amount BTC', 'Amount Local', 'Currency', 'Created At', 'Counterparty'];
-    const rows = filteredTrades.map(t => {
-      const isBuyer = String(user?.id) === String(t.buyer_id);
-      const cp = isBuyer ? t.seller : t.buyer;
-      return [
-        String(t.id).slice(0, 8).toUpperCase(),
-        t.status,
-        isBuyer ? 'Buy' : 'Sell',
-        t.payment_method || '',
-        fmtBtc(t.amount_btc),
-        t.amount_local || '',
-        t.local_currency || t.currency || '',
-        t.created_at || '',
-        cp?.username || '',
-      ];
-    });
-    const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    const rows = buildExportRows();
+    const csv = [EXPORT_HEADERS, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -604,6 +664,36 @@ export default function TraderSettings({ user }) {
     a.download = `praqen-trades-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // Export to PDF
+  const handleExportPDF = () => {
+    if (!filteredTrades.length) return;
+    const rows = buildExportRows();
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(30, 41, 59);
+    doc.text('Trade History', 40, 40);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Exported ${new Date().toLocaleString()} · ${rows.length} trade${rows.length === 1 ? '' : 's'}`, 40, 56);
+    autoTable(doc, {
+      head: [EXPORT_HEADERS],
+      body: rows,
+      startY: 70,
+      styles: { font: 'helvetica', fontSize: 8, cellPadding: 4, textColor: [51, 65, 85] },
+      headStyles: { fillColor: [27, 67, 50], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [240, 250, 245] },
+      margin: { left: 40, right: 40 },
+    });
+    doc.save(`praqen-trades-${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
+  const handleExport = format => {
+    if (format === 'pdf') handleExportPDF();
+    else handleExportCSV();
   };
 
   // ── Render ──────────────────────────────────────────────────────────
@@ -973,16 +1063,7 @@ function TradeInsights({
             <FilterDropdown label="Payment method" options={paymentMethods} selected={paymentMethodFilter} onChange={setPaymentMethodFilter} />
             <FilterDropdown label="Date" options={DATE_OPTIONS} selected={dateFilter} onChange={setDateFilter} />
             <div style={{ flex: 1 }} />
-            <button onClick={onExport}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '7px 14px', borderRadius: 10, border: `1px solid ${C.g200}`,
-                background: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 700,
-                color: C.g700, whiteSpace: 'nowrap',
-              }}>
-              <Download size={12} />
-              Export
-            </button>
+            <ExportDropdown onExport={onExport} compact />
           </div>
 
           {/* Mobile filters */}
@@ -1008,16 +1089,7 @@ function TradeInsights({
                 }}>{activeFilterCount}</span>
               )}
             </button>
-            <button onClick={onExport}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '8px 14px', borderRadius: 10, border: `1px solid ${C.g200}`,
-                background: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 700,
-                color: C.g700, whiteSpace: 'nowrap', width: 'fit-content',
-              }}>
-              <Download size={13} />
-              Export
-            </button>
+            <ExportDropdown onExport={onExport} />
           </div>
         </>
       )}
