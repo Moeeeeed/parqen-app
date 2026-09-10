@@ -674,7 +674,7 @@ export default function TraderSettings({ user }) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
     doc.setTextColor(30, 41, 59);
-    doc.text('Trade History', 40, 40);
+    doc.text('PraQen Trade History', 40, 40);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(100, 116, 139);

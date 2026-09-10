@@ -503,14 +503,14 @@ function ActiveTradeModal({ trades, userId, onClose }) {
                   <div className="flex justify-between text-xs">
                     <span style={{color:C.g500}}><Lock size={10} className="inline mr-1"/>BTC Escrow</span>
                     <span className="font-black" style={{color:C.amber}}>
-                      {isBuyer ? (trade.amount_local ? `${fmt(lamount)} ${lcur}` : `$${fmt(trade.amount_usd||0)} USD`) : (trade.amount_receive_usd ? `$${parseFloat(trade.amount_receive_usd).toFixed(2)} USD` : payDisp)}
+                      {isBuyer ? (localAmt ? `${fmt(localAmt)} ${cur}` : `$${fmt(trade.amount_usd||0)} USD`) : (trade.amount_receive_usd ? `$${parseFloat(trade.amount_receive_usd).toFixed(2)} USD` : payDisp)}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs pt-1 border-t" style={{borderColor:C.g100}}>
                     <span style={{color:C.g500}}><CheckCircle size={10} className="inline mr-1"/>You Receive</span>
                     <span className="font-black" style={{color:isBuyer?C.success:typeColor}}>
                       {isBuyer
-                        ? (trade.amount_receive_usd ? `$${parseFloat(trade.amount_receive_usd).toFixed(2)} USD` : trade.amount_local ? `${fmt(lamount)} ${lcur}` : `$${fmt(trade.amount_usd||0)} USD`)
+                        ? (trade.amount_receive_usd ? `$${parseFloat(trade.amount_receive_usd).toFixed(2)} USD` : localAmt ? `${fmt(localAmt)} ${cur}` : `$${fmt(trade.amount_usd||0)} USD`)
                         : trade.amount_receive_usd
                           ? `$${parseFloat(trade.amount_receive_usd).toFixed(2)} USD`
                           : payDisp}
