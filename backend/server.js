@@ -1076,8 +1076,12 @@ function encryptCode(code, key = 'mock-encryption-key') {
   return cipher.update(code, 'utf8', 'hex') + cipher.final('hex');
 }
 
+// Platform fee for a crypto P2P trade. Gift-card trades are 3% — the trade
+// insert and tradeEscrowService use the gift-card-aware rate; this helper is the
+// 2% common case (rough pre-escrow estimate; the authoritative per-trade fee is
+// written by lockFundsInEscrow).
 function calculateFee(btcAmount) {
-  return (parseFloat(btcAmount) * 0.01).toFixed(8);
+  return (parseFloat(btcAmount) * 0.02).toFixed(8);
 }
 
 // allowCached=true (default): reuse _btcCache for up to BTC_CACHE_TTL — for display-only
@@ -6445,9 +6449,14 @@ app.get('/api/listings', async (req, res) => {
       // isn't used for rate display at all), which previously let near-empty wallets pass
       // the $10 minimum check because the inflated price overstated their USD balance.
       const livePriceUsd = _btcCache || 88000;
-      const balanceUsdFor = (l) => (l.asset === 'USDT')
+      // Under the additive fee model the seller must hold amount + 2% to fund a
+      // trade, so their *sellable* balance is holdings ÷ 1.02. Capping displayed
+      // limits to the raw balance would let buyers open a top-of-range trade that
+      // then fails at escrow-lock with "insufficient funds".
+      const SELL_FEE_DIVISOR = 1.02;
+      const balanceUsdFor = (l) => ((l.asset === 'USDT')
         ? (usdtBalMap[l.seller_id] || 0)
-        : (balMap[l.seller_id] || 0) * livePriceUsd;
+        : (balMap[l.seller_id] || 0) * livePriceUsd) / SELL_FEE_DIVISOR;
       // For SELL offers: cap displayed limits to seller's actual balance
       listings = listings.map(l => {
         if (l.listing_type !== 'SELL' && l.listing_type !== 'SELL_BITCOIN') return l;
@@ -6921,13 +6930,15 @@ app.get('/api/offers', async (req, res) => {
       .filter(l => {
         // Hide SELL offers where seller has < $10 worth of the offer's asset — offer stays
         // ACTIVE in DB and reappears automatically once they top up their wallet.
+        // Divided by 1.02: under the additive fee model the seller needs amount + 2%
+        // to fund a trade, so that's their real sellable balance.
         if (l.listing_type !== 'SELL' && l.listing_type !== 'SELL_BITCOIN') return true;
         if ((l.asset || 'BTC') === 'USDT') {
-          return (usdtBalMap[l.seller_id] || 0) >= 10; // 1 USDT ≈ $1
+          return (usdtBalMap[l.seller_id] || 0) / 1.02 >= 10; // 1 USDT ≈ $1
         }
         const sellerBtc = balMap[l.seller_id] || 0;
         const btcPriceVal = parseFloat(l.bitcoin_price) || 88000;
-        return sellerBtc * btcPriceVal >= 10;
+        return (sellerBtc * btcPriceVal) / 1.02 >= 10;
       })
       .map(l => ({
         ...l,
@@ -8280,7 +8291,12 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
       amountReceiveUsd = parseFloat((verifiedAmountBtc * marketRateUSD).toFixed(2));
     }
 
-    const verifiedFee = parseFloat(calculateFee(verifiedAmountBtc));
+    // Gift-card trades are 3%, everything else 2%. lockFundsInEscrow re-derives
+    // and overwrites platform_fee_btc/usdt, but platform_fee_usd is set here and
+    // never touched again — so it must use the right rate too.
+    const isGiftCardTrade = listingTypeUpper.includes('GIFT_CARD');
+    const tradeFeeRate = isGiftCardTrade ? 0.03 : 0.02;
+    const verifiedFee = parseFloat((verifiedAmountBtc * tradeFeeRate).toFixed(8));
     const tradeRef = 'PRAQ-' + require('crypto').randomBytes(4).toString('hex').toUpperCase();
 
     // Pre-check: ensure the provider has enough balance in the LISTING'S ASSET
@@ -8288,6 +8304,8 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
     // only from there. Gift-card / BTC listings lock BTC; USDT-asset listings
     // lock USDT — checking the wrong field here let $0-BTC USDT sellers pass
     // as "insufficient" or, worse, let BTC-poor USDT holders slip through.
+    // requiredProviderBalance() adds the fee on top under the additive model, so
+    // this stays in lock-step with lockFundsInEscrow across the migration window.
     const tradeCurrency = listing.asset === 'USDT' ? 'USDT' : 'BTC';
     const isUsdtTrade = tradeCurrency === 'USDT';
     const { data: providerWallet } = await supabaseAdmin
@@ -8295,7 +8313,8 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
     const availableBtc = isUsdtTrade
       ? parseFloat(providerWallet?.balance_usdt || 0)
       : parseFloat(providerWallet?.balance_btc || 0);
-    if (availableBtc < verifiedAmountBtc) {
+    const requiredProviderBtc = await tradeEscrowService.requiredProviderBalance(verifiedAmountBtc, isGiftCardTrade);
+    if (availableBtc < requiredProviderBtc) {
       const isOwnBalance = btcProviderId === req.userId;
       // Auto-pause the offer if the balance problem is on the offer creator's side
       if (!isOwnBalance) {
@@ -8305,9 +8324,12 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
           .then(() => { }).catch(() => { });
       }
       const assetLabel = isUsdtTrade ? 'USDT' : 'Bitcoin';
-      const neededStr = isUsdtTrade ? `${verifiedAmountBtc.toFixed(2)} USDT` : `${verifiedAmountBtc.toFixed(6)} BTC`;
+      const neededStr = isUsdtTrade ? `${requiredProviderBtc.toFixed(2)} USDT` : `${requiredProviderBtc.toFixed(6)} BTC`;
+      const feeNote = requiredProviderBtc > verifiedAmountBtc + 1e-9
+        ? ` (${(isUsdtTrade ? verifiedAmountBtc.toFixed(2) : verifiedAmountBtc.toFixed(6))} + ${(tradeFeeRate * 100).toFixed(0)}% platform fee)`
+        : '';
       const msg = isOwnBalance
-        ? `You don't have enough ${assetLabel} in your PRAQEN wallet to open this trade. You need ${neededStr}. Please top up your wallet first.`
+        ? `You don't have enough ${assetLabel} in your PRAQEN wallet to open this trade. You need ${neededStr}${feeNote}. Please top up your wallet first.`
         : `This seller doesn't have enough ${assetLabel} to complete this trade right now. Their offer has been paused automatically. Please choose a different offer.`;
       return res.status(400).json({ error: msg });
     }
@@ -8336,7 +8358,7 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
       amount_usdt: isUsdtTrade ? verifiedAmountBtc : null,
       platform_fee_btc: verifiedFee,
       platform_fee_usdt: isUsdtTrade ? verifiedFee : null,
-      platform_fee_usd: (tradeAmountUsd * 0.01).toFixed(2), fee_status: 'PENDING',
+      platform_fee_usd: (tradeAmountUsd * tradeFeeRate).toFixed(2), fee_status: 'PENDING',
       payment_method: paymentMethod || listing.payment_method,
       gift_card_brand: listingTypeUpper.includes('GIFT_CARD') ? (listing.gift_card_brand || null) : null,
       trade_ref: tradeRef,
@@ -10941,7 +10963,8 @@ app.get('/api/admin/listings/all', verifyToken, async (req, res) => {
       if (l.status !== 'ACTIVE' || !btcRequiredTypes.includes(l.listing_type)) {
         return { ...l, effectively_visible: l.status === 'ACTIVE' };
       }
-      const balanceUsd = l.asset === 'USDT' ? (usdtBalMap[l.seller_id] || 0) : (balMap[l.seller_id] || 0) * livePriceUsd;
+      // ÷1.02 — additive fee model: seller needs amount + 2% to fund a trade.
+      const balanceUsd = (l.asset === 'USDT' ? (usdtBalMap[l.seller_id] || 0) : (balMap[l.seller_id] || 0) * livePriceUsd) / 1.02;
       const minUsd = parseFloat(l.min_limit_usd || 0);
       const hiddenForBalance = balanceUsd < 10 || (minUsd > 0 && balanceUsd < minUsd);
       return { ...l, effectively_visible: !hiddenForBalance, seller_balance_usd: balanceUsd };

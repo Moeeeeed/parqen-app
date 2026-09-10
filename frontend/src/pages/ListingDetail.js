@@ -347,11 +347,14 @@ const loadAll = useCallback(async (isBackground = false) => {
   const activeRate   = quote ? quote.executableRate : sellerRateLocal;
 
   const btcGross    = payAmtNum > 0 && activeRate > 0 ? payAmtNum / activeRate : 0;
-  // Preview only — matches the real fee tradeEscrowService applies at release
-  // (2% on Buy/Sell, 3% on gift cards). This used to be a flat 0.995 regardless
-  // of trade type, which under-stated the fee shown to buyers.
+  // Additive fee model (see tradeEscrowService): the platform fee is added ON TOP
+  // of the trade amount and paid by the BTC provider (the selling side). The BTC
+  // receiver (the buying side) gets the FULL amount.
+  //   • visitor buying  → YOU RECEIVE = btcGross (full)
+  //   • visitor selling → YOU PAY     = btcGross + fee
   const previewFeeRate = isGiftCard ? 0.03 : 0.02;
-  const btcAfterFee = btcGross * (1 - previewFeeRate);
+  const previewFee     = btcGross * previewFeeRate;
+  const btcAfterFee    = isVisitorSelling ? (btcGross + previewFee) : btcGross;
 
   // CORRECT fiat equivalent calculation: localAmount / (1 + margin/100)
   const fiatEquivalent = payAmtNum > 0 ? payAmtNum / (1 + margin / 100) : 0;
@@ -950,6 +953,13 @@ const loadAll = useCallback(async (isBackground = false) => {
                   </div>
                   {quoteFetching && <RefreshCw size={13} color={C.g300} style={{ marginLeft: 'auto' }} className="animate-spin" />}
                 </div>
+                {btcGross > 0 && (
+                  <div style={{ fontSize: 10.5, color: C.g400, fontWeight: 600, marginTop: 8 }}>
+                    {isVisitorSelling
+                      ? `Includes ${isUsdtAsset ? `${previewFee.toFixed(2)} USDT` : `${fmtBtc(previewFee)} BTC`} platform fee (${(previewFeeRate * 100).toFixed(0)}%) — added on top; the buyer receives the full amount.`
+                      : `You receive the full amount — the seller pays the ${(previewFeeRate * 100).toFixed(0)}% platform fee.`}
+                  </div>
+                )}
               </div>
 
               {/* Trade terms (if any) */}

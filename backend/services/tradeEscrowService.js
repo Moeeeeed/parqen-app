@@ -17,9 +17,20 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
 
-const FEE_RATE            = 0.02;
+const FEE_RATE            = 0.02;   // crypto P2P trades
+const GIFT_CARD_FEE_RATE  = 0.03;   // gift-card trades
 const COMPANY_WALLET_ID   = '14762cd0-d3b2-474f-acab-fe0071961e9a';
 const COMPANY_BTC_ADDRESS = 'bc1qd8z3zdn2e3eul6y8nmcyjvgle3yzv8ttvsjp49';
+
+// Fee model for NEW trades:
+//   'additive'  — fee is added ON TOP of the trade amount. The BTC provider locks
+//                 (amount + fee), the receiver gets the FULL amount, the company
+//                 gets the fee. The provider (seller, in the normal case) pays it.
+//   'inclusive' — legacy. The provider locks `amount`, the receiver gets
+//                 (amount - fee), the company gets the fee.
+// Every trade's actual behaviour is pinned by trades.fee_model at lock time, so
+// flipping this constant never changes an already-locked trade.
+const FEE_MODEL           = 'additive';
 
 // `wallets` is the single source of truth for BTC balance, but two secondary
 // tables (user_balances, user_wallets — both BTC-only, neither has a USDT
@@ -191,6 +202,51 @@ class TradeEscrowService {
 
   constructor() {
     this.feeRate = FEE_RATE;
+    this._feeModelCap = undefined; // cached probe of trades.fee_model existence
+  }
+
+  // ── Fee-model helpers ─────────────────────────────────────────────────────
+  // The additive fee model records `trades.fee_model = 'additive'` at lock time.
+  // If that column hasn't been migrated in yet we must NOT lock the extra fee
+  // amount (there'd be no marker telling release/refund to give it back), so new
+  // trades transparently fall back to the legacy inclusive model until the
+  // migration runs. Result is cached for the life of the process (a deploy
+  // restarts it).
+  async _feeModelColumnReady() {
+    if (this._feeModelCap !== undefined) return this._feeModelCap;
+    const { error } = await supabaseAdmin.from('trades').select('fee_model').limit(1);
+    this._feeModelCap = !error;
+    if (error) {
+      console.warn('[Escrow] trades.fee_model column missing — new trades use the legacy inclusive fee until migration 20260909_additive_fee_model.sql is run');
+    }
+    return this._feeModelCap;
+  }
+
+  async _additiveActive() {
+    return FEE_MODEL === 'additive' && await this._feeModelColumnReady();
+  }
+
+  feeRateFor(isGiftCard) {
+    return isGiftCard ? GIFT_CARD_FEE_RATE : FEE_RATE;
+  }
+
+  // Look up whether a trade's listing is a gift-card listing (fee is 3% vs 2%).
+  async _isGiftCardTrade(tradeId) {
+    const { data: t } = await supabaseAdmin
+      .from('trades').select('listing_id').eq('id', tradeId).maybeSingle();
+    if (!t?.listing_id) return false;
+    const { data: l } = await supabaseAdmin
+      .from('listings').select('listing_type').eq('id', t.listing_id).maybeSingle();
+    return String(l?.listing_type || '').toUpperCase().includes('GIFT_CARD');
+  }
+
+  // What a BTC provider must have available to open a trade of `amount` in the
+  // listing's asset. Used by the pre-check in server.js POST /api/trades so it
+  // stays in lock-step with lockFundsInEscrow across the migration window.
+  async requiredProviderBalance(amount, isGiftCard = false) {
+    const a = parseFloat(amount) || 0;
+    if (!(await this._additiveActive())) return a;
+    return a * (1 + this.feeRateFor(isGiftCard));
   }
 
   // ── Helper: send in-app notification ───────────────────────────────────────
@@ -259,8 +315,23 @@ class TradeEscrowService {
 
     const parsedAmount = parseFloat(amount);
     if (!parsedAmount || parsedAmount <= 0) throw new Error('Invalid escrow amount');
+    const dec = isUsdt ? 6 : 8;
 
     await ensureWalletExists(btcProviderId);
+
+    // ── Fee model ─────────────────────────────────────────────────────────
+    // additive : provider locks (amount + fee); receiver gets the full amount;
+    //            company gets the fee.  reserve = amount + fee.
+    // inclusive: provider locks `amount`; receiver gets (amount - fee).
+    //            reserve = amount. (Legacy — also the fallback until the
+    //            trades.fee_model column exists.)
+    const isGiftCard = await this._isGiftCardTrade(tradeId);
+    const feeRate    = this.feeRateFor(isGiftCard);
+    const additive   = await this._additiveActive();
+    const feeAmount  = parseFloat((parsedAmount * feeRate).toFixed(dec));
+    const reserve    = additive
+      ? parseFloat((parsedAmount + feeAmount).toFixed(dec))
+      : parsedAmount;
 
     // ── 1. Get provider balance ────────────────────────────────────────────
     const balField    = isUsdt ? 'balance_usdt'        : 'balance_btc';
@@ -277,9 +348,10 @@ class TradeEscrowService {
     }
 
     const currentBalance = parseFloat(walletRow[balField] || 0);
-    if (currentBalance < parsedAmount) {
+    if (currentBalance < reserve) {
       throw new Error(
-        `Insufficient ${currency} balance. Provider has ${currentBalance.toFixed(isUsdt ? 2 : 8)} ${currency}, needs ${parsedAmount.toFixed(isUsdt ? 2 : 8)} ${currency}`
+        `Insufficient ${currency} balance. Provider has ${currentBalance.toFixed(isUsdt ? 2 : 8)} ${currency}, needs ${reserve.toFixed(isUsdt ? 2 : 8)} ${currency}` +
+        (additive ? ` (${parsedAmount.toFixed(isUsdt ? 2 : 8)} trade + ${feeAmount.toFixed(isUsdt ? 2 : 8)} fee)` : '')
       );
     }
 
@@ -288,14 +360,13 @@ class TradeEscrowService {
       ? require('./tronWalletService').generateEscrowAddress(tradeId)
       : hdWallet.generateEscrowAddress(tradeId);
     const escrowAddress = escrowData.address;
-    const feeAmount     = parseFloat((parsedAmount * this.feeRate).toFixed(isUsdt ? 6 : 8));
 
     console.log(`   Escrow address: ${escrowAddress}`);
-    console.log(`   Fee (${(this.feeRate * 100).toFixed(0)}%):       ${feeAmount} ${currency}`);
+    console.log(`   Fee (${(feeRate * 100).toFixed(0)}%): ${feeAmount} ${currency} | model: ${additive ? 'additive' : 'inclusive'} | reserve locked: ${reserve} ${currency}`);
 
     // ── 3. Deduct from available, add to locked ────────────────────────────
-    const newAvailable = parseFloat((currentBalance - parsedAmount).toFixed(isUsdt ? 6 : 8));
-    const newLocked    = parseFloat((parseFloat(walletRow[lockedField] || 0) + parsedAmount).toFixed(isUsdt ? 6 : 8));
+    const newAvailable = parseFloat((currentBalance - reserve).toFixed(dec));
+    const newLocked    = parseFloat((parseFloat(walletRow[lockedField] || 0) + reserve).toFixed(dec));
 
     const updateFields = {
       [balField]:    newAvailable,
@@ -364,6 +435,9 @@ class TradeEscrowService {
     }
 
     // ── 6. Update trade ────────────────────────────────────────────────────
+    // escrow_amount stays = the trade amount (its established meaning). For an
+    // additive trade the wallet actually has `reserve` (= amount + fee) locked;
+    // release / cancelTrade reconstruct that from platform_fee_* + fee_model.
     const tradeUpdate = {
       status:                'FUNDS_LOCKED',
       escrow_wallet_address: escrowAddress,
@@ -378,18 +452,21 @@ class TradeEscrowService {
     } else {
       tradeUpdate.platform_fee_btc  = feeAmount;
     }
+    // Only written when the column exists (additive === true guarantees it).
+    if (additive) tradeUpdate.fee_model = 'additive';
 
     const { error: tradeUpdateErr } = await supabaseAdmin
       .from('trades').update(tradeUpdate).eq('id', tradeId);
     if (tradeUpdateErr) throw new Error(`Failed to update trade: ${tradeUpdateErr.message}`);
 
     // ── 7. Audit log ───────────────────────────────────────────────────────
+    // Log the reserve — that's what actually left the provider's spendable balance.
     await this.logTransaction(
-      btcProviderId, 'ESCROW_LOCK', parsedAmount, lockTxHash,
-      `Funds locked for trade #${tradeId.slice(0,8)}`, currency
+      btcProviderId, 'ESCROW_LOCK', reserve, lockTxHash,
+      `Funds locked for trade #${tradeId.slice(0,8)}${additive ? ` (${parsedAmount} + ${feeAmount} fee)` : ''}`, currency
     );
 
-    console.log(`✅ Funds locked — ${parsedAmount} ${currency} from provider ${btcProviderId.slice(0,8)}`);
+    console.log(`✅ Funds locked — ${reserve} ${currency} from provider ${btcProviderId.slice(0,8)}`);
 
     supabaseAdmin.from('trades')
       .select('seller_id, trade_ref, amount_btc, amount_usdt')
@@ -406,9 +483,11 @@ class TradeEscrowService {
       success:      true,
       escrowAddress,
       lockTxHash,
-      amountLocked: parsedAmount,
+      amountLocked: reserve,      // what was actually moved to locked balance
+      tradeAmount:  parsedAmount, // the trade size
       currency,
       feeAmount,
+      feeModel:     additive ? 'additive' : 'inclusive',
       newBalance:   newAvailable,
       expiresAt:    new Date(Date.now() + timeLimitMins * 60 * 1000).toISOString(),
     };
@@ -586,8 +665,19 @@ class TradeEscrowService {
       ? parseFloat(tradeData.amount_usdt || tradeData.escrow_amount || 0)
       : parseFloat(tradeData.amount_btc);
     const feeRate     = isGiftCardTrade ? 0.03 : 0.02;
-    const buyerGets   = parseFloat((amount * (1 - feeRate)).toFixed(isUsdt ? 6 : 8));
     const platformFee = parseFloat((amount * feeRate).toFixed(isUsdt ? 6 : 8));
+
+    // Fee model was pinned at lock time. additive → the provider locked
+    // (amount + fee), the receiver gets the FULL amount, and the provider's
+    // locked balance must be cleared by (amount + fee). inclusive (legacy /
+    // NULL) → receiver gets (amount - fee), locked cleared by `amount`.
+    const additive       = tradeData.fee_model === 'additive';
+    const buyerGets       = additive
+      ? amount
+      : parseFloat((amount * (1 - feeRate)).toFixed(isUsdt ? 6 : 8));
+    const reserveToClear  = additive
+      ? parseFloat((amount + platformFee).toFixed(isUsdt ? 6 : 8))
+      : amount;
 
     // Mandatory fee sanity check — fail before touching any balance rather than
     // silently release funds with a missing/malformed company fee (e.g. NaN
@@ -734,10 +824,12 @@ class TradeEscrowService {
     }
 
     // ── Clear locked balance for the BTC/USDT provider ────────────────────────
+    // Additive trades locked (amount + fee), so clear that whole reserve —
+    // clearing only `amount` would leave the fee stuck in locked_balance forever.
     const { data: providerWallet } = await supabaseAdmin
         .from('wallets').select(lockedField).eq('user_id', btcProviderId).maybeSingle();
     const clearedLocked = parseFloat(
-        Math.max(0, parseFloat(providerWallet?.[lockedField] || 0) - amount).toFixed(decimals)
+        Math.max(0, parseFloat(providerWallet?.[lockedField] || 0) - reserveToClear).toFixed(decimals)
     );
     await supabaseAdmin.from('wallets')
         .update({ [lockedField]: clearedLocked, updated_at: new Date().toISOString() })
@@ -1002,9 +1094,19 @@ class TradeEscrowService {
     const esc            = (await supabaseAdmin.from('escrow_locks').select('*').eq('trade_id', tradeId).maybeSingle()).data;
     const escCurrency    = (esc?.currency || trade.currency || 'BTC').toUpperCase();
     const isUsdtRefund   = escCurrency === 'USDT';
-    const refundAmount   = isUsdtRefund
+    let refundAmount     = isUsdtRefund
       ? parseFloat(esc?.amount_usdt || trade.amount_usdt || trade.escrow_amount || 0)
       : parseFloat(esc?.amount_btc  || trade.escrow_amount || trade.amount_btc  || 0);
+
+    // Additive-fee trades locked (amount + fee) — the provider must get the whole
+    // reserve back on a cancel, and the locked-balance decrement (RPC + every
+    // manual fallback below all key off refundAmount) must match.
+    if (trade.fee_model === 'additive') {
+      const feeBack = isUsdtRefund
+        ? parseFloat(trade.platform_fee_usdt || 0)
+        : parseFloat(trade.platform_fee_btc  || 0);
+      refundAmount = parseFloat((refundAmount + feeBack).toFixed(isUsdtRefund ? 6 : 8));
+    }
 
     let fallbackBtcProvider = trade.seller_id;
     if (!esc?.seller_id && trade.listing_id) {
