@@ -1,9 +1,11 @@
 // ============================================================
 // AI Chat RAG Pipeline — retrieves from Supabase kb_articles,
-// calls Mistral with structured output, persists conversations.
+// prefers Groq when configured, falls back to Mistral, and persists conversations.
 // ============================================================
 
 const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const DEFAULT_GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
 
 // ── Embed a message via Mistral mistral-embed ───────────────────────────
 async function embedText(text) {
@@ -267,31 +269,58 @@ async function handleAIChatRAG(req, res, supabaseAdmin, PRAQEN_SUPPORT_AGENT_CON
         `\n\nUser: ${chatUser.username}`)
     : '';
 
-  // 5. Call Mistral LLM
-  if (MISTRAL_API_KEY) {
-    try {
-      const messages = [
-        ...history.slice(-10).map(m => ({
-          role: m.role === 'user' ? 'user' : 'assistant',
-          content: m.text,
-        })),
-        { role: 'user', content: message },
-      ];
+  // 5. Call available LLM (prefer Groq when configured, fall back to Mistral)
+  const messages = [
+    ...history.slice(-10).map(m => ({
+      role: m.role === 'user' ? 'user' : 'assistant',
+      content: m.text,
+    })),
+    { role: 'user', content: message },
+  ];
 
-      const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+  const providers = [];
+
+  if (GROQ_API_KEY) {
+    providers.push({
+      name: 'Groq',
+      endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+      apiKey: GROQ_API_KEY,
+      model: DEFAULT_GROQ_MODEL,
+      body: { model: DEFAULT_GROQ_MODEL, max_tokens: 400, messages: [
+        { role: 'system', content: systemPrompt + userPart },
+        ...messages,
+      ] },
+    });
+  }
+
+  if (MISTRAL_API_KEY) {
+    providers.push({
+      name: 'Mistral',
+      endpoint: 'https://api.mistral.ai/v1/chat/completions',
+      apiKey: MISTRAL_API_KEY,
+      model: 'mistral-small-latest',
+      body: {
+        model: 'mistral-small-latest',
+        max_tokens: 400,
+        messages: [
+          { role: 'system', content: systemPrompt + userPart },
+          ...messages,
+        ],
+      },
+    });
+  }
+
+  let lastError = null;
+
+  for (const provider of providers) {
+    try {
+      const response = await fetch(provider.endpoint, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${MISTRAL_API_KEY}`,
+          'Authorization': `Bearer ${provider.apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model: 'mistral-small-latest',
-          max_tokens: 400,
-          messages: [
-            { role: 'system', content: systemPrompt + userPart },
-            ...messages,
-          ],
-        }),
+        body: JSON.stringify(provider.body),
         signal: AbortSignal.timeout(30000),
       });
 
@@ -300,7 +329,6 @@ async function handleAIChatRAG(req, res, supabaseAdmin, PRAQEN_SUPPORT_AGENT_CON
         const rawReply = data.choices?.[0]?.message?.content || '';
         const result = parseStructuredReply(rawReply);
 
-        // Persist conversation
         persistConversation(supabaseAdmin, chatUser?.id, null, mode, message, result);
 
         return res.json({
@@ -308,13 +336,19 @@ async function handleAIChatRAG(req, res, supabaseAdmin, PRAQEN_SUPPORT_AGENT_CON
           should_escalate: result.should_escalate,
           suggested_priority: result.suggested_priority,
         });
-      } else {
-        const errBody = await response.text().catch(() => '');
-        console.error('[ai-chat] Mistral API error:', response.status, errBody.slice(0, 200));
       }
+
+      const errBody = await response.text().catch(() => '');
+      lastError = `${provider.name} API error: ${response.status} ${errBody.slice(0, 200)}`;
+      console.error('[ai-chat]', lastError);
     } catch (err) {
-      console.error('[ai-chat] Mistral API error:', err.message);
+      lastError = `${provider.name} request failed: ${err.message}`;
+      console.error('[ai-chat]', lastError);
     }
+  }
+
+  if (lastError) {
+    console.warn('[ai-chat] All configured LLM providers failed. Falling back to local support response.', lastError);
   }
 
   // 6. Honest fallback when no API key or API failure

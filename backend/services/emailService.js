@@ -17,9 +17,34 @@ const supabase = createClient(
 // isn't a domain Brevo can authenticate on this account, so Brevo silently rewrote the visible
 // sender to <local-part>@<account-id>.brevosend.com to stay DMARC-compliant — which is exactly
 // the "kendevdash@11171618.brevosend.com" users were seeing instead of a praqen.com address.
-// Never fall back to EMAIL_USER here; only SMTP_FROM (if explicitly set for this purpose) or
-// the praqen.com default.
-const FROM_ADDRESS = `PraQen <${process.env.SMTP_FROM || 'noreply@praqen.com'}>`;
+// Prefer explicit env-driven sender configuration for each outgoing email class.
+const DEFAULT_FROM_ADDRESS = 'noreply@praqen.com';
+
+function getConfiguredFromAddress(role = 'notifications') {
+  const configured = role === 'support'
+    ? (process.env.EMAIL_FROM_SUPPORT || process.env.EMAIL_FROM_NOTIFICATIONS || process.env.SMTP_FROM || process.env.EMAIL_USER)
+    : (process.env.EMAIL_FROM_NOTIFICATIONS || process.env.SMTP_FROM || process.env.EMAIL_USER);
+
+  return configured || DEFAULT_FROM_ADDRESS;
+}
+
+function formatFromAddress(address) {
+  if (!address) return `PraQen <${DEFAULT_FROM_ADDRESS}>`;
+  return address.includes('<') ? address : `PraQen <${address}>`;
+}
+
+function getResendFromAddress(role = 'notifications') {
+  const configured = role === 'support'
+    ? process.env.EMAIL_FROM_SUPPORT
+    : process.env.EMAIL_FROM_NOTIFICATIONS;
+
+  if (process.env.RESEND_FROM) return process.env.RESEND_FROM;
+  return formatFromAddress(configured || process.env.SMTP_FROM || process.env.EMAIL_USER || DEFAULT_FROM_ADDRESS);
+}
+
+function getTestOverrideEmail() {
+  return (process.env.TEST_EMAIL_OVERRIDE || '').trim();
+}
 
 // Pooled, reused connection — nodemailer's defaults (no pooling, connectionTimeout
 // 2min, socketTimeout 10min) meant every single email paid a fresh TCP+TLS
@@ -75,30 +100,35 @@ async function logEmail({ userId, email, subject, type, status, messageId, error
 // The DB log write is intentionally not awaited — it's a fire-and-forget audit
 // trail with its own internal try/catch, so it should never add its own
 // round-trip to a caller waiting on the actual send result.
-async function sendEmail({ userId, to, subject, html, type, metadata }) {
+async function sendEmail({ userId, to, subject, html, type, metadata, fromRole = 'notifications' }) {
+  const testOverrideEmail = getTestOverrideEmail();
+  const originalRecipient = to;
+  const effectiveRecipient = testOverrideEmail || originalRecipient;
+
   // ── Attempt 1: Resend API ────────────────────────────────────────────────
   const resendKey  = process.env.RESEND_API_KEY;
-  const resendFrom = process.env.RESEND_FROM || 'PraQen <onboarding@resend.dev>';
+  const resendFrom = getResendFromAddress(fromRole);
+  const smtpFrom = formatFromAddress(getConfiguredFromAddress(fromRole));
   if (resendKey) {
     try {
       const response = await fetch('https://api.resend.com/emails', {
         method:  'POST',
         headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: resendFrom, to: [to], subject, html }),
+        body: JSON.stringify({ from: resendFrom, to: [effectiveRecipient], subject, html }),
         signal:  AbortSignal.timeout(8000),
       });
       const data = await response.json();
       if (data.id) {
-        console.log(`[Email] ✅ Resend ${type} → ${to} (${data.id})`);
-        logEmail({ userId, email: to, subject, type, status: 'sent', messageId: data.id, metadata });
+        console.log(`[Email] ✅ Resend ${type} → ${effectiveRecipient} (${data.id})`);
+        logEmail({ userId, email: effectiveRecipient, subject, type, status: 'sent', messageId: data.id, metadata: { ...(metadata || {}), original_recipient: originalRecipient, test_email_override: testOverrideEmail || null } });
         return { success: true, messageId: data.id };
       }
       throw new Error(JSON.stringify(data));
     } catch (resendErr) {
-      console.error(`[Email] ⚠️ Resend failed for ${type} → ${to}: ${resendErr.message} — trying Brevo fallback`);
+      console.error(`[Email] ⚠️ Resend failed for ${type} → ${effectiveRecipient}: ${resendErr.message} — trying Brevo fallback`);
     }
   } else {
-    console.warn(`[Email] Resend not configured — skipping to Brevo for ${type} → ${to}`);
+    console.warn(`[Email] Resend not configured — skipping to Brevo for ${type} → ${effectiveRecipient}`);
   }
 
   // ── Attempt 2: Brevo SMTP fallback ───────────────────────────────────────
@@ -114,26 +144,26 @@ async function sendEmail({ userId, to, subject, html, type, metadata }) {
       // strand a fire-and-forget send (e.g. forgot-password) with no visible
       // failure to the user or the logs.
       const info = await Promise.race([
-        transporter.sendMail({ from: FROM_ADDRESS, to, subject, html }),
+        transporter.sendMail({ from: smtpFrom, to: effectiveRecipient, subject, html }),
         new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP send timed out after 15s')), 15000)),
       ]);
-      console.log(`[Email] ✅ Brevo SMTP fallback ${type} → ${to} (${info.messageId})`);
-      logEmail({ userId, email: to, subject, type, status: 'sent', messageId: info.messageId, metadata });
+      console.log(`[Email] ✅ Brevo SMTP fallback ${type} → ${effectiveRecipient} (${info.messageId})`);
+      logEmail({ userId, email: effectiveRecipient, subject, type, status: 'sent', messageId: info.messageId, metadata: { ...(metadata || {}), original_recipient: originalRecipient, test_email_override: testOverrideEmail || null } });
       return { success: true, messageId: info.messageId };
     } catch (smtpErr) {
-      console.error(`[Email] ❌ Brevo SMTP fallback also failed for ${type} → ${to}: ${smtpErr.message}`);
+      console.error(`[Email] ❌ Brevo SMTP fallback also failed for ${type} → ${effectiveRecipient}: ${smtpErr.message}`);
       // A stuck/broken pooled connection stays stuck for every subsequent send —
       // drop it so the next sendEmail() call opens a fresh one instead of retrying
       // the same bad socket.
       if (_transporter) { try { _transporter.close(); } catch (_) {} _transporter = null; }
-      logEmail({ userId, email: to, subject, type, status: 'failed', errorMessage: `Resend: failed, SMTP: ${smtpErr.message}`, metadata });
+      logEmail({ userId, email: effectiveRecipient, subject, type, status: 'failed', errorMessage: `Resend: failed, SMTP: ${smtpErr.message}`, metadata: { ...(metadata || {}), original_recipient: originalRecipient, test_email_override: testOverrideEmail || null } });
       return { success: false, error: smtpErr.message };
     }
   }
 
   // ── Both providers unconfigured ──────────────────────────────────────────
-  console.error(`[Email] ❌ No email provider configured — cannot send ${type} → ${to}`);
-  logEmail({ userId, email: to, subject, type, status: 'failed', errorMessage: 'No provider configured', metadata });
+  console.error(`[Email] ❌ No email provider configured — cannot send ${type} → ${effectiveRecipient}`);
+  logEmail({ userId, email: effectiveRecipient, subject, type, status: 'failed', errorMessage: 'No provider configured', metadata: { ...(metadata || {}), original_recipient: originalRecipient, test_email_override: testOverrideEmail || null } });
   return { success: false, error: 'No email provider configured' };
 }
 
@@ -611,6 +641,78 @@ function txReceiptHtml(name, tx) {
 </html>`;
 }
 
+// ── Support ticket emails (two-way email integration) ────────────────────────
+// Sent from the SUPPORT address (not noreply@) so the user can just hit "Reply"
+// in their mail client and the response lands back at the support inbox, where
+// the inbound-parse webhook turns it into a message on the same ticket.
+function supportRefHeader(ticketId) {
+  // Short ticket ref (first 8 chars, uppercased) — same form the dashboards display.
+  const ref = String(ticketId || '').replace(/-/g, '').slice(0, 8).toUpperCase();
+  return `[PraQen #${ref}]`;
+}
+
+async function sendTicketCreatedEmail({ ticket, messagePreview, userEmail }) {
+  const to = userEmail || ticket.submitted_email || ticket.user_email || ticket.user?.email;
+  if (!to) return { success: false, error: 'No recipient email for ticket confirmation' };
+  const ref = supportRefHeader(ticket.id);
+  // Per the form-based email-only spec (Step 3): the confirmation email contains
+  // (1) confirmation + Ticket ID, (2) the complaint the user submitted, and
+  // (3) a generic "what happens next" note until an agent triages the ticket.
+  const html = base('Support Ticket Received', `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#1B4332;font-weight:800;">Your ticket has been created</h2>
+    <p style="margin:0 0 16px;color:#64748B;font-size:15px;">Hi <strong>${ticket.username || ticket.full_name || 'there'}</strong>, we've received your support request and our team is on it.</p>
+    <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:16px 20px;margin:0 0 20px;">
+      <p style="margin:0 0 4px;font-size:13px;color:#64748B;">Ticket ID</p>
+      <p style="margin:0 0 12px;font-size:18px;font-weight:800;color:#1B4332;">${ref}</p>
+      <p style="margin:0 0 4px;font-size:13px;color:#64748B;">Subject</p>
+      <p style="margin:0;font-size:14px;color:#334155;font-weight:600;">${(ticket.subject || '').replace(/</g, '&lt;')}</p>
+    </div>
+    <p style="margin:0 0 8px;color:#64748B;font-size:14px;">Your complaint (as we received it):</p>
+    <div style="background:#F8FAFC;border-left:4px solid #10B981;border-radius:8px;padding:16px 20px;margin:0 0 20px;">
+      <p style="margin:0;color:#334155;font-size:14px;white-space:pre-wrap;">${String(messagePreview || '').slice(0, 1000).replace(/</g, '&lt;')}${(messagePreview || '').length > 1000 ? '…' : ''}</p>
+    </div>
+    <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:12px;padding:16px 20px;margin:0 0 24px;">
+      <p style="margin:0 0 6px;font-size:14px;font-weight:800;color:#1E40AF;">What happens next</p>
+      <p style="margin:0;font-size:13px;color:#334155;">Our team will review your issue and reach out if additional information is needed. Keep an eye on your inbox — all replies will come to this email address.</p>
+    </div>
+    <p style="margin:0 0 8px;color:#64748B;font-size:14px;">Need to add something? Just <strong>reply to this email</strong> — it goes straight to your ticket. All communication about this ticket happens over email; there is no in-app chat for it.</p>
+    <p style="margin:0;color:#94A3B8;font-size:12px;">Keep this email's subject line (including ${ref}) intact when replying so we can link your message to this ticket.</p>
+  `);
+  return sendEmail({
+    userId:  ticket.user_id,
+    to,
+    subject: `${ref} We received your support request — ${(ticket.subject || '').slice(0, 80)}`,
+    html,
+    type:    'ticket_created',
+    fromRole: 'support',
+    metadata: { ticket_id: ticket.id, channel: ticket.channel || 'email' },
+  });
+}
+
+async function sendTicketReplyEmail({ ticket, userEmail, message, agentName }) {
+  const to = userEmail || ticket.submitted_email || ticket.user_email || ticket.user?.email;
+  if (!to) return { success: false, error: 'No recipient email for ticket reply' };
+  const ref = supportRefHeader(ticket.id);
+  const html = base('New Reply From Support', `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#1B4332;font-weight:800;">${agentName || 'Our support team'} replied to your ticket</h2>
+    <p style="margin:0 0 20px;color:#64748B;font-size:15px;">Ticket <strong>${ref}</strong> — ${(ticket.subject || '').replace(/</g, '&lt;')}</p>
+    <div style="background:#F8FAFC;border-left:4px solid #10B981;border-radius:8px;padding:16px 20px;margin:0 0 24px;">
+      <p style="margin:0;color:#334155;font-size:14px;white-space:pre-wrap;">${String(message || '').slice(0, 2000).replace(/</g, '&lt;')}</p>
+    </div>
+    <p style="margin:0 0 8px;color:#64748B;font-size:14px;">You can reply directly to this email to continue the conversation, or reply in the app under <strong>Community Board → Support</strong>.</p>
+    <p style="margin:0;color:#94A3B8;font-size:12px;">Keep this email's subject line (including ${ref}) intact when replying so we can link your message to this ticket.</p>
+  `);
+  return sendEmail({
+    userId:  ticket.user_id,
+    to,
+    subject: `${ref} Re: ${(ticket.subject || 'Your support request').slice(0, 80)}`,
+    html,
+    type:    'ticket_reply',
+    fromRole: 'support',
+    metadata: { ticket_id: ticket.id, channel: ticket.channel || 'email' },
+  });
+}
+
 async function sendTxReceiptEmail(user, tx) {
   const name = user.username || user.email || 'Trader';
   const isSend     = tx.type === 'WITHDRAWAL' || tx.type === 'SEND' || tx.type === 'TRANSFER_OUT';
@@ -668,7 +770,7 @@ async function sendLoginAlertEmail(user) {
   return sendEmail({
     userId:  user.id,
     to:      user.email,
-    subject: 'New Login to Your <b>PraQen</b> Account',
+    subject: 'New Login to Your PraQen Account',
     html:    loginAlertHtml(user.username || user.email, new Date().toUTCString()),
     type:    'login_alert',
   });
@@ -1330,6 +1432,8 @@ async function sendBroadcastToAllUsers(subject, htmlBody, broadcastType = 'broad
 
 module.exports = {
   sendEmail,
+  sendTicketCreatedEmail,
+  sendTicketReplyEmail,
   sendWelcomeEmail,
   sendVerificationEmail,
   sendLoginAlertEmail,

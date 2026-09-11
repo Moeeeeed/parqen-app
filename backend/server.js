@@ -64,6 +64,12 @@ const quoteService = require('./services/quoteService');
 const { E, S } = require('./utils/apiErrors');
 const { requireNotBanned, isUserBanned, getRestrictedState, isBlockedStatus } = require('./middleware/requireNotBanned');
 const emailService = require('./services/emailService');
+const { processInboundEmail } = require('./services/inboundEmailService');
+const {
+  isEmailChannelTicket,
+  registerEmailChannelTicket,
+  unregisterEmailChannelTicket,
+} = require('./services/inboundEmailService');
 const speakeasy = require('speakeasy');
 
 // ── 2FA login-store: maps tempTokenHash -> { code, expires, userId, method } ─
@@ -291,6 +297,37 @@ app.use(cors({
 app.use('/api/wallet/webhook', express.raw({ type: '*/*' }));
 
 app.use(express.json({ limit: '6mb' })); // raised from 2mb — KYC route needs headroom for 2 compressed base64 images (~1.1–1.9mb each after canvas compression)
+
+// ── Inbound support email webhook (two-way email integration) ───────────────
+// Receives parsed inbound email POSTs from the provider configured on the
+// support address (Resend Inbound Parse by default; SendGrid/Mailgun/Postmark
+// payloads are also normalized — see inboundEmailService). Public endpoint:
+// secured by an optional shared secret (INBOUND_EMAIL_WEBHOOK_SECRET env var)
+// plus support-address filtering and message-id idempotency in the service.
+app.post('/webhooks/inbound-email', express.json({ limit: '10mb', type: '*/*' }), async (req, res) => {
+  try {
+    const expectedSecret = process.env.INBOUND_EMAIL_WEBHOOK_SECRET;
+    if (expectedSecret) {
+      const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      const provided = bearer || req.headers['x-webhook-secret'] || req.query.secret;
+      if (provided !== expectedSecret) {
+        console.warn('[InboundEmail] Rejected webhook: bad or missing secret');
+        return res.status(401).json({ error: 'Invalid webhook secret' });
+      }
+    } else {
+      console.warn('[InboundEmail] INBOUND_EMAIL_WEBHOOK_SECRET not set — endpoint is unauthenticated (fine for local testing; set it before production)');
+    }
+
+    const result = await processInboundEmail(req.body || {});
+    return res.status(200).json({ ok: true, action: result.action, ticketId: result.ticket?.id || null, deduped: !!result.deduped });
+  } catch (e) {
+    console.error('[InboundEmail] Webhook processing failed:', e.message);
+    // 202 = provider should NOT retry (e.g. not-a-support-address drops).
+    // Real processing failures return 500 so the provider retries per its policy.
+    const status = e.status || 500;
+    return res.status(status).json({ ok: false, error: e.message });
+  }
+});
 
 // ── Lightweight perf timing for a curated set of endpoints ─────────────────
 // Only method, path, duration, and status — never bodies, headers, tokens,
@@ -959,9 +996,11 @@ function buildWelcomeEmailHtml(username) {
 </html>`;
 }
 
-// NOTE: For Resend to deliver to real inboxes, verify praqen.com in your Resend dashboard
-// then set RESEND_FROM=hello@praqen.com in .env
-const RESEND_FROM_ADDR = process.env.RESEND_FROM || 'PraQen <hello@praqen.com>';
+// NOTE: For Resend to deliver to real inboxes, verify your sender domain in the Resend dashboard,
+// then set EMAIL_FROM_NOTIFICATIONS / EMAIL_FROM_SUPPORT in .env as needed.
+const NOTIFICATION_FROM_ADDR = process.env.EMAIL_FROM_NOTIFICATIONS || process.env.SMTP_FROM || process.env.EMAIL_USER || 'noreply@praqen.com';
+const SUPPORT_FROM_ADDR = process.env.EMAIL_FROM_SUPPORT || NOTIFICATION_FROM_ADDR;
+const RESEND_FROM_ADDR = process.env.RESEND_FROM || `PraQen <${NOTIFICATION_FROM_ADDR}>`;
 
 async function sendVerificationEmail(email, code, subject = 'Your PraQen Verification Code') {
   console.log(`📧 Sending verification to ${email}`);
@@ -1012,7 +1051,7 @@ async function sendWelcomeEmail(email, username) {
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
     });
     await transporter.sendMail({
-      from: `"PraQen" <${process.env.EMAIL_USER}>`,
+      from: `"PraQen" <${NOTIFICATION_FROM_ADDR}>`,
       to: email, subject, html,
     });
     console.log(`✅ Welcome email sent via Gmail to ${email}`);
@@ -10195,7 +10234,7 @@ app.post('/api/admin/send-welcome-emails', verifyToken, async (req, res) => {
 
       const subject = `Welcome to PRAQEN, ${user.username}! 🎉 Start Trading Bitcoin`;
       const mailOpts = {
-        from: `"PRAQEN" <${process.env.EMAIL_USER || 'support@praqen.com'}>`,
+        from: `"PRAQEN" <${NOTIFICATION_FROM_ADDR}>`,
         to: user.email, subject, html,
       };
 
@@ -12003,22 +12042,52 @@ app.delete('/api/admin/suggestions/:id', verifyToken, async (req, res) => {
 // ============================================================
 
 // POST /api/support/tickets — create ticket + first message
+// Email-only flow: tickets created from the Support form are channel='email',
+// but they are created silently — no confirmation email is sent. The first
+// email the user receives is the agent's first reply from the dashboard.
 app.post('/api/support/tickets', verifyToken, async (req, res) => {
   try {
-    const { subject, category, message, department } = req.body;
+    const { subject, category, message, department, priority, trade_reference, username, email } = req.body;
     if (!subject?.trim()) return res.status(400).json({ error: 'Subject is required' });
     if (!message?.trim()) return res.status(400).json({ error: 'Message is required' });
+    const trimmedUsername = username?.trim();
+    const trimmedEmail = email?.trim();
+    if (!trimmedUsername) return res.status(400).json({ error: 'Username is required' });
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      return res.status(400).json({ error: 'Please enter a valid email address' });
+    }
 
-    // Try insert with department column; fall back without it if column doesn't exist yet
-    let ticketPayload = { user_id: req.userId, subject: subject.trim(), category: category || 'general', status: 'open' };
+    // Try insert with department/priority/trade_reference/contact columns; fall back
+    // progressively if any column doesn't exist yet in the live schema.
+    let ticketPayload = {
+      user_id: req.userId,
+      subject: subject.trim(),
+      category: category || 'general',
+      status: 'open',
+      channel: 'email',
+      submitted_username: trimmedUsername,
+      submitted_email: trimmedEmail,
+    };
     if (department) ticketPayload.department = department;
+    if (priority) ticketPayload.priority = priority;
+    if (trade_reference) ticketPayload.trade_reference = String(trade_reference).slice(0, 200);
     let { data: ticket, error: tErr } = await supabaseAdmin
       .from('support_tickets')
       .insert(ticketPayload)
       .select().single();
-    // If insert failed and we included department, retry without it (column may not exist)
-    if (tErr && department && tErr.message?.includes('department')) {
-      delete ticketPayload.department;
+    // Column-missing fallbacks: strip the offending optional fields and retry.
+    // Includes 'channel' so ticket creation still succeeds (untagged) in
+    // environments where the email-channel migration hasn't been applied yet.
+    // Match ONLY PostgREST missing-column errors ("Could not find the 'x'
+    // column …") — never constraint violations, whose text can contain column names.
+    const OPTIONAL_COLS = ['trade_reference', 'priority', 'department', 'submitted_username', 'submitted_email', 'channel'];
+    const isMissingCol = (err, col) => !!err && /could not find the/i.test(err.message || '') && (err.message || '').includes(`'${col}'`);
+    let stripped = 0;
+    while (tErr && stripped < OPTIONAL_COLS.length) {
+      const missing = OPTIONAL_COLS.find(c => ticketPayload[c] !== undefined && isMissingCol(tErr, c));
+      if (!missing) break;
+      delete ticketPayload[missing];
+      stripped++;
       ({ data: ticket, error: tErr } = await supabaseAdmin
         .from('support_tickets')
         .insert(ticketPayload)
@@ -12026,11 +12095,29 @@ app.post('/api/support/tickets', verifyToken, async (req, res) => {
     }
     if (tErr) return res.status(400).json({ error: tErr.message });
 
-    const { error: mErr } = await supabaseAdmin
+    // Bridge: pre-migration, PostgREST drops channel='email' on insert, so the
+    // reply endpoints' email gate would never fire. Remember it in-process
+    // (post-migration the DB column is authoritative and this is a no-op).
+    registerEmailChannelTicket(ticket.id);
+
+    const firstMessage = trade_reference
+      ? `${message.trim()}\n\n(Trade/Reference ID: ${String(trade_reference).slice(0, 200)})`
+      : message.trim();
+    // Message insert: 'channel' is dropped gracefully if the migration hasn't
+    // run in this environment (same degraded-mode behavior as the ticket insert).
+    let msgPayload = { ticket_id: ticket.id, sender_id: req.userId, is_admin: false, message: firstMessage, channel: 'email' };
+    let { error: mErr } = await supabaseAdmin
       .from('support_messages')
-      .insert({ ticket_id: ticket.id, sender_id: req.userId, is_admin: false, message: message.trim() });
+      .insert(msgPayload);
+    if (mErr && /could not find the/i.test(mErr.message || '') && mErr.message.includes("'channel'")) {
+      delete msgPayload.channel;
+      ({ error: mErr } = await supabaseAdmin.from('support_messages').insert(msgPayload));
+    }
     if (mErr) return res.status(400).json({ error: mErr.message });
 
+    // Form-created tickets are intentionally silent. The user sees the
+    // on-screen success state immediately, and the first email they receive is
+    // the agent's first reply from the dashboard.
     res.json({ success: true, ticket });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -12086,7 +12173,7 @@ app.get('/api/admin/support/tickets', verifyToken, async (req, res) => {
     const { status = '', page = 1, limit = 100 } = req.query;
     const offset = (page - 1) * limit;
     let query = supabaseAdmin.from('support_tickets')
-      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, email, avatar_url, phone_number, country, created_at)', { count: 'exact' })
+      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, email, avatar_url, phone, country, created_at)', { count: 'exact' })
       .order('updated_at', { ascending: false })
       .range(offset, offset + parseInt(limit) - 1);
     if (status) query = query.eq('status', status);
@@ -12095,11 +12182,11 @@ app.get('/api/admin/support/tickets', verifyToken, async (req, res) => {
     res.json({
       tickets: (data || []).map(t => ({
         ...t,
-        username: t.users?.username,
+        username: t.submitted_username || t.users?.username,
         full_name: t.users?.full_name,
-        user_email: t.users?.email,
+        user_email: t.submitted_email || t.users?.email,
         avatar_url: t.users?.avatar_url,
-        user_phone: t.users?.phone_number,
+        user_phone: t.users?.phone,
         user_country: t.users?.country,
         user_joined: t.users?.created_at,
       })),
@@ -12113,18 +12200,20 @@ app.get('/api/admin/support/tickets/:id/messages', verifyToken, async (req, res)
   try {
     const admin = await requireAdminOrCeo(req, res); if (!admin) return;
     const { data: ticket } = await supabaseAdmin.from('support_tickets')
-      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, email, avatar_url, phone_number, country, created_at)')
+      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, email, avatar_url, phone, country, created_at)')
       .eq('id', req.params.id).single();
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
     const { data: messages } = await supabaseAdmin.from('support_messages').select('*').eq('ticket_id', req.params.id).order('created_at', { ascending: true });
     res.json({
       ticket: {
         ...ticket,
-        username: ticket.users?.username,
+        username: ticket.submitted_username || ticket.users?.username,
         full_name: ticket.users?.full_name,
-        user_email: ticket.users?.email,
+        user_email: ticket.submitted_email || ticket.users?.email,
         avatar_url: ticket.users?.avatar_url,
-        user_phone: ticket.users?.phone_number,
+        // Pre-migration bridge: stamp email-channel so "via Email" badges render.
+        channel: ticket.channel || (isEmailChannelTicket(ticket) ? 'email' : ticket.channel),
+        user_phone: ticket.users?.phone,
         user_country: ticket.users?.country,
         user_joined: ticket.users?.created_at,
       },
@@ -12139,22 +12228,71 @@ app.post('/api/admin/support/tickets/:id/reply', verifyToken, async (req, res) =
     const admin = await requireAdminOrCeo(req, res); if (!admin) return;
     const { message } = req.body;
     if (!message?.trim()) return res.status(400).json({ error: 'Reply is required' });
-    const { data: ticket } = await supabaseAdmin.from('support_tickets').select('user_id, subject').eq('id', req.params.id).single();
+    const { data: ticket } = await supabaseAdmin.from('support_tickets').select('*').eq('id', req.params.id).single();
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
-    const { data: msg, error } = await supabaseAdmin.from('support_messages')
-      .insert({ ticket_id: req.params.id, sender_id: req.userId, is_admin: true, message: message.trim() })
+    const isEmailChannel = isEmailChannelTicket(ticket);
+    let msgPayload = { ticket_id: req.params.id, sender_id: req.userId, is_admin: true, message: message.trim(), ...(isEmailChannel ? { channel: 'email' } : {}) };
+    let { data: msg, error } = await supabaseAdmin.from('support_messages')
+      .insert(msgPayload)
       .select().single();
+    // Pre-migration tolerance: the channel column may not exist yet — retry
+    // without it rather than losing the reply entirely.
+    if (error && /could not find the 'channel' column/i.test(error.message || '')) {
+      delete msgPayload.channel;
+      ({ data: msg, error } = await supabaseAdmin.from('support_messages').insert(msgPayload).select().single());
+    }
     if (error) return res.status(400).json({ error: error.message });
     await supabaseAdmin.from('support_tickets').update({ updated_at: new Date(), status: 'active' }).eq('id', req.params.id);
+    // Email-channel tickets have no in-app chat view for the user — point them
+    // at their inbox instead of the Community Board.
     await createNotification(
       ticket.user_id, 'system',
       '💬 Support team replied to your ticket',
-      `Your ticket "${(ticket.subject || '').slice(0, 60)}" has a new reply. Open Community Board → Support to read it.`,
+      isEmailChannel
+        ? `Your ticket "${(ticket.subject || '').slice(0, 60)}" has a new reply. Check your email for the full message.`
+        : `Your ticket "${(ticket.subject || '').slice(0, 60)}" has a new reply. Open Community Board → Support to read it.`,
       '/'
     );
     sendSystemAlert(ticket.user_id, '💬 Support team replied to your ticket',
       `Your ticket "${(ticket.subject || '').slice(0, 60)}" has a new reply.`,
       'https://praqen.com').catch(() => { });
+
+    // Two-way email integration: email-channel tickets have no in-app chat view
+    // for the user, so replies from Admin/Ceo/Team dashboards must go out as
+    // actual emails too (mirrors the agent reply endpoint). Fire-and-forget.
+    if (isEmailChannel) {
+      supabaseAdmin.from('users').select('email, username, full_name').eq('id', req.userId).single()
+        .then(({ data: adminUser }) => adminUser?.username || adminUser?.full_name || null)
+        .catch(() => null)
+        .then(adminName => {
+          return supabaseAdmin.from('users').select('email').eq('id', ticket.user_id).single()
+            .then(({ data: ticketUser }) => {
+              const replyEmail = ticket.submitted_email || ticketUser?.email;
+              if (!replyEmail) throw new Error('ticket user has no email on file');
+              return emailService.sendTicketReplyEmail({
+                ticket,
+                userEmail: replyEmail,
+                message: message.trim(),
+                agentName: adminName,
+              });
+            });
+        })
+        .then(r => {
+          if (r && !r.success) {
+            console.warn(`[AdminReply] Email not sent for ticket ${req.params.id}: ${r.error}`);
+            return;
+          }
+          // Track the outbound Message-ID for In-Reply-To threading of the
+          // user's next reply (overwrites the previous ref — newest wins).
+          if (r?.messageId) {
+            supabaseAdmin.from('support_tickets')
+              .update({ inbound_email_ref: String(r.messageId).replace(/^<|>$/g, '') })
+              .eq('id', req.params.id)
+              .then(() => {}, () => {});
+          }
+        })
+        .catch(err => console.error(`[AdminReply] Reply email failed for ticket ${req.params.id}:`, err.message));
+    }
     res.json({ success: true, message: msg });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -12331,20 +12469,27 @@ app.post('/api/support/tickets/:id/assign-agent', verifyToken, async (req, res) 
         .eq('id', req.params.id);
     }
 
-    // Send an automatic agent introduction message
-    const memStatus = getAgentStatus(bestAgent.id);
-    const agentDisplayName = memStatus.display_name || bestAgent.full_name || bestAgent.username || 'Support Agent';
-    const greeting = `Hi! I'm ${agentDisplayName}, a support agent at PRAQEN. I'll be helping you today. Could you please share any transaction ID, trade reference, or specific details about your issue so I can assist you right away?`;
-    const { data: introMsg, error: introErr } = await supabaseAdmin
-      .from('support_messages')
-      .insert({
-        ticket_id: req.params.id,
-        sender_id: bestAgent.id,
-        is_admin: true,
-        message: greeting,
-      })
-      .select().single();
-    if (introErr) console.error('Failed to send agent intro:', introErr);
+    // Send an automatic agent introduction message — but NOT for email-channel
+    // tickets: those are email-only, so the first real /reply (which sends the
+    // actual email) serves as the introduction.
+    const isEmailChannel = isEmailChannelTicket(ticket);
+    let introMsg = null;
+    let introErr = null;
+    if (!isEmailChannel) {
+      const memStatus = getAgentStatus(bestAgent.id);
+      const agentDisplayName = memStatus.display_name || bestAgent.full_name || bestAgent.username || 'Support Agent';
+      const greeting = `Hi! I'm ${agentDisplayName}, a support agent at PRAQEN. I'll be helping you today. Could you please share any transaction ID, trade reference, or specific details about your issue so I can assist you right away?`;
+      ({ data: introMsg, error: introErr } = await supabaseAdmin
+        .from('support_messages')
+        .insert({
+          ticket_id: req.params.id,
+          sender_id: bestAgent.id,
+          is_admin: true,
+          message: greeting,
+        })
+        .select().single());
+      if (introErr) console.error('Failed to send agent intro:', introErr);
+    }
 
     res.json({
       agent: bestAgent,
@@ -12502,18 +12647,21 @@ app.get('/api/agent/dashboard', verifyToken, async (req, res) => {
     // accurate even if the raw list is ever capped.
     const { data, error } = await supabaseAdmin
       .from('support_tickets')
-      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, avatar_url, email, phone_number, country)')
+      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, avatar_url, email, phone, country)')
       .order('updated_at', { ascending: false })
       .limit(500);
     if (error) return res.status(400).json({ error: error.message });
 
     const tickets = (data || []).map(t => ({
       ...t,
+      // Pre-migration bridge: stamp email-channel so "via Email" badges render
+      // for form/email tickets even while the channel column is missing.
+      channel: t.channel || (isEmailChannelTicket(t) ? 'email' : t.channel),
       username: t.users?.username,
       full_name: t.users?.full_name,
       avatar_url: t.users?.avatar_url,
       user_email: t.users?.email,
-      user_phone: t.users?.phone_number,
+      user_phone: t.users?.phone,
       user_country: t.users?.country,
     }));
 
@@ -12583,16 +12731,22 @@ app.post('/api/agent/tickets/:id/accept', verifyToken, async (req, res) => {
     agentName = agentName || agentUser?.full_name || agentUser?.username || 'Support Agent';
     agentAvatar = agentAvatar || agentUser?.avatar_url || null;
 
-    // Check if we already sent an intro message from this agent
-    const { data: existingMsgs } = await supabaseAdmin
-      .from('support_messages')
-      .select('id')
-      .eq('ticket_id', req.params.id)
-      .eq('sender_id', req.userId)
-      .limit(1);
+    // Check if we already sent an intro message from this agent.
+    // Email-channel tickets skip the live-chat intro entirely — the user has no
+    // in-app chat for these; the agent's first /reply goes out as an actual email.
+    const isEmailChannel = isEmailChannelTicket(ticket);
+    let existingMsgs = null;
+    if (!isEmailChannel) {
+      ({ data: existingMsgs } = await supabaseAdmin
+        .from('support_messages')
+        .select('id')
+        .eq('ticket_id', req.params.id)
+        .eq('sender_id', req.userId)
+        .limit(1));
+    }
 
     let introMessage = null;
-    if (!existingMsgs || existingMsgs.length === 0) {
+    if (!isEmailChannel && (!existingMsgs || existingMsgs.length === 0)) {
       // Send agent introduction
       const greeting = `Hi! I'm ${agentName}, a support agent at PRAQEN. I'll be helping you today. Could you please share any transaction ID, trade reference, or specific details about your issue so I can assist you right away?`;
       const { data: msg, error: msgErr } = await supabaseAdmin
@@ -12656,6 +12810,47 @@ app.post('/api/agent/tickets/:id/reply', verifyToken, async (req, res) => {
     sendSystemAlert(ticket.user_id, '💬 Support agent replied to your chat',
       `Your support chat "${(ticket.subject || '').slice(0, 60)}" has a new reply.`,
       'https://praqen.com').catch(() => { });
+
+    const isEmailChannel = isEmailChannelTicket(ticket);
+    console.log(`[AgentReply] ticket=${req.params.id} rawChannel=${ticket.channel || 'null'} isEmailChannel=${isEmailChannel}`);
+
+    // Two-way email integration: on email-channel tickets the reply must land in
+    // the user's actual inbox — email users may never open the app. Chat tickets
+    // keep the in-app notification behavior only. Fire-and-forget so reply
+    // latency and success never depend on the email provider.
+    if (isEmailChannel) {
+      const agentMem = getAgentStatus(req.userId);
+      supabaseAdmin.from('users').select('email, username, full_name').eq('id', req.userId).single()
+        .then(({ data: agentUser }) => agentUser?.username || agentUser?.full_name || agentMem?.display_name || null)
+        .catch(() => agentMem?.display_name || null)
+        .then(agentName => {
+          return supabaseAdmin.from('users').select('email').eq('id', ticket.user_id).single()
+            .then(({ data: ticketUser }) => {
+              if (!ticketUser?.email) throw new Error('ticket user has no email on file');
+              return emailService.sendTicketReplyEmail({
+                ticket,
+                userEmail: ticketUser.email,
+                message: message.trim(),
+                agentName,
+              });
+            });
+        })
+        .then(r => {
+          if (r && !r.success) {
+            console.warn(`[AgentReply] Email not sent for ticket ${req.params.id}: ${r.error}`);
+            return;
+          }
+          // Track the outbound Message-ID for In-Reply-To threading of the
+          // user's next reply (overwrites the previous ref — newest wins).
+          if (r?.messageId) {
+            supabaseAdmin.from('support_tickets')
+              .update({ inbound_email_ref: String(r.messageId).replace(/^<|>$/g, '') })
+              .eq('id', req.params.id)
+              .then(() => {}, () => {});
+          }
+        })
+        .catch(err => console.error(`[AgentReply] Reply email failed for ticket ${req.params.id}:`, err.message));
+    }
 
     // Clear typing indicator for this agent on this ticket
     delete supportTypingState[`${req.params.id}:${req.userId}`];
@@ -13897,7 +14092,7 @@ app.post('/api/wallet/usdt/internal-transfer', verifyToken, requireNotBanned, as
 
     // ── Email notifications (fire-and-forget) ──────────────────────────────
     const txDate = new Date().toUTCString();
-    const emailFrom = `"PRAQEN" <${process.env.EMAIL_USER || 'support@praqen.com'}>`;
+    const emailFrom = `"PRAQEN" <${NOTIFICATION_FROM_ADDR}>`;
 
     const recipHtml = `<div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:520px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #E2E8F0">
   <div style="background:linear-gradient(135deg,#1B4332,#26A17B);padding:28px 32px;text-align:center">
