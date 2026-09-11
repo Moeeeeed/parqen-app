@@ -29,8 +29,8 @@ function getConfiguredFromAddress(role = 'notifications') {
 }
 
 function formatFromAddress(address) {
-  if (!address) return `PraQen <${DEFAULT_FROM_ADDRESS}>`;
-  return address.includes('<') ? address : `PraQen <${address}>`;
+  if (!address) return `PraQen Support Team <${DEFAULT_FROM_ADDRESS}>`;
+  return address.includes('<') ? address : `PraQen Support Team <${address}>`;
 }
 
 function getResendFromAddress(role = 'notifications') {
@@ -693,8 +693,9 @@ async function sendTicketReplyEmail({ ticket, userEmail, message, agentName }) {
   const to = userEmail || ticket.submitted_email || ticket.user_email || ticket.user?.email;
   if (!to) return { success: false, error: 'No recipient email for ticket reply' };
   const ref = supportRefHeader(ticket.id);
+  const senderName = 'PraQen Support Team';
   const html = base('New Reply From Support', `
-    <h2 style="margin:0 0 8px;font-size:22px;color:#1B4332;font-weight:800;">${agentName || 'Our support team'} replied to your ticket</h2>
+    <h2 style="margin:0 0 8px;font-size:22px;color:#1B4332;font-weight:800;">${senderName} replied to your ticket</h2>
     <p style="margin:0 0 20px;color:#64748B;font-size:15px;">Ticket <strong>${ref}</strong> — ${(ticket.subject || '').replace(/</g, '&lt;')}</p>
     <div style="background:#F8FAFC;border-left:4px solid #10B981;border-radius:8px;padding:16px 20px;margin:0 0 24px;">
       <p style="margin:0;color:#334155;font-size:14px;white-space:pre-wrap;">${String(message || '').slice(0, 2000).replace(/</g, '&lt;')}</p>
