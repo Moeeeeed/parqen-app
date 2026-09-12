@@ -3,6 +3,7 @@ import axios from 'axios';
 import { toast } from 'react-toastify';
 import { copyToClipboard } from '../utils/clipboard';
 import AdminTraderRecognition from '../components/AdminTraderRecognition';
+import UserProgressAudit from '../components/UserProgressAudit';
 import {
   LayoutDashboard, Users, ArrowLeftRight, ArrowUpRight, AlertTriangle,
   ShieldCheck, DollarSign, List, Megaphone, LogOut,
@@ -2177,10 +2178,11 @@ UPDATE users SET kyc_status = 'approved' WHERE is_id_verified = true AND kyc_sta
 }
 
 // ================================================================
-// P2P MIGRATION SECTION — leads from Noones / Binance P2P / other,
-// captured on /register before they create an account.
+// P2P MIGRATION SECTION — traders importing a reputation from another P2P
+// platform, captured on /register before they create an account. We never
+// name a specific outside platform.
 // ================================================================
-const MIGRATION_PLATFORM_LABEL = { noones: 'Noones', binance: 'Binance P2P', other: 'Other P2P' };
+const MIGRATION_PLATFORM_LABEL = { noones: 'External P2P', binance: 'External P2P', other: 'External P2P' };
 
 function P2PMigrationSection() {
   const [submissions, setSubs] = useState([]);
@@ -2311,7 +2313,7 @@ function P2PMigrationSection() {
         </div>
       )}
 
-      <SectionHead title="P2P Migration Requests" sub="Traders who submitted a screenshot from Noones / Binance P2P / other platforms before signing up"
+      <SectionHead title="P2P Migration Requests" sub="Traders who submitted proof of a reputation from another P2P platform before signing up"
         action={
           <div className="flex gap-2 items-center">
             {['pending', 'approved', 'rejected', 'all'].map(s => (
@@ -5112,6 +5114,7 @@ const NAV = [
   { id:'users',        label:'Users',         icon:Users           },
   { id:'newusers',     label:'New Users',     icon:UserPlus        },
   { id:'users-audit',  label:'Users Audit',   icon:History         },
+  { id:'progress-audit', label:'Progress Audit', icon:ClipboardList },
   { id:'trades',       label:'Trades',        icon:ArrowLeftRight  },
   { id:'disputes',     label:'Disputes',      icon:AlertTriangle   },
   { id:'deposits',     label:'Deposits',      icon:Lock            },
@@ -5176,6 +5179,7 @@ export default function AdminDashboard({ user: appUser, onLogin }) {
     users:       <UsersSection />,
     newusers:    <NewUsersSection />,
     'users-audit': <UsersAuditSection />,
+    'progress-audit': <UserProgressAudit mode="admin" apiUrl={API_URL} authH={authH} />,
     trades:      <TradesSection />,
     disputes:    <DisputesSection />,
     deposits:    <SellerDepositsSection />,

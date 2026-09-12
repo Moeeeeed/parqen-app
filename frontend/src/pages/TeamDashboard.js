@@ -18,6 +18,8 @@ import {
   Ban, ShieldCheck, History,
 } from 'lucide-react';
 
+import UserProgressAudit from '../components/UserProgressAudit';
+
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 // Team access is validated by the backend (is_moderator || is_admin flag)
@@ -50,7 +52,7 @@ const SUGGESTION_STATUS = {
   done:      { label: 'Done',         color: '#166534', bg: '#F0FDF4'  },
   rejected:  { label: 'Not Planned',  color: '#6B7280', bg: '#F9FAFB'  },
 };
-const MIGRATION_PLATFORM_LABEL = { noones: 'Noones', binance: 'Binance P2P', other: 'Other P2P' };
+const MIGRATION_PLATFORM_LABEL = { noones: 'External P2P', binance: 'External P2P', other: 'External P2P' };
 
 const authH = () => {
   const t = localStorage.getItem('team_token') || localStorage.getItem('token');
@@ -3062,7 +3064,7 @@ function OverviewSection({ teamUser }) {
 }
 
 // ================================================================
-// P2P MIGRATION — traders who submitted a screenshot from Noones/Binance/other
+// P2P MIGRATION — traders who submitted proof of a reputation from another P2P
 // platforms before signing up. Ported from AdminDashboard.js's P2PMigrationSection
 // (same backend endpoints — now open to moderators too via requireTeamOrCeo).
 // ================================================================
@@ -3191,7 +3193,7 @@ function P2PMigrationSection() {
         </div>
       )}
 
-      <SectionHead title="P2P Migration Requests" sub="Traders who submitted a screenshot from Noones / Binance P2P / other platforms before signing up"
+      <SectionHead title="P2P Migration Requests" sub="Traders who submitted proof of a reputation from another P2P platform before signing up"
         action={
           <div className="flex gap-2 items-center">
             {['pending', 'approved', 'rejected', 'all'].map(s => (
@@ -5587,6 +5589,7 @@ export default function TeamDashboard({ user: propUser }) {
     { label: 'People', items: [
       { id: 'users',          label: 'Users',           icon: Users },
       { id: 'users-audit',    label: 'Users Audit',     icon: History },
+      { id: 'progress-audit', label: 'Users Progress Audit', icon: ClipboardList },
       { id: 'staff',          label: 'Staff Directory', icon: Briefcase },
     ]},
     { label: 'Tools', items: [
@@ -5777,6 +5780,7 @@ export default function TeamDashboard({ user: propUser }) {
           {section === 'vendor-deposits' && <VendorDepositsSection teamUser={teamUser} />}
           {section === 'users'          && <UsersSection />}
           {section === 'users-audit'    && <UsersAuditSection />}
+          {section === 'progress-audit' && <UserProgressAudit mode="team" apiUrl={API_URL} authH={authH} />}
         </main>
       </div>
     </div>
