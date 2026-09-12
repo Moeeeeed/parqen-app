@@ -22,28 +22,51 @@ function formatDate(iso) {
   }
 }
 
+const MD_LINK_RE = /\[([^\]]+)\]\((\/[^)]+)\)/g;
+
 function inlineLinks(text, links) {
-  // Renders {label} occurrences of `links[].label` inside `text` as internal <Link>s.
-  if (!links || !links.length) return text;
-  let parts = [text];
-  links.forEach(({ label, to }) => {
-    parts = parts.flatMap(part => {
-      if (typeof part !== 'string' || !part.includes(label)) return [part];
-      const segs = part.split(label);
-      const out = [];
-      segs.forEach((seg, i) => {
-        out.push(seg);
-        if (i < segs.length - 1) {
-          out.push(
-            <Link key={`${label}-${i}`} to={to} className="font-bold underline" style={{ color: C.green }}>
-              {label}
-            </Link>
-          );
-        }
+  // Two link mechanisms, both supported: (1) markdown-style [label](/path) written
+  // directly in the content string — parsed here so it never shows up as raw
+  // bracket/paren text; (2) an explicit `links: [{ label, to }]` array on the block,
+  // which swaps every occurrence of `label` in the text for a <Link>.
+  if (typeof text !== 'string') return text;
+
+  let parts = [];
+  let lastIndex = 0;
+  let match;
+  MD_LINK_RE.lastIndex = 0;
+  while ((match = MD_LINK_RE.exec(text))) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    parts.push(
+      <Link key={`md-${match.index}`} to={match[2]} className="font-bold underline" style={{ color: C.green }}>
+        {match[1]}
+      </Link>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  if (parts.length === 0) parts = [text];
+
+  if (links && links.length) {
+    links.forEach(({ label, to }) => {
+      parts = parts.flatMap(part => {
+        if (typeof part !== 'string' || !part.includes(label)) return [part];
+        const segs = part.split(label);
+        const out = [];
+        segs.forEach((seg, i) => {
+          out.push(seg);
+          if (i < segs.length - 1) {
+            out.push(
+              <Link key={`${label}-${i}`} to={to} className="font-bold underline" style={{ color: C.green }}>
+                {label}
+              </Link>
+            );
+          }
+        });
+        return out;
       });
-      return out;
     });
-  });
+  }
   return parts;
 }
 
