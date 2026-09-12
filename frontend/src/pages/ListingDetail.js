@@ -352,7 +352,7 @@ const loadAll = useCallback(async (isBackground = false) => {
   // receiver (the buying side) gets the FULL amount.
   //   • visitor buying  → YOU RECEIVE = btcGross (full)
   //   • visitor selling → YOU PAY     = btcGross + fee
-  const previewFeeRate = isGiftCard ? 0.03 : 0.02;
+  const previewFeeRate = isGiftCard ? 0.01 : 0.005;
   const previewFee     = btcGross * previewFeeRate;
   const btcAfterFee    = isVisitorSelling ? (btcGross + previewFee) : btcGross;
 

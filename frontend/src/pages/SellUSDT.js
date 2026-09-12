@@ -286,9 +286,9 @@ function OfferCard({listing, usdtPriceUSD, btcPriceUSD, onViewBuyer, onSell, lik
   const examplePay = (userSellAmt && parseFloat(userSellAmt) > 0)
     ? parseFloat(userSellAmt)
     : (minLocal || Math.round(100*usdRate));
-  // Additive fee model: the seller (crypto provider) pays the 2% platform fee ON
-  // TOP, so what actually leaves their wallet is gross + 2%.
-  const cryptoAmount = (examplePay / rateLocal) * 1.02;
+  // Additive fee model: the seller (crypto provider) pays the 0.5% platform fee ON
+  // TOP, so what actually leaves their wallet is gross + 0.5%.
+  const cryptoAmount = (examplePay / rateLocal) * 1.005;
   // Market value of that crypto at the real rate — NOT the buyer's marked-up
   // rate. Deliberately different from examplePay whenever margin != 0, so the
   // margin's effect is visible instead of the "you sell" line just echoing

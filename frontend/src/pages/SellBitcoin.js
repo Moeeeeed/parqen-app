@@ -368,9 +368,9 @@ function OfferCard({listing, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLi
     ? parseFloat(userSellAmt)
     : (minLocal || Math.round(100*usdRate));
   const { btcReceived: examplePayBtcGross } = calcBtc(exampleReceiveFiat, btcPriceUSD, margin, usdRate);
-  // Additive fee model: the seller (BTC provider) pays the 2% platform fee ON TOP,
-  // so what actually leaves their wallet is gross + 2%.
-  const SELL_FEE_RATE = 0.02;
+  // Additive fee model: the seller (BTC provider) pays the 0.5% platform fee ON TOP,
+  // so what actually leaves their wallet is gross + 0.5%.
+  const SELL_FEE_RATE = 0.005;
   const examplePayBtc = examplePayBtcGross * (1 + SELL_FEE_RATE);
   // Market value of the BTC given up, at the real BTC/USD rate — NOT the
   // seller's marked-up rate. Deliberately different from exampleReceiveFiat
@@ -515,7 +515,7 @@ function OfferCard({listing, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLi
           </p>
           <div className="flex items-center gap-1.5 mt-0.5">
             <p className="text-[10px] font-semibold" style={{color:C.g500}}>
-              ≈ {fmt(examplePayMarketFiat, 2)} {cur}
+              ≈ {fmt(examplePayMarketFiat, 2)} {cur} · incl. {(SELL_FEE_RATE*100).toFixed(1)}% fee, paid by you on top
             </p>
           </div>
         </div>

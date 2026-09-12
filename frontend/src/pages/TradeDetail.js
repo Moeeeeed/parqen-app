@@ -1481,7 +1481,7 @@ export default function TradeDetail({user}) {
   //   fee_model NULL (legacy inclusive) → buyer received amount_btc net of the
   //     fee; gross = received / (1 - rate).
   const isGiftCardFeeTrade = String(trade.listing?.listing_type || trade.trade_type || '').toUpperCase().includes('GIFT_CARD');
-  const FEE_RATE       = isGiftCardFeeTrade ? 0.03 : 0.02;
+  const FEE_RATE       = isGiftCardFeeTrade ? 0.01 : 0.005;
   const isAdditiveFee  = trade.fee_model === 'additive';
   const feeBtc         = parseFloat(trade.platform_fee_btc || 0) > 0
     ? parseFloat(trade.platform_fee_btc)

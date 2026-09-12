@@ -572,17 +572,22 @@ export default function SellGiftCardMarketplace({ user }) {
                 </p>
               </div>
               
-              <div className="p-3 rounded-lg" style={{ backgroundColor: PRAQEN.lightBg }}>
-                <p className="text-sm font-semibold mb-2">You Will Receive:</p>
-                <p className="text-2xl font-bold text-orange-600">
-                  {(parseFloat(tradeAmount || 0) / modalRate).toFixed(8)} BTC
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  ≈ ${tradeAmount} USD value
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Platform fee: 0.5% ({(parseFloat(tradeAmount || 0) / modalRate * 0.005).toFixed(8)} BTC)
-                </p>
+              <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${PRAQEN.gray[200]}` }}>
+                <div className="p-3" style={{ backgroundColor: PRAQEN.lightBg }}>
+                  <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: PRAQEN.gray[500] }}>You Will Receive</p>
+                  <p className="text-2xl font-bold" style={{ color: PRAQEN.primary }}>
+                    {(parseFloat(tradeAmount || 0) / modalRate).toFixed(8)} BTC
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: PRAQEN.gray[500] }}>
+                    ≈ ${tradeAmount} USD value — the full amount, no fee subtracted
+                  </p>
+                </div>
+                <div className="px-3 py-2.5 bg-white flex items-start gap-2">
+                  <Percent size={13} style={{ color: PRAQEN.primary, marginTop: 2, flexShrink: 0 }} />
+                  <p className="text-xs leading-relaxed" style={{ color: PRAQEN.gray[600] }}>
+                    <strong style={{ color: PRAQEN.gray[800] }}>Platform fee: 1%</strong> ({(parseFloat(tradeAmount || 0) / modalRate * 0.01).toFixed(8)} BTC) — added on top and paid by the BTC buyer. It never comes out of what you receive above. No other fee applies to this trade.
+                  </p>
+                </div>
               </div>
               
               <div className="bg-yellow-50 p-3 rounded-lg">
