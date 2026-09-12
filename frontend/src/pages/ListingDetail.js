@@ -415,7 +415,7 @@ const loadAll = useCallback(async (isBackground = false) => {
       }
 
       // Submit the GROSS BTC amount — no fee pre-deduction here. The platform
-      // fee (1% Buy/Sell, 2% gift cards) is applied exactly once, at release,
+      // fee (0.5% Buy/Sell, 1% gift cards) is applied exactly once, at release,
       // by tradeEscrowService.js. Regular Buy/Sell trades get this value
       // re-verified server-side anyway, but gift card trades use it as-is, so
       // deducting a fee here as well used to double-charge gift card trades.

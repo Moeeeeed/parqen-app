@@ -1825,8 +1825,15 @@ export default function CreateOffer({ user }) {
                     {/* ── Trade Breakdown — crystal clear profit explanation ── */}
                     {curr && (() => {
                       const exampleCash = 100;
-                      const buyerGetsUSD = (exampleCash / (1 + margin / 100)) * 0.995;
-                      const yourProfitUSD = exampleCash - buyerGetsUSD;
+                      // Additive fee model (0.5% BTC/USDT trades): the buyer always
+                      // receives the full priced amount — nothing deducted from them.
+                      // The seller pays the 0.5% platform fee ON TOP, so it comes out
+                      // of the seller's margin profit instead.
+                      const PLATFORM_FEE_RATE = 0.005;
+                      const buyerGetsUSD = exampleCash / (1 + margin / 100);
+                      const yourProfitUSD = offerType === 'sell'
+                        ? exampleCash - buyerGetsUSD * (1 + PLATFORM_FEE_RATE)
+                        : exampleCash - buyerGetsUSD;
                       const yourProfitPct = (yourProfitUSD / exampleCash) * 100;
                       return (
                         <div

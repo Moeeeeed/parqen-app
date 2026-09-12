@@ -2587,7 +2587,7 @@ function PlatformWalletsCard() {
               </div>
               <div>
                 <p className="font-black text-xs" style={{ color: C.g700 }}>Fee Collection Wallet</p>
-                <p className="text-[11px]" style={{ color: C.g400 }}>1% on BTC trades · 2% on gift cards</p>
+                <p className="text-[11px]" style={{ color: C.g400 }}>0.5% on BTC trades · 1% on gift cards</p>
               </div>
             </div>
 
@@ -3017,7 +3017,7 @@ function FinanceSection() {
           <p className="text-[11px] font-black uppercase tracking-wide" style={{ color: C.g400 }}>Total Escrow Fees Collected</p>
           <p className="text-xl font-black" style={{ color: '#F59E0B' }}>₿{fmtBtc(totalFeesBtc)}</p>
           <p className="text-xs font-semibold" style={{ color: C.g500 }}>${fmt(totalFeesUsd, 2)} USD</p>
-          <p className="text-[10px] mt-1" style={{ color: C.g400 }}>1% BTC / 2% gift card — on completed trades only ({data.profits?.length || 0} trades)</p>
+          <p className="text-[10px] mt-1" style={{ color: C.g400 }}>0.5% BTC / 1% gift card — on completed trades only ({data.profits?.length || 0} trades)</p>
         </div>
       </div>
 
@@ -3119,7 +3119,7 @@ function FinanceSection() {
       <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
         <div className="px-5 py-4 border-b" style={{ borderColor: C.g100 }}>
           <h3 className="font-black text-sm" style={{ color: C.g800 }}>Escrow Fee Collections</h3>
-          <p className="text-xs mt-0.5" style={{ color: C.g400 }}>1% on BTC trades · 2% on gift card trades — credited to escrow wallet on completion</p>
+          <p className="text-xs mt-0.5" style={{ color: C.g400 }}>0.5% on BTC trades · 1% on gift card trades — credited to escrow wallet on completion</p>
         </div>
         {(data.profits || []).length === 0 ? <Empty icon={<Banknote size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No fee collections yet" /> : (
           <div className="overflow-x-auto">

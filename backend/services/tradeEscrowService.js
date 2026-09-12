@@ -664,7 +664,7 @@ class TradeEscrowService {
     const amount      = isUsdt
       ? parseFloat(tradeData.amount_usdt || tradeData.escrow_amount || 0)
       : parseFloat(tradeData.amount_btc);
-    const feeRate     = isGiftCardTrade ? 0.03 : 0.02;
+    const feeRate     = this.feeRateFor(isGiftCardTrade); // 0.5% / 1% — same rate reserved at lock time
     const platformFee = parseFloat((amount * feeRate).toFixed(isUsdt ? 6 : 8));
 
     // Fee model was pinned at lock time. additive → the provider locked
@@ -683,7 +683,7 @@ class TradeEscrowService {
     // silently release funds with a missing/malformed company fee (e.g. NaN
     // propagating from a corrupt `amount`, or a future edit changing feeRate
     // to something outside the two approved rates).
-    const expectedFeeRate = isGiftCardTrade ? 0.03 : 0.02;
+    const expectedFeeRate = this.feeRateFor(isGiftCardTrade);
     if (!Number.isFinite(platformFee) || platformFee < 0 || feeRate !== expectedFeeRate) {
       throw new Error(`Fee validation failed before release — trade ${tradeId.slice(0, 8)}: platformFee=${platformFee}, feeRate=${feeRate}, expected=${expectedFeeRate}. Release blocked.`);
     }

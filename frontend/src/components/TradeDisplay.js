@@ -12,10 +12,12 @@ const TradeDisplay = ({
   const [localCurrency, setLocalCurrency] = useState(initialLocalCurrency || 'GHS');
   const [exchangeRate, setExchangeRate] = useState(initialExchangeRate || 11.09);
 
-  // Calculate BTC amount based on seller's rate
+  // Calculate BTC amount based on seller's rate.
+  // Additive fee model: the seller pays the 0.5% platform fee on top — the
+  // buyer always receives the full amount, nothing deducted.
   const btcAmount = usdAmount / sellerRate;
-  const fee = btcAmount * 0.005;
-  const btcAfterFee = btcAmount - fee;
+  const fee = btcAmount * 0.005; // seller's fee, paid on top — informational only, not deducted from the buyer
+  const btcAfterFee = btcAmount;
 
   // Format local currency
   const formatLocal = (usdValue) => {
@@ -89,7 +91,7 @@ const TradeDisplay = ({
           <span className="text-green-700 font-bold text-lg">You will receive:</span>
           <div className="text-2xl font-bold text-green-700 mt-2">₿ {btcAfterFee.toFixed(8)} BTC</div>
           <div className="text-sm text-green-600 font-semibold">
-            (≈ ${(usdAmount * 0.995).toFixed(2)} USD / {formatLocal(usdAmount * 0.995)})
+            (≈ ${usdAmount.toFixed(2)} USD / {formatLocal(usdAmount)})
           </div>
         </div>
       </div>
@@ -114,8 +116,8 @@ const TradeDisplay = ({
               <span>₿ {fee.toFixed(8)}</span>
             </div>
             <div className="flex justify-between font-semibold border-t pt-1 mt-1">
-              <span>Total locked:</span>
-              <span>₿ {btcAmount.toFixed(8)}</span>
+              <span>Total locked (seller pays fee on top):</span>
+              <span>₿ {(btcAmount + fee).toFixed(8)}</span>
             </div>
           </div>
         </div>

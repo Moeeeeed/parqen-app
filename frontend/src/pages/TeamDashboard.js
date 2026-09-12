@@ -2852,7 +2852,7 @@ function TeamFinanceSection() {
             </div>
             <p className="text-xl font-black" style={{ color: C.gold }}>₿{fees.totalGcBtc}</p>
             {btcPrice > 0 && <p className="text-xs font-semibold mt-0.5" style={{ color: C.g500 }}>{usd(fees.totalGcBtc)}</p>}
-            <p className="text-[10px] mt-2 font-bold" style={{ color: C.g400 }}>{fees.gcCount} trades · 2% fee</p>
+            <p className="text-[10px] mt-2 font-bold" style={{ color: C.g400 }}>{fees.gcCount} trades · 1% fee</p>
           </div>
           <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.g200 }}>
             <div className="flex items-center gap-2 mb-3">
