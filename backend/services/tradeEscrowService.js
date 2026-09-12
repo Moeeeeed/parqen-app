@@ -17,8 +17,8 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
 
-const FEE_RATE            = 0.02;   // crypto P2P trades
-const GIFT_CARD_FEE_RATE  = 0.03;   // gift-card trades
+const FEE_RATE            = 0.005;  // crypto P2P trades (Buy/Sell BTC & USDT) — 0.5%
+const GIFT_CARD_FEE_RATE  = 0.01;   // gift-card trades — 1%
 const COMPANY_WALLET_ID   = '14762cd0-d3b2-474f-acab-fe0071961e9a';
 const COMPANY_BTC_ADDRESS = 'bc1qd8z3zdn2e3eul6y8nmcyjvgle3yzv8ttvsjp49';
 

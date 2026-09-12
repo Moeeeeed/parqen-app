@@ -1076,13 +1076,24 @@ function encryptCode(code, key = 'mock-encryption-key') {
   return cipher.update(code, 'utf8', 'hex') + cipher.final('hex');
 }
 
-// Platform fee for a crypto P2P trade. Gift-card trades are 3% — the trade
+// Platform fee for a crypto P2P trade. Gift-card trades are 1% — the trade
 // insert and tradeEscrowService use the gift-card-aware rate; this helper is the
-// 2% common case (rough pre-escrow estimate; the authoritative per-trade fee is
+// 0.5% common case (rough pre-escrow estimate; the authoritative per-trade fee is
 // written by lockFundsInEscrow).
 function calculateFee(btcAmount) {
-  return (parseFloat(btcAmount) * 0.02).toFixed(8);
+  return (parseFloat(btcAmount) * 0.005).toFixed(8);
 }
+
+// PUBLIC-facing trade-count display override. The trades themselves are real and
+// untouched — this only stops the public profile (GET /api/users/:userId) and the
+// listing seller card (GET /api/listings/:id) from silently re-syncing
+// users.total_trades back up to the live trades-table count for these accounts.
+// Internal admin/team tools (Users Progress Audit, /admin/users/:id/detail, etc.)
+// deliberately still show the real recomputed number — this list only affects what
+// buyers/visitors see on the public profile and on offer cards.
+const HIDE_TRADE_COUNT_FOR = new Set([
+  '65830906-297b-4eb5-8c60-ed0e9a4aac82', // KEN IGHO — requested 2026-09-11
+]);
 
 // allowCached=true (default): reuse _btcCache for up to BTC_CACHE_TTL — for display-only
 // call sites (rates, balance display, listings). allowCached=false: always hit the live
@@ -5599,19 +5610,25 @@ app.get('/api/users/:userId', async (req, res) => {
       if (count != null) referral_trade_count = count;
     } catch { }
 
-    // Real trade count from trades table (buyer or seller, completed)
-    let real_total_trades = data.total_trades || 0;
-    try {
-      const [buyerRes, sellerRes] = await Promise.all([
-        supabaseAdmin.from('trades').select('*', { count: 'exact', head: true }).eq('buyer_id', data.id).eq('status', 'COMPLETED'),
-        supabaseAdmin.from('trades').select('*', { count: 'exact', head: true }).eq('seller_id', data.id).eq('status', 'COMPLETED'),
-      ]);
-      const realCount = (buyerRes.count || 0) + (sellerRes.count || 0);
-      if (realCount > real_total_trades) {
-        real_total_trades = realCount;
-        supabaseAdmin.from('users').update({ total_trades: realCount }).eq('id', data.id).then(null, () => { });
-      }
-    } catch { }
+    // Real trade count from trades table (buyer or seller, completed) — skipped for
+    // HIDE_TRADE_COUNT_FOR accounts. Note the stored column itself can never be
+    // lowered (the protect_user_stats DB trigger blocks any UPDATE that would
+    // decrease total_trades/feedback), so hiding this for an account means
+    // returning a hardcoded 0 in the API response, not trying to zero the column.
+    let real_total_trades = HIDE_TRADE_COUNT_FOR.has(data.id) ? 0 : (data.total_trades || 0);
+    if (!HIDE_TRADE_COUNT_FOR.has(data.id)) {
+      try {
+        const [buyerRes, sellerRes] = await Promise.all([
+          supabaseAdmin.from('trades').select('*', { count: 'exact', head: true }).eq('buyer_id', data.id).eq('status', 'COMPLETED'),
+          supabaseAdmin.from('trades').select('*', { count: 'exact', head: true }).eq('seller_id', data.id).eq('status', 'COMPLETED'),
+        ]);
+        const realCount = (buyerRes.count || 0) + (sellerRes.count || 0);
+        if (realCount > real_total_trades) {
+          real_total_trades = realCount;
+          supabaseAdmin.from('users').update({ total_trades: realCount }).eq('id', data.id).then(null, () => { });
+        }
+      } catch { }
+    }
 
     // Real review counts from reviews table
     let real_positive = data.positive_feedback || 0;
@@ -6449,11 +6466,11 @@ app.get('/api/listings', async (req, res) => {
       // isn't used for rate display at all), which previously let near-empty wallets pass
       // the $10 minimum check because the inflated price overstated their USD balance.
       const livePriceUsd = _btcCache || 88000;
-      // Under the additive fee model the seller must hold amount + 2% to fund a
-      // trade, so their *sellable* balance is holdings ÷ 1.02. Capping displayed
+      // Under the additive fee model the seller must hold amount + 0.5% to fund a
+      // trade, so their *sellable* balance is holdings ÷ 1.005. Capping displayed
       // limits to the raw balance would let buyers open a top-of-range trade that
       // then fails at escrow-lock with "insufficient funds".
-      const SELL_FEE_DIVISOR = 1.02;
+      const SELL_FEE_DIVISOR = 1.005;
       const balanceUsdFor = (l) => ((l.asset === 'USDT')
         ? (usdtBalMap[l.seller_id] || 0)
         : (balMap[l.seller_id] || 0) * livePriceUsd) / SELL_FEE_DIVISOR;
@@ -6589,9 +6606,12 @@ app.get('/api/listings/:id', async (req, res) => {
           const negCount = reviews.filter(r => r.rating <= 2).length;
           const avgRating = reviews.length > 0
             ? reviews.reduce((s, r) => s + parseFloat(r.rating || 0), 0) / reviews.length : 0;
+          // Stored column can't be lowered (protect_user_stats DB trigger), so hiding
+          // it means returning a hardcoded 0 here, not falling back to the column.
+          const hideTrades = HIDE_TRADE_COUNT_FOR.has(seller.id);
           enrichedSeller = {
             ...seller,
-            total_trades: realTrades > seller.total_trades ? realTrades : seller.total_trades,
+            total_trades: hideTrades ? 0 : (realTrades > seller.total_trades ? realTrades : seller.total_trades),
             positive_feedback: posCount > seller.positive_feedback ? posCount : seller.positive_feedback,
             negative_feedback: negCount > seller.negative_feedback ? negCount : seller.negative_feedback,
             total_feedback_count: reviews.length > seller.total_feedback_count ? reviews.length : seller.total_feedback_count,
@@ -6930,15 +6950,15 @@ app.get('/api/offers', async (req, res) => {
       .filter(l => {
         // Hide SELL offers where seller has < $10 worth of the offer's asset — offer stays
         // ACTIVE in DB and reappears automatically once they top up their wallet.
-        // Divided by 1.02: under the additive fee model the seller needs amount + 2%
+        // Divided by 1.005: under the additive fee model the seller needs amount + 0.5%
         // to fund a trade, so that's their real sellable balance.
         if (l.listing_type !== 'SELL' && l.listing_type !== 'SELL_BITCOIN') return true;
         if ((l.asset || 'BTC') === 'USDT') {
-          return (usdtBalMap[l.seller_id] || 0) / 1.02 >= 10; // 1 USDT ≈ $1
+          return (usdtBalMap[l.seller_id] || 0) / 1.005 >= 10; // 1 USDT ≈ $1
         }
         const sellerBtc = balMap[l.seller_id] || 0;
         const btcPriceVal = parseFloat(l.bitcoin_price) || 88000;
-        return (sellerBtc * btcPriceVal) / 1.02 >= 10;
+        return (sellerBtc * btcPriceVal) / 1.005 >= 10;
       })
       .map(l => ({
         ...l,
@@ -8291,11 +8311,11 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
       amountReceiveUsd = parseFloat((verifiedAmountBtc * marketRateUSD).toFixed(2));
     }
 
-    // Gift-card trades are 3%, everything else 2%. lockFundsInEscrow re-derives
+    // Gift-card trades are 1%, everything else 0.5%. lockFundsInEscrow re-derives
     // and overwrites platform_fee_btc/usdt, but platform_fee_usd is set here and
     // never touched again — so it must use the right rate too.
     const isGiftCardTrade = listingTypeUpper.includes('GIFT_CARD');
-    const tradeFeeRate = isGiftCardTrade ? 0.03 : 0.02;
+    const tradeFeeRate = isGiftCardTrade ? 0.01 : 0.005;
     const verifiedFee = parseFloat((verifiedAmountBtc * tradeFeeRate).toFixed(8));
     const tradeRef = 'PRAQ-' + require('crypto').randomBytes(4).toString('hex').toUpperCase();
 
@@ -10436,16 +10456,50 @@ app.get('/api/admin/stats', verifyToken, async (req, res) => {
 app.get('/api/admin/users', verifyToken, async (req, res) => {
   try {
     const admin = await requireAdmin(req, res); if (!admin) return;
-    const { search = '', status = '', country = '', page = 1, limit = 50 } = req.query;
+    const {
+      search = '', status = '', country = '', page = 1, limit = 50,
+      joinedFrom = '', joinedTo = '', sort = 'created_at', sortDir = 'desc',
+      hasFlag = '', hasOpenDispute = '', verified = '',
+    } = req.query;
+
+    // Optional cross-table filters — resolve the matching user-id set first, then
+    // constrain the main query with .in(). Both source sets are small (flags and
+    // live disputes are low-cardinality), so this stays cheap.
+    let restrictIds = null;
+    const intersect = (ids) => {
+      const s = new Set(ids);
+      restrictIds = restrictIds === null ? [...s] : restrictIds.filter(x => s.has(x));
+    };
+    if (hasFlag === 'true') {
+      const { data: fr } = await supabaseAdmin.from('reconciliation_flags')
+        .select('user_id').not('user_id', 'is', null).limit(5000);
+      intersect((fr || []).map(r => r.user_id));
+    }
+    if (hasOpenDispute === 'true') {
+      const { data: dr } = await supabaseAdmin.from('trades')
+        .select('buyer_id, seller_id').eq('status', 'DISPUTED').limit(5000);
+      intersect((dr || []).flatMap(r => [r.buyer_id, r.seller_id]).filter(Boolean));
+    }
+    if (restrictIds !== null && restrictIds.length === 0) {
+      return res.json({ users: [], total: 0, page: parseInt(page), limit: parseInt(limit) });
+    }
+
+    const sortCol = ['created_at', 'last_seen_at', 'last_login', 'total_trades', 'average_rating'].includes(sort) ? sort : 'created_at';
     let query = supabaseAdmin.from('users')
       .select('*', { count: 'exact' })
-      .order('created_at', { ascending: false })
+      .order(sortCol, { ascending: sortDir === 'asc', nullsFirst: false })
       .range((page - 1) * limit, page * limit - 1);
     if (search) query = query.or(`username.ilike.%${search}%,email.ilike.%${search}%,full_name.ilike.%${search}%,phone.ilike.%${search}%`);
     if (status === 'phone_pending') query = query.not('phone', 'is', null).eq('is_phone_verified', false);
     else if (status === 'kyc_pending') query = query.eq('kyc_status', 'pending');
     else if (status) query = query.eq('account_status', status);
     if (country) query = query.eq('country', country.toUpperCase());
+    if (joinedFrom) query = query.gte('created_at', joinedFrom);
+    if (joinedTo) query = query.lte('created_at', joinedTo);
+    if (verified === 'email') query = query.eq('is_email_verified', true);
+    else if (verified === 'phone') query = query.eq('is_phone_verified', true);
+    else if (verified === 'id') query = query.eq('is_id_verified', true);
+    if (restrictIds !== null) query = query.in('id', restrictIds);
     const { data, error, count } = await query;
     if (error) return res.status(400).json({ error: error.message });
     // Surface a phone-derived country as a fallback signal — the country
@@ -10568,6 +10622,255 @@ app.get('/api/admin/users/:id/wallet-detail', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('[GET /api/admin/users/:id/wallet-detail]', error.message);
     res.status(500).json({ error: 'Failed to load wallet details: ' + error.message });
+  }
+});
+
+// ================================================================
+// USERS PROGRESS AUDIT — per-user "case file" endpoints, read by both the
+// Admin Panel (deep build: balances + full ledger) and the Team Portal
+// (lighter build: no money tabs). All read-only.
+//   /trades              — full trade history for one user  (requireAdmin)
+//   /wallet-transactions — full money ledger + balance_audit (requireFullAdmin)
+//   /activity            — merged progress timeline          (requireAdmin)
+//   /risk                — flags / disputes / holds / deposits (requireAdmin)
+// ================================================================
+
+// GET /api/admin/users/:id/trades — every trade this user is a party to
+// (buyer OR seller), newest first, paginated, with a lifetime summary that
+// spans ALL their trades (not just the current page).
+app.get('/api/admin/users/:id/trades', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const { id } = req.params;
+    const { status = '', page = 1, limit = 25 } = req.query;
+    const lim = Math.min(parseInt(limit) || 25, 100);
+    const pg  = Math.max(parseInt(page) || 1, 1);
+
+    let q = supabaseAdmin.from('trades')
+      .select(
+        'id, status, trade_type, amount_btc, amount_usd, amount_usdt, amount_local, local_currency, ' +
+        'currency, payment_method, gift_card_brand, trade_ref, fee_model, platform_fee_btc, platform_fee_usdt, ' +
+        'buyer_id, seller_id, created_at, completed_at, cancelled_at, cancel_reason, admin_notes, ' +
+        'listing:listing_id(id, listing_type, asset), ' +
+        'buyer:buyer_id(id, username), seller:seller_id(id, username)',
+        { count: 'exact' }
+      )
+      .or(`buyer_id.eq.${id},seller_id.eq.${id}`)
+      .order('created_at', { ascending: false })
+      .range((pg - 1) * lim, pg * lim - 1);
+    if (status) q = q.eq('status', status);
+
+    const { data, error, count } = await q;
+    if (error) return res.status(400).json({ error: error.message });
+
+    const trades = (data || []).map(t => ({
+      ...t,
+      role: t.buyer_id === id ? 'buyer' : 'seller',
+      counterparty: t.buyer_id === id ? (t.seller || null) : (t.buyer || null),
+    }));
+
+    // Lifetime summary — one light pass over every trade for this user.
+    const { data: allRows } = await supabaseAdmin.from('trades')
+      .select('status, amount_usd, platform_fee_btc, platform_fee_usdt, created_at, completed_at')
+      .or(`buyer_id.eq.${id},seller_id.eq.${id}`).limit(5000);
+    const rows = allRows || [];
+    const done = rows.filter(r => r.status === 'COMPLETED');
+    const durations = done
+      .filter(r => r.created_at && r.completed_at)
+      .map(r => (new Date(r.completed_at) - new Date(r.created_at)) / 60000)
+      .filter(m => m >= 0);
+    const summary = {
+      total:      rows.length,
+      completed:  done.length,
+      cancelled:  rows.filter(r => r.status === 'CANCELLED').length,
+      disputed:   rows.filter(r => r.status === 'DISPUTED').length,
+      open:       rows.filter(r => ['CREATED', 'FUNDS_LOCKED', 'PAYMENT_SENT'].includes(r.status)).length,
+      volumeUsd:  parseFloat(done.reduce((s, r) => s + parseFloat(r.amount_usd || 0), 0).toFixed(2)),
+      feesBtc:    parseFloat(done.reduce((s, r) => s + parseFloat(r.platform_fee_btc || 0), 0).toFixed(8)),
+      feesUsdt:   parseFloat(done.reduce((s, r) => s + parseFloat(r.platform_fee_usdt || 0), 0).toFixed(2)),
+      completionRate: rows.length ? Math.round((done.length / rows.length) * 100) : 0,
+      avgMinutesToComplete: durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : null,
+      capped: rows.length >= 5000,
+    };
+
+    res.json({ success: true, trades, total: count || 0, page: pg, limit: lim, summary });
+  } catch (e) {
+    console.error('[GET /api/admin/users/:id/trades]', e.message);
+    res.status(500).json({ error: 'Failed to load trade history: ' + e.message });
+  }
+});
+
+// GET /api/admin/users/:id/wallet-transactions — the full money ledger for one
+// user (every wallet_transactions row) plus the balance_audit trail. FULL ADMIN
+// ONLY — moderators open every other tab of the audit but never this one.
+app.get('/api/admin/users/:id/wallet-transactions', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const { id } = req.params;
+    const { type = '', page = 1, limit = 40 } = req.query;
+    const lim = Math.min(parseInt(limit) || 40, 200);
+    const pg  = Math.max(parseInt(page) || 1, 1);
+
+    let q = supabaseAdmin.from('wallet_transactions')
+      .select(
+        'id, type, currency, amount_btc, amount_usdt, platform_fee_btc, platform_fee_usdt, ' +
+        'destination_address, status, tx_hash, notes, rejection_reason, created_at, reviewed_at',
+        { count: 'exact' }
+      )
+      .eq('user_id', id)
+      .order('created_at', { ascending: false })
+      .range((pg - 1) * lim, pg * lim - 1);
+    if (type) q = q.eq('type', type);
+
+    const [txR, auditR, walletR] = await Promise.all([
+      q,
+      supabaseAdmin.from('balance_audit')
+        .select('id, change_btc, new_balance, reason, trade_id, created_at')
+        .eq('user_id', id).order('created_at', { ascending: false }).limit(100),
+      supabaseAdmin.from('wallets')
+        .select('balance_btc, locked_balance_btc, balance_usdt, locked_balance_usdt')
+        .eq('user_id', id).maybeSingle(),
+    ]);
+    if (txR.error) return res.status(400).json({ error: txR.error.message });
+
+    // Mirror-table drift snapshot (BTC only — that's what the mirrors carry).
+    const [ubR, uwR] = await Promise.all([
+      supabaseAdmin.from('user_balances').select('balance_btc').eq('user_id', id).maybeSingle(),
+      supabaseAdmin.from('user_wallets').select('balance_btc').eq('user_id', id).maybeSingle(),
+    ]);
+    const authBtc = parseFloat(walletR.data?.balance_btc || 0);
+    const mirrors = {
+      wallets_btc:       authBtc,
+      user_balances_btc: ubR.data ? parseFloat(ubR.data.balance_btc || 0) : null,
+      user_wallets_btc:  uwR.data ? parseFloat(uwR.data.balance_btc || 0) : null,
+    };
+    mirrors.drift = (
+      (mirrors.user_balances_btc != null && Math.abs(mirrors.user_balances_btc - authBtc) > 1e-8) ||
+      (mirrors.user_wallets_btc  != null && Math.abs(mirrors.user_wallets_btc  - authBtc) > 1e-8)
+    );
+
+    res.json({
+      success: true,
+      wallet: walletR.data || { balance_btc: 0, locked_balance_btc: 0, balance_usdt: 0, locked_balance_usdt: 0 },
+      transactions: txR.data || [],
+      total: txR.count || 0,
+      page: pg, limit: lim,
+      balanceAudit: auditR.data || [],
+      mirrors,
+    });
+  } catch (e) {
+    console.error('[GET /api/admin/users/:id/wallet-transactions]', e.message);
+    res.status(500).json({ error: 'Failed to load wallet ledger: ' + e.message });
+  }
+});
+
+// GET /api/admin/users/:id/activity — a single reverse-chronological timeline of
+// what this user has DONE: signup, logins (last_login / last_seen_at), listings
+// created, reviews written and received, KYC submission. Read-only, team-visible.
+app.get('/api/admin/users/:id/activity', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const { id } = req.params;
+
+    const { data: u } = await supabaseAdmin.from('users')
+      .select('created_at, last_login, last_seen_at, token_version, kyc_status, kyc_submitted_at').eq('id', id).maybeSingle();
+    if (!u) return res.status(404).json({ error: 'User not found' });
+
+    const [listingsR, revWrittenR, revReceivedR] = await Promise.all([
+      supabaseAdmin.from('listings').select('id, listing_type, asset, status, created_at')
+        .eq('seller_id', id).order('created_at', { ascending: false }).limit(50),
+      supabaseAdmin.from('reviews').select('id, rating, comment, reviewee_id, created_at')
+        .eq('reviewer_id', id).order('created_at', { ascending: false }).limit(50),
+      supabaseAdmin.from('reviews').select('id, rating, comment, reviewer_id, created_at')
+        .eq('reviewee_id', id).order('created_at', { ascending: false }).limit(50),
+    ]);
+
+    const events = [];
+    if (u.created_at)        events.push({ type: 'SIGNUP', at: u.created_at, label: 'Account created' });
+    if (u.kyc_submitted_at)  events.push({ type: 'KYC_SUBMIT', at: u.kyc_submitted_at, label: `KYC submitted (${u.kyc_status || 'pending'})` });
+    if (u.last_login)        events.push({ type: 'LOGIN', at: u.last_login, label: 'Last login' });
+    if (u.last_seen_at)      events.push({ type: 'SEEN', at: u.last_seen_at, label: 'Last seen' });
+    (listingsR.data || []).forEach(l => events.push({
+      type: 'LISTING', at: l.created_at,
+      label: `${(l.listing_type || '').includes('BUY') ? 'Buy' : 'Sell'} offer for ${l.asset || 'BTC'} — ${l.status}`,
+      ref: l.id,
+    }));
+    (revWrittenR.data || []).forEach(r => events.push({
+      type: 'REVIEW_OUT', at: r.created_at, label: `Left a ${r.rating}★ review`, ref: r.id,
+    }));
+    (revReceivedR.data || []).forEach(r => events.push({
+      type: 'REVIEW_IN', at: r.created_at, label: `Received a ${r.rating}★ review`, ref: r.id,
+    }));
+    events.sort((a, b) => new Date(b.at) - new Date(a.at));
+
+    res.json({
+      success: true,
+      sessionInvalidations: u.token_version || 0,
+      lastLogin: u.last_login || null,
+      lastSeen: u.last_seen_at || null,
+      events: events.slice(0, 120),
+    });
+  } catch (e) {
+    console.error('[GET /api/admin/users/:id/activity]', e.message);
+    res.status(500).json({ error: 'Failed to load activity: ' + e.message });
+  }
+});
+
+// GET /api/admin/users/:id/risk — everything that should make a reviewer pause:
+// restriction state + reason, open disputes, reconciliation flags, admin holds,
+// and uncredited on-chain deposits. Read-only, team-visible. Balance figures are
+// only included for a full admin.
+app.get('/api/admin/users/:id/risk', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const isFullAdmin = !!(admin.is_admin || admin.email === ADMIN_EMAIL);
+    const { id } = req.params;
+
+    const { data: u } = await supabaseAdmin.from('users').select('*').eq('id', id).maybeSingle();
+    if (!u) return res.status(404).json({ error: 'User not found' });
+
+    const [flagsR, disputesR, holdsR, depR] = await Promise.all([
+      supabaseAdmin.from('reconciliation_flags')
+        .select('id, currency, source_table, reason, status, diff, created_at')
+        .eq('user_id', id).order('created_at', { ascending: false }).limit(50),
+      supabaseAdmin.from('trades')
+        .select('id, trade_ref, status, amount_usd, buyer_id, seller_id, created_at')
+        .or(`buyer_id.eq.${id},seller_id.eq.${id}`).eq('status', 'DISPUTED')
+        .order('created_at', { ascending: false }).limit(25),
+      supabaseAdmin.from('balance_audit')
+        .select('id, change_btc, new_balance, reason, created_at')
+        .eq('user_id', id).ilike('reason', '%HOLD%')
+        .order('created_at', { ascending: false }).limit(25),
+      supabaseAdmin.from('deposit_tracking_v2')
+        .select('tx_hash, address, currency, amount, credited, detected_by, created_at')
+        .eq('user_id', id).eq('credited', false)
+        .order('created_at', { ascending: false }).limit(25),
+    ]);
+
+    const restricted = String(u.account_status || 'active').toLowerCase();
+    res.json({
+      success: true,
+      restriction: {
+        status: restricted,
+        isRestricted: restricted === 'banned' || restricted === 'frozen',
+        reason: u.ban_reason || u.freeze_reason || null,
+        since: u.banned_at || u.frozen_at || null,
+        hasWarning: !!u.has_warning,
+      },
+      flags: flagsR.data || [],
+      openDisputes: (disputesR.data || []).map(t => ({ ...t, role: t.buyer_id === id ? 'buyer' : 'seller' })),
+      holds: (holdsR.data || []).map(h => isFullAdmin ? h : { ...h, change_btc: undefined, new_balance: undefined }),
+      uncreditedDeposits: depR.data || [],
+      counts: {
+        flags: (flagsR.data || []).length,
+        openDisputes: (disputesR.data || []).length,
+        holds: (holdsR.data || []).length,
+        uncreditedDeposits: (depR.data || []).length,
+      },
+    });
+  } catch (e) {
+    console.error('[GET /api/admin/users/:id/risk]', e.message);
+    res.status(500).json({ error: 'Failed to load risk view: ' + e.message });
   }
 });
 
@@ -10963,8 +11266,8 @@ app.get('/api/admin/listings/all', verifyToken, async (req, res) => {
       if (l.status !== 'ACTIVE' || !btcRequiredTypes.includes(l.listing_type)) {
         return { ...l, effectively_visible: l.status === 'ACTIVE' };
       }
-      // ÷1.02 — additive fee model: seller needs amount + 2% to fund a trade.
-      const balanceUsd = (l.asset === 'USDT' ? (usdtBalMap[l.seller_id] || 0) : (balMap[l.seller_id] || 0) * livePriceUsd) / 1.02;
+      // ÷1.005 — additive fee model: seller needs amount + 0.5% to fund a trade.
+      const balanceUsd = (l.asset === 'USDT' ? (usdtBalMap[l.seller_id] || 0) : (balMap[l.seller_id] || 0) * livePriceUsd) / 1.005;
       const minUsd = parseFloat(l.min_limit_usd || 0);
       const hiddenForBalance = balanceUsd < 10 || (minUsd > 0 && balanceUsd < minUsd);
       return { ...l, effectively_visible: !hiddenForBalance, seller_balance_usd: balanceUsd };
@@ -12891,7 +13194,7 @@ app.post('/api/wallet/withdraw', verifyToken, authLimiter, requireEmailVerified,
 // POST /api/wallet/internal-transfer
 // FREE instant balance-to-balance transfer between two PRAQEN users.
 // No on-chain broadcast, no PRAQEN platform fee, no network miner fee.
-// Only trades (Buy/Sell) carry the 1% fee; Gift Card trades carry 2%.
+// Only trades (Buy/Sell) carry the 0.5% fee; Gift Card trades carry 1%.
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/wallet/internal-transfer', verifyToken, requireNotBanned, async (req, res) => {
   try {
