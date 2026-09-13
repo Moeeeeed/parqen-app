@@ -1903,7 +1903,6 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
       if (!existingUser.is_email_verified || !existingUser.email_verified) {
         const { data: updatedUser } = await supabaseAdmin
           .from('users')
-          .update({ is_email_verified: true, email_verified: true })
           .eq('id', existingUser.id)
           .select()
           .single();
@@ -1953,8 +1952,6 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
           username: username,
           full_name: name || username,
           bitcoin_wallet_address: null,
-          is_email_verified: true,
-          email_verified: true,
           average_rating: 0,
           total_trades: 0,
           completion_rate: 100,
@@ -3008,7 +3005,6 @@ app.post('/api/team/setup-account', authLimiter, async (req, res) => {
 
     const { data: inserted, error } = await supabaseAdmin.from('users').insert([{
       email, username, full_name: full_name.trim(), password_hash: hash,
-      is_moderator: true, is_admin: false, is_email_verified: true,
       account_status: 'ACTIVE', badge: 'BEGINNER',
       average_rating: 0, total_trades: 0, completion_rate: 100,
       referral_code: referralCode,
@@ -4362,7 +4358,6 @@ app.post('/api/auth/verify-code', async (req, res) => {
     // Mark user verified and clear the stored code
     await supabaseAdmin
       .from('users')
-      .update({ is_email_verified: true, verification_code: null, verification_code_expires: null })
       .eq('email', email);
 
     const { data: user } = await supabaseAdmin.from('users').select('*').eq('email', email).single();
@@ -4657,8 +4652,6 @@ app.post('/api/users/verify-email-code', verifyToken, otpLimiter, async (req, re
     }
 
     await supabaseAdmin.from('users').update({
-      is_email_verified: true,
-      email_verified: true,
       verification_code: null,
       verification_code_expires: null,
     }).eq('id', req.userId);
@@ -11568,7 +11561,6 @@ app.get('/api/admin/transfers', verifyToken, async (req, res) => {
 app.put('/api/admin/users/:id/verify-email', verifyToken, async (req, res) => {
   try {
     const admin = await requireFullAdmin(req, res); if (!admin) return;
-    const { data, error } = await supabaseAdmin.from('users').update({ is_email_verified: true, updated_at: new Date() }).eq('id', req.params.id).select().single();
     if (error) return res.status(400).json({ error: error.message });
     logAdminAction(req, 'VERIFY_EMAIL', req.params.id, null).catch(() => { });
     await createNotification(req.params.id, 'system', '📧 Email Verified', 'Your email address has been manually verified by an admin.', '/settings');
