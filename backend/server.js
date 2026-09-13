@@ -272,8 +272,13 @@ app.use(cors({
     if (!origin) return callback(null, true);
     // Allow listed production origins
     if (_allowedOrigins.some(a => origin === a)) return callback(null, true);
-    // Allow localhost in development only
-    if (process.env.NODE_ENV !== 'production' && origin.startsWith('http://localhost')) {
+    // Allow localhost and local network IPs in development only
+    if (process.env.NODE_ENV !== 'production' && (
+      origin.startsWith('http://localhost') || 
+      origin.startsWith('http://192.168.') || 
+      origin.startsWith('http://10.') || 
+      origin.startsWith('http://172.')
+    )) {
       return callback(null, true);
     }
     callback(new Error('CORS: origin not allowed — ' + origin));
@@ -1903,6 +1908,7 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
       if (!existingUser.is_email_verified || !existingUser.email_verified) {
         const { data: updatedUser } = await supabaseAdmin
           .from('users')
+          .update({ is_email_verified: true, email_verified: true })
           .eq('id', existingUser.id)
           .select()
           .single();
@@ -1952,6 +1958,7 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
           username: username,
           full_name: name || username,
           bitcoin_wallet_address: null,
+          is_email_verified: true,
           average_rating: 0,
           total_trades: 0,
           completion_rate: 100,
@@ -2150,7 +2157,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     if (error) {
       console.error('[Register] DB insert error:', error);
       const isDuplicate = error.message?.includes('duplicate') || error.code === '23505';
-      return res.status(400).json({ error: isDuplicate ? 'An account with this email or username already exists.' : 'Registration failed. Please try again.' });
+      return res.status(400).json({ error: isDuplicate ? 'An account with this email or username already exists.' : `Registration failed. DB Error: ${error.message}` });
     }
     if (!data || data.length === 0) return res.status(400).json({ error: E.REGISTER_FAILED });
 
@@ -2439,6 +2446,12 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       expires: Date.now() + 10 * 60 * 1000,
       userId: data.id,
     });
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('\n=============================================');
+      console.log(`🔑 LOGIN OTP CODE FOR ${normalizedLoginEmail}: ${loginOtp}`);
+      console.log('=============================================\n');
+    }
 
     // Send OTP email — this comment used to claim "we await to catch send failures" while the
     // code right below it did the opposite (fire-and-forget, catch() with no await). That meant
@@ -3005,6 +3018,7 @@ app.post('/api/team/setup-account', authLimiter, async (req, res) => {
 
     const { data: inserted, error } = await supabaseAdmin.from('users').insert([{
       email, username, full_name: full_name.trim(), password_hash: hash,
+      is_moderator: true, is_admin: false, is_email_verified: true,
       account_status: 'ACTIVE', badge: 'BEGINNER',
       average_rating: 0, total_trades: 0, completion_rate: 100,
       referral_code: referralCode,
@@ -4358,6 +4372,7 @@ app.post('/api/auth/verify-code', async (req, res) => {
     // Mark user verified and clear the stored code
     await supabaseAdmin
       .from('users')
+      .update({ is_email_verified: true, verification_code: null, verification_code_expires: null })
       .eq('email', email);
 
     const { data: user } = await supabaseAdmin.from('users').select('*').eq('email', email).single();
@@ -4652,6 +4667,8 @@ app.post('/api/users/verify-email-code', verifyToken, otpLimiter, async (req, re
     }
 
     await supabaseAdmin.from('users').update({
+      is_email_verified: true,
+      email_verified: true,
       verification_code: null,
       verification_code_expires: null,
     }).eq('id', req.userId);
@@ -11561,6 +11578,7 @@ app.get('/api/admin/transfers', verifyToken, async (req, res) => {
 app.put('/api/admin/users/:id/verify-email', verifyToken, async (req, res) => {
   try {
     const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const { data, error } = await supabaseAdmin.from('users').update({ is_email_verified: true, updated_at: new Date() }).eq('id', req.params.id).select().single();
     if (error) return res.status(400).json({ error: error.message });
     logAdminAction(req, 'VERIFY_EMAIL', req.params.id, null).catch(() => { });
     await createNotification(req.params.id, 'system', '📧 Email Verified', 'Your email address has been manually verified by an admin.', '/settings');
