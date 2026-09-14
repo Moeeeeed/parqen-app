@@ -2,9 +2,13 @@
 // PRAQEN — Deposit Sweeper (Safe, Silent, Automatic)
 //
 // WHAT it does:
-//   Every 30 minutes it scans every user deposit address for real on-chain BTC.
-//   If an address has spendable UTXOs it moves that BTC to the platform hot wallet.
-//   The hot wallet then funds all external user withdrawals.
+//   Every SWEEP_INTERVAL_MS it scans every user deposit address for real
+//   on-chain BTC. If an address has spendable UTXOs it moves that BTC to the
+//   platform hot wallet. The hot wallet then funds all external user withdrawals.
+//   depositMonitor.js also calls sweepUser() directly right after crediting a
+//   deposit, so a freshly-credited address is swept within seconds — this
+//   periodic full scan is the safety net for anything that trigger missed
+//   (a manual credit, a restart, a transient error), not the primary path.
 //
 // WHAT it NEVER does:
 //   - Never changes any user DB balance (wallets / user_balances / user_wallets)
@@ -43,9 +47,10 @@ const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a'; // same id use
 
 class SweepService {
   constructor() {
-    this.isRunning     = false;
-    this.intervalId    = null;
-    this._inProgress   = new Set(); // prevents double-sweep of same address
+    this.isRunning        = false;
+    this.intervalId       = null;
+    this._inProgress      = new Set(); // prevents double-sweep of same address
+    this._cycleInProgress = false;     // prevents a second full _runCycle() overlapping an unfinished one
   }
 
   // ── Start background sweeper ───────────────────────────────────────────────
@@ -77,6 +82,18 @@ class SweepService {
 
   // ── Full sweep cycle ───────────────────────────────────────────────────────
   async _runCycle() {
+    // Guard against overlapping cycles: with enough addresses a scan can take
+    // longer than SWEEP_INTERVAL_MS, and without this guard the next setInterval
+    // tick would start a second full pass on top of the still-running one —
+    // doubling the request rate against blockstream.info/mempool.space and
+    // making any in-flight rate-limiting worse. Same guard depositMonitor.js
+    // already uses for its own poll cycle. This is distinct from _inProgress
+    // (which only stops the same single address being swept twice at once).
+    if (this._cycleInProgress) {
+      console.warn('[SweepService] ⚠️  Previous cycle still running — skipping this tick to avoid doubling request rate');
+      return;
+    }
+    this._cycleInProgress = true;
     console.log(`\n[SweepService] ⏱  Cycle start ${new Date().toISOString()}`);
     try {
       const hotAddress = hdWallet.getHotWalletAddress();
@@ -145,20 +162,26 @@ class SweepService {
       let sweptCount  = 0;
       let totalSwept  = 0;
 
-      for (const entry of toSweep) {
-        // Throttle — 1 address every 2.5 seconds to respect mempool.space rate limits
-        await this._sleep(2500);
-
-        try {
-          const sweptBtc = await this._sweepOne(entry.userId, entry.address, hotAddress, entry.lastOnchainBtc);
-          if (sweptBtc > 0) {
-            sweptCount++;
-            totalSwept += sweptBtc;
+      // Batch of 3 / 1.2s gap — same pacing depositMonitor.js already uses
+      // against the same providers (blockstream.info/mempool.space). The old
+      // serial "1 address every 2.5s" loop took ~74 minutes to get through
+      // ~1,776 addresses — longer than SWEEP_INTERVAL_MS itself, guaranteeing
+      // every cycle overlapped the next. This cuts a full pass to ~12 minutes.
+      const SWEEP_BATCH = 3;
+      for (let i = 0; i < toSweep.length; i += SWEEP_BATCH) {
+        const batch = toSweep.slice(i, i + SWEEP_BATCH);
+        const results = await Promise.allSettled(
+          batch.map(entry => this._sweepOne(entry.userId, entry.address, hotAddress, entry.lastOnchainBtc))
+        );
+        results.forEach((r, idx) => {
+          if (r.status === 'fulfilled') {
+            if (r.value > 0) { sweptCount++; totalSwept += r.value; }
+          } else {
+            // One address failing NEVER stops the rest — silent
+            console.error(`[SweepService] ⚠️  Could not sweep ${batch[idx].address.slice(0, 20)}…:`, r.reason?.message || r.reason);
           }
-        } catch (err) {
-          // One address failing NEVER stops the rest — silent
-          console.error(`[SweepService] ⚠️  Could not sweep ${entry.address.slice(0, 20)}…:`, err.message);
-        }
+        });
+        if (i + SWEEP_BATCH < toSweep.length) await this._sleep(1200);
       }
 
       if (sweptCount > 0) {
@@ -174,6 +197,8 @@ class SweepService {
     } catch (err) {
       // Outer guard — the entire cycle should NEVER crash the server
       console.error('[SweepService] Cycle error (non-fatal):', err.message);
+    } finally {
+      this._cycleInProgress = false;
     }
   }
 
@@ -384,6 +409,7 @@ class SweepService {
   getStatus() {
     return {
       running:             this.isRunning,
+      cycle_in_progress:    this._cycleInProgress,
       interval_minutes:    SWEEP_INTERVAL_MS / 60000,
       min_sweep_btc:        SWEEP_MIN_SATS / 1e8,
       in_progress:          this._inProgress.size,
