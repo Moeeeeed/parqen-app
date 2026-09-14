@@ -1,0 +1,198 @@
+# ================================================================
+# praqen - HOSTINGER KVM VPS DEPLOYMENT CHEATSHEET & COMMANDS
+# Domain: https://sainizbook.online
+# ================================================================
+
+# ----------------------------------------------------------------
+# STEP 1: SSH LOGIN (From your computer)
+# ----------------------------------------------------------------
+ssh root@YOUR_SERVER_IP
+
+
+# ----------------------------------------------------------------
+# STEP 2: SERVER UPDATE & 2GB SWAP SETUP
+# ----------------------------------------------------------------
+sudo apt update && sudo apt upgrade -y
+
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+free -h
+
+
+# ----------------------------------------------------------------
+# STEP 3: INSTALL NODE.JS (v20), GIT, NGINX, PM2, CERTBOT
+# ----------------------------------------------------------------
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs git nginx ufw certbot python3-certbot-nginx
+
+# Check Versions
+node -v
+npm -v
+
+# Install PM2 Process Manager
+sudo npm install -g pm2
+
+
+# ----------------------------------------------------------------
+# STEP 4: PREPARE FOLDER & PERMISSIONS
+# ----------------------------------------------------------------
+sudo mkdir -p /var/www/praqen-app
+sudo chown -R root:root /var/www/praqen-app
+sudo chmod -R 755 /var/www/praqen-app
+
+# (Now upload your files via FileZilla SFTP into /var/www/praqen-app)
+# Exclude node_modules and .git folders
+
+
+# ----------------------------------------------------------------
+# STEP 5: BACKEND SETUP & .ENV
+# ----------------------------------------------------------------
+cd /var/www/praqen-app/backend
+npm install --production
+
+# Create / Edit backend .env file:
+nano /var/www/praqen-app/backend/.env
+
+# --- PASTE THE FOLLOWING IN BACKEND .env ---
+PORT=5000
+NODE_ENV=production
+FRONTEND_URL=https://sainizbook.online,https://www.sainizbook.online
+SUPABASE_URL=https://hpkepzxvrumijmdvwaje.supabase.co
+SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
+HD_NETWORK=mainnet
+TRON_NETWORK=mainnet
+# (Add any other SMTP / Telegram / OneSignal keys here)
+# --- END OF BACKEND .env ---
+
+# Save & Exit Nano: CTRL+O -> Enter -> CTRL+X
+
+
+# ----------------------------------------------------------------
+# STEP 6: START BACKEND WITH PM2
+# ----------------------------------------------------------------
+cd /var/www/praqen-app/backend
+pm2 start server.js --name "praqen-backend" --node-args="--max-old-space-size=450"
+pm2 save
+pm2 startup
+
+
+# ----------------------------------------------------------------
+# STEP 7: FRONTEND BUILD SETUP & .ENV
+# ----------------------------------------------------------------
+cd /var/www/praqen-app/frontend
+npm install
+
+# Create / Edit frontend .env file:
+nano /var/www/praqen-app/frontend/.env
+
+# --- PASTE THE FOLLOWING IN FRONTEND .env ---
+REACT_APP_API_URL=https://sainizbook.online/api
+REACT_APP_SUPABASE_URL=https://hpkepzxvrumijmdvwaje.supabase.co
+REACT_APP_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+GENERATE_SOURCEMAP=false
+# --- END OF FRONTEND .env ---
+
+# Build React Frontend:
+npm run build
+
+
+# ----------------------------------------------------------------
+# STEP 8: NGINX CONFIGURATION
+# ----------------------------------------------------------------
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nano /etc/nginx/sites-available/praqen
+
+# --- PASTE THE FOLLOWING NGINX CONFIG ---
+server {
+    listen 80;
+    server_name sainizbook.online www.sainizbook.online;
+
+    # React Frontend Static Files
+    root /var/www/praqen-app/frontend/build;
+    index index.html index.htm;
+
+    # Gzip Compression
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+    # React Router SPA handling
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Backend API Proxy (No trailing slash in proxy_pass)
+    location /api/ {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket Support
+    location /ws/ {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400;
+    }
+
+    # Static Assets Caching
+    location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2)$ {
+        expires 30d;
+        add_header Cache-Control "public, no-transform";
+    }
+}
+# --- END OF NGINX CONFIG ---
+
+# Enable Config & Test Nginx:
+sudo ln -sf /etc/nginx/sites-available/praqen /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+
+
+# ----------------------------------------------------------------
+# STEP 9: FREE SSL CERTIFICATE (HTTPS) & FIREWALL
+# ----------------------------------------------------------------
+sudo certbot --nginx -d sainizbook.online -d www.sainizbook.online
+
+# Firewall Setup:
+sudo ufw allow OpenSSH
+sudo ufw allow 'Nginx Full'
+sudo ufw --force enable
+
+
+# ----------------------------------------------------------------
+# STEP 10: SUPABASE SQL QUERY FOR ADMIN USER
+# ----------------------------------------------------------------
+# Run this inside Supabase Dashboard -> SQL Editor:
+UPDATE users 
+SET is_admin = true, 
+    is_email_verified = true, 
+    is_id_verified = true,
+    account_status = 'ACTIVE' 
+WHERE email = 'YOUR_REGISTERED_EMAIL@gmail.com';
+
+
+# ================================================================
+# QUICK MAINTENANCE COMMANDS
+# ================================================================
+# View Backend Logs:      pm2 logs praqen-backend
+# Restart Backend:        pm2 restart praqen-backend
+# Check Backend Status:   pm2 status
+# Nginx Error Logs:       sudo tail -f /var/log/nginx/error.log
+# Reload Nginx:           sudo systemctl reload nginx
+# ================================================================
+coinfaucet.eu/en/btc-testnet
+bitcoinfaucet.uo1.net
+kuttler.eu/en/bitcoin/btc/faucet

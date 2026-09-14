@@ -137,6 +137,24 @@ export default function Login({ onLogin }) {
     else navigate('/buy-bitcoin');
   };
 
+  useEffect(() => {
+    const directToken = searchParams.get('token') || searchParams.get('auth_token');
+    if (directToken) {
+      localStorage.setItem('token', directToken);
+      axios.defaults.headers.common['Authorization'] = `Bearer ${directToken}`;
+      axios.get(`${API_URL}/users/profile`)
+        .then(res => {
+          if (res.data?.user) {
+            onLogin(res.data.user, directToken);
+            postLoginRedirect(res.data.user);
+          }
+        })
+        .catch(err => {
+          console.error('Direct token login failed:', err);
+        });
+    }
+  }, [searchParams, onLogin]);
+
   const go = newStep => {
     setStep(newStep); setError(''); setNotice('');
     setOtp(''); setEmailOtp(''); setOtpSent(false); setShowDrop(false); setSearch('');
@@ -173,27 +191,38 @@ export default function Login({ onLogin }) {
     }
   }, [onLogin, navigate]);
 
+  const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+  const isGoogleAuthEnabled = Boolean(
+    googleClientId &&
+    !googleClientId.includes('your-') &&
+    googleClientId.includes('.apps.googleusercontent.com')
+  );
   const googleInitialized = useRef(false);
 
-  // Initialize Google Identity Services once on mount
+  // Initialize Google Identity Services once on mount if a valid Client ID is configured
   useEffect(() => {
     /* global google */
-    if (window.google?.accounts && !googleInitialized.current) {
+    if (isGoogleAuthEnabled && window.google?.accounts && !googleInitialized.current) {
       try {
         window.google.accounts.id.initialize({
-          client_id: process.env.REACT_APP_GOOGLE_CLIENT_ID || '',
+          client_id: googleClientId,
           callback: handleGoogleResponse,
+          error_callback: (err) => {
+            console.warn('[Google Sign-In Notice]:', err);
+          },
+          auto_select: false,
+          cancel_on_tap_outside: true,
         });
         googleInitialized.current = true;
       } catch (err) {
-        console.error('Google Sign-In initialization failed:', err);
+        console.warn('Google Sign-In initialization skipped/failed:', err);
       }
     }
-  }, [handleGoogleResponse]);
+  }, [handleGoogleResponse, isGoogleAuthEnabled, googleClientId]);
 
-  // Render the Google button only when the choose step is active
+  // Render the Google button only when the choose step is active and valid client id exists
   useEffect(() => {
-    if (step === 'choose' && window.google?.accounts) {
+    if (step === 'choose' && isGoogleAuthEnabled && window.google?.accounts) {
       const container = document.getElementById('googleBtnLogin');
       if (container) {
         try {
@@ -202,11 +231,11 @@ export default function Login({ onLogin }) {
             theme: 'outline', size: 'large', width: '380', text: 'continue_with',
           });
         } catch (err) {
-          console.error('Google Sign-In render failed:', err);
+          console.warn('Google Sign-In render skipped/failed:', err);
         }
       }
     }
-  }, [step]);
+  }, [step, isGoogleAuthEnabled]);
 
   const handleEmailLogin = async e => {
     e?.preventDefault(); setError('');
@@ -220,7 +249,13 @@ export default function Login({ onLogin }) {
         setPendingEmail(data.email || email);
         setEmailOtp('');
         setStep('email-otp');
-        setNotice(`A 6-digit code was sent to ${data.email || email}`);
+        const devOtp = data.otp || data.debugOtp;
+        if (devOtp) {
+          console.log(`[PRAQEN Dev Login OTP]: ${devOtp}`);
+          setNotice(`A 6-digit code was sent to ${data.email || email} (Dev OTP: ${devOtp})`);
+        } else {
+          setNotice(`A 6-digit code was sent to ${data.email || email}`);
+        }
       } else if (data.success) {
         if (remember) localStorage.setItem('remember_contact', email);
         onLogin(data.user, data.token);
@@ -293,7 +328,14 @@ export default function Login({ onLogin }) {
     setLoading(true);
     try {
       const { data } = await axios.post(`${API_URL}/auth/login`, { email: pendingEmail, password });
-      if (data.requiresOtp) setNotice(`New code sent to ${pendingEmail}`);
+      if (data.requiresOtp) {
+        const devOtp = data.otp || data.debugOtp;
+        if (devOtp) {
+          setNotice(`New code sent to ${pendingEmail} (Dev OTP: ${devOtp})`);
+        } else {
+          setNotice(`New code sent to ${pendingEmail}`);
+        }
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Could not resend code. Try logging in again.');
     } finally { setLoading(false); }
@@ -831,14 +873,16 @@ export default function Login({ onLogin }) {
                 {step === 'choose' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     {/* Google OAuth Button */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, margin: '4px 0 8px' }}>
-                      <div id="googleBtnLogin" style={{ minHeight: 40 }}></div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{ flex: 1, height: 1, background: '#E2E8F0' }}></div>
-                        <span style={{ fontSize: 11, color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Or continue with</span>
-                        <div style={{ flex: 1, height: 1, background: '#E2E8F0' }}></div>
+                    {isGoogleAuthEnabled && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, margin: '4px 0 8px' }}>
+                        <div id="googleBtnLogin" style={{ minHeight: 40 }}></div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ flex: 1, height: 1, background: '#E2E8F0' }}></div>
+                          <span style={{ fontSize: 11, color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Or continue with</span>
+                          <div style={{ flex: 1, height: 1, background: '#E2E8F0' }}></div>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     {/* Email Method */}
                     <button className="method-card" onClick={() => go('email')}>

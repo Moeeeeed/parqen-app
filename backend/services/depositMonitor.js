@@ -20,6 +20,7 @@ const { createClient }       = require('@supabase/supabase-js');
 const btcApiGateway          = require('./btcApiGateway');
 const emailService           = require('./emailService');            // working transport: Resend → Brevo SMTP (+ email_logs)
 const { isDepositTooOld, MAX_DEPOSIT_AGE_HOURS } = require('./depositAgeGuard'); // containment guard, see depositAgeGuard.js
+const balanceAnomalyMonitor  = require('./balanceAnomalyMonitor');
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -167,10 +168,12 @@ class DepositMonitor {
       return;
     }
 
-    this.network = 'mainnet';
-    this.apiBase = 'https://mempool.space/api';
+    this.network = (process.env.HD_NETWORK || 'mainnet').toLowerCase();
+    this.apiBase = this.network === 'testnet'
+      ? 'https://mempool.space/testnet/api'
+      : 'https://mempool.space/api';
 
-    console.log(`\n🔍 DepositMonitor started — MAINNET`);
+    console.log(`\n🔍 DepositMonitor started — ${this.network.toUpperCase()}`);
     console.log(`   Polling every ${POLL_INTERVAL_MS / 1000 / 60} minutes`);
     console.log(`   API: ${this.apiBase}\n`);
 
@@ -312,10 +315,16 @@ class DepositMonitor {
     }
   }
 
-  // ── Validate mainnet address ───────────────────────────────────────────────
+  // ── Validate address for current network (mainnet or testnet) ────────────
   isValidMainnetAddress(address) {
     if (!address || typeof address !== 'string') return false;
-    if (/^bc1[a-z0-9]{25,87}$/.test(address)) return true;           // Native SegWit
+    const isTestnet = (process.env.HD_NETWORK || '').toLowerCase() === 'testnet';
+    if (isTestnet) {
+      if (/^tb1[a-z0-9]{25,87}$/i.test(address)) return true;           // Testnet SegWit
+      if (/^[mn2][a-zA-HJ-NP-Z1-9]{25,34}$/.test(address)) return true; // Testnet Legacy / P2SH
+      return false;
+    }
+    if (/^bc1[a-z0-9]{25,87}$/i.test(address)) return true;           // Native SegWit
     if (/^[13][a-zA-HJ-NP-Z1-9]{25,34}$/.test(address)) return true; // Legacy / P2SH
     return false;
   }
@@ -544,6 +553,16 @@ class DepositMonitor {
     await supabaseAdmin.from('deposit_tracking_v2')
       .update({ credited: true, credited_at: new Date().toISOString() })
       .eq('tx_hash', txHash).eq('address', address);
+
+    // ── Real-time balance spike & anomaly check ──────────────────────────────
+    balanceAnomalyMonitor.checkCreditEvent({
+      userId,
+      username,
+      currency: 'BTC',
+      amount: depositBTC,
+      txHash,
+      newBalance: newBalanceBTC,
+    }).catch(err => console.error('[DepositMonitor] Anomaly monitor error:', err.message));
 
     // Also mirror the deposit address onto user_wallets.btc_address if this is
     // this user's first detected deposit to it (best-effort; not part of the

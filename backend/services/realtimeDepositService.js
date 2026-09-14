@@ -29,7 +29,9 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
 
-const MEMPOOL_WS_URL       = 'wss://mempool.space/api/v1/ws';
+const MEMPOOL_WS_URL       = (process.env.HD_NETWORK || '').toLowerCase() === 'testnet'
+  ? 'wss://mempool.space/testnet/api/v1/ws'
+  : 'wss://mempool.space/api/v1/ws';
 const RECONNECT_BASE_MS    = 5_000;
 const RECONNECT_MAX_MS     = 120_000;  // cap at 2 minutes
 const PING_INTERVAL_MS     = 30_000;   // keepalive ping every 30s

@@ -174,15 +174,22 @@ router.post('/withdraw', verifyToken, async (req, res) => {
             .update({ status: 'WITHDRAWN' })
             .in('id', ids);
 
-        // Log transaction
-        await supabaseAdmin.from('wallet_transactions').insert({
-            user_id: userId,
-            type: 'REFERRAL_WITHDRAWAL',
-            amount_btc: totalEarnings,
-            status: 'CONFIRMED',
-            notes: `Referral earnings withdrawal — ₿${totalEarnings.toFixed(8)} from ${ids.length} commission(s)`,
-            created_at: new Date().toISOString()
-        });
+        // Sync balance mirrors, reset users.referral_earnings_btc, record transaction
+        await Promise.allSettled([
+            supabaseAdmin.from('user_balances').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
+            supabaseAdmin.from('user_wallets').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', userId),
+            supabaseAdmin.from('users').update({ referral_earnings_btc: 0 }).eq('id', userId),
+            supabaseAdmin.from('wallet_transactions').insert({
+                user_id: userId,
+                type: 'REFERRAL_WITHDRAWAL',
+                currency: 'BTC',
+                amount_btc: totalEarnings,
+                amount_usd: totalUsd,
+                status: 'CONFIRMED',
+                notes: `Referral earnings withdrawal — ₿${totalEarnings.toFixed(8)} from ${ids.length} commission(s)`,
+                created_at: new Date().toISOString()
+            }),
+        ]);
 
         res.json({
             success: true,

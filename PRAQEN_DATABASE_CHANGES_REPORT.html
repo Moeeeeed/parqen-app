@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PRAQEN Database Architecture & Migration Report</title>
+<style>
+  @page {
+    size: A4;
+    margin: 15mm 15mm 15mm 15mm;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1e293b;
+    background-color: #ffffff;
+    line-height: 1.5;
+    font-size: 13px;
+    margin: 0;
+    padding: 0;
+  }
+  .header {
+    border-bottom: 2px solid #2563eb;
+    padding-bottom: 12px;
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  h1 {
+    font-size: 24px;
+    color: #0f172a;
+    margin: 0 0 4px 0;
+  }
+  .subtitle {
+    font-size: 14px;
+    color: #64748b;
+    margin: 0;
+  }
+  .badge {
+    background: #dbeafe;
+    color: #1d4ed8;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 12px;
+  }
+  h2 {
+    font-size: 16px;
+    color: #1e3a8a;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 6px;
+    margin-top: 24px;
+    margin-bottom: 12px;
+  }
+  h3 {
+    font-size: 14px;
+    color: #0f172a;
+    margin-top: 14px;
+    margin-bottom: 6px;
+  }
+  p {
+    margin: 0 0 10px 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 16px;
+    font-size: 12px;
+  }
+  th, td {
+    border: 1px solid #cbd5e1;
+    padding: 6px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background-color: #f1f5f9;
+    color: #334155;
+    font-weight: 600;
+  }
+  tr:nth-child(even) {
+    background-color: #f8fafc;
+  }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    background: #f1f5f9;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-size: 11px;
+    color: #0f172a;
+  }
+  pre {
+    background: #0f172a;
+    color: #f8fafc;
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 11px;
+    overflow-x: auto;
+    margin: 8px 0 14px 0;
+    white-space: pre-wrap;
+  }
+  .card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-left: 4px solid #2563eb;
+    padding: 10px 14px;
+    border-radius: 4px;
+    margin-bottom: 14px;
+  }
+  .card-title {
+    font-weight: 600;
+    color: #1e293b;
+    margin-bottom: 4px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  ul {
+    margin: 0 0 10px 0;
+    padding-left: 18px;
+  }
+  li {
+    margin-bottom: 4px;
+  }
+  .page-break {
+    page-break-before: always;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>PRAQEN — Live Database Migration Report</h1>
+    <p class="subtitle">Complete Database Changes, Tables, Columns & Deployment Architecture</p>
+  </div>
+  <div>
+    <span class="badge">Production Ready</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Executive Summary</div>
+  <p>This document details the complete set of database modifications, 40 new tables, altered core entities, atomic stored procedures, and triggers required to bring the live production server up to date with the latest multi-currency (BTC + USDT TRC-20) architecture.</p>
+</div>
+
+<h2>1. Required PostgreSQL Extensions</h2>
+<p>Run these commands first in the Supabase SQL Editor:</p>
+<pre>CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "vector";</pre>
+
+<h2>2. Inventory of All 40 New Database Tables</h2>
+<table>
+  <thead>
+    <tr>
+      <th style="width: 5%;">#</th>
+      <th style="width: 25%;">Table Name</th>
+      <th style="width: 50%;">Functional Purpose</th>
+      <th style="width: 20%;">Primary Key</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td><code>wallets</code></td><td>Authoritative single source of truth for user balances (BTC + USDT)</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>2</td><td><code>user_wallets</code></td><td>HD on-chain deposit addresses & checkpoint tracking</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>3</td><td><code>wallet_transactions</code></td><td>Authoritative financial ledger & idempotency locks</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>4</td><td><code>deposit_tracking_v2</code></td><td>Blockchain deposit deduplication by tx_hash</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>5</td><td><code>deposit_recheck_queue</code></td><td>Operational retry queue for failed explorer checks</td><td><code>(address, currency)</code></td></tr>
+    <tr><td>6</td><td><code>realtime_tx_dedupe</code></td><td>WebSocket transaction broadcast deduplication</td><td><code>dedupe_key (TEXT)</code></td></tr>
+    <tr><td>7</td><td><code>swap_transactions</code></td><td>Financial ledger for BTC ↔ USDT internal swaps</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>8</td><td><code>seller_deposits</code></td><td>Merchant/seller $200 USDT bond escrow system</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>9</td><td><code>reconciliation_flags</code></td><td>Balance anomaly detection flags & audit logs</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>10</td><td><code>balance_audit</code></td><td>Immutable audit trail for balance deltas</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>11</td><td><code>security_events</code></td><td>Authentication, 2FA, lockout & fraud security logs</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>12</td><td><code>security_action_codes</code></td><td>Persistent 2FA short-lived action authorization codes</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>13</td><td><code>user_badges</code></td><td>User trust & gamification achievement tracking</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>14</td><td><code>user_trust</code></td><td>User trust/block social graph</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>15</td><td><code>notifications</code></td><td>User notification center with JSONB payloads</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>16</td><td><code>otp_codes</code></td><td>OTP email & phone verification codes</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>17</td><td><code>trade_images</code></td><td>Trade chat attachments & payment proofs</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>18</td><td><code>support_tickets</code></td><td>Customer support ticketing system</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>19</td><td><code>support_messages</code></td><td>Messages within support ticket threads</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>20</td><td><code>agent_chat_status</code></td><td>Real-time support agent availability status</td><td><code>user_id (UUID)</code></td></tr>
+    <tr><td>21</td><td><code>kb_articles</code></td><td>RAG Knowledge Base with 1024-dim vector embeddings</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>22</td><td><code>ai_chat_sessions</code></td><td>AI support bot session management</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>23</td><td><code>ai_chat_messages</code></td><td>Conversation history for AI chat assistant</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>24</td><td><code>p2p_migration_requests</code></td><td>External reputation import requests (Noones/Binance)</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>25</td><td><code>phone_verification_requests</code></td><td>Manual and automated phone verification queue</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>26</td><td><code>email_logs</code></td><td>Brevo/SMTP transactional email dispatch logs</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>27</td><td><code>admin_audit_log</code></td><td>Administrative action ledger (bans, KYC, roles)</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>28</td><td><code>trader_of_week</code></td><td>Active recognition slots for top traders</td><td><code>category (TEXT)</code></td></tr>
+    <tr><td>29</td><td><code>trader_of_week_history</code></td><td>Historical archive of all trader awards</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>30</td><td><code>suggestions</code></td><td>Community feature request & feedback board</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>31</td><td><code>suggestion_votes</code></td><td>Upvotes on community suggestions</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>32</td><td><code>dispute_votes</code></td><td>3-of-4 Moderator quorum dispute voting ledger</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>33</td><td><code>dispute_comments</code></td><td>Moderator-only discussion threads on disputes</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>34</td><td><code>moderator_oaths</code></td><td>Cryptographic/versioned moderator ethics signatures</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>35</td><td><code>company_loans</code></td><td>Corporate debt and investor standing loans ledger</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>36</td><td><code>company_expenses</code></td><td>Operating expenses tracking</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>37</td><td><code>company_staff</code></td><td>Staff directory, payroll & contracts</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>38</td><td><code>user_address_migrations</code></td><td>Legacy to new HD treasury address migration ledger</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>39</td><td><code>late_deposit_sweeps</code></td><td>Sweeps from deprecated deposit addresses</td><td><code>id (UUID)</code></td></tr>
+    <tr><td>40</td><td><code>treasury_migration_transactions</code></td><td>Full audit ledger for on-chain treasury movements</td><td><code>id (UUID)</code></td></tr>
+  </tbody>
+</table>
+
+<div class="page-break"></div>
+
+<h2>3. Modified Existing Tables & Columns Added</h2>
+
+<h3>A. <code>users</code> Table (New Columns)</h3>
+<table>
+  <thead>
+    <tr><th>Category</th><th>Column Name</th><th>Data Type</th><th>Default / Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td rowspan="4"><b>Roles & Privileges</b></td><td><code>is_admin</code></td><td>BOOLEAN</td><td>false</td></tr>
+    <tr><td><code>is_moderator</code></td><td>BOOLEAN</td><td>false</td></tr>
+    <tr><td><code>is_agent</code></td><td>BOOLEAN</td><td>false (Support desk agent)</td></tr>
+    <tr><td><code>is_ceo</code></td><td>BOOLEAN</td><td>false (Withdrawal gatekeeper)</td></tr>
+    <tr><td rowspan="6"><b>KYC & Identity</b></td><td><code>kyc_status</code></td><td>VARCHAR(20)</td><td>'pending' | 'approved' | 'rejected'</td></tr>
+    <tr><td><code>id_type</code></td><td>VARCHAR(50)</td><td>'ghana_card' | 'passport' etc.</td></tr>
+    <tr><td><code>id_front_url, id_back_url, selfie_url</code></td><td>TEXT</td><td>Document upload URLs</td></tr>
+    <tr><td><code>kyc_submitted_at, kyc_approved_at</code></td><td>TIMESTAMPTZ</td><td>Review timestamps</td></tr>
+    <tr><td><code>kyc_rejection_reason</code></td><td>TEXT</td><td>Admin review feedback</td></tr>
+    <tr><td><code>kyc_verified, is_id_verified, is_phone_verified</code></td><td>BOOLEAN</td><td>false</td></tr>
+    <tr><td rowspan="3"><b>Security & 2FA</b></td><td><code>two_factor_enabled</code></td><td>BOOLEAN</td><td>false</td></tr>
+    <tr><td><code>two_factor_method</code></td><td>VARCHAR(50)</td><td>'email' | 'totp'</td></tr>
+    <tr><td><code>totp_secret, reset_password_token</code></td><td>TEXT</td><td>Encrypted security tokens</td></tr>
+    <tr><td rowspan="4"><b>Reputation & Trust</b></td><td><code>badge</code></td><td>VARCHAR(50)</td><td>'BEGINNER' | 'PRO' | 'EXPERT' | 'AMBASSADOR' | 'LEGEND'</td></tr>
+    <tr><td><code>has_warning, warning_reason, warned_at</code></td><td>BOOLEAN / TEXT</td><td>Trust & Safety moderation warning</td></tr>
+    <tr><td><code>trusted_by_count, blocked_by_count</code></td><td>INT</td><td>0</td></tr>
+    <tr><td><code>avg_response_time</code></td><td>NUMERIC</td><td>Running average message response time</td></tr>
+    <tr><td rowspan="3"><b>P2P Migration</b></td><td><code>p2p_migrated_platform</code></td><td>TEXT</td><td>'binance' | 'noones' | 'paxful'</td></tr>
+    <tr><td><code>p2p_migrated_username, p2p_migrated_feedback</code></td><td>TEXT</td><td>External reputation snapshot</td></tr>
+    <tr><td><code>p2p_migration_approved_at</code></td><td>TIMESTAMPTZ</td><td>Approval timestamp</td></tr>
+    <tr><td rowspan="2"><b>Referral & Bonus</b></td><td><code>referral_code, referred_by</code></td><td>VARCHAR(100) / UUID</td><td>Unique referral code & inviter link</td></tr>
+    <tr><td><code>total_referrals, referral_earnings_btc</code></td><td>INT / DECIMAL</td><td>Commission accounting</td></tr>
+  </tbody>
+</table>
+
+<h3>B. <code>trades</code> Table (New Columns & Status Update)</h3>
+<ul>
+  <li><b>Added Currency Columns:</b> <code>currency</code> (TEXT, default 'BTC'), <code>amount_usdt</code> (DECIMAL(18,6)), <code>platform_fee_usdt</code> (DECIMAL(18,6)), <code>amount_receive_usd</code> (DECIMAL).</li>
+  <li><b>Added Trade Tracking:</b> <code>trade_ref</code> (VARCHAR(20) UNIQUE), <code>payment_proof_url</code> (TEXT), <code>payment_proof_at</code> (TIMESTAMPTZ), <code>release_tx_hash</code> (VARCHAR(255)), <code>buyer_received_btc</code> (DECIMAL(18,8)).</li>
+  <li><b>Added Dispute Quorum Columns:</b> <code>disputed_by</code> (UUID), <code>resolved_via</code> (TEXT: 'QUORUM' | 'ADMIN_OVERRIDE'), <code>override_reason</code> (TEXT), <code>admin_notes</code> (TEXT), <code>dispute_reason</code> (TEXT), <code>dispute_resolution</code> (VARCHAR(50)), <code>dispute_notes</code> (TEXT), <code>disputed_at</code>, <code>resolved_by</code>, <code>resolved_at</code>.</li>
+  <li><b>Constraint Update:</b> <code>trades_status_check</code> updated to include <code>CANCELLING</code> intermediate state to prevent cancellation race conditions.</li>
+</ul>
+
+<h3>C. <code>listings</code> Table (New Columns)</h3>
+<ul>
+  <li><code>asset</code> (VARCHAR(20) NOT NULL DEFAULT 'BTC' CHECK (asset IN ('BTC', 'USDT'))).</li>
+  <li><code>gift_card_currencies</code> (JSONB) — Multi-currency/region configuration array.</li>
+  <li><code>card_values</code> (DECIMAL[]), <code>card_type</code> (VARCHAR(20)), <code>face_value</code> (DECIMAL), <code>pricing_type</code> (VARCHAR(20)).</li>
+</ul>
+
+<h2>4. Stored Procedures / Atomic PL/pgSQL Functions</h2>
+
+<div class="card">
+  <div class="card-title">1. praqen_credit_deposit(user_id, currency, amount, onchain_balance, idempotency_key, note)</div>
+  <p>Performs atomic deposit crediting: writes transaction ledger entry, increments wallet balance, synchronizes mirrors, advances on-chain checkpoint, and writes audit log inside a single ACID transaction.</p>
+</div>
+
+<div class="card">
+  <div class="card-title">2. praqen_internal_transfer(sender_id, recipient_id, currency, amount, idempotency_key, note)</div>
+  <p>Performs deadlock-free atomic user-to-user transfers. Sorts user IDs prior to row-locking, verifies sender balance, updates both wallets, and writes dual ledger entries simultaneously.</p>
+</div>
+
+<div class="card">
+  <div class="card-title">3. praqen_release_escrow & praqen_refund_escrow</div>
+  <p>Manages atomic escrow release to buyers and dispute refunds to sellers without exposure to concurrency races.</p>
+</div>
+
+<h2>5. Supabase Storage Buckets Required</h2>
+<table>
+  <thead>
+    <tr><th>Bucket Name</th><th>Access Level</th><th>Purpose</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>kyc-documents</code></td><td>Private / Authenticated</td><td>Government ID, Passport, and selfie uploads</td></tr>
+    <tr><td><code>p2p-migration</code></td><td>Public</td><td>Reputation screenshot proofs from external platforms</td></tr>
+    <tr><td><code>trade-proofs</code></td><td>Authenticated</td><td>Fiat payment receipts and trade confirmation images</td></tr>
+    <tr><td><code>avatars</code></td><td>Public</td><td>User profile avatars</td></tr>
+  </tbody>
+</table>
+
+<h2>6. Deployment Execution Order for Main Developer</h2>
+<ol>
+  <li>Execute master script: <code>RUN_COMPLETE_DATABASE_SETUP.sql</code></li>
+  <li>Execute dispute quorum schema: <code>dispute_voting_tables.sql</code></li>
+  <li>Execute ERP books & staff: <code>company_books_tables.sql</code> and <code>company_staff_table.sql</code></li>
+  <li>Execute team features: <code>team_features_tables.sql</code></li>
+  <li>Execute RAG Vector schema: <code>RUN_THIS_IN_SUPABASE.sql</code></li>
+  <li>Initialize user wallets & assign admin role.</li>
+</ol>
+
+</body>
+</html>

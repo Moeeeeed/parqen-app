@@ -47,7 +47,8 @@ const HOT_MIN_TRX        = num(process.env.HOT_WALLET_MIN_TRX, 200);
 const HOT_LIABILITY_RATIO = num(process.env.HOT_WALLET_LIABILITY_RATIO, 0.9); // alert if hot wallet holds < ratio × user liability
 const HOT_CHECK_EVERY    = Math.max(1, parseInt(process.env.DEPOSIT_HEALTH_HOT_CHECK_EVERY || '4', 10)); // every Nth health check
 const DIGEST_HOUR_UTC    = Math.min(23, Math.max(0, parseInt(process.env.DEPOSIT_HEALTH_DIGEST_HOUR || '8', 10)));
-const USDT_CONTRACT      = process.env.TRON_USDT_CONTRACT || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+const tronConfig         = require('./tronConfig');
+const USDT_CONTRACT      = tronConfig.usdtContract;
 
 class DepositHealthMonitor {
   constructor() {
@@ -230,9 +231,10 @@ class DepositHealthMonitor {
     if (!tronAddr) { try { tronAddr = require('./tronHotWallet').getHotWalletAddress?.(); } catch (_) {} }
     if (tronAddr) {
       try {
-        const headers = {};
-        if (process.env.TRONGRID_API_KEY) headers['TRON-PRO-API-KEY'] = process.env.TRONGRID_API_KEY;
-        const { data } = await axios.get(`https://api.trongrid.io/v1/accounts/${tronAddr}`, { headers, timeout: 15000 });
+        const { data } = await axios.get(`${tronConfig.trongridUrl}/v1/accounts/${tronAddr}`, {
+          headers: tronConfig.getHeaders(),
+          timeout: 15000,
+        });
         const acc = (data?.data || [])[0] || {};
         const trx = Number(acc.balance || 0) / 1e6;
         const usdt = (acc.trc20 || []).map(o => o[USDT_CONTRACT]).filter(Boolean).map(v => Number(v) / 1e6)[0] || 0;

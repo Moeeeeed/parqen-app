@@ -21,6 +21,7 @@ require('dotenv').config();
 const axios      = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 const tronWallet = require('./tronWalletService');
+const tronConfig = require('./tronConfig');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -31,15 +32,12 @@ const supabase = createClient(
 const HOT_ID            = process.env.PRAQEN_HOT_WALLET_IDENTIFIER         || 'praqen_hot_wallet_main';
 const COMPANY_ID        = process.env.PRAQEN_COMPANY_WALLET_IDENTIFIER     || 'praqen_company_wallet';
 const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
-const TRONGRID_KEY      = process.env.TRONGRID_API_KEY || '';
 const MIN_TRX_RESERVE   = parseInt(process.env.HOT_WALLET_MIN_TRX   || '100',  10);
 const TRX_PER_SWEEP     = parseInt(process.env.HOT_WALLET_TRX_SWEEP || '20',   10);
 const USDT_WITHDRAWAL_FEE_RATE = 0.008; // 0.8% per withdrawal
 
 function tronHeaders() {
-  const h = { 'Content-Type': 'application/json' };
-  if (TRONGRID_KEY) h['TRON-PRO-API-KEY'] = TRONGRID_KEY;
-  return h;
+  return tronConfig.getHeaders();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,7 +93,7 @@ class TronHotWallet {
    */
   async _getTrxAt(address, { throwOnError = false } = {}) {
     const fetch = () => axios.get(
-      `https://api.trongrid.io/v1/accounts/${address}`,
+      `${tronConfig.trongridUrl}/v1/accounts/${address}`,
       { headers: tronHeaders(), timeout: 10000 }
     );
     try {
@@ -432,6 +430,10 @@ class TronHotWallet {
       pending_sweeps:       pendingCount?.count || 0,
       swept_today_usdt:     todayVolume,
       withdrawal_fee_usdt:  USDT_WITHDRAWAL_FEE_RATE,
+      network:              tronConfig.network,
+      is_testnet:           tronConfig.isTestnet,
+      explorer_url:         tronConfig.getExplorerAddressUrl(hotAddr),
+      usdt_contract:        tronConfig.usdtContract,
     };
   }
 
@@ -468,7 +470,7 @@ class TronHotWallet {
 
     const pk = tronWallet.getPrivateKeyHex(HOT_ID);
     const tw = new TronWebClass({
-      fullHost:   'https://api.trongrid.io',
+      fullHost:   tronConfig.trongridUrl,
       headers:    tronHeaders(),
       privateKey: pk,
     });
@@ -545,7 +547,9 @@ class TronHotWallet {
     try {
       const hotAddr     = this.getHotWalletAddress();
       const companyAddr = this.getCompanyTronAddress();
-      console.log('\n🔥 PRAQEN USDT Hot Wallet Service');
+      console.log(`\n🔥 PRAQEN USDT Hot Wallet Service [${tronConfig.isTestnet ? 'TESTNET - Nile' : 'MAINNET'}]`);
+      console.log(`   TronGrid Endpoint   : ${tronConfig.trongridUrl}`);
+      console.log(`   USDT Contract       : ${tronConfig.usdtContract}`);
       console.log(`   Hot wallet address  : ${hotAddr}`);
       console.log(`   Company Tron address: ${companyAddr}`);
       console.log(`   Withdrawal fee      : ₮${USDT_WITHDRAWAL_FEE_RATE} per withdrawal`);

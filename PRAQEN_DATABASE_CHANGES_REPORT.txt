@@ -1,0 +1,507 @@
+================================================================================
+PRAQEN PLATFORM — COMPREHENSIVE DATABASE CHANGES & MIGRATION REPORT
+Target Database: PostgreSQL / Supabase Database
+Author: Database Administration & Systems Architecture Team
+Status: Production Ready
+================================================================================
+
+1. EXECUTIVE ARCHITECTURAL SUMMARY
+--------------------------------------------------------------------------------
+The database architecture for PRAQEN has transitioned from a single-currency (BTC)
+prototype to an institutional-grade, multi-asset (BTC + USDT TRC-20) P2P financial 
+exchange.
+
+Key Architectural Principles:
+1. Authoritative Ledger Model:
+   - The 'wallets' table is the single authoritative source of truth for user 
+     balances (balance_btc, locked_balance_btc, balance_usdt, locked_balance_usdt).
+   - 'user_wallets' tracks on-chain addresses and monitor checkpoints.
+   - Legacy mirror columns ('user_balances') are kept synchronized via PostgreSQL 
+     triggers and atomic functions.
+
+2. Atomic Database-Level Operations (ACID Compliance):
+   - All financial balance modifications (deposits, internal transfers, escrow 
+     locks, releases, refunds, withdrawals) execute inside PostgreSQL PL/pgSQL 
+     SECURITY DEFINER functions with row-level locks and strict idempotency keys.
+
+3. Security & Row Level Security (RLS):
+   - Public/Anon keys have zero access to private user data or balance modifications.
+   - Backend operates securely via the Supabase Service Role Key.
+
+4. AI Support & Vector Infrastructure:
+   - pgvector extension (vector(1024)) enabled for semantic search in customer support.
+
+5. 3-of-4 Moderator Quorum System:
+   - Multi-party dispute voting, threaded comments, and immutable oath logs.
+
+6. Company Books & Administration:
+   - Full ERP tables for loans, expenses, staff directory, security events, and audit logs.
+
+
+================================================================================
+2. REQUIRED POSTGRESQL EXTENSIONS
+================================================================================
+Run these commands first in the Supabase SQL Editor:
+
+  CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+  CREATE EXTENSION IF NOT EXISTS "vector";
+
+
+================================================================================
+3. COMPLETE LIST OF ALL NEW TABLES (40 TABLES)
+================================================================================
+
+1. wallets
+   - Purpose: Authoritative single source of truth for user balances.
+   - Primary Key: id (UUID)
+   - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE
+   - Columns: id, user_id, address, private_key, balance_btc, locked_balance_btc, 
+              balance_usdt, locked_balance_usdt, created_at, updated_at
+   - Constraints: UNIQUE(user_id), Sanity bounds CHECK (>=0 and <=21M for BTC, <=1B for USDT)
+
+2. user_wallets
+   - Purpose: Tracks HD deposit addresses (BTC & Tron TRC-20) and on-chain balance checkpoints.
+   - Primary Key: id (UUID)
+   - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE
+   - Columns: id, user_id, btc_address, tron_address, network, balance_btc, 
+              last_onchain_btc, last_onchain_usdt, is_active, created_at, updated_at
+   - Constraints: UNIQUE(user_id)
+
+3. wallet_transactions
+   - Purpose: Master financial transaction ledger with idempotency deduplication.
+   - Primary Key: id (UUID)
+   - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE, 
+                   trade_id REFERENCES trades(id) ON DELETE SET NULL,
+                   reviewed_by REFERENCES users(id)
+   - Columns: id, user_id, trade_id, type, currency, amount_btc, amount_usdt, amount_usd, 
+              platform_fee_btc, platform_fee_usdt, tx_hash, coinbase_tx_id, destination_address, 
+              status, notes, idempotency_key, reviewed_by, reviewed_at, rejection_reason, created_at
+   - Constraints: Partial UNIQUE index on (idempotency_key) WHERE idempotency_key IS NOT NULL
+
+4. deposit_tracking_v2
+   - Purpose: Blockchain deposit deduplication by tx_hash & address.
+   - Primary Key: id (UUID)
+   - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE
+   - Columns: id, tx_hash, address, user_id, currency, amount, credited, 
+              credit_error, detected_by, detected_at, credited_at
+   - Constraints: UNIQUE(tx_hash, address)
+
+5. deposit_recheck_queue
+   - Purpose: Retry queue for failed explorer checks (rate limits / timeouts).
+   - Primary Key: (address, currency)
+   - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE
+   - Columns: address, currency, user_id, reason, attempts, first_seen, last_attempt
+
+6. realtime_tx_dedupe
+   - Purpose: WebSocket incoming transaction deduplication cache.
+   - Primary Key: dedupe_key (TEXT)
+   - Columns: dedupe_key, kind, created_at
+
+7. swap_transactions
+   - Purpose: Financial ledger for BTC <-> USDT instant internal conversions.
+   - Primary Key: id (UUID)
+   - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE
+   - Columns: id, user_id, from_currency, to_currency, from_amount, to_amount, 
+              rate, fee_pct, fee_amount, swap_ref, status, created_at
+   - Constraints: UNIQUE(swap_ref)
+
+8. seller_deposits
+   - Purpose: Merchant/seller $200 USDT security bond for gift card listings.
+   - Primary Key: id (UUID)
+   - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE
+   - Columns: id, user_id, amount_usdt, remaining_amount, status, locked_at, eligible_at, 
+              withdrawal_requested_at, withdrawn_at, approved_at, rejected_at, seized_amount, 
+              seized_at, admin_notes, created_at, updated_at
+   - Constraints: Partial UNIQUE index on (user_id) WHERE status IN ('PENDING_APPROVAL', 'LOCKED', 'PENDING_WITHDRAWAL')
+
+9. reconciliation_flags
+   - Purpose: Automated anomaly detection flags for balance drift investigation.
+   - Primary Key: id (UUID)
+   - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE, resolved_by REFERENCES users(id)
+   - Columns: id, user_id, currency, source_table, authoritative_value, mirror_value, 
+              diff, reason, status, detail, created_at, resolved_at, resolved_by, resolution_notes
+
+10. balance_audit
+    - Purpose: Immutable audit log tracking balance deltas and reasons.
+    - Primary Key: id (UUID)
+    - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE, trade_id REFERENCES trades(id)
+    - Columns: id, user_id, trade_id, reason, change_btc, new_balance, created_at
+
+11. security_events
+    - Purpose: Real-time authentication, 2FA, brute-force, and fraud audit log.
+    - Primary Key: id (UUID)
+    - Foreign Keys: user_id REFERENCES users(id) ON DELETE SET NULL
+    - Columns: id, user_id, email_attempted, event_type, ip_address, user_agent, details, created_at
+
+12. security_action_codes
+    - Purpose: Persistent store for short-lived 2FA action authorization codes.
+    - Primary Key: id (UUID)
+    - Columns: id, user_id, action, code, expires_at, created_at
+    - Constraints: UNIQUE(user_id, action)
+
+13. user_badges
+    - Purpose: Gamification, trust badges, and milestone achievements.
+    - Primary Key: id (UUID)
+    - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE
+    - Columns: id, user_id, badge_name, is_unlocked, unlocked_at, created_at
+    - Constraints: UNIQUE(user_id, badge_name)
+
+14. user_trust
+    - Purpose: User trust & block social graph.
+    - Primary Key: id (UUID)
+    - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE, target_id REFERENCES users(id) ON DELETE CASCADE
+    - Columns: id, user_id, target_id, type, created_at
+    - Constraints: UNIQUE(user_id, target_id, type), CHECK(type IN ('trust', 'block'))
+
+15. notifications
+    - Purpose: In-app user notification center with action links and JSON payloads.
+    - Primary Key: id (UUID)
+    - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE
+    - Columns: id, user_id, type, title, message, link, action, data, is_read, read_at, created_at
+
+16. otp_codes
+    - Purpose: OTP codes for email and phone verification.
+    - Primary Key: id (UUID)
+    - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE
+    - Columns: id, user_id, email, phone, code, purpose, expires_at, used, created_at
+
+17. trade_images
+    - Purpose: Trade chat image attachments and payment proof URLs.
+    - Primary Key: id (UUID)
+    - Foreign Keys: trade_id REFERENCES trades(id) ON DELETE CASCADE, user_id REFERENCES users(id) ON DELETE CASCADE
+    - Columns: id, trade_id, user_id, image_url, created_at
+
+18. support_tickets
+    - Purpose: Customer support ticketing system.
+    - Primary Key: id (UUID)
+    - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE, assigned_agent_id REFERENCES users(id)
+    - Columns: id, user_id, subject, category, department, assigned_agent_id, status, created_at, updated_at
+
+19. support_messages
+    - Purpose: Messages inside support ticket threads.
+    - Primary Key: id (UUID)
+    - Foreign Keys: ticket_id REFERENCES support_tickets(id) ON DELETE CASCADE, sender_id REFERENCES users(id)
+    - Columns: id, ticket_id, sender_id, is_admin, message, created_at
+
+20. agent_chat_status
+    - Purpose: Support agent live chat availability and custom presence profile.
+    - Primary Key: user_id (UUID)
+    - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE
+    - Columns: user_id, is_online, display_name, avatar_url, status_message, last_toggled_at, created_at, updated_at
+
+21. kb_articles
+    - Purpose: Knowledge base documentation with 1024-dimension vector embeddings.
+    - Primary Key: id (UUID)
+    - Columns: id, topic, title, content, embedding (VECTOR(1024)), created_at, updated_at
+
+22. ai_chat_sessions
+    - Purpose: AI support bot conversation sessions.
+    - Primary Key: id (UUID)
+    - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE
+    - Columns: id, user_id, ticket_id, mode, created_at
+
+23. ai_chat_messages
+    - Purpose: Messages and AI confidence scores in AI support conversations.
+    - Primary Key: id (UUID)
+    - Foreign Keys: session_id REFERENCES ai_chat_sessions(id) ON DELETE CASCADE
+    - Columns: id, session_id, role, content, confidence, escalated, suggested_priority, created_at
+
+24. p2p_migration_requests
+    - Purpose: Reputation import verification from Binance P2P, Noones, Paxful, etc.
+    - Primary Key: id (UUID)
+    - Foreign Keys: user_id REFERENCES users(id), reviewed_by REFERENCES users(id)
+    - Columns: id, user_id, email, full_name, platform, feedback_count, screenshot_url, 
+              status, admin_username_seen, admin_feedback_count, admin_notes, reviewed_at, reviewed_by, created_at
+
+25. phone_verification_requests
+    - Purpose: Phone verification manual/automatic review queue.
+    - Primary Key: id (UUID)
+    - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE, reviewed_by REFERENCES users(id)
+    - Columns: id, user_id, phone, status, submitted_at, reviewed_at, reviewed_by, rejection_reason
+    - Constraints: UNIQUE(user_id)
+
+26. email_logs
+    - Purpose: Brevo/SMTP transactional email tracking and delivery logs.
+    - Primary Key: id (UUID)
+    - Foreign Keys: user_id REFERENCES users(id) ON DELETE SET NULL
+    - Columns: id, user_id, email, subject, type, status, message_id, error_message, metadata, 
+              sent_at, opened_at, clicked_at, created_at
+
+27. admin_audit_log
+    - Purpose: Administrative action logs (role changes, bans, KYC decisions).
+    - Primary Key: id (UUID)
+    - Foreign Keys: admin_id REFERENCES users(id), target_id REFERENCES users(id)
+    - Columns: id, admin_id, target_id, action, details (JSONB), ip_address, created_at
+
+28. trader_of_week
+    - Purpose: Active recognition recognition slots for top traders.
+    - Primary Key: category (TEXT)
+    - Foreign Keys: user_id REFERENCES users(id), listing_id REFERENCES listings(id)
+    - Columns: category, user_id, username, listing_id, total_trades, average_rating, 
+              pin_expires_at, stats_snapshot (JSONB), selected_at, next_rotation_at
+
+29. trader_of_week_history
+    - Purpose: Historical audit archive of all trader selections.
+    - Primary Key: id (UUID)
+    - Foreign Keys: user_id REFERENCES users(id), selected_by REFERENCES users(id)
+    - Columns: id, category, user_id, username, selected_by, selected_by_username, 
+              selected_at, expires_at, stats_snapshot (JSONB)
+
+30. suggestions
+    - Purpose: Community feature suggestion and feedback board.
+    - Primary Key: id (UUID)
+    - Foreign Keys: user_id REFERENCES users(id) ON DELETE SET NULL
+    - Columns: id, user_id, username, category, title, body, upvotes, status, 
+              admin_reply, admin_replied_at, is_pinned, created_at, updated_at
+
+31. suggestion_votes
+    - Purpose: Upvotes on community suggestions.
+    - Primary Key: id (UUID)
+    - Foreign Keys: suggestion_id REFERENCES suggestions(id) ON DELETE CASCADE, user_id REFERENCES users(id) ON DELETE CASCADE
+    - Columns: id, suggestion_id, user_id, created_at
+    - Constraints: UNIQUE(suggestion_id, user_id)
+
+32. dispute_votes
+    - Purpose: 3-of-4 Moderator quorum dispute resolution voting.
+    - Primary Key: id (UUID)
+    - Foreign Keys: trade_id REFERENCES trades(id) ON DELETE CASCADE, moderator_id REFERENCES users(id) ON DELETE CASCADE
+    - Columns: id, trade_id, moderator_id, vote (BUYER_WINS | SELLER_WINS | CANCEL), reasoning, created_at
+    - Constraints: UNIQUE(trade_id, moderator_id)
+
+33. dispute_comments
+    - Purpose: Moderator internal discussions on disputes.
+    - Primary Key: id (UUID)
+    - Foreign Keys: trade_id REFERENCES trades(id) ON DELETE CASCADE, author_id REFERENCES users(id) ON DELETE CASCADE, 
+                   parent_id REFERENCES dispute_comments(id) ON DELETE CASCADE
+    - Columns: id, trade_id, author_id, parent_id, message, is_admin_override, created_at
+
+34. moderator_oaths
+    - Purpose: Versioned moderator ethical oath signatures.
+    - Primary Key: id (UUID)
+    - Foreign Keys: user_id REFERENCES users(id) ON DELETE CASCADE
+    - Columns: id, user_id, oath_version, signed_at
+    - Constraints: UNIQUE(user_id, oath_version)
+
+35. company_loans
+    - Purpose: Corporate loan tracking and repayment schedules.
+    - Primary Key: id (UUID)
+    - Columns: id, title, lender, amount_usd, amount_paid_usd, currency, original_amount, 
+              fx_rate, due_date, status, notes, created_by, created_at, updated_at
+
+36. company_expenses
+    - Purpose: Corporate expense ledger.
+    - Primary Key: id (UUID)
+    - Columns: id, category, title, amount_usd, expense_date, paid_by, notes, created_by, created_at
+
+37. company_staff
+    - Purpose: Employee & contractor directory and payroll data.
+    - Primary Key: id (UUID)
+    - Columns: id, full_name, role, department, official_email, personal_email, phone, 
+              salary_usd, salary_period, contract_type, contract_months, start_date, end_date, 
+              status, avatar_url, bio, address, emergency_contact, emergency_phone, notes, added_by, created_at, updated_at
+
+38. user_address_migrations
+    - Purpose: Old-to-new HD treasury Bitcoin address migration tracking.
+    - Primary Key: id (UUID)
+    - Columns: id, user_id, old_btc_address, new_btc_address, old_address_balance_at_migration_sats, 
+              monitoring_status, migrated_at, monitoring_closed_at, notes
+
+39. late_deposit_sweeps
+    - Purpose: Tracking sweeps from deprecated deposit addresses.
+    - Primary Key: id (UUID)
+    - Columns: id, user_id, old_btc_address, detected_at, amount_sats, swept_to_treasury_txid, 
+              swept_status, balance_credit_status, reviewed_by, reviewed_at, notes
+
+40. treasury_migration_transactions
+    - Purpose: On-chain transaction ledger for master wallet migration.
+    - Primary Key: id (UUID)
+    - Columns: id, phase, source_address, destination_address, intended_amount_sats, 
+              actual_amount_sats, fee_sats, txid, confirmation_status, user_id, 
+              reconciliation_status, reconciliation_notes, created_at, confirmed_at
+
+
+================================================================================
+4. MODIFIED EXISTING TABLES (COLUMNS ADDED)
+================================================================================
+
+1. users (Added Columns)
+   - is_admin (BOOLEAN DEFAULT false)
+   - is_moderator (BOOLEAN DEFAULT false)
+   - is_agent (BOOLEAN DEFAULT false)
+   - is_ceo (BOOLEAN DEFAULT false)
+   - kyc_status (VARCHAR(20) DEFAULT NULL)
+   - id_type (VARCHAR(50) DEFAULT NULL)
+   - id_front_url (TEXT DEFAULT NULL)
+   - id_back_url (TEXT DEFAULT NULL)
+   - selfie_url (TEXT DEFAULT NULL)
+   - kyc_submitted_at (TIMESTAMPTZ DEFAULT NULL)
+   - kyc_approved_at (TIMESTAMPTZ DEFAULT NULL)
+   - kyc_rejection_reason (TEXT DEFAULT NULL)
+   - kyc_verified (BOOLEAN DEFAULT false)
+   - is_id_verified (BOOLEAN DEFAULT false)
+   - is_phone_verified (BOOLEAN DEFAULT false)
+   - phone (VARCHAR(50))
+   - two_factor_enabled (BOOLEAN DEFAULT false)
+   - two_factor_method (VARCHAR(50) DEFAULT 'email')
+   - totp_secret (TEXT DEFAULT NULL)
+   - reset_password_token (TEXT)
+   - reset_password_expires (TIMESTAMPTZ)
+   - badge (VARCHAR(50) DEFAULT 'BEGINNER')
+   - has_warning (BOOLEAN DEFAULT false)
+   - warning_reason (TEXT DEFAULT NULL)
+   - warned_at (TIMESTAMPTZ DEFAULT NULL)
+   - warned_by (UUID REFERENCES users(id))
+   - trusted_by_count (INT DEFAULT 0)
+   - blocked_by_count (INT DEFAULT 0)
+   - blocked_count (INT DEFAULT 0)
+   - positive_feedback (INT DEFAULT 0)
+   - negative_feedback (INT DEFAULT 0)
+   - total_feedback_count (INT DEFAULT 0)
+   - avg_response_time (NUMERIC DEFAULT NULL)
+   - p2p_migrated_platform (TEXT)
+   - p2p_migrated_username (TEXT)
+   - p2p_migrated_feedback (TEXT)
+   - p2p_migration_approved_at (TIMESTAMPTZ)
+   - referral_code (VARCHAR(100) UNIQUE)
+   - referred_by (UUID REFERENCES users(id))
+   - total_referrals (INT DEFAULT 0)
+   - referral_earnings_btc (DECIMAL(18,8) DEFAULT 0)
+   - bonus_step (INT DEFAULT 0)
+   - bonus_expires_at (TIMESTAMPTZ)
+   - bonus_unlocked_at (TIMESTAMPTZ)
+   - last_seen_at (TIMESTAMPTZ)
+   - hide_full_name (BOOLEAN DEFAULT false)
+   - name_display (VARCHAR(10) DEFAULT 'full')
+   - city (VARCHAR(100))
+   - country (VARCHAR(100))
+   - country_name (VARCHAR(100))
+   - last_seen_location (TEXT)
+
+2. trades (Added Columns & Updated Constraints)
+   - currency (TEXT DEFAULT 'BTC')
+   - amount_usdt (DECIMAL(18,6))
+   - platform_fee_usdt (DECIMAL(18,6))
+   - amount_receive_usd (DECIMAL DEFAULT NULL)
+   - trade_ref (VARCHAR(20) UNIQUE)
+   - payment_proof_url (TEXT)
+   - payment_proof_at (TIMESTAMPTZ)
+   - release_tx_hash (VARCHAR(255))
+   - buyer_received_btc (DECIMAL(18,8))
+   - disputed_by (UUID REFERENCES users(id))
+   - resolved_via (TEXT)
+   - override_reason (TEXT)
+   - admin_notes (TEXT)
+   - dispute_reason (TEXT)
+   - dispute_resolution (VARCHAR(50))
+   - dispute_notes (TEXT)
+   - disputed_at (TIMESTAMPTZ)
+   - resolved_by (UUID REFERENCES users(id))
+   - resolved_at (TIMESTAMPTZ)
+   - Status Constraint updated to allow: 'CREATED', 'FUNDS_LOCKED', 'PAYMENT_SENT', 
+     'DISPUTED', 'CANCELLING', 'CANCELLED', 'COMPLETED'
+
+3. listings (Added Columns)
+   - asset (VARCHAR(20) DEFAULT 'BTC' CHECK (asset IN ('BTC', 'USDT')))
+   - crypto_currency (VARCHAR(20) DEFAULT 'BTC')
+   - gift_card_currencies (JSONB DEFAULT NULL)
+   - card_values (DECIMAL[] DEFAULT NULL)
+   - card_type (VARCHAR(20) DEFAULT 'both')
+   - face_value (DECIMAL DEFAULT NULL)
+   - pricing_type (VARCHAR(20) DEFAULT 'market')
+
+4. escrow_locks (Added Columns & Constraints)
+   - currency (TEXT DEFAULT 'BTC')
+   - amount_usdt (DECIMAL(18,6))
+   - Status Constraint updated to allow: 'LOCKED', 'RELEASING', 'RELEASED', 'REFUNDING', 'REFUNDED'
+
+5. reviews (Added Columns)
+   - payment_method (TEXT)
+
+6. notifications (Added Columns)
+   - data (JSONB DEFAULT NULL)
+   - action (VARCHAR(255))
+   - link (VARCHAR(255))
+   - read_at (TIMESTAMPTZ)
+
+
+================================================================================
+5. STORED PROCEDURES / PL/PGSQL RPC FUNCTIONS
+================================================================================
+
+1. public.praqen_credit_deposit(p_user_id, p_currency, p_amount, p_onchain_balance, p_idempotency_key, p_note)
+   - Atomically records ledger row, increments balance, syncs mirrors, and updates checkpoints.
+
+2. public.praqen_internal_transfer(p_sender_id, p_recipient_id, p_currency, p_amount, p_idempotency_key, p_note)
+   - Locks both wallet rows in sorted user_id order to eliminate deadlocks, debits sender, 
+     credits recipient, and writes dual ledger entries atomically.
+
+3. public.praqen_release_escrow(p_trade_id, p_receiver_id, p_company_id, p_amount_btc, p_fee_btc, p_amount_usd, p_tx_hash)
+   - Atomically releases escrowed cryptocurrency to buyer and fee to platform treasury.
+
+4. public.praqen_refund_escrow(p_trade_id, p_provider_id, p_amount_btc, p_reason)
+   - Atomically refunds locked escrow balance back to the seller.
+
+5. public.praqen_reject_withdrawal(p_tx_id, p_ceo_id, p_reason)
+   - Atomically transitions a pending withdrawal to PROCESSING, refunds user balance, 
+     and marks status as REJECTED with CEO reason.
+
+
+================================================================================
+6. DATABASE TRIGGERS
+================================================================================
+
+1. trg_wallets_mirror_sync
+   - Attached to: public.wallets (AFTER UPDATE OF balance_btc, balance_usdt)
+   - Action: Copies updated balances directly into 'user_balances' and 'user_wallets' 
+     to prevent mirror drift.
+
+2. trg_credit_referral_earnings
+   - Attached to: public.affiliate_earnings (AFTER INSERT)
+   - Action: Increments referrer's 'referral_earnings_btc' whenever an affiliate row 
+     with status 'CREDITED' is created.
+
+3. kb_articles_updated_at
+   - Attached to: public.kb_articles (BEFORE UPDATE)
+   - Action: Auto-updates updated_at timestamp.
+
+
+================================================================================
+7. SUPABASE STORAGE BUCKETS REQUIRED
+================================================================================
+
+Create these 4 buckets in the Supabase Dashboard -> Storage:
+1. kyc-documents (Private) - Government IDs, Passports, and selfie files.
+2. p2p-migration (Public) - External P2P proof screenshots.
+3. trade-proofs (Authenticated) - Payment confirmation receipts.
+4. avatars (Public) - User profile pictures.
+
+
+================================================================================
+8. DEPLOYMENT INSTRUCTIONS FOR MAIN DEVELOPER
+================================================================================
+
+Step 1: In the Supabase Dashboard, open SQL Editor.
+Step 2: Execute the following migration files in order:
+        1. RUN_COMPLETE_DATABASE_SETUP.sql
+        2. dispute_voting_tables.sql
+        3. company_books_tables.sql
+        4. company_staff_table.sql
+        5. team_features_tables.sql
+        6. RUN_THIS_IN_SUPABASE.sql
+Step 3: Run the initial user wallet seeding script:
+        INSERT INTO wallets (user_id, balance_btc, locked_balance_btc, balance_usdt, locked_balance_usdt, created_at, updated_at)
+        SELECT u.id, 0, 0, 0, 0, NOW(), NOW()
+        FROM users u
+        ON CONFLICT (user_id) DO NOTHING;
+
+        INSERT INTO user_wallets (user_id, network, balance_btc, last_onchain_btc, last_onchain_usdt, created_at, updated_at)
+        SELECT u.id, 'mainnet', 0, 0, 0, NOW(), NOW()
+        FROM users u
+        ON CONFLICT (user_id) DO NOTHING;
+Step 4: Promote your admin account:
+        UPDATE users 
+        SET is_admin = true, is_ceo = true, is_moderator = true, is_email_verified = true, is_id_verified = true, account_status = 'ACTIVE' 
+        WHERE email = 'YOUR_ADMIN_EMAIL@example.com';
+================================================================================
+END OF REPORT
+================================================================================

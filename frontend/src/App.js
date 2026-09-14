@@ -514,7 +514,7 @@ function App() {
   return (
     <HelmetProvider>
       <RatesProvider>
-        <Router>
+        <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <CustomToastContainer />
           <Suspense fallback={<PageLoader />}>
             <Routes>

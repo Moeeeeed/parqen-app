@@ -570,7 +570,7 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
 }
 
 // ─── Receive Modal ─────────────────────────────────────────────────────────────
-function ReceiveModal({ address, network, onClose, onGenerate, checking, onCheckDeposits }) {
+function ReceiveModal({ address, network, onClose, onGenerate, checking, scanCooldown = 0, onCheckDeposits }) {
   const [copied, setCopied] = useState(false);
 
   const copy = () => {
@@ -578,7 +578,10 @@ function ReceiveModal({ address, network, onClose, onGenerate, checking, onCheck
       .then((ok) => { if (ok) setCopied(true); setTimeout(() => setCopied(false), 3000); });
   };
 
-  const explorerUrl = `https://mempool.space/address/${address}`;
+  const isTestnet = network === 'testnet' || address?.startsWith('tb1') || address?.startsWith('2') || address?.startsWith('m') || address?.startsWith('n');
+  const explorerUrl = isTestnet
+    ? `https://mempool.space/testnet/address/${address}`
+    : `https://mempool.space/address/${address}`;
 
   return (
     <div className="fixed inset-0 z-[1100] flex items-end md:items-center justify-center p-0 md:p-4"
@@ -619,12 +622,12 @@ function ReceiveModal({ address, network, onClose, onGenerate, checking, onCheck
                 {copied ? <><CheckCircle size={15} /> Copied!</> : <><Copy size={15} /> Copy Address</>}
               </button>
 
-              <button onClick={onCheckDeposits} disabled={checking}
-                className="w-full py-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 hover:bg-gray-50 transition"
+              <button onClick={onCheckDeposits} disabled={checking || scanCooldown > 0}
+                className="w-full py-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 hover:bg-gray-50 transition disabled:opacity-50"
                 style={{ borderColor: C.g200, color: C.g600 }}>
                 {checking
                   ? <><RefreshCw size={12} className="animate-spin" /> Checking mempool…</>
-                  : <><Zap size={12} style={{ color: C.gold }} /> Check for New Deposits</>}
+                  : <><Zap size={12} style={{ color: C.gold }} /> {scanCooldown > 0 ? `Scan available in ${scanCooldown}s` : 'Check for New Deposits'}</>}
               </button>
 
               <a href={explorerUrl} target="_blank" rel="noopener noreferrer"
@@ -2776,7 +2779,7 @@ function AssetActionSheet({ asset, balanceLabel, usdLabel, onAction, onClose }) 
 }
 
 // ─── USDT Receive Modal ────────────────────────────────────────────────────────
-function UsdtReceiveModal({ address, onClose, checking, scanCooldown, onCheckDeposits }) {
+function UsdtReceiveModal({ address, onClose, checking, scanCooldown, onCheckDeposits, isTestnet, customExplorerUrl, networkName }) {
   const [copied, setCopied] = useState(false);
 
   const copy = () => {
@@ -2784,7 +2787,7 @@ function UsdtReceiveModal({ address, onClose, checking, scanCooldown, onCheckDep
       .then((ok) => { if (ok) setCopied(true); setTimeout(() => setCopied(false), 3000); });
   };
 
-  const explorerUrl = `https://tronscan.org/#/address/${address}`;
+  const explorerUrl = customExplorerUrl || (isTestnet ? `https://nile.tronscan.org/#/address/${address}` : `https://tronscan.org/#/address/${address}`);
 
   return (
     <div className="fixed inset-0 z-[1100] flex items-end md:items-center justify-center p-0 md:p-4"
@@ -2795,7 +2798,14 @@ function UsdtReceiveModal({ address, onClose, checking, scanCooldown, onCheckDep
             <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#26A17B15' }}>
               <ArrowDownLeft size={15} style={{ color: '#26A17B' }} />
             </div>
-            <h2 className="font-black text-sm" style={{ color: C.g800 }}>Deposit USDT</h2>
+            <div>
+              <h2 className="font-black text-sm" style={{ color: C.g800 }}>Deposit USDT</h2>
+              {isTestnet && (
+                <span className="inline-block text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800">
+                  Nile Testnet
+                </span>
+              )}
+            </div>
           </div>
           <button onClick={onClose} className="w-7 h-7 rounded-xl flex items-center justify-center hover:bg-gray-100">
             <X size={14} style={{ color: C.g500 }} />
@@ -2803,7 +2813,11 @@ function UsdtReceiveModal({ address, onClose, checking, scanCooldown, onCheckDep
         </div>
 
         <div className="p-5 space-y-4">
-          <p className="text-xs text-gray-500">Send USDT (TRC-20) to your Tron address. Credited after network confirmation.</p>
+          <p className="text-xs text-gray-500">
+            {isTestnet
+              ? 'Send Testnet USDT (Nile TRC-20) to your test address. Get free test coins from the Nile faucet.'
+              : 'Send USDT (TRC-20) to your Tron address. Credited after network confirmation.'}
+          </p>
 
           {address ? (
             <div className="flex justify-center p-4 rounded-xl border" style={{ borderColor: C.g200, backgroundColor: '#fff' }}>
@@ -2817,7 +2831,9 @@ function UsdtReceiveModal({ address, onClose, checking, scanCooldown, onCheckDep
           )}
 
           <div>
-            <label className="block text-xs font-bold mb-1.5 text-gray-600">Your Tron (USDT-TRC20) Address</label>
+            <label className="block text-xs font-bold mb-1.5 text-gray-600">
+              {isTestnet ? 'Your Tron Nile (Testnet TRC20) Address' : 'Your Tron (USDT-TRC20) Address'}
+            </label>
             <div className="p-3 rounded-xl border font-mono text-xs break-all"
               style={{ borderColor: C.g200, backgroundColor: C.g50, color: C.g700 }}>
               {address || 'Loading…'}
@@ -2844,14 +2860,16 @@ function UsdtReceiveModal({ address, onClose, checking, scanCooldown, onCheckDep
             <a href={explorerUrl} target="_blank" rel="noopener noreferrer"
               className="w-full py-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 hover:bg-gray-50"
               style={{ borderColor: C.g200, color: C.g600 }}>
-              View on Tronscan Explorer ↗
+              {isTestnet ? 'View on Nile Tronscan Explorer ↗' : 'View on Tronscan Explorer ↗'}
             </a>
           )}
 
-          <div className="flex items-start gap-2 p-3 rounded-xl" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
-            <AlertTriangle size={12} style={{ color: '#d97706', flexShrink: 0, marginTop: 1 }} />
-            <p className="text-xs font-semibold" style={{ color: '#92400e' }}>
-              Only send <strong>USDT TRC-20</strong> to this address. Other coins or networks will be lost permanently.
+          <div className="flex items-start gap-2 p-3 rounded-xl" style={{ backgroundColor: isTestnet ? '#EFF6FF' : '#FFFBEB', border: isTestnet ? '1px solid #BFDBFE' : '1px solid #FDE68A' }}>
+            <AlertTriangle size={12} style={{ color: isTestnet ? '#2563EB' : '#d97706', flexShrink: 0, marginTop: 1 }} />
+            <p className="text-xs font-semibold" style={{ color: isTestnet ? '#1E40AF' : '#92400e' }}>
+              {isTestnet
+                ? <span><strong>Nile Testnet Mode:</strong> Only send test TRC-20 USDT. Do not send real mainnet USDT.</span>
+                : <span>Only send <strong>USDT TRC-20</strong> to this address. Other coins or networks will be lost permanently.</span>}
             </p>
           </div>
         </div>
@@ -2975,9 +2993,10 @@ export default function WalletPage({ user }) {
   const [swapUsdAmount, setSwapUsdAmount] = useState('');
   const [swapping,      setSwapping]      = useState(false);
   const [swapReceipt,   setSwapReceipt]   = useState(null); // last completed swap — shown in a persistent receipt modal
-  const [checkingUsdt,  setCheckingUsdt]  = useState(false);
-  const [scanCooldown,  setScanCooldown]  = useState(0); // seconds remaining
-  const [loadingUsdt,   setLoadingUsdt]   = useState(false);
+  const [checkingUsdt,    setCheckingUsdt]    = useState(false);
+  const [scanCooldown,    setScanCooldown]    = useState(0); // seconds remaining for USDT
+  const [btcScanCooldown, setBtcScanCooldown] = useState(0); // seconds remaining for BTC
+  const [loadingUsdt,     setLoadingUsdt]     = useState(false);
 
   // Seller security deposit (only relevant to users who've listed gift cards for sale)
   const [depositStatus,   setDepositStatus]   = useState(null);
@@ -3108,6 +3127,10 @@ export default function WalletPage({ user }) {
         tron_address:        r.data.tron_address,
         balance_usdt:        parseFloat(r.data.balance_usdt        || 0),
         locked_balance_usdt: parseFloat(r.data.locked_balance_usdt || 0),
+        is_testnet:          r.data.is_testnet,
+        network:             r.data.network,
+        explorer_url:        r.data.explorer_url,
+        contract:            r.data.contract,
       });
     } catch {
       // Explicit isActive guard against re-firing under React 18 StrictMode double-invoke,
@@ -3260,13 +3283,22 @@ export default function WalletPage({ user }) {
 
   // ── Check for new deposits ─────────────────────────────────────────────────
   const checkDeposit = async () => {
+    if (btcScanCooldown > 0 || checking) return;
     setChecking(true);
     try {
       const r = await axios.post(`${API_URL}/hd-wallet/check-deposit`, {}, { headers: authH() });
       toast.info(r.data.message || 'Check complete');
       await loadWallet(); // refresh balance after check
+      let secs = 15;
+      setBtcScanCooldown(secs);
+      const tick = setInterval(() => {
+        secs -= 1;
+        setBtcScanCooldown(secs);
+        if (secs <= 0) clearInterval(tick);
+      }, 1000);
     } catch (e) {
-      toast.error('Failed to check deposits');
+      const msg = e.response?.data?.error || 'Failed to check deposits';
+      toast.error(msg);
     } finally { setChecking(false); }
   };
 
@@ -4134,6 +4166,7 @@ export default function WalletPage({ user }) {
           onClose={() => setShowRecv(false)}
           onGenerate={generateAddress}
           checking={checking}
+          scanCooldown={btcScanCooldown}
           onCheckDeposits={checkDeposit}
         />
       )}
@@ -4144,6 +4177,9 @@ export default function WalletPage({ user }) {
           checking={checkingUsdt}
           scanCooldown={scanCooldown}
           onCheckDeposits={checkUsdtDeposit}
+          isTestnet={usdtData?.is_testnet}
+          customExplorerUrl={usdtData?.explorer_url}
+          networkName={usdtData?.network}
         />
       )}
       {assetPicker && (

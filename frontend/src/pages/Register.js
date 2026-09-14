@@ -565,11 +565,22 @@ export default function Register({ onLogin }) {
   useEffect(() => {
     /* global google */
     const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
-    if (googleClientId && window.google && window.google.accounts) {
+    const isGoogleAuthEnabled = Boolean(
+      googleClientId &&
+      !googleClientId.includes('your-') &&
+      googleClientId.includes('.apps.googleusercontent.com')
+    );
+
+    if (isGoogleAuthEnabled && window.google && window.google.accounts) {
       try {
         window.google.accounts.id.initialize({
           client_id: googleClientId,
           callback: handleGoogleResponse,
+          error_callback: (err) => {
+            console.warn('[Google Sign-Up Notice]:', err);
+          },
+          auto_select: false,
+          cancel_on_tap_outside: true,
         });
         const btnContainer = document.getElementById('googleBtnRegister');
         if (btnContainer) {
@@ -581,7 +592,7 @@ export default function Register({ onLogin }) {
           });
         }
       } catch (err) {
-        console.error('Google Sign-In initialization failed:', err);
+        console.warn('Google Sign-In initialization skipped/failed:', err);
       }
     }
   }, [mode, step]);

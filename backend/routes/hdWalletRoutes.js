@@ -231,13 +231,25 @@ router.get('/wallet', verifyToken, async (req, res) => {
                 .limit(50),
         ]);
 
-        if (walletErr || !walletRow) {
-            console.error(`[Wallet] No wallet row for user ${userId}:`, walletErr?.message);
-            return res.status(404).json({ error: 'Wallet not found for this user' });
+        let activeWallet = walletRow;
+        if (!activeWallet) {
+            console.log(`[Wallet] No wallet row found for user ${userId} — provisioning wallet...`);
+            try {
+                await hdWallet.ensureWalletExists(userId);
+                const { data: newWallet } = await supabaseAdmin
+                    .from('wallets')
+                    .select('balance_btc, locked_balance_btc, balance_usdt, locked_balance_usdt')
+                    .eq('user_id', userId)
+                    .maybeSingle();
+                activeWallet = newWallet || { balance_btc: 0, locked_balance_btc: 0, balance_usdt: 0, locked_balance_usdt: 0 };
+            } catch (wInitErr) {
+                console.warn(`[Wallet] ensureWalletExists fallback:`, wInitErr.message);
+                activeWallet = { balance_btc: 0, locked_balance_btc: 0, balance_usdt: 0, locked_balance_usdt: 0 };
+            }
         }
 
-        const available_btc = parseFloat(walletRow.balance_btc || 0);
-        const locked_btc    = parseFloat(walletRow.locked_balance_btc || 0);
+        const available_btc = parseFloat(activeWallet.balance_btc || 0);
+        const locked_btc    = parseFloat(activeWallet.locked_balance_btc || 0);
         const total_btc     = parseFloat((available_btc + locked_btc).toFixed(8));
         const balance_usd   = parseFloat((total_btc * liveBtcPrice).toFixed(2));
 
@@ -258,8 +270,8 @@ router.get('/wallet', verifyToken, async (req, res) => {
             available_btc,
             locked_btc,
             balance_usd,
-            balance_usdt:        parseFloat(walletRow.balance_usdt || 0),
-            locked_balance_usdt: parseFloat(walletRow.locked_balance_usdt || 0),
+            balance_usdt:        parseFloat(activeWallet?.balance_usdt || 0),
+            locked_balance_usdt: parseFloat(activeWallet?.locked_balance_usdt || 0),
             btc_price:    liveBtcPrice,
             network:      process.env.HD_NETWORK || 'mainnet',
             has_address:  !!address,
@@ -358,6 +370,9 @@ router.get('/balance', verifyToken, async (req, res) => {
   }
 });
 
+// Per-user cooldown map for BTC deposit checks (15 seconds)
+const userBtcScanCooldown = new Map();
+
 // ============================================================
 // POST /api/hd-wallet/check-deposit
 // Manually trigger deposit check for this user
@@ -365,6 +380,14 @@ router.get('/balance', verifyToken, async (req, res) => {
 // ============================================================
 router.post('/check-deposit', verifyToken, async (req, res) => {
   try {
+    const lastScan = userBtcScanCooldown.get(req.userId) || 0;
+    const now = Date.now();
+    if (now - lastScan < 15000) {
+      const remainingSec = Math.ceil((15000 - (now - lastScan)) / 1000);
+      return res.status(429).json({ error: `Please wait ${remainingSec}s before checking again.` });
+    }
+    userBtcScanCooldown.set(req.userId, now);
+
     const result = await depositMonitor.checkAddressNow(req.userId);
 
     // Deposit may have changed balance — re-evaluate offer status (fire and forget)
