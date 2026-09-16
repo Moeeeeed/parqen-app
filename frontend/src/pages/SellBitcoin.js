@@ -515,7 +515,7 @@ function OfferCard({listing, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLi
           </p>
           <div className="flex items-center gap-1.5 mt-0.5">
             <p className="text-[10px] font-semibold" style={{color:C.g500}}>
-              ≈ {fmt(examplePayMarketFiat, 2)} {cur} · incl. {(SELL_FEE_RATE*100).toFixed(1)}% fee, paid by you on top
+              ≈ {fmt(examplePayMarketFiat, 2)} {cur}
             </p>
           </div>
         </div>
