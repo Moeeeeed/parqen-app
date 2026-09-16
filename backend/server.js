@@ -369,6 +369,7 @@ const hdWalletService = require('./services/hdWalletService');
 const depositMonitor = require('./services/depositMonitor');
 const realtimeDepositService = require('./services/realtimeDepositService');
 const sweepService = require('./services/sweepService');
+const balanceAnomalyMonitor = require('./services/balanceAnomalyMonitor');
 const hdWalletRoutes = require('./routes/hdWalletRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const tradeEscrowService = require('./services/tradeEscrowService');
@@ -14684,6 +14685,13 @@ if (
     // Runs 2 min after startup then every 30 min. Silent — never affects user balances.
     sweepService.start();
     console.log(`🧹 Sweep service: MAINNET — hot wallet ${hdWalletService.getHotWalletAddress()}`);
+
+    // ── Real-time balance anomaly monitor — spike/velocity/drift alerting ──
+    // Never writes to a balance; only reads and sends alerts (email/Telegram/
+    // admin notification). depositMonitor.js and usdtDepositMonitor.js already
+    // call balanceAnomalyMonitor.checkCreditEvent() on every successful credit;
+    // this starts its periodic ledger-vs-wallet drift check.
+    balanceAnomalyMonitor.start();
 
     // ── Daily balance integrity check ───────────────────────────────────────
     balanceIntegrity.start();

@@ -20,6 +20,7 @@ const { createClient }       = require('@supabase/supabase-js');
 const btcApiGateway          = require('./btcApiGateway');
 const emailService           = require('./emailService');            // working transport: Resend → Brevo SMTP (+ email_logs)
 const { isDepositTooOld, MAX_DEPOSIT_AGE_HOURS } = require('./depositAgeGuard'); // containment guard, see depositAgeGuard.js
+const balanceAnomalyMonitor  = require('./balanceAnomalyMonitor');
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -544,6 +545,16 @@ class DepositMonitor {
     await supabaseAdmin.from('deposit_tracking_v2')
       .update({ credited: true, credited_at: new Date().toISOString() })
       .eq('tx_hash', txHash).eq('address', address);
+
+    // ── Real-time balance spike & anomaly check ──────────────────────────────
+    balanceAnomalyMonitor.checkCreditEvent({
+      userId,
+      username,
+      currency: 'BTC',
+      amount: depositBTC,
+      txHash,
+      newBalance: newBalanceBTC,
+    }).catch(err => console.error('[DepositMonitor] Anomaly monitor error:', err.message));
 
     // Also mirror the deposit address onto user_wallets.btc_address if this is
     // this user's first detected deposit to it (best-effort; not part of the
