@@ -1081,12 +1081,14 @@ function encryptCode(code, key = 'mock-encryption-key') {
   return cipher.update(code, 'utf8', 'hex') + cipher.final('hex');
 }
 
-// Platform fee for a crypto P2P trade. Gift-card trades are 1% — the trade
-// insert and tradeEscrowService use the gift-card-aware rate; this helper is the
-// 0.5% common case (rough pre-escrow estimate; the authoritative per-trade fee is
-// written by lockFundsInEscrow).
-function calculateFee(btcAmount) {
-  return (parseFloat(btcAmount) * 0.005).toFixed(8);
+// Platform fee for a crypto P2P trade — a rough pre-escrow estimate; the
+// authoritative per-trade fee is written by lockFundsInEscrow. Delegates to
+// tradeEscrowService.feeRateFor() (the single source of truth for both rates)
+// instead of hardcoding its own copy — two independent copies drifting out of
+// sync is exactly what caused escrow release to briefly charge 2%/3% against
+// trades quoted 0.5%/1% on 2026-09-11/12.
+function calculateFee(btcAmount, isGiftCard = false) {
+  return (parseFloat(btcAmount) * tradeEscrowService.feeRateFor(isGiftCard)).toFixed(8);
 }
 
 // PUBLIC-facing trade-count display override. The trades themselves are real and
@@ -2393,7 +2395,17 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
           is_moderator: data.is_moderator || false, referral_code: data.referral_code || null,
           bitcoin_wallet_address: btcAddress,
           total_referrals: data.total_referrals || 0,
-          referral_earnings_btc: data.referral_earnings_btc || 0
+          referral_earnings_btc: data.referral_earnings_btc || 0,
+          // Verification fields — omitted here before meant a freshly logged-in user's
+          // cached user object always showed unverified/pending regardless of the real
+          // DB state (e.g. an approved KYC) until a full profile refetch overwrote it.
+          is_id_verified: data.is_id_verified || false,
+          kyc_status: data.kyc_status || null,
+          kyc_verified: data.kyc_verified || false,
+          is_email_verified: data.is_email_verified || false,
+          email_verified: data.email_verified || false,
+          is_phone_verified: data.is_phone_verified || false,
+          phone_verified: data.phone_verified || false,
         },
         token,
       });
@@ -2574,7 +2586,17 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
         total_referrals: data.total_referrals || 0,
         referral_earnings_btc: data.referral_earnings_btc || 0,
         two_factor_enabled: data.two_factor_enabled || false,
-        two_factor_method: data.two_factor_method || null
+        two_factor_method: data.two_factor_method || null,
+        // Verification fields — see the phone-login branch above for why these matter:
+        // without them, a just-approved KYC (or email/phone verification) shows as
+        // unverified right after login until a separate profile refetch corrects it.
+        is_id_verified: data.is_id_verified || false,
+        kyc_status: data.kyc_status || null,
+        kyc_verified: data.kyc_verified || false,
+        is_email_verified: data.is_email_verified || false,
+        email_verified: data.email_verified || false,
+        is_phone_verified: data.is_phone_verified || false,
+        phone_verified: data.phone_verified || false,
       },
       token,
     });
@@ -2696,6 +2718,15 @@ app.post('/api/auth/verify-2fa-login', authLimiter, async (req, res) => {
         referral_earnings_btc: data.referral_earnings_btc || 0,
         two_factor_enabled: data.two_factor_enabled || false,
         two_factor_method: data.two_factor_method || null,
+        // Same fix as the other two login paths (phone login, email-OTP login) — see
+        // those for why these fields must not be omitted from the login response.
+        is_id_verified: data.is_id_verified || false,
+        kyc_status: data.kyc_status || null,
+        kyc_verified: data.kyc_verified || false,
+        is_email_verified: data.is_email_verified || false,
+        email_verified: data.email_verified || false,
+        is_phone_verified: data.is_phone_verified || false,
+        phone_verified: data.phone_verified || false,
       },
     });
 
@@ -8187,12 +8218,15 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
     if (await isUserBanned(listing.seller_id)) {
       return res.status(403).json({ error: 'ACCOUNT_BANNED', message: 'This offer belongs to a banned account and can no longer be traded.' });
     }
-    const fee = calculateFee(parsedAmountBtc);
 
     // GOLDEN RULE: The offer CREATOR always has the Bitcoin.
     // The trade OPENER always brings what the creator wants (cash, MTN, or a gift card).
     // Backend infers roles from listing_type — never trusts frontend trade_type.
+    // Computed here (moved up from its original spot below) so the fee estimate
+    // right below uses the correct gift-card-aware rate instead of always
+    // assuming the plain-BTC rate.
     const listingTypeUpper = (listing.listing_type || '').toUpperCase();
+    const fee = calculateFee(parsedAmountBtc, listingTypeUpper.includes('GIFT_CARD'));
 
     let buyerId, sellerId, btcProviderId, resolvedType;
 
@@ -8321,11 +8355,15 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
       amountReceiveUsd = parseFloat((verifiedAmountBtc * marketRateUSD).toFixed(2));
     }
 
-    // Gift-card trades are 1%, everything else 0.5%. lockFundsInEscrow re-derives
-    // and overwrites platform_fee_btc/usdt, but platform_fee_usd is set here and
-    // never touched again — so it must use the right rate too.
+    // lockFundsInEscrow re-derives and overwrites platform_fee_btc/usdt, but
+    // platform_fee_usd is set here and never touched again — so it must use the
+    // right rate too. Pulled from tradeEscrowService.feeRateFor() (the single
+    // source of truth for both rates) rather than a separate hardcoded copy —
+    // two independent copies drifting out of sync is exactly what caused
+    // escrow release to briefly charge 2%/3% against trades quoted 0.5%/1%
+    // on 2026-09-11/12.
     const isGiftCardTrade = listingTypeUpper.includes('GIFT_CARD');
-    const tradeFeeRate = isGiftCardTrade ? 0.01 : 0.005;
+    const tradeFeeRate = tradeEscrowService.feeRateFor(isGiftCardTrade);
     const verifiedFee = parseFloat((verifiedAmountBtc * tradeFeeRate).toFixed(8));
     const tradeRef = 'PRAQ-' + require('crypto').randomBytes(4).toString('hex').toUpperCase();
 

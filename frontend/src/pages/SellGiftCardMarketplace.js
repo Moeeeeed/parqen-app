@@ -140,27 +140,10 @@ function BuyerOfferCard({ offer, onSelect, user, liveBtcUsd }) {
               </div>
             </div>
           </div>
-          {margin !== 0 && (
-            <div className={`text-xs font-bold px-2 py-1 rounded-full ${margin > 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-              {margin > 0 ? `+${margin}%` : `${margin}%`}
-            </div>
-          )}
         </div>
-        
+
         {/* Offer Details */}
-        <div className="grid grid-cols-3 gap-3 py-3 border-t border-b border-gray-100">
-          <div className="text-center">
-            <p className="text-xs text-gray-500">Rate</p>
-            <p className="text-sm font-bold" style={{ color: PRAQEN.primary }}>
-              1 BTC ≈ ${formatNumber(btcRate)}
-            </p>
-          </div>
-          <div className="text-center">
-            <p className="text-xs text-gray-500">Limits</p>
-            <p className="text-sm font-semibold">
-              ${minAmount} - ${maxAmount}
-            </p>
-          </div>
+        <div className="flex items-center justify-center py-3 border-t border-b border-gray-100">
           <div className="text-center">
             <p className="text-xs text-gray-500">Payment</p>
             <div className="flex items-center justify-center gap-1">

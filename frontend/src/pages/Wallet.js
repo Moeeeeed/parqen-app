@@ -4116,7 +4116,7 @@ export default function WalletPage({ user }) {
               © {new Date().getFullYear()} PRAQEN. All rights reserved.
             </p>
             <p className="text-xs flex items-center gap-1" style={{ color: 'rgba(255,255,255,0.3)' }}>
-              <Shield size={10} /> Self-Custodial HD Wallet · 0.5% fee on trades
+              <Shield size={10} /> Self-Custodial HD Wallet · 1% fee on trades
             </p>
           </div>
         </div>

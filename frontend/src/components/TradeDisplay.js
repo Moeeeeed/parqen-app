@@ -13,10 +13,10 @@ const TradeDisplay = ({
   const [exchangeRate, setExchangeRate] = useState(initialExchangeRate || 11.09);
 
   // Calculate BTC amount based on seller's rate.
-  // Additive fee model: the seller pays the 0.5% platform fee on top — the
+  // Additive fee model: the seller pays the 1% platform fee on top — the
   // buyer always receives the full amount, nothing deducted.
   const btcAmount = usdAmount / sellerRate;
-  const fee = btcAmount * 0.005; // seller's fee, paid on top — informational only, not deducted from the buyer
+  const fee = btcAmount * 0.01; // seller's fee, paid on top — informational only, not deducted from the buyer
   const btcAfterFee = btcAmount;
 
   // Format local currency
@@ -112,7 +112,7 @@ const TradeDisplay = ({
               <span>₿ {btcAmount.toFixed(8)}</span>
             </div>
             <div className="flex justify-between">
-              <span>Platform fee (0.5%):</span>
+              <span>Platform fee (1%):</span>
               <span>₿ {fee.toFixed(8)}</span>
             </div>
             <div className="flex justify-between font-semibold border-t pt-1 mt-1">

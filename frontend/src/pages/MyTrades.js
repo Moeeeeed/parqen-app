@@ -1003,7 +1003,7 @@ export default function MyTrades({user}) {
             <div>
               <p className="text-xs font-black mb-0.5" style={{color:C.forest}}>All trades are escrow-protected</p>
               <p className="text-xs leading-relaxed" style={{color:C.g500}}>
-                Bitcoin is locked in escrow from the moment a trade starts. It is only released when both parties confirm. 0.5% fee auto-deducted on completion.
+                Bitcoin is locked in escrow from the moment a trade starts. It is only released when both parties confirm. 1% fee auto-deducted on completion.
               </p>
             </div>
           </div>
@@ -1071,7 +1071,7 @@ export default function MyTrades({user}) {
             style={{borderColor:'rgba(255,255,255,0.08)'}}>
             <p className="text-xs" style={{color:'rgba(255,255,255,0.3)'}}>© {new Date().getFullYear()} PRAQEN. All rights reserved.</p>
             <p className="text-xs flex items-center gap-1" style={{color:'rgba(255,255,255,0.3)'}}>
-              <Shield size={10}/> Escrow Protected · 0.5% fee on completion only
+              <Shield size={10}/> Escrow Protected · 1% fee on completion only
             </p>
           </div>
         </div>

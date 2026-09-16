@@ -573,14 +573,12 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
           <p className="text-base font-bold leading-tight" style={{ color: C.g800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '4px' }}>
             {youGive.val}
           </p>
-          <p className="text-[10px] font-semibold mt-0.5" style={{ color: C.g500 }}>{youGive.sub}</p>
         </div>
         <div className="border-l pl-3" style={{ borderColor: ft ? ft.divider : C.g100 }}>
           <p className="text-[11px] font-bold uppercase tracking-wide mb-0.5" style={{ color: ft ? ft.labelColor : C.g500 }}>You receive</p>
           <p className="text-base font-bold leading-tight" style={{ color: C.g800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '4px' }}>
             {youReceive.val}
           </p>
-          <p className="text-[10px] font-semibold mt-0.5" style={{ color: C.g500 }}>{youReceive.sub}</p>
         </div>
       </div>
 
@@ -609,59 +607,6 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
         )}
       </div>
 
-      <div className="px-3.5 pb-2.5" style={{ borderTop: `1px solid ${ft ? ft.divider : C.g100}` }}>
-        {/* ── Rate / % / Range — grey info board ───── */}
-        <div className="group relative mt-1">
-          <div className="rounded-xl px-2.5 py-2 flex items-center justify-between transition-colors"
-            style={{ backgroundColor: C.g100, border: `1px solid ${C.g200}` }}>
-
-            <div className="min-w-0">
-              <p className="text-xs font-semibold" style={{ color: C.g600 }}>
-                Rate:&nbsp;<span style={{ color: C.g800, fontWeight: 700 }}>{fmt(rateLocal)}</span>&nbsp;<span style={{ color: C.g500, fontSize: '0.85em' }}>{cur}</span>
-              </p>
-              <p className="text-xs font-semibold mt-1 truncate" style={{ color: C.g600, maxWidth: 190 }}>
-                Range:&nbsp;<span style={{ color: C.g700, fontWeight: 700 }}>{rangeLabel}</span>
-              </p>
-            </div>
-
-            <div className="flex items-center flex-shrink-0 ml-4 mr-6">
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[11px] font-black"
-                style={{
-                  backgroundColor: margin < 0 ? 'rgba(16,185,129,0.14)' : margin > 0 ? 'rgba(239,68,68,0.12)' : '#E2E8F0',
-                  color: margin < 0 ? '#16A34A' : margin > 0 ? '#EF4444' : C.g500,
-                  border: margin < 0 ? '1px solid rgba(16,185,129,0.25)' : margin > 0 ? '1px solid rgba(239,68,68,0.25)' : `1px solid ${C.g300}`,
-                }}>
-                {margin === 0 ? 'Market' : `${margin > 0 ? '+' : ''}${margin}%`}
-              </span>
-            </div>
-          </div>
-
-          {/* Tooltip — visible on hover */}
-          <div className="absolute bottom-full left-0 right-0 mb-3 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity"
-            style={{ zIndex: 20 }}>
-            <div className="rounded-xl shadow-2xl border p-3 text-xs"
-              style={{ backgroundColor: '#1E293B', borderColor: '#334155', color: '#E2E8F0', position: 'relative' }}>
-              <p className="font-black text-[10px] uppercase tracking-wider mb-2" style={{ color: '#64748B' }}>Offer Details</p>
-              <div className="flex items-center justify-between mb-1.5">
-                <span style={{ color: '#94A3B8' }}>Rate</span>
-                <span className="font-bold" style={{ color: '#F0FAF5' }}>{fmt(rateLocal)} {cur}</span>
-              </div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span style={{ color: '#94A3B8' }}>Margin</span>
-                <span className="font-bold"
-                  style={{ color: margin < 0 ? '#4ADE80' : margin > 0 ? '#F87171' : '#94A3B8' }}>
-                  {margin === 0 ? 'Market rate' : `${margin > 0 ? '+' : ''}${margin}%`}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span style={{ color: '#94A3B8' }}>Range</span>
-                <span className="font-bold" style={{ color: '#F0FAF5' }}>{rangeLabel}</span>
-              </div>
-              <div style={{ position: 'absolute', bottom: '-5px', left: '20px', width: 10, height: 10, backgroundColor: '#1E293B', border: '1px solid #334155', borderTop: 'none', borderLeft: 'none', transform: 'rotate(45deg)' }} />
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* ─ Actions ───────────────────────────────────────────────── */}
       <div className="px-3.5 pb-3 flex items-center gap-2">

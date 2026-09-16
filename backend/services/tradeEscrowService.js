@@ -17,8 +17,8 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
 
-const FEE_RATE            = 0.005;  // crypto P2P trades (Buy/Sell BTC & USDT) — 0.5%
-const GIFT_CARD_FEE_RATE  = 0.01;   // gift-card trades — 1%
+const FEE_RATE            = 0.01;   // crypto P2P trades (Buy/Sell BTC & USDT) — 1%
+const GIFT_CARD_FEE_RATE  = 0.02;   // gift-card trades — 2%
 const COMPANY_WALLET_ID   = '14762cd0-d3b2-474f-acab-fe0071961e9a';
 const COMPANY_BTC_ADDRESS = 'bc1qd8z3zdn2e3eul6y8nmcyjvgle3yzv8ttvsjp49';
 
@@ -230,7 +230,7 @@ class TradeEscrowService {
     return isGiftCard ? GIFT_CARD_FEE_RATE : FEE_RATE;
   }
 
-  // Look up whether a trade's listing is a gift-card listing (fee is 3% vs 2%).
+  // Look up whether a trade's listing is a gift-card listing (fee is 2% vs 1%).
   async _isGiftCardTrade(tradeId) {
     const { data: t } = await supabaseAdmin
       .from('trades').select('listing_id').eq('id', tradeId).maybeSingle();
@@ -664,7 +664,7 @@ class TradeEscrowService {
     const amount      = isUsdt
       ? parseFloat(tradeData.amount_usdt || tradeData.escrow_amount || 0)
       : parseFloat(tradeData.amount_btc);
-    const feeRate     = this.feeRateFor(isGiftCardTrade); // 0.5% / 1% — same rate reserved at lock time
+    const feeRate     = this.feeRateFor(isGiftCardTrade); // 1% / 2% — same rate reserved at lock time
     const platformFee = parseFloat((amount * feeRate).toFixed(isUsdt ? 6 : 8));
 
     // Fee model was pinned at lock time. additive → the provider locked

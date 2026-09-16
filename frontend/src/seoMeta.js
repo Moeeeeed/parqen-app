@@ -6,19 +6,19 @@
 const PAGE_META = {
   '/': {
     title: 'PRAQEN | Noones Alternative — Buy & Sell Bitcoin & USDT P2P Worldwide',
-    description: "Looking for a Noones alternative? PRAQEN is a trusted P2P Bitcoin, USDT & gift card trading platform — bring your trading reputation with you. Buy or sell Bitcoin and USDT instantly with MTN Mobile Money, Airtel, M-Pesa & bank transfer. Escrow-protected, 0.5% flat fee, 180+ countries.",
+    description: "Looking for a Noones alternative? PRAQEN is a trusted P2P Bitcoin, USDT & gift card trading platform — bring your trading reputation with you. Buy or sell Bitcoin and USDT instantly with MTN Mobile Money, Airtel, M-Pesa & bank transfer. Escrow-protected, 1% flat fee, 180+ countries.",
     ogTitle: 'PRAQEN — Buy & Sell Bitcoin & USDT P2P Worldwide',
-    ogDesc: "A trusted Noones & LocalBitcoins alternative for peer-to-peer Bitcoin & USDT trading. Escrow-protected trades, 0.5% flat fee, pay with Mobile Money, M-Pesa or bank transfer.",
+    ogDesc: "A trusted Noones & LocalBitcoins alternative for peer-to-peer Bitcoin & USDT trading. Escrow-protected trades, 1% flat fee, pay with Mobile Money, M-Pesa or bank transfer.",
     h1: 'PRAQEN — Buy & Sell Bitcoin & USDT P2P Worldwide',
-    intro: "A trusted peer-to-peer Bitcoin, USDT and gift card trading platform — and a straightforward alternative if you're moving on from Noones or LocalBitcoins. Buy or sell Bitcoin instantly with MTN Mobile Money, Airtel Money, M-Pesa, and bank transfer. Deposit, withdraw, send and instantly swap USDT (TRC-20) in your wallet. Escrow-protected. 0.5% flat fee. 180+ countries. No hidden charges.",
+    intro: "A trusted peer-to-peer Bitcoin, USDT and gift card trading platform — and a straightforward alternative if you're moving on from Noones or LocalBitcoins. Buy or sell Bitcoin instantly with MTN Mobile Money, Airtel Money, M-Pesa, and bank transfer. Deposit, withdraw, send and instantly swap USDT (TRC-20) in your wallet. Escrow-protected. 1% flat fee. 180+ countries. No hidden charges.",
   },
   '/buy-bitcoin': {
     title: 'Buy Bitcoin Worldwide with Mobile Money | PRAQEN P2P',
-    description: 'Buy Bitcoin instantly in Ghana, Nigeria, Kenya & worldwide. Pay with MTN MoMo, M-Pesa, Airtel Money or bank transfer. Best rates, escrow-protected, 0.5% fee.',
+    description: 'Buy Bitcoin instantly in Ghana, Nigeria, Kenya & worldwide. Pay with MTN MoMo, M-Pesa, Airtel Money or bank transfer. Best rates, escrow-protected, 1% fee.',
     ogTitle: 'Buy Bitcoin Worldwide — PRAQEN P2P Marketplace',
     ogDesc: 'Buy BTC with MTN Mobile Money, M-Pesa or bank transfer. Escrow-protected, best P2P rates globally.',
     h1: 'Buy Bitcoin Worldwide with Mobile Money',
-    intro: 'Browse verified sellers and buy Bitcoin instantly with MTN Mobile Money, M-Pesa, Airtel Money, bank transfer, or USDT. Every trade is escrow-protected — Bitcoin is locked before you pay. Best rates, 0.5% flat fee, 180+ countries.',
+    intro: 'Browse verified sellers and buy Bitcoin instantly with MTN Mobile Money, M-Pesa, Airtel Money, bank transfer, or USDT. Every trade is escrow-protected — Bitcoin is locked before you pay. Best rates, 1% flat fee, 180+ countries.',
   },
   '/sell-bitcoin': {
     title: 'Sell Bitcoin for Mobile Money & Cash Worldwide | PRAQEN',

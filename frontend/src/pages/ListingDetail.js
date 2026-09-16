@@ -352,7 +352,7 @@ const loadAll = useCallback(async (isBackground = false) => {
   // receiver (the buying side) gets the FULL amount.
   //   • visitor buying  → YOU RECEIVE = btcGross (full)
   //   • visitor selling → YOU PAY     = btcGross + fee
-  const previewFeeRate = isGiftCard ? 0.01 : 0.005;
+  const previewFeeRate = isGiftCard ? 0.02 : 0.01;
   const previewFee     = btcGross * previewFeeRate;
   const btcAfterFee    = isVisitorSelling ? (btcGross + previewFee) : btcGross;
 
@@ -415,7 +415,7 @@ const loadAll = useCallback(async (isBackground = false) => {
       }
 
       // Submit the GROSS BTC amount — no fee pre-deduction here. The platform
-      // fee (0.5% Buy/Sell, 1% gift cards) is applied exactly once, at release,
+      // fee (1% Buy/Sell, 2% gift cards) is applied exactly once, at release,
       // by tradeEscrowService.js. Regular Buy/Sell trades get this value
       // re-verified server-side anyway, but gift card trades use it as-is, so
       // deducting a fee here as well used to double-charge gift card trades.

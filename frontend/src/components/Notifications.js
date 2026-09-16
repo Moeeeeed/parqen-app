@@ -1320,6 +1320,25 @@ export default function Notifications({ user }) {
           playNotifSound();
           newUnreadForSound.forEach(n => soundPlayedIdsRef.current.add(n.id));
         }
+
+        // ── Live-refresh the cached user object on verification changes ──────────
+        // Login responses and this component's own user prop are otherwise only
+        // corrected on a full reload or a Settings/Profile visit — an admin
+        // approving KYC while the user is already logged in elsewhere (Wallet,
+        // Trade, etc.) used to leave is_id_verified/kyc_status stale in
+        // localStorage indefinitely. createNotification(..., 'kyc', ...) is the
+        // only place that type is used (server.js /api/admin/kyc/:id/approve and
+        // /reject), so this fires on both approval and rejection.
+        if (freshUnread.some(n => n.type === 'kyc')) {
+          axios.get(`${API_URL}/users/profile`, { headers: hdrs(), timeout: 10000 })
+            .then(r => {
+              const fresh = r.data?.user;
+              if (!fresh) return;
+              localStorage.setItem('user', JSON.stringify(fresh));
+              window.dispatchEvent(new Event('userUpdated'));
+            })
+            .catch(() => { /* next 15s poll or a reload will still pick it up */ });
+        }
       }
       seenIdsRef.current = new Set(incoming.map(n => n.id));
       setNotifs(incoming);
