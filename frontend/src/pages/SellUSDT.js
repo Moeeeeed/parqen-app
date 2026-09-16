@@ -381,6 +381,7 @@ function OfferCard({listing, usdtPriceUSD, btcPriceUSD, onViewBuyer, onSell, lik
           <p className="text-lg font-bold leading-tight truncate" style={{color:C.g800}}>
             {sym}{fmt(cryptoMarketFiat, 2)}
           </p>
+          <p className="text-xs font-semibold mt-0.5" style={{color:C.g500}}>≈ {asset} {asset === 'USDT' ? fUsdt(cryptoAmount) : cryptoAmount.toFixed(6)}</p>
         </div>
         <div className="border-l pl-3" style={{borderColor:C.g100}}>
           <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{color:C.g500}}>YOU RECEIVE</p>
@@ -394,6 +395,20 @@ function OfferCard({listing, usdtPriceUSD, btcPriceUSD, onViewBuyer, onSell, lik
           </span>
         </div>
       </div>
+
+      <div className="px-4 pb-2">
+        <p className="text-xs font-semibold" style={{color:C.g600}}>
+          Rate: {sym}{fmt(rateLocal)}/USDT
+        </p>
+      </div>
+
+      {(minLocal > 0 || maxLocal > 0) && (
+        <div className="px-4 pb-2">
+          <p className="text-xs font-bold" style={{color:C.g600}}>
+            LIMIT {fmt(minLocal)} – {fmt(maxLocal)} {cur}
+          </p>
+        </div>
+      )}
 
       <div className="px-4 pb-4 flex items-center gap-2">
         <button onClick={onViewBuyer}
