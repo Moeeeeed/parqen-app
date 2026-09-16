@@ -289,7 +289,7 @@ export default function ActiveTradeBanner({ user, currentPage }) {
           <div className="flex items-center gap-1.5">
             <Shield size={12} style={{ color: C.green }}/>
             <p className="text-xs font-semibold" style={{ color: C.g500 }}>
-              Escrow-protected · 1% fee on completion only
+              Escrow-protected · 2% fee on completion only
             </p>
           </div>
           <button onClick={() => setShowModal(false)}

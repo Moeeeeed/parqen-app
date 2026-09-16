@@ -568,7 +568,7 @@ export default function SellGiftCardMarketplace({ user }) {
                 <div className="px-3 py-2.5 bg-white flex items-start gap-2">
                   <Percent size={13} style={{ color: PRAQEN.primary, marginTop: 2, flexShrink: 0 }} />
                   <p className="text-xs leading-relaxed" style={{ color: PRAQEN.gray[600] }}>
-                    <strong style={{ color: PRAQEN.gray[800] }}>Platform fee: 1%</strong> ({(parseFloat(tradeAmount || 0) / modalRate * 0.01).toFixed(8)} BTC) — added on top and paid by the BTC buyer. It never comes out of what you receive above. No other fee applies to this trade.
+                    <strong style={{ color: PRAQEN.gray[800] }}>Platform fee: 3%</strong> ({(parseFloat(tradeAmount || 0) / modalRate * 0.03).toFixed(8)} BTC) — added on top and paid by the BTC buyer. It never comes out of what you receive above. No other fee applies to this trade.
                   </p>
                 </div>
               </div>
