@@ -269,13 +269,12 @@ function OTPInput({ value, onChange, hasError }) {
   );
 }
 
-// ─── Welcome gate for traders coming from Noones / Binance P2P / other ──────
+// ─── Welcome gate for traders coming from another P2P platform ──────────────
 // Shown once, before the normal signup form. Captures an email + a screenshot
-// of their existing P2P profile (so the admin can see their username and
+// of their existing P2P profile (so the team can see their username and
 // feedback/trade count) for manual review — it never blocks registration.
+// We never name a specific outside platform.
 const MIGRATION_PLATFORMS = [
-  { id: 'noones', label: 'Noones' },
-  { id: 'binance', label: 'Binance P2P' },
   { id: 'other', label: 'Another P2P platform' },
 ];
 
@@ -382,7 +381,7 @@ function P2PWelcomeGate({ userEmail, onDone }) {
                 {stage === 'intro' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <p style={{ fontSize: 13, color: C.g600, lineHeight: 1.6, margin: '0 0 4px', textAlign: 'center' }}>
-                      Already building a reputation on <strong style={{ color: C.g800 }}>Noones</strong> or <strong style={{ color: C.g800 }}>Binance P2P</strong>? Bring it with you and skip the cold start.
+                      Already building a reputation on <strong style={{ color: C.g800 }}>another P2P platform</strong>? Bring it with you and skip the cold start.
                     </p>
                     {MIGRATION_PLATFORMS.map(p => (
                       <button key={p.id} onClick={() => pickPlatform(p.id)}
@@ -1524,7 +1523,7 @@ export default function Register({ onLogin }) {
                 <div style={{ margin: '0 20px 4px', padding: '12px 14px', borderRadius: 12, background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 100%)` }}>
                   <p style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 800, color: C.gold, margin: '0 0 8px' }}>
                     <Globe size={14} style={{ color: C.gold, flexShrink: 0 }} />
-                    Moving from Noones or Binance P2P? Do you already have a PRAQEN account?
+                    Moving from another P2P platform? Do you already have a PRAQEN account?
                   </p>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button type="button" onClick={() => navigate('/login?next=migrate')}
@@ -1542,7 +1541,7 @@ export default function Register({ onLogin }) {
                 <div style={{ margin: '0 20px 4px', padding: '10px 14px', borderRadius: 12, background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 100%)`, display: 'flex', alignItems: 'center', gap: 8 }}>
                   <BadgeCheck size={14} style={{ color: C.gold, flexShrink: 0 }} />
                   <p style={{ fontSize: 12, color: C.gold, fontWeight: 800, margin: 0 }}>
-                    Sign up below with the <u>same email</u> you use on Noones/Binance — once your account is created, you'll be able to upload your feedback for review.
+                    Sign up below with the <u>same email</u> you use on your other P2P platform — once your account is created, you'll be able to upload your feedback for review.
                   </p>
                 </div>
               )}

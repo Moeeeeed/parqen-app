@@ -735,6 +735,16 @@ export default function Dashboard({ user }) {
               onClick={() => { setWalletMenuOpen(false); navigate(route); }}
             />
           ))}
+          {/* Bottom bar */}
+          <div className="flex flex-col md:flex-row items-center justify-between gap-2 pt-5 border-t"
+            style={{borderColor:'rgba(255,255,255,0.08)'}}>
+            <p className="text-xs" style={{color:'rgba(255,255,255,0.3)'}}>
+              © {new Date().getFullYear()} PRAQEN. All rights reserved. Built with honesty.
+            </p>
+            <p className="text-xs flex items-center gap-1.5" style={{color:'rgba(255,255,255,0.3)'}}>
+              <Shield size={11}/> Escrow Protected · 2% fee on completion only
+            </p>
+          </div>
         </div>
       </PopupModal>
 

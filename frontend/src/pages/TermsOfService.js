@@ -63,7 +63,7 @@ export default function TermsOfService() {
           </Section>
 
           <Section title="5. Fees">
-            <p>PRAQEN charges a flat 0.5% fee on completed trades. Withdrawals to an external wallet may also incur a blockchain network fee, which is separate from the platform fee and varies with network conditions. Fees are disclosed before you confirm an action.</p>
+            <p>PRAQEN charges a 2% fee on completed Bitcoin/USDT trades and 3% on gift-card trades. Withdrawals to an external wallet may also incur a blockchain network fee, which is separate from the platform fee and varies with network conditions. Fees are disclosed before you confirm an action.</p>
           </Section>
 
           <Section title="6. Disputes">

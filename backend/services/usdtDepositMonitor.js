@@ -19,6 +19,7 @@ const tronWallet          = require('./tronWalletService');
 const tronHotWallet       = require('./tronHotWallet');
 const emailService        = require('./emailService');            // working transport: Resend → Brevo SMTP (+ email_logs)
 const { isDepositTooOld, MAX_DEPOSIT_AGE_HOURS } = require('./depositAgeGuard'); // containment guard, see depositAgeGuard.js
+const balanceAnomalyMonitor = require('./balanceAnomalyMonitor');
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -431,6 +432,16 @@ class USDTDepositMonitor {
     await supabaseAdmin.from('deposit_tracking_v2')
       .update({ credited: true, credited_at: new Date().toISOString() })
       .eq('tx_hash', txHash).eq('address', address);
+
+    // ── Real-time balance spike & anomaly check ──────────────────────────────
+    balanceAnomalyMonitor.checkCreditEvent({
+      userId,
+      username,
+      currency: 'USDT',
+      amount: depositUsdt,
+      txHash,
+      newBalance: newUsdt,
+    }).catch(err => console.error('[USDTMonitor] Anomaly monitor error:', err.message));
 
     // ── In-app notification ─────────────────────────────────────────────────
     await supabaseAdmin.from('notifications').insert({

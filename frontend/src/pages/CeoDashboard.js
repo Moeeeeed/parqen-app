@@ -939,7 +939,7 @@ function KycReviewModal({ onClose, onActed }) {
   );
 }
 
-const MIGRATION_PLATFORM_LABELS = { noones: 'Noones', binance: 'Binance P2P', other: 'Other platform' };
+const MIGRATION_PLATFORM_LABELS = { noones: 'External P2P', binance: 'External P2P', other: 'External P2P' };
 
 // ─── P2P-migration review modal — same shape as KYC review, but the screenshot bucket is
 // public so it's a plain <img src>, no auth-blob fetch needed. Approve/reject use
@@ -1008,7 +1008,7 @@ function MigrationReviewModal({ onClose, onActed }) {
             <div key={sReq.id} className="rounded-2xl border p-4" style={{ borderColor: C.g200 }}>
               <p className="font-black text-sm" style={{ color: C.g800 }}>{sReq.email}</p>
               <div className="flex items-center flex-wrap gap-1.5 mt-1.5">
-                <Pill label={MIGRATION_PLATFORM_LABELS[sReq.platform] || sReq.platform} color="#7C3AED" bg="#F5F3FF" />
+                <Pill label={MIGRATION_PLATFORM_LABELS[sReq.platform] || 'External P2P'} color="#7C3AED" bg="#F5F3FF" />
                 <span className="text-xs" style={{ color: C.g400 }}>· {fmtAge(sReq.created_at)}</span>
               </div>
 

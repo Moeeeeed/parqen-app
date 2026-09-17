@@ -272,6 +272,50 @@ function App() {
     }
   }, [token]);
 
+  // ── Force-logout on a mid-session account restriction ────────────────────
+  // The backend now rejects an authenticated request from a banned/frozen
+  // account (403 ACCOUNT_BANNED / ACCOUNT_FROZEN with `self: true`) or a session
+  // whose token was invalidated (401 SESSION_EXPIRED). Clear the local session
+  // and bounce the user to /login with the server's own explanation, once.
+  //
+  // The `self` check matters: the same 403 code is also raised ABOUT A THIRD
+  // PARTY (e.g. trying to trade against a banned seller, or a CEO approving a
+  // banned user's withdrawal) — those carry no `self` flag and must NOT log the
+  // caller out.
+  useEffect(() => {
+    let handled = false;
+    const id = axios.interceptors.response.use(
+      (r) => r,
+      (error) => {
+        const status = error?.response?.status;
+        const data = error?.response?.data || {};
+        const code = data.error;
+        const isRestricted =
+          (status === 403 && data.self === true && (code === 'ACCOUNT_BANNED' || code === 'ACCOUNT_FROZEN')) ||
+          (status === 401 && code === 'SESSION_EXPIRED');
+        if (isRestricted && !handled && localStorage.getItem('token')) {
+          handled = true;
+          const msg = error?.response?.data?.message ||
+            (code === 'ACCOUNT_FROZEN'
+              ? 'Your account is temporarily frozen and under review.'
+              : code === 'ACCOUNT_BANNED'
+                ? 'Your account has been suspended.'
+                : 'Your session has ended. Please sign in again.');
+          try {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            delete axios.defaults.headers.common['Authorization'];
+          } catch { }
+          try { toast.error(msg); } catch { }
+          window.dispatchEvent(new Event('userUpdated'));
+          setTimeout(() => { window.location.assign('/login'); }, 800);
+        }
+        return Promise.reject(error);
+      }
+    );
+    return () => axios.interceptors.response.eject(id);
+  }, []);
+
   // ── Cleanup market cache ──────────────────────────────────────────────────
   useEffect(() => {
     try {

@@ -17,9 +17,20 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
 
-const FEE_RATE            = 0.02;
+const FEE_RATE            = 0.02;   // crypto P2P trades (Buy/Sell BTC & USDT) — 2%
+const GIFT_CARD_FEE_RATE  = 0.03;   // gift-card trades — 3%
 const COMPANY_WALLET_ID   = '14762cd0-d3b2-474f-acab-fe0071961e9a';
 const COMPANY_BTC_ADDRESS = 'bc1qd8z3zdn2e3eul6y8nmcyjvgle3yzv8ttvsjp49';
+
+// Fee model for NEW trades:
+//   'additive'  — fee is added ON TOP of the trade amount. The BTC provider locks
+//                 (amount + fee), the receiver gets the FULL amount, the company
+//                 gets the fee. The provider (seller, in the normal case) pays it.
+//   'inclusive' — legacy. The provider locks `amount`, the receiver gets
+//                 (amount - fee), the company gets the fee.
+// Every trade's actual behaviour is pinned by trades.fee_model at lock time, so
+// flipping this constant never changes an already-locked trade.
+const FEE_MODEL           = 'additive';
 
 // `wallets` is the single source of truth for BTC balance, but two secondary
 // tables (user_balances, user_wallets — both BTC-only, neither has a USDT
@@ -61,6 +72,39 @@ async function syncSecondaryBtcBalance(userId, newBtcBalance) {
     detail:               { failures },
   }).then(({ error }) => {
     if (error) console.error(`🚨 [Escrow] ALSO failed to record reconciliation_flags for user ${userId.slice(0, 8)} — this drift is now untracked anywhere but the log line above:`, error.message);
+  });
+}
+
+// USDT counterpart of syncSecondaryBtcBalance — pushes the authoritative
+// wallets.balance_usdt out to the two mirror tables. Best-effort: the mirror
+// columns may not exist in every environment, so a failure is logged and
+// flagged, never thrown (the caller has already committed the source-of-truth
+// update on `wallets`).
+async function syncSecondaryUsdtBalance(userId, newUsdtBalance) {
+  const nowIso = new Date().toISOString();
+  const [ub, uw] = await Promise.allSettled([
+    supabaseAdmin.from('user_balances').update({ balance_usdt: newUsdtBalance, updated_at: nowIso }).eq('user_id', userId),
+    supabaseAdmin.from('user_wallets').update({ balance_usdt: newUsdtBalance, updated_at: nowIso }).eq('user_id', userId),
+  ]);
+
+  const failures = [];
+  if (ub.status === 'rejected' || ub.value?.error) failures.push({ table: 'user_balances', error: ub.status === 'rejected' ? ub.reason?.message : ub.value.error.message });
+  if (uw.status === 'rejected' || uw.value?.error) failures.push({ table: 'user_wallets', error: uw.status === 'rejected' ? uw.reason?.message : uw.value.error.message });
+  if (failures.length === 0) return;
+
+  console.error(`[Escrow] syncSecondaryUsdtBalance: mirror sync failed for user ${userId.slice(0, 8)} — flagging for reconciliation:`, failures);
+  await supabaseAdmin.from('reconciliation_flags').insert({
+    user_id:             userId,
+    currency:            'USDT',
+    source_table:        failures.map(f => f.table).join(','),
+    authoritative_value: newUsdtBalance,
+    mirror_value:        null,
+    diff:                null,
+    reason:              'SYNC_FAILURE',
+    status:              'RECONCILIATION_REQUIRED',
+    detail:              { failures },
+  }).then(({ error }) => {
+    if (error) console.error(`🚨 [Escrow] ALSO failed to record reconciliation_flags (USDT) for user ${userId.slice(0, 8)}:`, error.message);
   });
 }
 
@@ -158,6 +202,51 @@ class TradeEscrowService {
 
   constructor() {
     this.feeRate = FEE_RATE;
+    this._feeModelCap = undefined; // cached probe of trades.fee_model existence
+  }
+
+  // ── Fee-model helpers ─────────────────────────────────────────────────────
+  // The additive fee model records `trades.fee_model = 'additive'` at lock time.
+  // If that column hasn't been migrated in yet we must NOT lock the extra fee
+  // amount (there'd be no marker telling release/refund to give it back), so new
+  // trades transparently fall back to the legacy inclusive model until the
+  // migration runs. Result is cached for the life of the process (a deploy
+  // restarts it).
+  async _feeModelColumnReady() {
+    if (this._feeModelCap !== undefined) return this._feeModelCap;
+    const { error } = await supabaseAdmin.from('trades').select('fee_model').limit(1);
+    this._feeModelCap = !error;
+    if (error) {
+      console.warn('[Escrow] trades.fee_model column missing — new trades use the legacy inclusive fee until migration 20260909_additive_fee_model.sql is run');
+    }
+    return this._feeModelCap;
+  }
+
+  async _additiveActive() {
+    return FEE_MODEL === 'additive' && await this._feeModelColumnReady();
+  }
+
+  feeRateFor(isGiftCard) {
+    return isGiftCard ? GIFT_CARD_FEE_RATE : FEE_RATE;
+  }
+
+  // Look up whether a trade's listing is a gift-card listing (fee is 3% vs 2%).
+  async _isGiftCardTrade(tradeId) {
+    const { data: t } = await supabaseAdmin
+      .from('trades').select('listing_id').eq('id', tradeId).maybeSingle();
+    if (!t?.listing_id) return false;
+    const { data: l } = await supabaseAdmin
+      .from('listings').select('listing_type').eq('id', t.listing_id).maybeSingle();
+    return String(l?.listing_type || '').toUpperCase().includes('GIFT_CARD');
+  }
+
+  // What a BTC provider must have available to open a trade of `amount` in the
+  // listing's asset. Used by the pre-check in server.js POST /api/trades so it
+  // stays in lock-step with lockFundsInEscrow across the migration window.
+  async requiredProviderBalance(amount, isGiftCard = false) {
+    const a = parseFloat(amount) || 0;
+    if (!(await this._additiveActive())) return a;
+    return a * (1 + this.feeRateFor(isGiftCard));
   }
 
   // ── Helper: send in-app notification ───────────────────────────────────────
@@ -226,8 +315,23 @@ class TradeEscrowService {
 
     const parsedAmount = parseFloat(amount);
     if (!parsedAmount || parsedAmount <= 0) throw new Error('Invalid escrow amount');
+    const dec = isUsdt ? 6 : 8;
 
     await ensureWalletExists(btcProviderId);
+
+    // ── Fee model ─────────────────────────────────────────────────────────
+    // additive : provider locks (amount + fee); receiver gets the full amount;
+    //            company gets the fee.  reserve = amount + fee.
+    // inclusive: provider locks `amount`; receiver gets (amount - fee).
+    //            reserve = amount. (Legacy — also the fallback until the
+    //            trades.fee_model column exists.)
+    const isGiftCard = await this._isGiftCardTrade(tradeId);
+    const feeRate    = this.feeRateFor(isGiftCard);
+    const additive   = await this._additiveActive();
+    const feeAmount  = parseFloat((parsedAmount * feeRate).toFixed(dec));
+    const reserve    = additive
+      ? parseFloat((parsedAmount + feeAmount).toFixed(dec))
+      : parsedAmount;
 
     // ── 1. Get provider balance ────────────────────────────────────────────
     const balField    = isUsdt ? 'balance_usdt'        : 'balance_btc';
@@ -244,9 +348,10 @@ class TradeEscrowService {
     }
 
     const currentBalance = parseFloat(walletRow[balField] || 0);
-    if (currentBalance < parsedAmount) {
+    if (currentBalance < reserve) {
       throw new Error(
-        `Insufficient ${currency} balance. Provider has ${currentBalance.toFixed(isUsdt ? 2 : 8)} ${currency}, needs ${parsedAmount.toFixed(isUsdt ? 2 : 8)} ${currency}`
+        `Insufficient ${currency} balance. Provider has ${currentBalance.toFixed(isUsdt ? 2 : 8)} ${currency}, needs ${reserve.toFixed(isUsdt ? 2 : 8)} ${currency}` +
+        (additive ? ` (${parsedAmount.toFixed(isUsdt ? 2 : 8)} trade + ${feeAmount.toFixed(isUsdt ? 2 : 8)} fee)` : '')
       );
     }
 
@@ -255,14 +360,13 @@ class TradeEscrowService {
       ? require('./tronWalletService').generateEscrowAddress(tradeId)
       : hdWallet.generateEscrowAddress(tradeId);
     const escrowAddress = escrowData.address;
-    const feeAmount     = parseFloat((parsedAmount * this.feeRate).toFixed(isUsdt ? 6 : 8));
 
     console.log(`   Escrow address: ${escrowAddress}`);
-    console.log(`   Fee (${(this.feeRate * 100).toFixed(0)}%):       ${feeAmount} ${currency}`);
+    console.log(`   Fee (${(feeRate * 100).toFixed(0)}%): ${feeAmount} ${currency} | model: ${additive ? 'additive' : 'inclusive'} | reserve locked: ${reserve} ${currency}`);
 
     // ── 3. Deduct from available, add to locked ────────────────────────────
-    const newAvailable = parseFloat((currentBalance - parsedAmount).toFixed(isUsdt ? 6 : 8));
-    const newLocked    = parseFloat((parseFloat(walletRow[lockedField] || 0) + parsedAmount).toFixed(isUsdt ? 6 : 8));
+    const newAvailable = parseFloat((currentBalance - reserve).toFixed(dec));
+    const newLocked    = parseFloat((parseFloat(walletRow[lockedField] || 0) + reserve).toFixed(dec));
 
     const updateFields = {
       [balField]:    newAvailable,
@@ -331,6 +435,9 @@ class TradeEscrowService {
     }
 
     // ── 6. Update trade ────────────────────────────────────────────────────
+    // escrow_amount stays = the trade amount (its established meaning). For an
+    // additive trade the wallet actually has `reserve` (= amount + fee) locked;
+    // release / cancelTrade reconstruct that from platform_fee_* + fee_model.
     const tradeUpdate = {
       status:                'FUNDS_LOCKED',
       escrow_wallet_address: escrowAddress,
@@ -345,18 +452,21 @@ class TradeEscrowService {
     } else {
       tradeUpdate.platform_fee_btc  = feeAmount;
     }
+    // Only written when the column exists (additive === true guarantees it).
+    if (additive) tradeUpdate.fee_model = 'additive';
 
     const { error: tradeUpdateErr } = await supabaseAdmin
       .from('trades').update(tradeUpdate).eq('id', tradeId);
     if (tradeUpdateErr) throw new Error(`Failed to update trade: ${tradeUpdateErr.message}`);
 
     // ── 7. Audit log ───────────────────────────────────────────────────────
+    // Log the reserve — that's what actually left the provider's spendable balance.
     await this.logTransaction(
-      btcProviderId, 'ESCROW_LOCK', parsedAmount, lockTxHash,
-      `Funds locked for trade #${tradeId.slice(0,8)}`, currency
+      btcProviderId, 'ESCROW_LOCK', reserve, lockTxHash,
+      `Funds locked for trade #${tradeId.slice(0,8)}${additive ? ` (${parsedAmount} + ${feeAmount} fee)` : ''}`, currency
     );
 
-    console.log(`✅ Funds locked — ${parsedAmount} ${currency} from provider ${btcProviderId.slice(0,8)}`);
+    console.log(`✅ Funds locked — ${reserve} ${currency} from provider ${btcProviderId.slice(0,8)}`);
 
     supabaseAdmin.from('trades')
       .select('seller_id, trade_ref, amount_btc, amount_usdt')
@@ -373,9 +483,11 @@ class TradeEscrowService {
       success:      true,
       escrowAddress,
       lockTxHash,
-      amountLocked: parsedAmount,
+      amountLocked: reserve,      // what was actually moved to locked balance
+      tradeAmount:  parsedAmount, // the trade size
       currency,
       feeAmount,
+      feeModel:     additive ? 'additive' : 'inclusive',
       newBalance:   newAvailable,
       expiresAt:    new Date(Date.now() + timeLimitMins * 60 * 1000).toISOString(),
     };
@@ -552,15 +664,26 @@ class TradeEscrowService {
     const amount      = isUsdt
       ? parseFloat(tradeData.amount_usdt || tradeData.escrow_amount || 0)
       : parseFloat(tradeData.amount_btc);
-    const feeRate     = isGiftCardTrade ? 0.03 : 0.02;
-    const buyerGets   = parseFloat((amount * (1 - feeRate)).toFixed(isUsdt ? 6 : 8));
+    const feeRate     = this.feeRateFor(isGiftCardTrade); // 2% / 3% — same rate reserved at lock time
     const platformFee = parseFloat((amount * feeRate).toFixed(isUsdt ? 6 : 8));
+
+    // Fee model was pinned at lock time. additive → the provider locked
+    // (amount + fee), the receiver gets the FULL amount, and the provider's
+    // locked balance must be cleared by (amount + fee). inclusive (legacy /
+    // NULL) → receiver gets (amount - fee), locked cleared by `amount`.
+    const additive       = tradeData.fee_model === 'additive';
+    const buyerGets       = additive
+      ? amount
+      : parseFloat((amount * (1 - feeRate)).toFixed(isUsdt ? 6 : 8));
+    const reserveToClear  = additive
+      ? parseFloat((amount + platformFee).toFixed(isUsdt ? 6 : 8))
+      : amount;
 
     // Mandatory fee sanity check — fail before touching any balance rather than
     // silently release funds with a missing/malformed company fee (e.g. NaN
     // propagating from a corrupt `amount`, or a future edit changing feeRate
     // to something outside the two approved rates).
-    const expectedFeeRate = isGiftCardTrade ? 0.03 : 0.02;
+    const expectedFeeRate = this.feeRateFor(isGiftCardTrade);
     if (!Number.isFinite(platformFee) || platformFee < 0 || feeRate !== expectedFeeRate) {
       throw new Error(`Fee validation failed before release — trade ${tradeId.slice(0, 8)}: platformFee=${platformFee}, feeRate=${feeRate}, expected=${expectedFeeRate}. Release blocked.`);
     }
@@ -701,10 +824,12 @@ class TradeEscrowService {
     }
 
     // ── Clear locked balance for the BTC/USDT provider ────────────────────────
+    // Additive trades locked (amount + fee), so clear that whole reserve —
+    // clearing only `amount` would leave the fee stuck in locked_balance forever.
     const { data: providerWallet } = await supabaseAdmin
         .from('wallets').select(lockedField).eq('user_id', btcProviderId).maybeSingle();
     const clearedLocked = parseFloat(
-        Math.max(0, parseFloat(providerWallet?.[lockedField] || 0) - amount).toFixed(decimals)
+        Math.max(0, parseFloat(providerWallet?.[lockedField] || 0) - reserveToClear).toFixed(decimals)
     );
     await supabaseAdmin.from('wallets')
         .update({ [lockedField]: clearedLocked, updated_at: new Date().toISOString() })
@@ -969,9 +1094,19 @@ class TradeEscrowService {
     const esc            = (await supabaseAdmin.from('escrow_locks').select('*').eq('trade_id', tradeId).maybeSingle()).data;
     const escCurrency    = (esc?.currency || trade.currency || 'BTC').toUpperCase();
     const isUsdtRefund   = escCurrency === 'USDT';
-    const refundAmount   = isUsdtRefund
+    let refundAmount     = isUsdtRefund
       ? parseFloat(esc?.amount_usdt || trade.amount_usdt || trade.escrow_amount || 0)
       : parseFloat(esc?.amount_btc  || trade.escrow_amount || trade.amount_btc  || 0);
+
+    // Additive-fee trades locked (amount + fee) — the provider must get the whole
+    // reserve back on a cancel, and the locked-balance decrement (RPC + every
+    // manual fallback below all key off refundAmount) must match.
+    if (trade.fee_model === 'additive') {
+      const feeBack = isUsdtRefund
+        ? parseFloat(trade.platform_fee_usdt || 0)
+        : parseFloat(trade.platform_fee_btc  || 0);
+      refundAmount = parseFloat((refundAmount + feeBack).toFixed(isUsdtRefund ? 6 : 8));
+    }
 
     let fallbackBtcProvider = trade.seller_id;
     if (!esc?.seller_id && trade.listing_id) {
@@ -1349,120 +1484,157 @@ class TradeEscrowService {
     }
   }
 
-  // ── Hold a suspicious/erroneous BTC credit ────────────────────────────────
+  // ── Hold a suspicious/erroneous credit (BTC or USDT) ──────────────────────
   // For a credit that shouldn't be spendable yet (a duplicate deposit, a system
-  // miscredit) — moves the flagged amount from balance_btc into
-  // locked_balance_btc using the same optimistic-concurrency pattern as
+  // miscredit) — moves the flagged amount from balance_<cur> into
+  // locked_balance_<cur> using the same optimistic-concurrency pattern as
   // lockFundsInEscrow, so the user immediately loses the ability to send,
-  // withdraw, or trade it (every spend path only ever checks balance_btc,
+  // withdraw, or trade it (every spend path only ever checks the free balance,
   // which already excludes locked funds) without it silently vanishing —
   // it still shows in their wallet as held, and they're notified why.
-  async holdSuspiciousBtc(userId, amountBtc, reason, adminId) {
-    const amount = parseFloat(amountBtc);
+  //
+  // currency: 'BTC' (default) or 'USDT'.
+  async holdSuspiciousFunds(userId, amountRaw, currency, reason, adminId) {
+    const cur = String(currency || 'BTC').toUpperCase();
+    if (!['BTC', 'USDT'].includes(cur)) throw new Error("currency must be 'BTC' or 'USDT'");
+    const isUsdt   = cur === 'USDT';
+    const decimals = isUsdt ? 6 : 8;
+    const balField    = isUsdt ? 'balance_usdt'        : 'balance_btc';
+    const lockedField = isUsdt ? 'locked_balance_usdt' : 'locked_balance_btc';
+    const sym = isUsdt ? '₮' : '₿';
+
+    const amount = parseFloat(amountRaw);
     if (!amount || amount <= 0) throw new Error('Invalid hold amount');
 
     const { data: walletRow, error: wErr } = await supabaseAdmin
-      .from('wallets').select('balance_btc, locked_balance_btc').eq('user_id', userId).single();
+      .from('wallets').select(`${balField}, ${lockedField}`).eq('user_id', userId).single();
     if (wErr || !walletRow) throw new Error('Wallet not found');
 
-    const currentBalance = parseFloat(walletRow.balance_btc || 0);
+    const currentBalance = parseFloat(walletRow[balField] || 0);
     if (currentBalance < amount) {
-      throw new Error(`User only has ₿${currentBalance.toFixed(8)} available — cannot hold ₿${amount.toFixed(8)}`);
+      throw new Error(`User only has ${sym}${currentBalance.toFixed(decimals)} available — cannot hold ${sym}${amount.toFixed(decimals)}`);
     }
-    const currentLocked = parseFloat(walletRow.locked_balance_btc || 0);
-    const newAvailable  = parseFloat((currentBalance - amount).toFixed(8));
-    const newLocked     = parseFloat((currentLocked + amount).toFixed(8));
+    const currentLocked = parseFloat(walletRow[lockedField] || 0);
+    const newAvailable  = parseFloat((currentBalance - amount).toFixed(decimals));
+    const newLocked     = parseFloat((currentLocked + amount).toFixed(decimals));
 
     const { data: claimed, error: updErr } = await supabaseAdmin
       .from('wallets')
-      .update({ balance_btc: newAvailable, locked_balance_btc: newLocked, updated_at: new Date().toISOString() })
+      .update({ [balField]: newAvailable, [lockedField]: newLocked, updated_at: new Date().toISOString() })
       .eq('user_id', userId)
-      .eq('balance_btc', currentBalance)
-      .eq('locked_balance_btc', currentLocked)
+      .eq(balField, currentBalance)
+      .eq(lockedField, currentLocked)
       .select('user_id');
     if (updErr) throw new Error(`Failed to place hold: ${updErr.message}`);
     if (!claimed || claimed.length === 0) {
       throw new Error('Balance changed while placing the hold — please retry.');
     }
 
-    await syncSecondaryBtcBalance(userId, newAvailable);
+    if (isUsdt) await syncSecondaryUsdtBalance(userId, newAvailable);
+    else        await syncSecondaryBtcBalance(userId, newAvailable);
 
-    await supabaseAdmin.from('balance_audit').insert({
-      user_id:     userId,
-      change_btc:  -amount,
-      new_balance: newAvailable,
-      reason:      `ADMIN_HOLD: ${reason || 'Suspicious credit under review'}`,
-      created_at:  new Date().toISOString(),
-    }).catch(() => {});
+    // balance_audit is BTC-shaped (change_btc / new_balance) and is read back by
+    // the BTC swap ledger guard — only stamp it for BTC holds.
+    if (!isUsdt) {
+      await supabaseAdmin.from('balance_audit').insert({
+        user_id:     userId,
+        change_btc:  -amount,
+        new_balance: newAvailable,
+        reason:      `ADMIN_HOLD: ${reason || 'Suspicious credit under review'}`,
+        created_at:  new Date().toISOString(),
+      }).catch(() => {});
+    }
 
     await supabaseAdmin.from('notifications').insert({
       user_id: userId, type: 'security', title: '🔒 Balance Under Review',
-      message: `₿${amount.toFixed(8)} of your balance has been placed on hold pending review${reason ? `: ${reason}` : '.'} It stays in your wallet and is not lost — you just can't send or withdraw it until the review is complete. Contact support@praqen.com with questions.`,
+      message: `${sym}${amount.toFixed(decimals)} of your ${cur} balance has been placed on hold pending review${reason ? `: ${reason}` : '.'} It stays in your wallet and is not lost — you just can't send or withdraw it until the review is complete. Contact support@praqen.com with questions.`,
       action: '/wallet', is_read: false, created_at: new Date().toISOString(),
     }).catch(() => {});
 
-    console.log(`🔒 [Escrow] Hold placed: ₿${amount.toFixed(8)} on user ${userId.slice(0,8)} by admin ${adminId ? adminId.slice(0,8) : 'system'} — ${reason}`);
-    return { success: true, heldAmount: amount, newAvailable, newLocked };
+    console.log(`🔒 [Escrow] Hold placed: ${sym}${amount.toFixed(decimals)} ${cur} on user ${userId.slice(0,8)} by admin ${adminId ? adminId.slice(0,8) : 'system'} — ${reason}`);
+    return { success: true, currency: cur, heldAmount: amount, newAvailable, newLocked };
   }
 
-  // ── Resolve a hold placed by holdSuspiciousBtc ─────────────────────────────
-  // action: 'RELEASE' returns the held amount to balance_btc (hold was a false
-  // alarm — the user keeps it). 'CLAWBACK' removes it permanently — it was a
-  // real system error and is gone for good, no longer counted anywhere in the
+  // ── Resolve a hold placed by holdSuspiciousFunds (BTC or USDT) ────────────
+  // action: 'RELEASE' returns the held amount to the free balance (hold was a
+  // false alarm — the user keeps it). 'CLAWBACK' removes it permanently — it was
+  // a real system error and is gone for good, no longer counted anywhere in the
   // user's balance.
-  async resolveSuspiciousHold(userId, amountBtc, action, adminId, note) {
-    const amount = parseFloat(amountBtc);
-    if (!amount || amount <= 0) throw new Error('Invalid amount');
+  async resolveSuspiciousFundsHold(userId, amountRaw, action, currency, adminId, note) {
+    const cur = String(currency || 'BTC').toUpperCase();
+    if (!['BTC', 'USDT'].includes(cur)) throw new Error("currency must be 'BTC' or 'USDT'");
     if (!['RELEASE', 'CLAWBACK'].includes(action)) throw new Error('action must be RELEASE or CLAWBACK');
+    const isUsdt   = cur === 'USDT';
+    const decimals = isUsdt ? 6 : 8;
+    const balField    = isUsdt ? 'balance_usdt'        : 'balance_btc';
+    const lockedField = isUsdt ? 'locked_balance_usdt' : 'locked_balance_btc';
+    const sym = isUsdt ? '₮' : '₿';
+
+    const amount = parseFloat(amountRaw);
+    if (!amount || amount <= 0) throw new Error('Invalid amount');
 
     const { data: walletRow, error: wErr } = await supabaseAdmin
-      .from('wallets').select('balance_btc, locked_balance_btc').eq('user_id', userId).single();
+      .from('wallets').select(`${balField}, ${lockedField}`).eq('user_id', userId).single();
     if (wErr || !walletRow) throw new Error('Wallet not found');
 
-    const currentBalance = parseFloat(walletRow.balance_btc || 0);
-    const currentLocked  = parseFloat(walletRow.locked_balance_btc || 0);
+    const currentBalance = parseFloat(walletRow[balField] || 0);
+    const currentLocked  = parseFloat(walletRow[lockedField] || 0);
     if (currentLocked < amount) {
-      throw new Error(`Only ₿${currentLocked.toFixed(8)} is currently held — cannot resolve ₿${amount.toFixed(8)}`);
+      throw new Error(`Only ${sym}${currentLocked.toFixed(decimals)} is currently held — cannot resolve ${sym}${amount.toFixed(decimals)}`);
     }
 
-    const newLocked    = parseFloat((currentLocked - amount).toFixed(8));
+    const newLocked    = parseFloat((currentLocked - amount).toFixed(decimals));
     const newAvailable = action === 'RELEASE'
-      ? parseFloat((currentBalance + amount).toFixed(8))
+      ? parseFloat((currentBalance + amount).toFixed(decimals))
       : currentBalance; // CLAWBACK: the held amount just disappears; available is untouched
 
     const { data: claimed, error: updErr } = await supabaseAdmin
       .from('wallets')
-      .update({ balance_btc: newAvailable, locked_balance_btc: newLocked, updated_at: new Date().toISOString() })
+      .update({ [balField]: newAvailable, [lockedField]: newLocked, updated_at: new Date().toISOString() })
       .eq('user_id', userId)
-      .eq('balance_btc', currentBalance)
-      .eq('locked_balance_btc', currentLocked)
+      .eq(balField, currentBalance)
+      .eq(lockedField, currentLocked)
       .select('user_id');
     if (updErr) throw new Error(`Failed to resolve hold: ${updErr.message}`);
     if (!claimed || claimed.length === 0) {
       throw new Error('Balance changed while resolving the hold — please retry.');
     }
 
-    await syncSecondaryBtcBalance(userId, newAvailable);
+    if (isUsdt) await syncSecondaryUsdtBalance(userId, newAvailable);
+    else        await syncSecondaryBtcBalance(userId, newAvailable);
 
-    await supabaseAdmin.from('balance_audit').insert({
-      user_id:     userId,
-      change_btc:  action === 'RELEASE' ? amount : -amount,
-      new_balance: newAvailable,
-      reason:      `ADMIN_HOLD_${action}: ${note || ''}`.trim(),
-      created_at:  new Date().toISOString(),
-    }).catch(() => {});
+    if (!isUsdt) {
+      await supabaseAdmin.from('balance_audit').insert({
+        user_id:     userId,
+        change_btc:  action === 'RELEASE' ? amount : -amount,
+        new_balance: newAvailable,
+        reason:      `ADMIN_HOLD_${action}: ${note || ''}`.trim(),
+        created_at:  new Date().toISOString(),
+      }).catch(() => {});
+    }
 
     await supabaseAdmin.from('notifications').insert({
       user_id: userId, type: 'security',
       title: action === 'RELEASE' ? '✅ Hold Released' : '⚠️ Balance Correction Applied',
       message: action === 'RELEASE'
-        ? `The ₿${amount.toFixed(8)} hold on your balance has been cleared and is available again.${note ? ` ${note}` : ''}`
-        : `₿${amount.toFixed(8)} has been permanently removed from your balance — it was credited in error and did not belong to you.${note ? ` Reason: ${note}` : ''} Contact support@praqen.com with questions.`,
+        ? `The ${sym}${amount.toFixed(decimals)} ${cur} hold on your balance has been cleared and is available again.${note ? ` ${note}` : ''}`
+        : `${sym}${amount.toFixed(decimals)} ${cur} has been permanently removed from your balance — it was credited in error and did not belong to you.${note ? ` Reason: ${note}` : ''} Contact support@praqen.com with questions.`,
       action: '/wallet', is_read: false, created_at: new Date().toISOString(),
     }).catch(() => {});
 
-    console.log(`${action === 'RELEASE' ? '✅' : '⚠️'} [Escrow] Hold resolved (${action}): ₿${amount.toFixed(8)} for user ${userId.slice(0,8)} by admin ${adminId ? adminId.slice(0,8) : 'system'}`);
-    return { success: true, action, amount, newAvailable, newLocked };
+    console.log(`${action === 'RELEASE' ? '✅' : '⚠️'} [Escrow] Hold resolved (${action}): ${sym}${amount.toFixed(decimals)} ${cur} for user ${userId.slice(0,8)} by admin ${adminId ? adminId.slice(0,8) : 'system'}`);
+    return { success: true, action, currency: cur, amount, newAvailable, newLocked };
+  }
+
+  // ── Back-compat wrappers — original BTC-only signatures ───────────────────
+  // Existing callers (POST /api/admin/users/:id/hold-balance & /resolve-hold)
+  // keep working unchanged; both now just forward to the currency-aware methods.
+  async holdSuspiciousBtc(userId, amountBtc, reason, adminId) {
+    return this.holdSuspiciousFunds(userId, amountBtc, 'BTC', reason, adminId);
+  }
+
+  async resolveSuspiciousHold(userId, amountBtc, action, adminId, note) {
+    return this.resolveSuspiciousFundsHold(userId, amountBtc, action, 'BTC', adminId, note);
   }
 }
 
