@@ -5,8 +5,10 @@ import {
   Headphones, Circle, Send, RefreshCw, ChevronLeft, User, Bot,
   CheckCircle, Clock, MessageCircle, Search, Wifi, WifiOff,
   Settings, LogOut, Eye, ArrowRight, Paperclip, FileText,
-  AlertTriangle, ChevronDown, ChevronUp, Zap,
+  AlertTriangle, ChevronDown, ChevronUp, Zap, Mail,
+  Volume2, VolumeX, Bell,
 } from 'lucide-react';
+import AgentNotificationsPanel from '../components/AgentNotificationsPanel';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 // Dedicated agentToken (own login, below) takes priority — falls back to the main site's
@@ -25,6 +27,36 @@ const LAST_SEEN_KEY = 'agentTicketLastSeen';
 function loadLastSeenMap() {
   try { return JSON.parse(localStorage.getItem(LAST_SEEN_KEY) || '{}'); } catch { return {}; }
 }
+
+function mergeMessages(existing = [], incoming = []) {
+  const merged = [];
+  const seen = new Set();
+
+  for (const message of [...existing, ...incoming]) {
+    if (!message) continue;
+
+    if (message.id) {
+      if (seen.has(message.id)) continue;
+      seen.add(message.id);
+    }
+
+    merged.push(message);
+  }
+
+  return merged;
+}
+
+// ── Email-channel badge ─────────────────────────────────────────────────
+// Tickets created from inbound support emails carry channel:'email' — agents
+// must know a reply goes out as an actual email, not an in-app chat message.
+const isEmailTicket = (t) => String(t?.channel || '').toLowerCase() === 'email';
+const EmailBadge = ({ ticket, small }) => isEmailTicket(ticket) ? (
+  <span className={`inline-flex items-center gap-1 font-bold flex-shrink-0 ${small ? 'text-[9px] px-1.5 py-0' : 'text-[10px] px-2 py-1'} rounded`}
+    style={{ backgroundColor: '#FEF3C7', color: '#B45309' }}
+    title="Started via email — replies are sent to the user's email address">
+    <Mail size={small ? 9 : 11} /> via Email
+  </span>
+) : null;
 
 // ── Color palette (matches TeamDashboard) ───────────────────────────────────
 const C = {
@@ -64,6 +96,108 @@ function TypingIndicator() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ── New-ticket arrival sound ────────────────────────────────────────────────
+// Short two-note chime synthesized with the Web Audio API — same approach as the
+// in-app Notifications component. No audio asset to load/bundle; the context is
+// created lazily on first play and resumed() so browser autoplay policies don't
+// mute us after a period of tab inactivity. One-shot per call — never loops.
+let _newTicketAudioCtx = null;
+function playNewTicketChime() {
+  try {
+    if (!_newTicketAudioCtx) _newTicketAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = _newTicketAudioCtx;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+
+    const t0 = ctx.currentTime + 0.01;
+    const notes = [
+      { f: 784, t: t0 },            // G5
+      { f: 1175, t: t0 + 0.12 },    // D6 — ascending "ping", non-intrusive
+    ];
+    const PEAK = 0.14;
+    notes.forEach(({ f, t }, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f, t);
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(PEAK, t + 0.012);
+      if (i === notes.length - 1) {
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5); // gentle ring-out
+      } else {
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+      }
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + (i === notes.length - 1 ? 0.55 : 0.15));
+    });
+  } catch {}
+}
+
+const SOUND_PREF_KEY = 'agentNewTicketSound'; // '1' on (default) / '0' muted
+
+// ── Loading skeletons (initial dashboard load) ─────────────────────────────
+// Same animate-pulse skeleton language as the trading/marketplace pages
+// (SkeletonCard in BuyBitcoin / GiftCardMarketplace). Skeletons pulse — visually
+// very different from the static "No chats in queue" empty state, so an agent
+// can always tell "still loading" apart from "genuinely empty".
+function StatSkeleton() {
+  return (
+    <div className="bg-white rounded-2xl border px-4 py-3 animate-pulse" style={{ borderColor: C.g200 }}>
+      <div className="h-2.5 rounded w-14" style={{ backgroundColor: C.g100 }} />
+      <div className="h-7 w-10 rounded mt-1.5" style={{ backgroundColor: C.g100 }} />
+    </div>
+  );
+}
+
+function QueueCardSkeleton() {
+  return (
+    <div className="bg-white rounded-xl border p-3 animate-pulse" style={{ borderColor: C.g200 }}>
+      <div className="flex items-start gap-2.5">
+        <div className="w-9 h-9 rounded-full flex-shrink-0" style={{ backgroundColor: C.g100 }} />
+        <div className="flex-1 space-y-1.5 pt-0.5">
+          <div className="flex items-center justify-between">
+            <div className="h-2.5 rounded w-24" style={{ backgroundColor: C.g200 }} />
+            <div className="h-3.5 w-12 rounded-full" style={{ backgroundColor: C.g100 }} />
+          </div>
+          <div className="h-2 rounded w-3/4" style={{ backgroundColor: C.g100 }} />
+          <div className="h-2 rounded w-1/2" style={{ backgroundColor: C.g100 }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QueueSkeleton() {
+  return (
+    <div className="space-y-1.5" role="status" aria-label="Loading tickets">
+      {[0, 1, 2, 3].map(i => <QueueCardSkeleton key={i} />)}
+      <p className="text-center text-[10px] font-bold pt-2" style={{ color: C.g400 }}>
+        <RefreshCw size={10} className="inline mr-1 animate-spin" style={{ verticalAlign: '-1px' }} />
+        Loading tickets…
+      </p>
+    </div>
+  );
+}
+
+// ── Right-panel initial-load state — branded spinner + label, so "the dashboard
+// is fetching data" never looks like the settled "nothing here yet" states.
+function DashboardLoader() {
+  return (
+    <>
+      <div className="w-16 h-16 rounded-2xl flex items-center justify-center animate-pulse"
+        style={{ backgroundColor: '#F0FDF4' }}>
+        <Headphones size={32} style={{ color: C.forest }} />
+      </div>
+      <div>
+        <p className="text-base font-black" style={{ color: C.g800 }}>Loading dashboard…</p>
+        <p className="text-xs mt-1" style={{ color: C.g400 }}>Fetching tickets and counters</p>
+      </div>
+      <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: C.forest }} />
+    </>
   );
 }
 
@@ -253,6 +387,7 @@ function AgentDashboardInner({ user }) {
   const [queueLoading, setQueueLoading] = useState(true);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
   const [searchQ, setSearchQ] = useState('');
@@ -263,6 +398,21 @@ function AgentDashboardInner({ user }) {
   const [userTyping, setUserTyping] = useState(false);
   const [agentTyping, setAgentTyping] = useState(false);
   const [accessDenied, setAccessDenied] = useState(null);
+  const [queueError, setQueueError] = useState(null);
+  // ── New-ticket notifications ────────────────────────────────────────────
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    try { return localStorage.getItem(SOUND_PREF_KEY) !== '0'; } catch { return true; }
+  });
+  const [notifications, setNotifications] = useState([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  // Highlights drive the brief pulse on a new ticket's queue card. State holds a
+  // version counter only (render trigger); the actual ids live in a ref so the
+  // 10s poll closure never needs to re-create around highlight churn.
+  const [highlightTick, setHighlightTick] = useState(0);
+  const soundEnabledRef = useRef(soundEnabled);
+  const knownTicketIdsRef = useRef(null);   // null = no baseline yet (first load)
+  const newTicketHighlightsRef = useRef(new Map()); // ticketId -> expiry timestamp
+  const notifyNewTicketRef = useRef(null);
   const [lastSeen, setLastSeenState] = useState(() => loadLastSeenMap());
   const markSeen = useCallback((ticketId) => {
     setLastSeenState(prev => {
@@ -281,6 +431,7 @@ function AgentDashboardInner({ user }) {
   const replyRef = useRef(null);
   const pollRef = useRef(null);
   const typingPollRef = useRef(null);
+  const sendingRef = useRef(false);
 
   // ── Load agent status ──────────────────────────────────────────────────
   const loadAgentStatus = useCallback(async () => {
@@ -295,22 +446,167 @@ function AgentDashboardInner({ user }) {
 
   // ── Load ticket queue ──────────────────────────────────────────────────
   const loadQueue = useCallback(async () => {
+    let data = null;
+
     try {
-      const { data } = await axios.get(`${API_URL}/agent/dashboard`, { headers: authH() });
+      const response = await axios.get(`${API_URL}/agent/dashboard`, { headers: authH() });
+      data = response.data;
       setTickets(data.tickets || []);
       if (data.stats) setStats(data.stats);
       setAccessDenied(null);
+      setQueueError(null);
     } catch (e) {
       if (e.response?.status === 403) {
         const msg = e.response?.data?.error || 'Agent access required';
         setAccessDenied(msg);
+      } else {
+        // Surface server errors instead of silently showing an empty queue —
+        // a silent failure here looks identical to "no tickets exist".
+        console.error('[AgentDashboard] Queue load failed:', e.response?.data?.error || e.message);
+        setQueueError(e.response?.data?.error || 'Failed to load ticket queue');
       }
     } finally {
       setQueueLoading(false);
     }
+
+    // ── Detect genuinely NEW tickets and notify ─────────────────────────
+    // Only fires on the diff between this poll and the previous successful one:
+    // never on the very first load (baseline), never re-fires for tickets we've
+    // already seen, and the baseline is left untouched on failed fetches so a
+    // request that fails between polls can't cause a duplicate alert on the next
+    // successful one.
+    try {
+      const incoming = Array.isArray(data?.tickets) ? data.tickets : [];
+      const incomingIds = new Set(incoming.map(t => t.id));
+      const baseline = knownTicketIdsRef.current;
+      if (baseline) {
+        const fresh = incoming.filter(t => !baseline.has(t.id));
+        if (fresh.length > 0) {
+          const now = Date.now();
+          fresh.forEach(t => newTicketHighlightsRef.current.set(t.id, now + 8000));
+          setHighlightTick(v => v + 1);
+          fresh.forEach(t => notifyNewTicketRef.current?.(t));
+          // Re-render once more after the last highlight expires to drop the
+          // "NEW" badges / pulse styling without another poll in between.
+          const maxExp = Math.max(...fresh.map(t => now + 8000));
+          setTimeout(() => setHighlightTick(v => v + 1), maxExp - now + 100);
+        }
+      }
+      knownTicketIdsRef.current = incomingIds;
+    } catch {}
   }, []);
 
   useEffect(() => { loadAgentStatus(); loadQueue(); }, [loadAgentStatus, loadQueue]);
+
+  // ── Open a ticket for live chat ────────────────────────────────────────
+  const openTicket = async (ticket) => {
+    setSelectedTicket(ticket);
+    setReply('');
+    setMessages([]);
+    setLoadingMessages(true);
+    setUserTyping(false);
+    setNotifications(prev => prev.map(n => n.ticketId === ticket?.id ? { ...n, read: true } : n));
+
+    try {
+      // Auto-accept/claim the ticket if unassigned — but only for a live ticket.
+      // Resolved/closed tickets are now visible for history (see loadQueue),
+      // so this must not fire when an agent is just reviewing a past ticket —
+      // it would otherwise reopen it, reassign it, and re-send the "Hi, I'm
+      // helping you today" intro message to a customer whose issue is done.
+      if (!ticket.assigned_agent_id && ['open', 'active', 'pending'].includes(ticket.status)) {
+        await axios.post(`${API_URL}/agent/tickets/${ticket.id}/accept`, {}, { headers: authH() });
+      }
+
+      // Load messages
+      const { data } = await axios.get(`${API_URL}/agent/tickets/${ticket.id}/messages`, { headers: authH() });
+      setMessages(data.messages || []);
+      markSeen(ticket.id);
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
+    } catch (e) {
+      toast.error('Failed to load chat');
+    } finally {
+      setLoadingMessages(false);
+    }
+  };
+
+  // ── New-ticket arrival: toast + sound (Online only) + OS notification ──
+  // Called from the 10s queue poll via notifyNewTicketRef, so this callback can
+  // depend on isOnline/openTicket without re-wiring the poll.
+  const notifyNewTicket = useCallback((t) => {
+    if (!t?.id) return;
+
+    setNotifications(prev => {
+      if (prev.some(n => n.ticketId === t.id)) return prev;
+      const nextNotification = {
+        ticketId: t.id,
+        subject: t.subject || t.username || 'New ticket',
+        origin: isEmailTicket(t) ? 'email' : 'chat',
+        timestamp: new Date().toISOString(),
+        read: false,
+        ticket: t,
+      };
+      return [nextNotification, ...prev].slice(0, 30);
+    });
+
+    const label = t.subject || t.username || 'New ticket';
+    const via = isEmailTicket(t) ? ' — via Email' : '';
+
+    // 1) In-app toast (top-right, clickable → opens the ticket). Custom toastId
+    //    keyed on the ticket id guarantees a single instance even if two polls
+    //    somehow race on the same row.
+    toast.info(
+      <span>
+        <strong>New ticket{via}:</strong> {label}
+        <span className="block text-[10px] mt-0.5" style={{ opacity: 0.7 }}>Click to open</span>
+      </span>,
+      {
+        toastId: `new-ticket-${t.id}`,
+        autoClose: 8000,
+        onClick: () => {
+          setNotifications(prev => prev.map(n => n.ticketId === t.id ? { ...n, read: true } : n));
+          openTicket(t);
+        },
+      }
+    );
+
+    // 2) Sound — only while the agent is Online (per the Online/Offline toggle).
+    if (isOnline && soundEnabledRef.current) playNewTicketChime();
+
+    // 3) Browser/OS notification — only when the tab isn't focused and the agent
+    //    has granted permission (requested once on mount below).
+    if (typeof document !== 'undefined' && !document.hasFocus()
+      && typeof window !== 'undefined' && 'Notification' in window
+      && Notification.permission === 'granted') {
+      try {
+        const n = new Notification(`New ticket${via}: ${label}`, {
+          body: `${t.username || t.full_name || 'A user'} needs help. Click to open the Agent Dashboard.`,
+          tag: `new-ticket-${t.id}`, // OS-level dedupe per ticket
+        });
+        n.onclick = () => { window.focus(); n.close(); };
+      } catch {}
+    }
+  }, [isOnline, openTicket]);
+
+  useEffect(() => { notifyNewTicketRef.current = notifyNewTicket; }, [notifyNewTicket]);
+
+  // Ask once for OS-notification permission (only if the browser hasn't asked
+  // before — 'granted'/'denied' states are left as they are).
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  // ── Mute/unmute new-ticket sound (persisted per browser) ──────────────
+  const toggleSound = () => {
+    setSoundEnabled(prev => {
+      const next = !prev;
+      soundEnabledRef.current = next;
+      try { localStorage.setItem(SOUND_PREF_KEY, next ? '1' : '0'); } catch {}
+      toast.success(next ? 'New-ticket sound on' : 'New-ticket sound muted');
+      return next;
+    });
+  };
 
   // ── Auto-refresh queue every 10s ───────────────────────────────────────
   useEffect(() => {
@@ -353,33 +649,6 @@ function AgentDashboardInner({ user }) {
     }
   };
 
-  // ── Open a ticket for live chat ────────────────────────────────────────
-  const openTicket = async (ticket) => {
-    setSelectedTicket(ticket);
-    setReply('');
-    setMessages([]);
-    setUserTyping(false);
-
-    try {
-      // Auto-accept/claim the ticket if unassigned — but only for a live ticket.
-      // Resolved/closed tickets are now visible for history (see loadQueue),
-      // so this must not fire when an agent is just reviewing a past ticket —
-      // it would otherwise reopen it, reassign it, and re-send the "Hi, I'm
-      // helping you today" intro message to a customer whose issue is done.
-      if (!ticket.assigned_agent_id && ['open', 'active', 'pending'].includes(ticket.status)) {
-        await axios.post(`${API_URL}/agent/tickets/${ticket.id}/accept`, {}, { headers: authH() });
-      }
-
-      // Load messages
-      const { data } = await axios.get(`${API_URL}/agent/tickets/${ticket.id}/messages`, { headers: authH() });
-      setMessages(data.messages || []);
-      markSeen(ticket.id);
-      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
-    } catch (e) {
-      toast.error('Failed to load chat');
-    }
-  };
-
   // ── Poll for new messages when a ticket is open ────────────────────────
   useEffect(() => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
@@ -390,9 +659,12 @@ function AgentDashboardInner({ user }) {
         const { data } = await axios.get(`${API_URL}/agent/tickets/${selectedTicket.id}/messages`, { headers: authH() });
         const incoming = data.messages || [];
         setMessages(prev => {
-          if (incoming.length <= prev.length) return prev;
+          const merged = mergeMessages(prev, incoming);
+          if (merged.length === prev.length && merged.every((m, i) => m.id === prev[i]?.id)) {
+            return prev;
+          }
           markSeen(selectedTicket.id);
-          return incoming;
+          return merged;
         });
       } catch {}
     }, 3000);
@@ -429,14 +701,16 @@ function AgentDashboardInner({ user }) {
 
   // ── Send reply ─────────────────────────────────────────────────────────
   const sendReply = async () => {
-    if (!reply.trim() || !selectedTicket || sending) return;
+    if (!reply.trim() || !selectedTicket || sendingRef.current) return;
+
+    sendingRef.current = true;
     setSending(true);
     const msgText = reply.trim();
     setReply('');
 
     try {
       const { data } = await axios.post(`${API_URL}/agent/tickets/${selectedTicket.id}/reply`, { message: msgText }, { headers: authH() });
-      setMessages(prev => [...prev, data.message]);
+      setMessages(prev => mergeMessages(prev, [data.message]));
       setTickets(prev => prev.map(t => t.id === selectedTicket.id ? { ...t, status: 'active', updated_at: new Date().toISOString() } : t));
       markSeen(selectedTicket.id);
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
@@ -444,6 +718,7 @@ function AgentDashboardInner({ user }) {
       setReply(msgText);
       toast.error(e.response?.data?.error || 'Failed to send');
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   };
@@ -504,6 +779,15 @@ function AgentDashboardInner({ user }) {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#F8FAFC' }}>
+      {/* New-ticket highlight animation (see newTicketHighlightsRef usage below) */}
+      <style>{`
+        @keyframes ticketHighlightPulse {
+          0%, 100% { box-shadow: 0 0 0 3px rgba(45, 106, 79, 0.35); }
+          50%      { box-shadow: 0 0 0 7px rgba(45, 106, 79, 0.10); }
+        }
+        .ticket-highlight { animation: ticketHighlightPulse 1.2s ease-in-out 3; }
+        .ticket-highlight-settled { box-shadow: 0 0 0 3px rgba(45, 106, 79, 0.18); }
+      `}</style>
       {/* ── Top Header Bar ──────────────────────────────────────────────── */}
       <div className="sticky top-0 z-50 border-b" style={{ backgroundColor: '#fff', borderColor: C.g200 }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
@@ -533,6 +817,31 @@ function AgentDashboardInner({ user }) {
                 : <><WifiOff size={13} /> Offline</>
               }
             </button>
+
+            {/* New-ticket sound toggle (persisted per browser) */}
+            <button onClick={toggleSound} title={soundEnabled ? 'New-ticket sound: on — click to mute' : 'New-ticket sound: muted — click to enable'}
+              className="p-2 rounded-xl border hover:bg-gray-50 transition"
+              style={{ borderColor: C.g200 }}>
+              {soundEnabled ? <Volume2 size={15} style={{ color: C.forestLight }} /> : <VolumeX size={15} style={{ color: C.g400 }} />}
+            </button>
+
+            <AgentNotificationsPanel
+              notifications={notifications}
+              panelOpen={notificationsOpen}
+              onToggle={() => {
+                setNotificationsOpen(prev => {
+                  const next = !prev;
+                  if (next) {
+                    setNotifications(current => current.map(n => ({ ...n, read: true })));
+                  }
+                  return next;
+                });
+              }}
+              onOpenTicket={(notification) => {
+                setNotificationsOpen(false);
+                openTicket(notification.ticket);
+              }}
+            />
 
             {/* Settings */}
             <button onClick={() => setShowSettings(!showSettings)}
@@ -584,17 +893,22 @@ function AgentDashboardInner({ user }) {
       {/* ── Stats strip ──────────────────────────────────────────────────── */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { label: 'Total', value: stats.total, color: C.g800 },
-            { label: 'Open', value: stats.open, color: '#2563EB' },
-            { label: 'Active', value: stats.active, color: C.forest },
-            { label: 'Resolved', value: stats.resolved, color: '#16A34A' },
-          ].map(s => (
-            <div key={s.label} className="bg-white rounded-2xl border px-4 py-3" style={{ borderColor: C.g200 }}>
-              <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: C.g400 }}>{s.label}</p>
-              <p className="text-2xl font-black mt-0.5" style={{ color: s.color }}>{s.value}</p>
-            </div>
-          ))}
+          {queueLoading ? (
+            // Initial load — pulse skeletons instead of misleading zeros.
+            [0, 1, 2, 3].map(i => <StatSkeleton key={i} />)
+          ) : (
+            [
+              { label: 'Total', value: stats.total, color: C.g800 },
+              { label: 'Open', value: stats.open, color: '#2563EB' },
+              { label: 'Active', value: stats.active, color: C.forest },
+              { label: 'Resolved', value: stats.resolved, color: '#16A34A' },
+            ].map(s => (
+              <div key={s.label} className="bg-white rounded-2xl border px-4 py-3" style={{ borderColor: C.g200 }}>
+                <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: C.g400 }}>{s.label}</p>
+                <p className="text-2xl font-black mt-0.5" style={{ color: s.color }}>{s.value}</p>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
@@ -652,11 +966,21 @@ function AgentDashboardInner({ user }) {
               ))}
             </div>
 
+            {/* Queue load error (non-403) — never show as empty queue */}
+            {queueError && !queueLoading && (
+              <div className="mb-2 px-3 py-2 rounded-lg text-[11px] font-semibold"
+                style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626' }}>
+                ⚠ Failed to load tickets: {queueError} — retrying automatically…
+              </div>
+            )}
+
             {/* Queue list */}
             <div className="flex-1 overflow-y-auto space-y-1.5" style={{ maxHeight: 'calc(100vh - 260px)' }}>
               {queueLoading ? (
-                <div className="flex justify-center py-10">
-                  <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: C.forest }} />
+                // Initial load — skeleton queue cards (pulsing), clearly distinct
+                // from the settled "no chats" empty state below.
+                <div className="pt-1">
+                  <QueueSkeleton />
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="text-center py-10">
@@ -671,9 +995,12 @@ function AgentDashboardInner({ user }) {
                   const isSelected = selectedTicket?.id === t.id;
                   const isAssigned = t.assigned_agent_id === user?.id;
                   const unread = isUnread(t);
+                  // Brief highlight for tickets that just arrived (see loadQueue).
+                  const isNew = newTicketHighlightsRef.current.has(t.id);
+                  const isNewActive = isNew && (newTicketHighlightsRef.current.get(t.id) || 0) > Date.now();
                   return (
                     <button key={t.id} onClick={() => openTicket(t)}
-                      className="w-full text-left p-3 rounded-xl transition-all"
+                      className={`w-full text-left p-3 rounded-xl transition-all ${isNewActive ? 'ticket-highlight' : isNew ? 'ticket-highlight-settled' : ''}`}
                       style={{
                         backgroundColor: isSelected ? '#F0FDF4' : '#fff',
                         border: `1.5px solid ${isSelected ? C.forest : (unread ? '#FCA5A5' : C.g200)}`,
@@ -700,6 +1027,12 @@ function AgentDashboardInner({ user }) {
                           <div className="flex items-center justify-between gap-2">
                             <p className="text-xs font-black truncate" style={{ color: unread ? '#B91C1C' : C.g800 }}>
                               {t.full_name || t.username || 'User'}
+                              {isNewActive && (
+                                <span className="ml-1.5 text-[8px] font-black px-1 py-0.5 rounded align-middle"
+                                  style={{ backgroundColor: C.forest, color: '#fff' }}>
+                                  NEW
+                                </span>
+                              )}
                             </p>
                             <span className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
                               style={{
@@ -713,6 +1046,7 @@ function AgentDashboardInner({ user }) {
                             {t.subject}
                           </p>
                           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            <EmailBadge ticket={t} small />
                             {t.category && (
                               <span className="text-[9px] font-bold px-1.5 py-0 rounded" style={{ backgroundColor: '#F1F5F9', color: C.g600 }}>
                                 {t.category.charAt(0).toUpperCase() + t.category.slice(1)}
@@ -766,6 +1100,10 @@ function AgentDashboardInner({ user }) {
                       </ol>
                     </div>
                   </>
+                ) : queueLoading ? (
+                  // Initial fetch in flight — branded loading state, never the
+                  // "nothing to do" empty state (which would look broken).
+                  <DashboardLoader />
                 ) : (
                   <>
                     <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
@@ -815,6 +1153,14 @@ function AgentDashboardInner({ user }) {
                       <p className="text-[10px] truncate" style={{ color: C.g400 }}>
                         {selectedTicket.subject} · Ticket #{selectedTicket.id?.slice(0, 8).toUpperCase()}
                       </p>
+                      {/* Email-originated tickets: show the external sender address (a
+                          ghost user row for unknown senders, so the linked users row has
+                          no useful username) and flag that replies go out as email. */}
+                      {isEmailTicket(selectedTicket) && selectedTicket.user_email && (
+                        <p className="text-[9px] truncate font-bold" style={{ color: '#B45309' }}>
+                          <Mail size={9} className="inline mr-1" />from {selectedTicket.user_email} — replies send an email
+                        </p>
+                      )}
                       {(selectedTicket.user_email || selectedTicket.user_phone || selectedTicket.user_country) && (
                         <p className="text-[9px] truncate" style={{ color: C.g300 }}>
                           {[selectedTicket.user_email, selectedTicket.user_phone, selectedTicket.user_country].filter(Boolean).join(' · ')}
@@ -835,6 +1181,8 @@ function AgentDashboardInner({ user }) {
                         {selectedTicket.department.charAt(0).toUpperCase() + selectedTicket.department.slice(1)}
                       </span>
                     )}
+                    {/* Email-channel badge */}
+                    <EmailBadge ticket={selectedTicket} />
                     {/* Status dropdown */}
                     <select value={selectedTicket.status}
                       onChange={e => updateStatus(selectedTicket.id, e.target.value)}
@@ -858,7 +1206,19 @@ function AgentDashboardInner({ user }) {
                     </span>
                   </div>
 
-                  {messages.map((m, i) => {
+                  {loadingMessages ? (
+                    <div className="flex h-full min-h-[220px] items-center justify-center">
+                      <div className="flex flex-col items-center gap-3 rounded-2xl border bg-white px-6 py-5 shadow-sm"
+                        style={{ borderColor: C.g200 }}>
+                        <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: C.forest }} />
+                        <div className="text-center">
+                          <p className="text-xs font-black" style={{ color: C.g800 }}>Loading conversation…</p>
+                          <p className="text-[10px] mt-1" style={{ color: C.g400 }}>Fetching message history for this ticket</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    messages.map((m, i) => {
                     const isAgent = m.is_admin === true || m.sender_id === user?.id;
                     return (
                       <div key={m.id || i} className={`flex ${isAgent ? 'justify-end' : 'justify-start'}`}>
@@ -876,8 +1236,11 @@ function AgentDashboardInner({ user }) {
                               borderRadius: isAgent ? '18px 18px 4px 18px' : '4px 18px 18px 18px',
                               boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
                             }}>
-                            <p className="text-[10px] font-bold mb-1" style={{ opacity: 0.6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <p className="text-[10px] font-bold mb-1 flex items-center gap-1" style={{ opacity: 0.6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                               {isAgent ? (displayName || user?.username || 'Agent') : (selectedTicket.username || 'User')}
+                              {!isAgent && String(m.channel || '').toLowerCase() === 'email' && (
+                                <Mail size={9} className="inline" /> 
+                              )}
                             </p>
                             <Msg text={m.message} />
                           </div>
@@ -887,7 +1250,8 @@ function AgentDashboardInner({ user }) {
                         </div>
                       </div>
                     );
-                  })}
+                    })
+                  )}
 
                   {/* User typing indicator */}
                   {userTyping && (
@@ -915,7 +1279,7 @@ function AgentDashboardInner({ user }) {
                       sendTyping();
                     }}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(); } }}
-                    placeholder="Type your reply…"
+                    placeholder={isEmailTicket(selectedTicket) ? 'Type your reply… (sends as email to the user)' : 'Type your reply…'}
                     rows={1}
                     className="flex-1 px-3 py-2.5 rounded-xl text-sm border outline-none resize-none"
                     style={{
