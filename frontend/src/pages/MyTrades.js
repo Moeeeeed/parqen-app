@@ -165,7 +165,7 @@ function ActiveAlert({trade, userId, onDismiss, onExpire}) {
   const isDisputed = trade.status?.toUpperCase()==='DISPUTED';
   const isGift     = tradeTypeOf(trade)==='gift';
   const typeColor  = isDisputed ? C.danger : isGift ? C.purple : isBuyer ? C.amber : C.green;
-  const cpCountry  = cp?.country||trade.listing?.country||'';
+  const cpCountry  = cp?.country_code||trade.listing?.country_code||'';
 
   // Countdown — use expires_at from DB (authoritative). Fallback to created_at + 30 min.
   const [timeLeft, setTimeLeft] = React.useState(null);
@@ -357,7 +357,8 @@ function TradeCard({trade, userId}) {
   // Additive fee model: the seller pays the platform fee on top — the buyer
   // always receives the full escrowed amount, nothing deducted.
   const btcNet   = btcAmt;
-  const cpFlag   = flag(cp?.country_code||trade.listing?.country_code||'');
+  const cpCountry = cp?.country_code||trade.listing?.country_code||'';
+  const cpFlag   = flag(cpCountry);
 
   const payDisplay = (lamount&&lcur)
     ? `${lsym}${lamount.toLocaleString()} ${lcur}`
@@ -468,7 +469,7 @@ function ActiveTradeModal({ trades, userId, onClose }) {
             const st       = getStatus(trade.status, trade.cancel_reason);
             const cp       = isBuyer ? trade.seller : trade.buyer;
             const cpName   = cp?.username||(isBuyer?trade.seller_name:trade.buyer_name)||'—';
-            const cpCountry = cp?.country||trade.listing?.country||'';
+            const cpCountry = cp?.country_code||trade.listing?.country_code||'';
             const isGift   = tradeTypeOf(trade)==='gift';
             const typeColor= isGift ? C.purple : isBuyer ? C.amber : C.green;
             const typeLabel = isGift ? <><Gift size={10} className="inline mr-1"/>GIFT CARD</>
