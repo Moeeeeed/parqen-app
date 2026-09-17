@@ -16,6 +16,20 @@ const C = {
   borderWarning: 'rgba(245, 158, 11, 0.2)',
 };
 
+function normalizeToastMessage(message) {
+  if (message === null || message === undefined) return '';
+  if (React.isValidElement(message)) return message;
+  if (typeof message === 'string' || typeof message === 'number') return String(message);
+  if (message instanceof Error) return message.message || 'Something went wrong';
+
+  if (typeof message === 'object') {
+    const text = message.text ?? message.message ?? message.error ?? message.title ?? message.content ?? message.detail ?? message.body;
+    return typeof text === 'string' || typeof text === 'number' ? String(text) : '';
+  }
+
+  return String(message);
+}
+
 export default function CustomToastContainer() {
   const [toasts, setToasts] = useState([]);
 
@@ -27,7 +41,7 @@ export default function CustomToastContainer() {
 
       const newToast = {
         id,
-        message: typeof message === 'object' ? message.toString() : message,
+        message: normalizeToastMessage(message),
         type,
         autoClose,
         createdAt: Date.now(),

@@ -29,21 +29,48 @@ const supabaseAdmin = createClient(
 // wallet-level hold (locked_balance_btc) happened to already be in place — nothing tied to
 // the status itself. Blocking both values here closes it everywhere this function is used
 // (trade creation, swap, withdrawal requests, and the CEO approve-route's re-check).
-const BLOCKED_STATUSES = ['banned', 'FROZEN'];
+//
+// 2026-09-08: matched case-insensitively. account_status has historically been written in
+// both cases ('banned'/'BANNED', 'active'/'ACTIVE', 'FROZEN') from different code paths and
+// manual DB edits; a literal-string check silently missed 'BANNED' / 'Frozen' etc. The
+// accountEnforcement service now normalises new writes to lower-case, but old rows and any
+// out-of-band edit still need to be caught here.
+const BLOCKED_STATUSES = ['banned', 'frozen'];
+
+function isBlockedStatus(status) {
+  return BLOCKED_STATUSES.includes(String(status || '').trim().toLowerCase());
+}
 
 async function isUserBanned(userId) {
   const { data, error } = await supabaseAdmin
     .from('users').select('account_status').eq('id', userId).maybeSingle();
   if (error) throw new Error(`isUserBanned: lookup failed — ${error.message}`);
-  return BLOCKED_STATUSES.includes(data?.account_status);
+  return isBlockedStatus(data?.account_status);
+}
+
+// Like isUserBanned but tells the two states apart, for callers that need to show
+// a "frozen" vs "banned" message. Returns 'banned' | 'frozen' | null.
+async function getRestrictedState(userId) {
+  const { data, error } = await supabaseAdmin
+    .from('users').select('account_status').eq('id', userId).maybeSingle();
+  if (error) throw new Error(`getRestrictedState: lookup failed — ${error.message}`);
+  const s = String(data?.account_status || '').trim().toLowerCase();
+  return BLOCKED_STATUSES.includes(s) ? s : null;
 }
 
 async function requireNotBanned(req, res, next) {
   try {
-    if (await isUserBanned(req.userId)) {
+    const state = await getRestrictedState(req.userId);
+    if (state) {
       return res.status(403).json({
-        error: 'ACCOUNT_BANNED',
-        message: 'Your account is banned or frozen. Trading, offers, and wallet transfers are disabled.',
+        error: state === 'frozen' ? 'ACCOUNT_FROZEN' : 'ACCOUNT_BANNED',
+        // `self: true` marks this as "the CALLER is restricted" (vs. a 403 with the
+        // same code raised about a third party — e.g. trading against a banned
+        // seller). The frontend only force-logs-out when self === true.
+        self: true,
+        message: state === 'frozen'
+          ? 'Your account is temporarily frozen. Trading, offers, swaps and wallet transfers are disabled while it is under review. Contact support@praqen.com.'
+          : 'Your account is banned. Trading, offers, and wallet transfers are disabled.',
       });
     }
     next();
@@ -52,4 +79,4 @@ async function requireNotBanned(req, res, next) {
   }
 }
 
-module.exports = { requireNotBanned, isUserBanned };
+module.exports = { requireNotBanned, isUserBanned, getRestrictedState, isBlockedStatus };

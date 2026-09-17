@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../App';
 import { supabase } from '../lib/supabaseClient'; // eslint-disable-line no-unused-vars
@@ -34,191 +34,168 @@ const C = {
   online: '#22C55E', purple: '#8B5CF6',
 };
 
-const MIGRATION_PLATFORM_LABELS = { noones: 'Noones', binance: 'Binance P2P', other: 'P2P' };
-const MIGRATION_PLATFORMS = [
-  { id: 'noones', label: 'Noones' },
-  { id: 'binance', label: 'Binance P2P' },
-  { id: 'other', label: 'Another P2P platform' },
-];
+// External Google Form where a user submits their prior P2P trading reputation
+// for review. Deliberately off-platform: the form answers and the verification
+// video live in Google Drive, NOT in our database. Our team reviews the
+// responses and stamps only the verified figure onto the user's profile.
+const P2P_MIGRATION_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSflO_Xq35BW4X68FWFf2aacvcF_174CC-IVNpA-6JVDWLm1Sw/viewform?usp=publish-editor';
 
-// ── Move-my-feedback card ── for a logged-in user who hasn't migrated a P2P
-// reputation yet. Collects exactly what admin needs to verify the claim:
-// account email (from the PRAQEN account, read-only), full name, feedback
-// count, and a screenshot showing that name + count. Checks on mount whether
-// this user already has a submission on file so a pending/rejected request
-// survives a page reload instead of the form re-showing empty every time —
-// and once submitted, the form locks (read-only "waiting for approval") until
-// admin reviews it.
-function MigrateFeedbackCard({ email, autoOpen }) {
-  const [open, setOpen] = useState(!!autoOpen);
-  const [platform, setPlatform] = useState(null);
-  const [fullName, setFullName] = useState('');
-  const [feedbackCount, setFeedbackCount] = useState('');
-  const [screenshotFile, setScreenshotFile] = useState(null);
-  const [screenshotPreview, setScreenshotPreview] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [error, setError] = useState('');
-  const [checkingStatus, setCheckingStatus] = useState(true);
-  const [existing, setExisting] = useState(null); // { status, platform, full_name, feedback_count, admin_notes } | null
-
-  useEffect(() => {
-    const tk = localStorage.getItem('token');
-    if (!tk) { setCheckingStatus(false); return; }
-    axios.get(`${API_URL}/p2p-migration/my-status`, { headers: { Authorization: `Bearer ${tk}` } })
-      .then(r => setExisting(r.data?.submission || null))
-      .catch(() => {})
-      .finally(() => setCheckingStatus(false));
-  }, []);
-
-  const compressScreenshot = (file, maxPx = 1200, quality = 0.8) =>
-    new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => {
-        const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
-        const w = Math.round(img.width * scale);
-        const h = Math.round(img.height * scale);
-        const canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        URL.revokeObjectURL(url);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image load failed')); };
-      img.src = url;
-    });
-
-  const handleFile = (file) => {
-    if (!file) return;
-    setScreenshotFile(file);
-    setScreenshotPreview(URL.createObjectURL(file));
-    setError('');
-  };
-
-  const submit = async () => {
-    if (!platform) { setError('Choose which platform you traded on'); return; }
-    if (!fullName.trim()) { setError('Enter your full name as it appears on your P2P profile'); return; }
-    if (!feedbackCount.trim()) { setError('Enter your feedback count'); return; }
-    if (!screenshotFile) { setError('Please upload a screenshot of your P2P profile'); return; }
-    setSubmitting(true); setError('');
-    try {
-      const screenshot = await compressScreenshot(screenshotFile);
-      const tk = localStorage.getItem('token');
-      await axios.post(`${API_URL}/p2p-migration/submit`,
-        { email, platform, screenshot, fullName: fullName.trim(), feedbackCount: feedbackCount.trim() },
-        tk ? { headers: { Authorization: `Bearer ${tk}` } } : {});
-      setSubmitted(true);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Something went wrong. Please try again.');
-    } finally { setSubmitting(false); }
-  };
-
-  if (checkingStatus) return null;
-
-  // Locked "waiting for approval" view — either just submitted this session,
-  // or reloaded the page and a pending request already exists on file.
-  const pendingExisting = existing && existing.status === 'pending';
-  if (submitted || pendingExisting) {
-    const shown = existing || { platform, full_name: fullName, feedback_count: feedbackCount };
-    return (
-      <div className="mt-4 rounded-2xl p-4" style={{ background: '#FFFBEB', border: '1px solid #FDE68A', textAlign: 'left' }}>
-        <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
-          <Clock size={16} style={{ color: '#D97706', flexShrink: 0 }} />
-          <p style={{ fontSize: 12.5, fontWeight: 800, color: '#92400E', margin: 0 }}>Waiting for approval</p>
-        </div>
-        <p style={{ fontSize: 11.5, color: '#92400E', margin: '0 0 10px', lineHeight: 1.5 }}>
-          Your {MIGRATION_PLATFORM_LABELS[shown.platform] || 'P2P'} reputation submission is locked in and under review — we'll notify you once it's approved.
-        </p>
-        <div style={{ borderRadius: 10, background: '#fff', border: '1px solid #FDE68A', padding: '8px 12px' }}>
-          {[
-            ['Email', email],
-            ['Full name', shown.full_name],
-            ['Feedback count', shown.feedback_count],
-          ].map(([label, val]) => (
-            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 11.5 }}>
-              <span style={{ color: '#92400E', opacity: 0.7 }}>{label}</span>
-              <span style={{ color: '#92400E', fontWeight: 700 }}>{val || '—'}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  // Rejected — show the reason (if any) and let them resubmit.
-  const wasRejected = existing && existing.status === 'rejected';
-
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)}
-        className="mt-4 w-full flex items-center gap-2 justify-center"
-        style={{ padding: '10px 16px', borderRadius: 99, border: 'none', background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 100%)`, color: C.gold, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
-        <Globe size={14} style={{ color: C.gold }} />
-        {wasRejected ? 'Resubmit your P2P feedback →' : 'Already trading on Noones or Binance P2P? Move your feedback here →'}
-      </button>
-    );
-  }
+// ── Import P2P reputation card ── shown on a user's own profile when they have
+// not imported an external P2P reputation yet. It's purely informational: it
+// explains what to prepare and links out to the Google Form. No data is
+// collected or stored here.
+function MigrateFeedbackCard() {
+  const steps = [
+    { icon: Camera, text: 'Record one short screen recording (under 2 minutes).' },
+    { icon: Award, text: 'In the same clip, show your other P2P account with its feedback / completed‑trade count clearly visible.' },
+    { icon: BadgeCheck, text: 'Then, still recording, open your PRAQEN profile so we can confirm it’s the same person.' },
+    { icon: FileText, text: 'Fill in the form, attach the recording, and submit.' },
+  ];
 
   return (
-    <div className="mt-4 rounded-2xl p-4" style={{ background: C.g50, border: `1px solid ${C.g200}`, textAlign: 'left' }}>
-      <p style={{ fontSize: 12.5, fontWeight: 800, color: C.forest, margin: '0 0 4px' }}>Move your feedback from another P2P platform</p>
-      <p style={{ fontSize: 11, color: C.g500, margin: '0 0 10px', lineHeight: 1.5 }}>
-        We need your full name and feedback count, plus a screenshot of your P2P profile that clearly shows both — this is how our team verifies the claim.
-      </p>
-      {wasRejected && (
-        <div style={{ padding: '8px 12px', borderRadius: 10, fontSize: 11.5, background: '#FEF2F2', color: '#991B1B', marginBottom: 10 }}>
-          Your last submission wasn't approved{existing.admin_notes ? `: ${existing.admin_notes}` : '.'} You can fix and resubmit below.
+    <div
+      className="mt-4 w-full"
+      style={{
+        borderRadius: 18,
+        border: `1px solid ${C.g200}`,
+        background: '#fff',
+        overflow: 'hidden',
+        textAlign: 'left',
+        boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 8px 24px rgba(15,23,42,0.05)',
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          position: 'relative',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          padding: '16px 18px',
+          background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 100%)`,
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ position: 'absolute', top: -30, right: -20, width: 110, height: 110, borderRadius: '50%', background: 'rgba(255,255,255,0.07)' }} />
+        <div style={{ position: 'absolute', bottom: -40, right: 40, width: 90, height: 90, borderRadius: '50%', background: 'rgba(255,255,255,0.05)' }} />
+        <div
+          style={{
+            position: 'relative',
+            width: 38,
+            height: 38,
+            borderRadius: 11,
+            background: 'rgba(255,255,255,0.16)',
+            border: '1px solid rgba(255,255,255,0.18)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <BadgeCheck size={19} style={{ color: C.gold }} />
         </div>
-      )}
-      {error && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 10, fontSize: 11.5, background: '#FEF2F2', color: '#EF4444', marginBottom: 10 }}>
-          <AlertTriangle size={12} />{error}
+        <div style={{ position: 'relative', minWidth: 0 }}>
+          <p style={{ fontSize: 13.5, fontWeight: 900, color: '#fff', margin: 0, letterSpacing: -0.1 }}>
+            Import your P2P reputation
+          </p>
+          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', margin: '2px 0 0' }}>
+            Already an experienced P2P trader? Bring your track record over.
+          </p>
         </div>
-      )}
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', borderRadius: 10, background: '#fff', border: `1px solid ${C.g200}`, marginBottom: 10 }}>
-        <span style={{ fontSize: 11.5, color: C.g500, fontWeight: 600 }}>Your account email</span>
-        <span style={{ fontSize: 11.5, color: C.g700, fontWeight: 800 }}>{email}</span>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-        {MIGRATION_PLATFORMS.map(p => (
-          <button key={p.id} onClick={() => { setPlatform(p.id); setError(''); }}
-            style={{ padding: '8px 14px', borderRadius: 99, border: `2px solid ${platform === p.id ? C.green : C.g200}`, background: platform === p.id ? '#ECFDF5' : '#fff', color: platform === p.id ? C.green : C.g600, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-            {p.label}
-          </button>
-        ))}
-      </div>
+      {/* Body */}
+      <div style={{ padding: '16px 18px' }}>
+        <p style={{ fontSize: 11.5, color: C.g600, lineHeight: 1.6, margin: '0 0 14px' }}>
+          Verified once by our team and shown as a separate badge on your profile — it
+          never mixes with your PRAQEN reviews.
+        </p>
 
-      <input type="text" value={fullName} onChange={e => { setFullName(e.target.value); setError(''); }}
-        placeholder="Full name (as shown on your P2P profile)"
-        style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1.5px solid ${C.g200}`, fontSize: 12.5, marginBottom: 8, boxSizing: 'border-box', color: C.g800 }} />
+        <ol style={{ margin: '0 0 16px', padding: 0, listStyle: 'none' }}>
+          {steps.map(({ icon: StepIcon, text }, i) => (
+            <li
+              key={i}
+              style={{
+                display: 'flex',
+                gap: 11,
+                alignItems: 'flex-start',
+                marginBottom: i === steps.length - 1 ? 0 : 12,
+              }}
+            >
+              <span
+                style={{
+                  position: 'relative',
+                  width: 26,
+                  height: 26,
+                  borderRadius: 9,
+                  background: C.mist,
+                  border: `1px solid ${C.g200}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  marginTop: 1,
+                }}
+              >
+                <StepIcon size={12.5} style={{ color: C.forest }} />
+                <span
+                  style={{
+                    position: 'absolute',
+                    bottom: -5,
+                    right: -5,
+                    width: 15,
+                    height: 15,
+                    borderRadius: 99,
+                    background: C.forest,
+                    color: '#fff',
+                    fontSize: 8.5,
+                    fontWeight: 900,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '2px solid #fff',
+                  }}
+                >
+                  {i + 1}
+                </span>
+              </span>
+              <span style={{ fontSize: 11.5, color: C.g600, lineHeight: 1.55, paddingTop: 3 }}>{text}</span>
+            </li>
+          ))}
+        </ol>
 
-      <input type="text" value={feedbackCount} onChange={e => { setFeedbackCount(e.target.value); setError(''); }}
-        placeholder="Feedback count (e.g. 793)"
-        style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1.5px solid ${C.g200}`, fontSize: 12.5, marginBottom: 10, boxSizing: 'border-box', color: C.g800 }} />
+        <a
+          href={P2P_MIGRATION_FORM_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:opacity-95 hover:-translate-y-px active:translate-y-0 active:opacity-100 transition"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            width: '100%',
+            padding: '12px 16px',
+            borderRadius: 12,
+            background: `linear-gradient(135deg, ${C.green}, ${C.mint})`,
+            color: '#fff',
+            fontSize: 12.5,
+            fontWeight: 800,
+            textDecoration: 'none',
+            boxSizing: 'border-box',
+            boxShadow: '0 4px 14px rgba(45,106,79,0.28)',
+          }}
+        >
+          Open the import form
+          <ArrowRight size={14} />
+        </a>
 
-      <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, padding: screenshotPreview ? 0 : '18px 12px', borderRadius: 12, border: `2px dashed ${screenshotPreview ? C.green : C.g200}`, cursor: 'pointer', overflow: 'hidden', background: screenshotPreview ? 'transparent' : '#fff', marginBottom: 10 }}>
-        <input type="file" accept="image/*" onChange={e => handleFile(e.target.files?.[0])} style={{ display: 'none' }} />
-        {screenshotPreview ? (
-          <img src={screenshotPreview} alt="Screenshot preview" style={{ width: '100%', maxHeight: 160, objectFit: 'cover' }} />
-        ) : (
-          <>
-            <FileText size={18} style={{ color: C.g400 }} />
-            <span style={{ fontSize: 11.5, color: C.g500, fontWeight: 600, textAlign: 'center' }}>Upload a screenshot of your profile showing your full name and feedback count</span>
-          </>
-        )}
-      </label>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={() => setOpen(false)}
-          style={{ padding: '10px 16px', borderRadius: 12, border: `1.5px solid ${C.g200}`, background: '#fff', color: C.g500, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
-          Cancel
-        </button>
-        <button onClick={submit} disabled={submitting}
-          style={{ flex: 1, padding: '10px 16px', borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${C.green}, ${C.mint})`, color: '#fff', fontSize: 12.5, fontWeight: 800, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-          {submitting ? <><RefreshCw size={13} style={{ animation: 'spin 0.7s linear infinite' }} /> Submitting…</> : <>Submit for Review</>}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, margin: '10px 0 0' }}>
+          <Lock size={10} style={{ color: C.g400 }} />
+          <p style={{ fontSize: 10.5, color: C.g400, margin: 0 }}>
+            Opens in a new tab · reviewed within ~48 hours
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -414,8 +391,6 @@ function SectionHeader({ icon, title, action, actionLabel }) {
 // ── Main Profile Component ───────────────────────────────────────────────────
 export default function Profile({ userId: propUserId }) {
   const { id: urlId } = useParams(); const navigate = useNavigate(); const fileRef = useRef(null);
-  const [searchParams] = useSearchParams();
-  const autoOpenMigrate = searchParams.get('migrate') === '1';
   const userId = urlId || propUserId;
   const { btcUsd } = useRates();
   const [user, setUser] = useState(null); const [reviews, setReviews] = useState([]);
@@ -597,9 +572,9 @@ export default function Profile({ userId: propUserId }) {
   const trades = parseInt(user.total_trades || 0); const rating = parseFloat(user.average_rating || 0);
   const posPct = reviews.length ? Math.round(reviews.filter(r => r.rating >= 4).length / reviews.length * 100) : 100;
   // Feedback count shown in the UI: on-platform review rows OR the verified count
-  // carried over from a P2P migration (Noones / Binance P2P / other), whichever is
-  // higher. A migrated trader can have thousands of verified feedback and zero
-  // on-platform review rows yet — without this the tab/badge would show 0.
+  // carried over from an imported P2P reputation, whichever is higher. An imported
+  // trader can have thousands of verified feedback and zero on-platform review
+  // rows yet — without this the tab/badge would show 0.
   const migratedFeedback = parseInt(user.total_feedback_count || user.positive_feedback || 0, 10) || 0;
   const displayFeedbackCount = Math.max(reviews.length, migratedFeedback);
   const status = trades >= 50 ? 'Active Trader' : trades >= 5 ? 'Growing Trader' : trades >= 1 ? 'New Trader' : 'Unverified';

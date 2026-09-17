@@ -3000,7 +3000,7 @@ export default function Settings({ user, setUser }) {
                 <span className="text-white">PRA</span><span style={{ color: C.gold }}>QEN</span>
               </span>
                 <p className="text-xs leading-relaxed my-3" style={{ color: 'rgba(255,255,255,0.4)' }}>
-                  The world's most trusted P2P Bitcoin platform. Escrow-protected. 0.5% fee only.
+                  The world's most trusted P2P Bitcoin platform. Escrow-protected. 2% fee only.
                 </p>
                 <div className="flex gap-2 flex-wrap">
                   {[
@@ -3039,7 +3039,7 @@ export default function Settings({ user, setUser }) {
             <div className="flex flex-col md:flex-row items-center justify-between gap-2 pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
               <p className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>© {new Date().getFullYear()} PRAQEN. All rights reserved.</p>
               <p className="text-xs flex items-center gap-1" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                <Shield size={10} /> Escrow Protected · 0.5% fee on completion only
+                <Shield size={10} /> Escrow Protected · 2% fee on completion only
               </p>
             </div>
           </div>

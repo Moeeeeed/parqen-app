@@ -72,7 +72,9 @@ function TradeCard({ trade, user, onClose, onExpire }) {
   const sym       = symMap[cur] || '';
   const localAmt  = trade.amount_local || trade.local_amount || 0;
   const btcAmt    = parseFloat(trade.amount_btc || 0);
-  const btcNet    = btcAmt * 0.995;
+  // Additive fee model: the seller pays the platform fee on top — the buyer
+  // always receives the full escrowed amount, nothing deducted.
+  const btcNet    = btcAmt;
   const payDisp   = localAmt ? `${sym}${fmt(localAmt)} ${cur}` : `$${fmt(trade.amount_usd||0)} USD`;
 
   // Parse as UTC — Supabase TIMESTAMP cols return without 'Z', causing local-time misparse
@@ -172,6 +174,9 @@ function TradeCard({ trade, user, onClose, onExpire }) {
             {isBuyer ? `₿${btcNet.toFixed(8)}` : payDisp}
           </span>
         </div>
+        {isBuyer && (
+          <p className="text-[9px] text-right -mt-1" style={{ color: C.g400 }}>full amount · seller pays the fee</p>
+        )}
         <div className="flex justify-between text-xs">
           <span style={{ color: C.g500 }}>📊 Status</span>
           <span className="font-bold px-2 py-0.5 rounded-full text-xs"
@@ -284,7 +289,7 @@ export default function ActiveTradeBanner({ user, currentPage }) {
           <div className="flex items-center gap-1.5">
             <Shield size={12} style={{ color: C.green }}/>
             <p className="text-xs font-semibold" style={{ color: C.g500 }}>
-              Escrow-protected · 0.5% fee on completion only
+              Escrow-protected · 2% fee on completion only
             </p>
           </div>
           <button onClick={() => setShowModal(false)}

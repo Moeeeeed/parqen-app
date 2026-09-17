@@ -189,6 +189,21 @@ export default function Home({ user }) {
         </div>
       </div>
 
+      {/* SEO Content Block */}
+<div className="bg-gray-50 py-12 px-4 border-t border-gray-100 text-center">
+  <div className="max-w-4xl mx-auto">
+    <h2 className="text-2xl font-bold text-gray-900 sm:text-3xl mb-3">
+      Secure, Escrow-Protected Peer-to-Peer (P2P) Crypto Trading
+    </h2>
+    <p className="text-base text-gray-600 leading-relaxed mb-2">
+      Experience a simpler way to trade cryptocurrency across Africa. Our platform provides a transparent, low-fee ecosystem optimized for local mobile money networks, ensuring your regional trades are fast and completely secure.
+    </p>
+    <p className="text-sm text-gray-500">
+      Instantly buy and sell cryptocurrency using regional corridors including MTN MoMo, Vodafone Cash, and AirtelTigo with a transparent 0.5% flat fee and automated escrow safety.
+    </p>
+  </div>
+</div>
+
       {/* ── FOOTER ── */}
       <div className="px-3 pb-2 max-w-2xl mx-auto text-center">
         <p className="text-xs font-black mb-1">

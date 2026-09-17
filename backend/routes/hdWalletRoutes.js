@@ -110,7 +110,7 @@ async function autoHealOrphanedEscrows(userId) {
         // lock — with several stale locks this loop was the wallet page's slowest
         // part, doing N sequential DB round trips before the wallet data even loaded.
         const { data: tradesData } = await supabaseAdmin
-            .from('trades').select('id, status').in('id', locks.map(l => l.trade_id));
+            .from('trades').select('id, status, fee_model, platform_fee_btc').in('id', locks.map(l => l.trade_id));
         const tradeById = new Map((tradesData || []).map(t => [t.id, t]));
 
         let healed = 0;
@@ -121,7 +121,12 @@ async function autoHealOrphanedEscrows(userId) {
             // Only auto-refund when the trade is definitively over
             if (!['CANCELLED', 'COMPLETED'].includes(trade.status)) continue;
 
-            const amount = parseFloat(lock.amount_btc || 0);
+            // lock.amount_btc is the trade amount. Additive-fee trades locked
+            // (amount + fee), so the reserve to unwind is amount + platform_fee_btc.
+            const baseAmount = parseFloat(lock.amount_btc || 0);
+            const amount = trade.fee_model === 'additive'
+                ? parseFloat((baseAmount + parseFloat(trade.platform_fee_btc || 0)).toFixed(8))
+                : baseAmount;
             if (amount <= 0) continue;
 
             console.log(`[AutoHeal] Orphaned escrow found — trade=${lock.trade_id.slice(0,8)} status=${trade.status} amount=${amount} — refunding to ${userId.slice(0,8)}`);

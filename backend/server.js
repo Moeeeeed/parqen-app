@@ -62,8 +62,14 @@ try {
 // All wallet operations now use hdWalletService (self-custody, keys in .env MNEMONIC).
 const quoteService = require('./services/quoteService');
 const { E, S } = require('./utils/apiErrors');
-const { requireNotBanned, isUserBanned } = require('./middleware/requireNotBanned');
+const { requireNotBanned, isUserBanned, getRestrictedState, isBlockedStatus } = require('./middleware/requireNotBanned');
 const emailService = require('./services/emailService');
+const { processInboundEmail } = require('./services/inboundEmailService');
+const {
+  isEmailChannelTicket,
+  registerEmailChannelTicket,
+  unregisterEmailChannelTicket,
+} = require('./services/inboundEmailService');
 const speakeasy = require('speakeasy');
 
 // ── 2FA login-store: maps tempTokenHash -> { code, expires, userId, method } ─
@@ -272,8 +278,13 @@ app.use(cors({
     if (!origin) return callback(null, true);
     // Allow listed production origins
     if (_allowedOrigins.some(a => origin === a)) return callback(null, true);
-    // Allow localhost in development only
-    if (process.env.NODE_ENV !== 'production' && origin.startsWith('http://localhost')) {
+    // Allow localhost and local network IPs in development only
+    if (process.env.NODE_ENV !== 'production' && (
+      origin.startsWith('http://localhost') || 
+      origin.startsWith('http://192.168.') || 
+      origin.startsWith('http://10.') || 
+      origin.startsWith('http://172.')
+    )) {
       return callback(null, true);
     }
     callback(new Error('CORS: origin not allowed — ' + origin));
@@ -291,6 +302,37 @@ app.use(cors({
 app.use('/api/wallet/webhook', express.raw({ type: '*/*' }));
 
 app.use(express.json({ limit: '6mb' })); // raised from 2mb — KYC route needs headroom for 2 compressed base64 images (~1.1–1.9mb each after canvas compression)
+
+// ── Inbound support email webhook (two-way email integration) ───────────────
+// Receives parsed inbound email POSTs from the provider configured on the
+// support address (Resend Inbound Parse by default; SendGrid/Mailgun/Postmark
+// payloads are also normalized — see inboundEmailService). Public endpoint:
+// secured by an optional shared secret (INBOUND_EMAIL_WEBHOOK_SECRET env var)
+// plus support-address filtering and message-id idempotency in the service.
+app.post('/webhooks/inbound-email', express.json({ limit: '10mb', type: '*/*' }), async (req, res) => {
+  try {
+    const expectedSecret = process.env.INBOUND_EMAIL_WEBHOOK_SECRET;
+    if (expectedSecret) {
+      const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      const provided = bearer || req.headers['x-webhook-secret'] || req.query.secret;
+      if (provided !== expectedSecret) {
+        console.warn('[InboundEmail] Rejected webhook: bad or missing secret');
+        return res.status(401).json({ error: 'Invalid webhook secret' });
+      }
+    } else {
+      console.warn('[InboundEmail] INBOUND_EMAIL_WEBHOOK_SECRET not set — endpoint is unauthenticated (fine for local testing; set it before production)');
+    }
+
+    const result = await processInboundEmail(req.body || {});
+    return res.status(200).json({ ok: true, action: result.action, ticketId: result.ticket?.id || null, deduped: !!result.deduped });
+  } catch (e) {
+    console.error('[InboundEmail] Webhook processing failed:', e.message);
+    // 202 = provider should NOT retry (e.g. not-a-support-address drops).
+    // Real processing failures return 500 so the provider retries per its policy.
+    const status = e.status || 500;
+    return res.status(status).json({ ok: false, error: e.message });
+  }
+});
 
 // ── Lightweight perf timing for a curated set of endpoints ─────────────────
 // Only method, path, duration, and status — never bodies, headers, tokens,
@@ -364,9 +406,11 @@ const hdWalletService = require('./services/hdWalletService');
 const depositMonitor = require('./services/depositMonitor');
 const realtimeDepositService = require('./services/realtimeDepositService');
 const sweepService = require('./services/sweepService');
+const balanceAnomalyMonitor = require('./services/balanceAnomalyMonitor');
 const hdWalletRoutes = require('./routes/hdWalletRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const tradeEscrowService = require('./services/tradeEscrowService');
+const accountEnforcement = require('./services/accountEnforcement');
 const actionCodeService = require('./services/actionCodeService');
 const { getClientIp, logSecurityEvent, isLockedOut } = require('./services/securityLogService');
 const balanceIntegrity = require('./services/balanceIntegrityService');
@@ -958,9 +1002,11 @@ function buildWelcomeEmailHtml(username) {
 </html>`;
 }
 
-// NOTE: For Resend to deliver to real inboxes, verify praqen.com in your Resend dashboard
-// then set RESEND_FROM=hello@praqen.com in .env
-const RESEND_FROM_ADDR = process.env.RESEND_FROM || 'PraQen <hello@praqen.com>';
+// NOTE: For Resend to deliver to real inboxes, verify your sender domain in the Resend dashboard,
+// then set EMAIL_FROM_NOTIFICATIONS / EMAIL_FROM_SUPPORT in .env as needed.
+const NOTIFICATION_FROM_ADDR = process.env.EMAIL_FROM_NOTIFICATIONS || process.env.SMTP_FROM || process.env.EMAIL_USER || 'noreply@praqen.com';
+const SUPPORT_FROM_ADDR = process.env.EMAIL_FROM_SUPPORT || NOTIFICATION_FROM_ADDR;
+const RESEND_FROM_ADDR = process.env.RESEND_FROM || `PraQen <${NOTIFICATION_FROM_ADDR}>`;
 
 async function sendVerificationEmail(email, code, subject = 'Your PraQen Verification Code') {
   console.log(`📧 Sending verification to ${email}`);
@@ -1011,7 +1057,7 @@ async function sendWelcomeEmail(email, username) {
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
     });
     await transporter.sendMail({
-      from: `"PraQen" <${process.env.EMAIL_USER}>`,
+      from: `"PraQen" <${NOTIFICATION_FROM_ADDR}>`,
       to: email, subject, html,
     });
     console.log(`✅ Welcome email sent via Gmail to ${email}`);
@@ -1075,9 +1121,26 @@ function encryptCode(code, key = 'mock-encryption-key') {
   return cipher.update(code, 'utf8', 'hex') + cipher.final('hex');
 }
 
-function calculateFee(btcAmount) {
-  return (parseFloat(btcAmount) * 0.01).toFixed(8);
+// Platform fee for a crypto P2P trade — a rough pre-escrow estimate; the
+// authoritative per-trade fee is written by lockFundsInEscrow. Delegates to
+// tradeEscrowService.feeRateFor() (the single source of truth for both rates)
+// instead of hardcoding its own copy — two independent copies drifting out of
+// sync is exactly what caused escrow release to briefly charge 2%/3% against
+// trades quoted 0.5%/1% on 2026-09-11/12.
+function calculateFee(btcAmount, isGiftCard = false) {
+  return (parseFloat(btcAmount) * tradeEscrowService.feeRateFor(isGiftCard)).toFixed(8);
 }
+
+// PUBLIC-facing trade-count display override. The trades themselves are real and
+// untouched — this only stops the public profile (GET /api/users/:userId) and the
+// listing seller card (GET /api/listings/:id) from silently re-syncing
+// users.total_trades back up to the live trades-table count for these accounts.
+// Internal admin/team tools (Users Progress Audit, /admin/users/:id/detail, etc.)
+// deliberately still show the real recomputed number — this list only affects what
+// buyers/visitors see on the public profile and on offer cards.
+const HIDE_TRADE_COUNT_FOR = new Set([
+  '65830906-297b-4eb5-8c60-ed0e9a4aac82', // KEN IGHO — requested 2026-09-11
+]);
 
 // allowCached=true (default): reuse _btcCache for up to BTC_CACHE_TTL — for display-only
 // call sites (rates, balance display, listings). allowCached=false: always hit the live
@@ -1640,16 +1703,70 @@ async function ensureWallet(userId, username) {
 // AUTH MIDDLEWARE
 // ============================================================
 
-function verifyToken(req, res, next) {
+// Short-TTL cache of each user's account gate (status + token_version) so
+// verifyToken can enforce a mid-session ban/freeze/force-logout without a DB
+// round-trip on every authenticated request. TTL is deliberately small; the
+// money-movement routes still run requireNotBanned, which reads the row fresh
+// with no cache.
+const _acctGateCache = new Map(); // userId -> { status, tv, exp }
+const ACCT_GATE_TTL_MS = 30_000;
+
+function _invalidateAcctGate(userId) { _acctGateCache.delete(userId); }
+
+async function _loadAcctGate(userId) {
+  const hit = _acctGateCache.get(userId);
+  if (hit && hit.exp > Date.now()) return hit;
+  const { data, error } = await supabaseAdmin
+    .from('users').select('account_status, token_version').eq('id', userId).maybeSingle();
+  if (error) throw new Error(error.message);
+  const entry = {
+    status: String(data?.account_status || 'active').trim().toLowerCase(),
+    tv: (data && data.token_version != null) ? Number(data.token_version) : null,
+    exp: Date.now() + ACCT_GATE_TTL_MS,
+  };
+  _acctGateCache.set(userId, entry);
+  return entry;
+}
+
+async function verifyToken(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: E.NO_TOKEN });
+
+  let decoded;
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.userId = decoded.userId;
-    next();
+    decoded = jwt.verify(token, JWT_SECRET);
   } catch {
-    res.status(401).json({ error: E.INVALID_TOKEN });
+    return res.status(401).json({ error: E.INVALID_TOKEN });
   }
+  req.userId = decoded.userId;
+
+  // Mid-session enforcement. A token stays cryptographically valid for 7 days,
+  // so without this a user banned/frozen after login could keep using every
+  // non-money route until it expired, and a "force logout" was impossible.
+  // FAIL-OPEN: any lookup problem here must never lock the whole platform out —
+  // on error we fall through to the old behaviour (valid signature = allowed),
+  // and the per-route requireNotBanned still guards anything that moves funds.
+  try {
+    const gate = await _loadAcctGate(decoded.userId);
+    if (gate.status === 'banned' || gate.status === 'frozen') {
+      _invalidateAcctGate(decoded.userId); // re-check promptly on their next call
+      return res.status(403).json({
+        error: gate.status === 'frozen' ? 'ACCOUNT_FROZEN' : 'ACCOUNT_BANNED',
+        self: true, // the CALLER is restricted — frontend force-logs-out only on this
+        message: gate.status === 'frozen'
+          ? 'Your account is temporarily frozen and under review. Contact support@praqen.com.'
+          : 'Your account has been suspended. Contact support@praqen.com.',
+      });
+    }
+    // token_version only enforced when BOTH sides have it — pre-migration tokens
+    // (no tv claim) and pre-migration rows (tv null) are left alone.
+    if (gate.tv != null && decoded.tv != null && Number(decoded.tv) !== gate.tv) {
+      return res.status(401).json({ error: 'SESSION_EXPIRED', message: 'Your session has ended. Please sign in again.' });
+    }
+  } catch (_) {
+    /* fail-open — see comment above */
+  }
+  next();
 }
 
 // Optional auth — attaches userId if token present, but never blocks the request
@@ -1884,11 +2001,10 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
           full_name: name || username,
           bitcoin_wallet_address: null,
           is_email_verified: true,
-          email_verified: true,
           average_rating: 0,
           total_trades: 0,
           completion_rate: 100,
-          account_status: 'ACTIVE',
+          account_status: 'active',
           created_at: new Date(),
           avatar_url: picture || null,
           is_admin: false,
@@ -1950,12 +2066,31 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
       }
     }
 
+    // Banned / frozen accounts must never get a token here either — the phone and
+    // email login paths already block at the door; without this a restricted user
+    // who signed up with Google could still mint a fresh 7-day token (it would be
+    // rejected on the next request by verifyToken, but only once the migration has
+    // run, and it's a confusing "logged in then kicked" experience regardless).
+    {
+      const _blocked = String(userToAuth.account_status || '').trim().toLowerCase();
+      if (_blocked === 'banned' || _blocked === 'frozen') {
+        logSecurityEvent({ userId: userToAuth.id, email: userToAuth.email, eventType: 'LOGIN_BLOCKED_BANNED', ip: getClientIp(req), userAgent: req.headers['user-agent'], details: { via: 'google', state: _blocked } });
+        return res.status(403).json({
+          error: _blocked === 'frozen' ? 'ACCOUNT_FROZEN' : 'ACCOUNT_BANNED',
+          self: true,
+          message: _blocked === 'frozen'
+            ? 'This account is temporarily frozen and under review. Contact support@praqen.com.'
+            : 'This account has been suspended. Contact support@praqen.com if you believe this is a mistake.',
+        });
+      }
+    }
+
     // 2FA login gate removed — Settings > Security "Enable 2FA" toggle still
     // exists and is stored, it just no longer blocks login with a second code.
 
     // 5. Sign JWT
     const token = jwt.sign(
-      { userId: userToAuth.id, email: userToAuth.email },
+      { userId: userToAuth.id, email: userToAuth.email, tv: (userToAuth.token_version ?? 0) },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -2051,7 +2186,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       average_rating: 0,
       total_trades: 0,
       completion_rate: 100,
-      account_status: 'ACTIVE',
+      account_status: 'active',
       created_at: new Date(),
       avatar_url: null,
       is_admin: false,
@@ -2064,7 +2199,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     if (error) {
       console.error('[Register] DB insert error:', error);
       const isDuplicate = error.message?.includes('duplicate') || error.code === '23505';
-      return res.status(400).json({ error: isDuplicate ? 'An account with this email or username already exists.' : 'Registration failed. Please try again.' });
+      return res.status(400).json({ error: isDuplicate ? 'An account with this email or username already exists.' : `Registration failed. DB Error: ${error.message}` });
     }
     if (!data || data.length === 0) return res.status(400).json({ error: E.REGISTER_FAILED });
 
@@ -2101,7 +2236,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     }
 
     // ── Sign JWT ───────────────────────────────────────────────────────────
-    const token = jwt.sign({ userId: newUser.id, email: email || null }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ userId: newUser.id, email: email || null, tv: (newUser.token_version ?? 0) }, JWT_SECRET, { expiresIn: '7d' });
 
     // ── RESPOND IMMEDIATELY — never block on email or external APIs ────────
     res.json({
@@ -2266,14 +2401,23 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       }
       if (!data) return res.status(404).json({ error: 'No account found for this phone number. Please register first.' });
 
-      if (['banned', 'FROZEN'].includes(data.account_status)) {
-        logSecurityEvent({ userId: data.id, email: data.email, eventType: 'LOGIN_BLOCKED_BANNED', ip: getClientIp(req), userAgent: req.headers['user-agent'], details: { via: 'phone' } });
-        return res.status(403).json({ error: 'This account has been suspended. Contact support if you believe this is a mistake.' });
+      {
+        const _blocked = String(data.account_status || '').trim().toLowerCase();
+        if (_blocked === 'banned' || _blocked === 'frozen') {
+          logSecurityEvent({ userId: data.id, email: data.email, eventType: 'LOGIN_BLOCKED_BANNED', ip: getClientIp(req), userAgent: req.headers['user-agent'], details: { via: 'phone', state: _blocked } });
+          return res.status(403).json({
+            error: _blocked === 'frozen' ? 'ACCOUNT_FROZEN' : 'ACCOUNT_BANNED',
+            self: true,
+            message: _blocked === 'frozen'
+              ? 'This account is temporarily frozen and under review. Contact support@praqen.com.'
+              : 'This account has been suspended. Contact support@praqen.com if you believe this is a mistake.',
+          });
+        }
       }
 
       // 2FA login gate removed — Settings > Security "Enable 2FA" toggle still
       // exists and is stored, it just no longer blocks login with a second code.
-      const token = jwt.sign({ userId: data.id, email: data.email }, JWT_SECRET, { expiresIn: '7d' });
+      const token = jwt.sign({ userId: data.id, email: data.email, tv: (data.token_version ?? 0) }, JWT_SECRET, { expiresIn: '7d' });
       logSecurityEvent({ userId: data.id, email: data.email, eventType: 'LOGIN_SUCCESS', ip: getClientIp(req), userAgent: req.headers['user-agent'], details: { via: 'phone' } });
       const nowPhone = new Date().toISOString();
       await supabaseAdmin.from('users').update({ last_login: nowPhone, last_seen_at: nowPhone }).eq('id', data.id);
@@ -2291,7 +2435,17 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
           is_moderator: data.is_moderator || false, referral_code: data.referral_code || null,
           bitcoin_wallet_address: btcAddress,
           total_referrals: data.total_referrals || 0,
-          referral_earnings_btc: data.referral_earnings_btc || 0
+          referral_earnings_btc: data.referral_earnings_btc || 0,
+          // Verification fields — omitted here before meant a freshly logged-in user's
+          // cached user object always showed unverified/pending regardless of the real
+          // DB state (e.g. an approved KYC) until a full profile refetch overwrote it.
+          is_id_verified: data.is_id_verified || false,
+          kyc_status: data.kyc_status || null,
+          kyc_verified: data.kyc_verified || false,
+          is_email_verified: data.is_email_verified || false,
+          email_verified: data.email_verified || false,
+          is_phone_verified: data.is_phone_verified || false,
+          phone_verified: data.phone_verified || false,
         },
         token,
       });
@@ -2308,9 +2462,18 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     // Banned accounts must never get a token — this used to only be enforced downstream
     // on individual routes (e.g. withdrawals), so a banned account could still log in and
     // use the rest of the app. Blocked at the door now, for every account.
-    if (['banned', 'FROZEN'].includes(data.account_status)) {
-      logSecurityEvent({ userId: data.id, email: normalizedLoginEmail, eventType: 'LOGIN_BLOCKED_BANNED', ip: clientIp, userAgent });
-      return res.status(403).json({ error: 'This account has been suspended. Contact support if you believe this is a mistake.' });
+    {
+      const _blocked = String(data.account_status || '').trim().toLowerCase();
+      if (_blocked === 'banned' || _blocked === 'frozen') {
+        logSecurityEvent({ userId: data.id, email: normalizedLoginEmail, eventType: 'LOGIN_BLOCKED_BANNED', ip: clientIp, userAgent, details: { state: _blocked } });
+        return res.status(403).json({
+          error: _blocked === 'frozen' ? 'ACCOUNT_FROZEN' : 'ACCOUNT_BANNED',
+          self: true,
+          message: _blocked === 'frozen'
+            ? 'This account is temporarily frozen and under review. Contact support@praqen.com.'
+            : 'This account has been suspended. Contact support@praqen.com if you believe this is a mistake.',
+        });
+      }
     }
 
     // Per-account lockout after repeated wrong passwords — see securityLogService for the
@@ -2335,6 +2498,12 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       expires: Date.now() + 10 * 60 * 1000,
       userId: data.id,
     });
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('\n=============================================');
+      console.log(`🔑 LOGIN OTP CODE FOR ${normalizedLoginEmail}: ${loginOtp}`);
+      console.log('=============================================\n');
+    }
 
     // Send OTP email — this comment used to claim "we await to catch send failures" while the
     // code right below it did the opposite (fire-and-forget, catch() with no await). That meant
@@ -2435,7 +2604,7 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
     logSecurityEvent({ userId: data.id, email: data.email, eventType: 'LOGIN_SUCCESS', ip: clientIp, userAgent });
 
     // ── Issue real JWT ──────────────────────────────────────────────────────
-    const token = jwt.sign({ userId: data.id, email: data.email }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ userId: data.id, email: data.email, tv: (data.token_version ?? 0) }, JWT_SECRET, { expiresIn: '7d' });
     const now = new Date().toISOString();
     await supabaseAdmin.from('users').update({ last_login: now, last_seen_at: now }).eq('id', data.id);
     detectAndSaveCountry(data.id, req).catch(() => { });
@@ -2457,7 +2626,17 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
         total_referrals: data.total_referrals || 0,
         referral_earnings_btc: data.referral_earnings_btc || 0,
         two_factor_enabled: data.two_factor_enabled || false,
-        two_factor_method: data.two_factor_method || null
+        two_factor_method: data.two_factor_method || null,
+        // Verification fields — see the phone-login branch above for why these matter:
+        // without them, a just-approved KYC (or email/phone verification) shows as
+        // unverified right after login until a separate profile refetch corrects it.
+        is_id_verified: data.is_id_verified || false,
+        kyc_status: data.kyc_status || null,
+        kyc_verified: data.kyc_verified || false,
+        is_email_verified: data.is_email_verified || false,
+        email_verified: data.email_verified || false,
+        is_phone_verified: data.is_phone_verified || false,
+        phone_verified: data.phone_verified || false,
       },
       token,
     });
@@ -2555,7 +2734,7 @@ app.post('/api/auth/verify-2fa-login', authLimiter, async (req, res) => {
 
     logSecurityEvent({ userId: data.id, email: data.email, eventType: 'LOGIN_SUCCESS', ip: getClientIp(req), userAgent: req.headers['user-agent'], details: { via: '2fa' } });
 
-    const token = jwt.sign({ userId: data.id, email: data.email }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ userId: data.id, email: data.email, tv: (data.token_version ?? 0) }, JWT_SECRET, { expiresIn: '7d' });
     const now = new Date().toISOString();
     await supabaseAdmin.from('users').update({ last_login: now, last_seen_at: now }).eq('id', data.id);
     detectAndSaveCountry(data.id, req).catch(() => { });
@@ -2579,6 +2758,15 @@ app.post('/api/auth/verify-2fa-login', authLimiter, async (req, res) => {
         referral_earnings_btc: data.referral_earnings_btc || 0,
         two_factor_enabled: data.two_factor_enabled || false,
         two_factor_method: data.two_factor_method || null,
+        // Same fix as the other two login paths (phone login, email-OTP login) — see
+        // those for why these fields must not be omitted from the login response.
+        is_id_verified: data.is_id_verified || false,
+        kyc_status: data.kyc_status || null,
+        kyc_verified: data.kyc_verified || false,
+        is_email_verified: data.is_email_verified || false,
+        email_verified: data.email_verified || false,
+        is_phone_verified: data.is_phone_verified || false,
+        phone_verified: data.phone_verified || false,
       },
     });
 
@@ -2902,7 +3090,7 @@ app.post('/api/team/setup-account', authLimiter, async (req, res) => {
     const { data: inserted, error } = await supabaseAdmin.from('users').insert([{
       email, username, full_name: full_name.trim(), password_hash: hash,
       is_moderator: true, is_admin: false, is_email_verified: true,
-      account_status: 'ACTIVE', badge: 'BEGINNER',
+      account_status: 'active', badge: 'BEGINNER',
       average_rating: 0, total_trades: 0, completion_rate: 100,
       referral_code: referralCode,
       avatar_url: null, bitcoin_wallet_address: null,
@@ -2924,7 +3112,7 @@ app.post('/api/team/setup-account', authLimiter, async (req, res) => {
 
     await supabaseAdmin.from('user_balances').insert([{ user_id: newUser.id, balance_btc: 0, balance_usd: 0 }]).then(null, () => { });
 
-    const token = jwt.sign({ userId: newUser.id, email }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ userId: newUser.id, email, tv: (newUser.token_version ?? 0) }, JWT_SECRET, { expiresIn: '7d' });
     res.json({
       success: true, token,
       user: {
@@ -4271,7 +4459,7 @@ app.post('/api/auth/verify-code', async (req, res) => {
       return res.json({ success: true, message: 'Code verified!', resetToken });
     }
 
-    const token = user ? jwt.sign({ userId: user.id, email }, JWT_SECRET, { expiresIn: '7d' }) : null;
+    const token = user ? jwt.sign({ userId: user.id, email, tv: (user.token_version ?? 0) }, JWT_SECRET, { expiresIn: '7d' }) : null;
 
     res.json({
       success: true,
@@ -5503,19 +5691,25 @@ app.get('/api/users/:userId', async (req, res) => {
       if (count != null) referral_trade_count = count;
     } catch { }
 
-    // Real trade count from trades table (buyer or seller, completed)
-    let real_total_trades = data.total_trades || 0;
-    try {
-      const [buyerRes, sellerRes] = await Promise.all([
-        supabaseAdmin.from('trades').select('*', { count: 'exact', head: true }).eq('buyer_id', data.id).eq('status', 'COMPLETED'),
-        supabaseAdmin.from('trades').select('*', { count: 'exact', head: true }).eq('seller_id', data.id).eq('status', 'COMPLETED'),
-      ]);
-      const realCount = (buyerRes.count || 0) + (sellerRes.count || 0);
-      if (realCount > real_total_trades) {
-        real_total_trades = realCount;
-        supabaseAdmin.from('users').update({ total_trades: realCount }).eq('id', data.id).then(null, () => { });
-      }
-    } catch { }
+    // Real trade count from trades table (buyer or seller, completed) — skipped for
+    // HIDE_TRADE_COUNT_FOR accounts. Note the stored column itself can never be
+    // lowered (the protect_user_stats DB trigger blocks any UPDATE that would
+    // decrease total_trades/feedback), so hiding this for an account means
+    // returning a hardcoded 0 in the API response, not trying to zero the column.
+    let real_total_trades = HIDE_TRADE_COUNT_FOR.has(data.id) ? 0 : (data.total_trades || 0);
+    if (!HIDE_TRADE_COUNT_FOR.has(data.id)) {
+      try {
+        const [buyerRes, sellerRes] = await Promise.all([
+          supabaseAdmin.from('trades').select('*', { count: 'exact', head: true }).eq('buyer_id', data.id).eq('status', 'COMPLETED'),
+          supabaseAdmin.from('trades').select('*', { count: 'exact', head: true }).eq('seller_id', data.id).eq('status', 'COMPLETED'),
+        ]);
+        const realCount = (buyerRes.count || 0) + (sellerRes.count || 0);
+        if (realCount > real_total_trades) {
+          real_total_trades = realCount;
+          supabaseAdmin.from('users').update({ total_trades: realCount }).eq('id', data.id).then(null, () => { });
+        }
+      } catch { }
+    }
 
     // Real review counts from reviews table
     let real_positive = data.positive_feedback || 0;
@@ -6458,8 +6652,19 @@ app.get('/api/listings', async (req, res) => {
       );
     }
 
+    // Hide every listing whose seller is currently banned or frozen. A ban already
+    // terminates their listings' status, but this also covers a frozen seller
+    // (status left intact so unfreeze restores it), cache lag, and any stale
+    // ACTIVE row. Only excluded when the seller's status is positively known —
+    // an unknown/missing user row is left visible rather than over-filtering.
+    const _restrictedSeller = (sellerId) => {
+      const st = String(userMap[sellerId]?.account_status || '').trim().toLowerCase();
+      return st === 'banned' || st === 'frozen';
+    };
+
     let listings = (rawListings || [])
       .filter(l => isListingMarginInBounds(l.listing_type, l.margin))
+      .filter(l => !_restrictedSeller(l.seller_id))
       .map(l => ({
         ...l,
         users: userMap[l.seller_id] || null,
@@ -6481,9 +6686,14 @@ app.get('/api/listings', async (req, res) => {
       // isn't used for rate display at all), which previously let near-empty wallets pass
       // the $10 minimum check because the inflated price overstated their USD balance.
       const livePriceUsd = _btcCache || 88000;
-      const balanceUsdFor = (l) => (l.asset === 'USDT')
+      // Under the additive fee model the seller must hold amount + 0.5% to fund a
+      // trade, so their *sellable* balance is holdings ÷ 1.005. Capping displayed
+      // limits to the raw balance would let buyers open a top-of-range trade that
+      // then fails at escrow-lock with "insufficient funds".
+      const SELL_FEE_DIVISOR = 1.005;
+      const balanceUsdFor = (l) => ((l.asset === 'USDT')
         ? (usdtBalMap[l.seller_id] || 0)
-        : (balMap[l.seller_id] || 0) * livePriceUsd;
+        : (balMap[l.seller_id] || 0) * livePriceUsd) / SELL_FEE_DIVISOR;
       // For SELL offers: cap displayed limits to seller's actual balance
       listings = listings.map(l => {
         if (l.listing_type !== 'SELL' && l.listing_type !== 'SELL_BITCOIN') return l;
@@ -6616,9 +6826,12 @@ app.get('/api/listings/:id', async (req, res) => {
           const negCount = reviews.filter(r => r.rating <= 2).length;
           const avgRating = reviews.length > 0
             ? reviews.reduce((s, r) => s + parseFloat(r.rating || 0), 0) / reviews.length : 0;
+          // Stored column can't be lowered (protect_user_stats DB trigger), so hiding
+          // it means returning a hardcoded 0 here, not falling back to the column.
+          const hideTrades = HIDE_TRADE_COUNT_FOR.has(seller.id);
           enrichedSeller = {
             ...seller,
-            total_trades: realTrades > seller.total_trades ? realTrades : seller.total_trades,
+            total_trades: hideTrades ? 0 : (realTrades > seller.total_trades ? realTrades : seller.total_trades),
             positive_feedback: posCount > seller.positive_feedback ? posCount : seller.positive_feedback,
             negative_feedback: negCount > seller.negative_feedback ? negCount : seller.negative_feedback,
             total_feedback_count: reviews.length > seller.total_feedback_count ? reviews.length : seller.total_feedback_count,
@@ -6684,7 +6897,7 @@ app.get('/api/my-listings', verifyToken, async (req, res) => {
   }
 });
 
-app.put('/api/listings/:id', verifyToken, async (req, res) => {
+app.put('/api/listings/:id', verifyToken, requireNotBanned, async (req, res) => {
   try {
     const { id } = req.params;
     const { margin, min_limit_usd, max_limit_usd, min_limit_local, max_limit_local,
@@ -6823,7 +7036,7 @@ app.post('/api/listings/:id/view', optionalAuth, async (req, res) => {
   }
 });
 
-app.patch('/api/listings/:id/status', verifyToken, async (req, res) => {
+app.patch('/api/listings/:id/status', verifyToken, requireNotBanned, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -6909,7 +7122,7 @@ app.get('/api/offers', async (req, res) => {
 
     let { data: users, error: userError } = await supabaseAdmin
       .from('users')
-      .select('id, username, full_name, name_display, hide_full_name, badge, country, country_name, city, total_trades, positive_feedback, negative_feedback, average_rating, avatar_url, last_seen_at, last_login, completion_rate')
+      .select('id, username, full_name, name_display, hide_full_name, badge, country, country_name, city, total_trades, positive_feedback, negative_feedback, average_rating, avatar_url, last_seen_at, last_login, completion_rate, account_status')
       .in('id', userIds);
 
     if (userError) {
@@ -6917,7 +7130,7 @@ app.get('/api/offers', async (req, res) => {
       console.warn('[offers] Retrying users select without optional columns:', userError.message);
       ({ data: users, error: userError } = await supabaseAdmin
         .from('users')
-        .select('id, username, full_name, badge, country, total_trades, positive_feedback, negative_feedback, average_rating, avatar_url, last_seen_at, last_login, completion_rate')
+        .select('id, username, full_name, badge, country, total_trades, positive_feedback, negative_feedback, average_rating, avatar_url, last_seen_at, last_login, completion_rate, account_status')
         .in('id', userIds));
       if (userError) throw userError;
     }
@@ -6927,6 +7140,13 @@ app.get('/api/offers', async (req, res) => {
       display_name: computeDisplayName(u),
       country: u.country || null,
     }]));
+
+    // Drop offers whose seller is banned or frozen (see the matching filter in
+    // /api/listings). Only excluded when the status is positively known.
+    const _restrictedOfferSeller = (sellerId) => {
+      const st = String(userMap[sellerId]?.account_status || '').trim().toLowerCase();
+      return st === 'banned' || st === 'frozen';
+    };
 
     // Fetch balances for SELL offer owners so we can hide low-balance offers
     const sellSellerIds = [...new Set(
@@ -6946,16 +7166,19 @@ app.get('/api/offers', async (req, res) => {
     }
 
     const offers = (listings || [])
+      .filter(l => !_restrictedOfferSeller(l.seller_id))
       .filter(l => {
         // Hide SELL offers where seller has < $10 worth of the offer's asset — offer stays
         // ACTIVE in DB and reappears automatically once they top up their wallet.
+        // Divided by 1.005: under the additive fee model the seller needs amount + 0.5%
+        // to fund a trade, so that's their real sellable balance.
         if (l.listing_type !== 'SELL' && l.listing_type !== 'SELL_BITCOIN') return true;
         if ((l.asset || 'BTC') === 'USDT') {
-          return (usdtBalMap[l.seller_id] || 0) >= 10; // 1 USDT ≈ $1
+          return (usdtBalMap[l.seller_id] || 0) / 1.005 >= 10; // 1 USDT ≈ $1
         }
         const sellerBtc = balMap[l.seller_id] || 0;
         const btcPriceVal = parseFloat(l.bitcoin_price) || 88000;
-        return sellerBtc * btcPriceVal >= 10;
+        return (sellerBtc * btcPriceVal) / 1.005 >= 10;
       })
       .map(l => ({
         ...l,
@@ -8174,12 +8397,15 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
     if (await isUserBanned(listing.seller_id)) {
       return res.status(403).json({ error: 'ACCOUNT_BANNED', message: 'This offer belongs to a banned account and can no longer be traded.' });
     }
-    const fee = calculateFee(parsedAmountBtc);
 
     // GOLDEN RULE: The offer CREATOR always has the Bitcoin.
     // The trade OPENER always brings what the creator wants (cash, MTN, or a gift card).
     // Backend infers roles from listing_type — never trusts frontend trade_type.
+    // Computed here (moved up from its original spot below) so the fee estimate
+    // right below uses the correct gift-card-aware rate instead of always
+    // assuming the plain-BTC rate.
     const listingTypeUpper = (listing.listing_type || '').toUpperCase();
+    const fee = calculateFee(parsedAmountBtc, listingTypeUpper.includes('GIFT_CARD'));
 
     let buyerId, sellerId, btcProviderId, resolvedType;
 
@@ -8308,7 +8534,16 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
       amountReceiveUsd = parseFloat((verifiedAmountBtc * marketRateUSD).toFixed(2));
     }
 
-    const verifiedFee = parseFloat(calculateFee(verifiedAmountBtc));
+    // lockFundsInEscrow re-derives and overwrites platform_fee_btc/usdt, but
+    // platform_fee_usd is set here and never touched again — so it must use the
+    // right rate too. Pulled from tradeEscrowService.feeRateFor() (the single
+    // source of truth for both rates) rather than a separate hardcoded copy —
+    // two independent copies drifting out of sync is exactly what caused
+    // escrow release to briefly charge 2%/3% against trades quoted 0.5%/1%
+    // on 2026-09-11/12.
+    const isGiftCardTrade = listingTypeUpper.includes('GIFT_CARD');
+    const tradeFeeRate = tradeEscrowService.feeRateFor(isGiftCardTrade);
+    const verifiedFee = parseFloat((verifiedAmountBtc * tradeFeeRate).toFixed(8));
     const tradeRef = 'PRAQ-' + require('crypto').randomBytes(4).toString('hex').toUpperCase();
 
     // Pre-check: ensure the provider has enough balance in the LISTING'S ASSET
@@ -8316,6 +8551,8 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
     // only from there. Gift-card / BTC listings lock BTC; USDT-asset listings
     // lock USDT — checking the wrong field here let $0-BTC USDT sellers pass
     // as "insufficient" or, worse, let BTC-poor USDT holders slip through.
+    // requiredProviderBalance() adds the fee on top under the additive model, so
+    // this stays in lock-step with lockFundsInEscrow across the migration window.
     const tradeCurrency = listing.asset === 'USDT' ? 'USDT' : 'BTC';
     const isUsdtTrade = tradeCurrency === 'USDT';
     const { data: providerWallet } = await supabaseAdmin
@@ -8323,7 +8560,8 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
     const availableBtc = isUsdtTrade
       ? parseFloat(providerWallet?.balance_usdt || 0)
       : parseFloat(providerWallet?.balance_btc || 0);
-    if (availableBtc < verifiedAmountBtc) {
+    const requiredProviderBtc = await tradeEscrowService.requiredProviderBalance(verifiedAmountBtc, isGiftCardTrade);
+    if (availableBtc < requiredProviderBtc) {
       const isOwnBalance = btcProviderId === req.userId;
       // Auto-pause the offer if the balance problem is on the offer creator's side
       if (!isOwnBalance) {
@@ -8333,9 +8571,12 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
           .then(() => { }).catch(() => { });
       }
       const assetLabel = isUsdtTrade ? 'USDT' : 'Bitcoin';
-      const neededStr = isUsdtTrade ? `${verifiedAmountBtc.toFixed(2)} USDT` : `${verifiedAmountBtc.toFixed(6)} BTC`;
+      const neededStr = isUsdtTrade ? `${requiredProviderBtc.toFixed(2)} USDT` : `${requiredProviderBtc.toFixed(6)} BTC`;
+      const feeNote = requiredProviderBtc > verifiedAmountBtc + 1e-9
+        ? ` (${(isUsdtTrade ? verifiedAmountBtc.toFixed(2) : verifiedAmountBtc.toFixed(6))} + ${(tradeFeeRate * 100).toFixed(0)}% platform fee)`
+        : '';
       const msg = isOwnBalance
-        ? `You don't have enough ${assetLabel} in your PRAQEN wallet to open this trade. You need ${neededStr}. Please top up your wallet first.`
+        ? `You don't have enough ${assetLabel} in your PRAQEN wallet to open this trade. You need ${neededStr}${feeNote}. Please top up your wallet first.`
         : `This seller doesn't have enough ${assetLabel} to complete this trade right now. Their offer has been paused automatically. Please choose a different offer.`;
       return res.status(400).json({ error: msg });
     }
@@ -8364,7 +8605,7 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
       amount_usdt: isUsdtTrade ? verifiedAmountBtc : null,
       platform_fee_btc: verifiedFee,
       platform_fee_usdt: isUsdtTrade ? verifiedFee : null,
-      platform_fee_usd: (tradeAmountUsd * 0.01).toFixed(2), fee_status: 'PENDING',
+      platform_fee_usd: (tradeAmountUsd * tradeFeeRate).toFixed(2), fee_status: 'PENDING',
       payment_method: paymentMethod || listing.payment_method,
       gift_card_brand: listingTypeUpper.includes('GIFT_CARD') ? (listing.gift_card_brand || null) : null,
       trade_ref: tradeRef,
@@ -8476,7 +8717,7 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
   }
 });
 
-app.post('/api/trades/:id/mark-paid', tradeLimiter, verifyToken, async (req, res) => {
+app.post('/api/trades/:id/mark-paid', tradeLimiter, verifyToken, requireNotBanned, async (req, res) => {
   try {
     const { data: trade, error: fetchError } = await supabaseAdmin
       .from('trades').select('*').eq('id', req.params.id).single();
@@ -8563,7 +8804,7 @@ app.post('/api/trades/:id/mark-paid', tradeLimiter, verifyToken, async (req, res
   }
 });
 
-app.post('/api/trades/:id/release', tradeLimiter, verifyToken, async (req, res) => {
+app.post('/api/trades/:id/release', tradeLimiter, verifyToken, requireNotBanned, async (req, res) => {
   try {
     // ── 2FA: enforce that user has 2FA enabled before releasing BTC ─────────
     const { data: releaseUser2FA } = await supabaseAdmin
@@ -8662,7 +8903,7 @@ app.post('/api/trades/:id/release', tradeLimiter, verifyToken, async (req, res) 
   }
 });
 
-app.post('/api/trades/:id/cancel', tradeLimiter, verifyToken, async (req, res) => {
+app.post('/api/trades/:id/cancel', tradeLimiter, verifyToken, requireNotBanned, async (req, res) => {
   try {
     const { reason } = req.body;
     const { data: trade, error: fetchError } = await supabaseAdmin.from('trades').select('*').eq('id', req.params.id).single();
@@ -8946,7 +9187,7 @@ app.get('/api/trades/:id/typing', verifyToken, async (req, res) => {
 // DISPUTES
 // ============================================================
 
-app.post('/api/trades/:id/dispute', tradeLimiter, verifyToken, async (req, res) => {
+app.post('/api/trades/:id/dispute', tradeLimiter, verifyToken, requireNotBanned, async (req, res) => {
   try {
     const { reason } = req.body;
     const { data: trade } = await supabaseAdmin.from('trades').select('*').eq('id', req.params.id).single();
@@ -9012,7 +9253,7 @@ app.post('/api/trades/:id/dispute', tradeLimiter, verifyToken, async (req, res) 
   }
 });
 
-app.post('/api/trades/:id/moderator-join', verifyToken, async (req, res) => {
+app.post('/api/trades/:id/moderator-join', verifyToken, requireNotBanned, async (req, res) => {
   try {
     const { data: userData } = await supabaseAdmin.from('users').select('is_moderator, is_admin, is_ceo, username').eq('id', req.userId).single();
     if (!userData?.is_moderator && !userData?.is_admin && !userData?.is_ceo) return res.status(403).json({ error: 'Moderators only' });
@@ -9815,7 +10056,7 @@ app.get('/api/referral/leaderboard', async (req, res) => {
   }
 });
 
-app.post('/api/referral/withdraw', verifyToken, authLimiter, async (req, res) => {
+app.post('/api/referral/withdraw', verifyToken, requireNotBanned, authLimiter, async (req, res) => {
   try {
     const { data: earnings, error } = await supabaseAdmin
       .from('affiliate_earnings')
@@ -10221,7 +10462,7 @@ app.post('/api/admin/send-welcome-emails', verifyToken, async (req, res) => {
 
       const subject = `Welcome to PRAQEN, ${user.username}! 🎉 Start Trading Bitcoin`;
       const mailOpts = {
-        from: `"PRAQEN" <${process.env.EMAIL_USER || 'support@praqen.com'}>`,
+        from: `"PRAQEN" <${NOTIFICATION_FROM_ADDR}>`,
         to: user.email, subject, html,
       };
 
@@ -10462,16 +10703,50 @@ app.get('/api/admin/stats', verifyToken, async (req, res) => {
 app.get('/api/admin/users', verifyToken, async (req, res) => {
   try {
     const admin = await requireAdmin(req, res); if (!admin) return;
-    const { search = '', status = '', country = '', page = 1, limit = 50 } = req.query;
+    const {
+      search = '', status = '', country = '', page = 1, limit = 50,
+      joinedFrom = '', joinedTo = '', sort = 'created_at', sortDir = 'desc',
+      hasFlag = '', hasOpenDispute = '', verified = '',
+    } = req.query;
+
+    // Optional cross-table filters — resolve the matching user-id set first, then
+    // constrain the main query with .in(). Both source sets are small (flags and
+    // live disputes are low-cardinality), so this stays cheap.
+    let restrictIds = null;
+    const intersect = (ids) => {
+      const s = new Set(ids);
+      restrictIds = restrictIds === null ? [...s] : restrictIds.filter(x => s.has(x));
+    };
+    if (hasFlag === 'true') {
+      const { data: fr } = await supabaseAdmin.from('reconciliation_flags')
+        .select('user_id').not('user_id', 'is', null).limit(5000);
+      intersect((fr || []).map(r => r.user_id));
+    }
+    if (hasOpenDispute === 'true') {
+      const { data: dr } = await supabaseAdmin.from('trades')
+        .select('buyer_id, seller_id').eq('status', 'DISPUTED').limit(5000);
+      intersect((dr || []).flatMap(r => [r.buyer_id, r.seller_id]).filter(Boolean));
+    }
+    if (restrictIds !== null && restrictIds.length === 0) {
+      return res.json({ users: [], total: 0, page: parseInt(page), limit: parseInt(limit) });
+    }
+
+    const sortCol = ['created_at', 'last_seen_at', 'last_login', 'total_trades', 'average_rating'].includes(sort) ? sort : 'created_at';
     let query = supabaseAdmin.from('users')
       .select('*', { count: 'exact' })
-      .order('created_at', { ascending: false })
+      .order(sortCol, { ascending: sortDir === 'asc', nullsFirst: false })
       .range((page - 1) * limit, page * limit - 1);
     if (search) query = query.or(`username.ilike.%${search}%,email.ilike.%${search}%,full_name.ilike.%${search}%,phone.ilike.%${search}%`);
     if (status === 'phone_pending') query = query.not('phone', 'is', null).eq('is_phone_verified', false);
     else if (status === 'kyc_pending') query = query.eq('kyc_status', 'pending');
     else if (status) query = query.eq('account_status', status);
     if (country) query = query.eq('country', country.toUpperCase());
+    if (joinedFrom) query = query.gte('created_at', joinedFrom);
+    if (joinedTo) query = query.lte('created_at', joinedTo);
+    if (verified === 'email') query = query.eq('is_email_verified', true);
+    else if (verified === 'phone') query = query.eq('is_phone_verified', true);
+    else if (verified === 'id') query = query.eq('is_id_verified', true);
+    if (restrictIds !== null) query = query.in('id', restrictIds);
     const { data, error, count } = await query;
     if (error) return res.status(400).json({ error: error.message });
     // Surface a phone-derived country as a fallback signal — the country
@@ -10597,14 +10872,297 @@ app.get('/api/admin/users/:id/wallet-detail', verifyToken, async (req, res) => {
   }
 });
 
+// ================================================================
+// USERS PROGRESS AUDIT — per-user "case file" endpoints, read by both the
+// Admin Panel (deep build: balances + full ledger) and the Team Portal
+// (lighter build: no money tabs). All read-only.
+//   /trades              — full trade history for one user  (requireAdmin)
+//   /wallet-transactions — full money ledger + balance_audit (requireFullAdmin)
+//   /activity            — merged progress timeline          (requireAdmin)
+//   /risk                — flags / disputes / holds / deposits (requireAdmin)
+// ================================================================
+
+// GET /api/admin/users/:id/trades — every trade this user is a party to
+// (buyer OR seller), newest first, paginated, with a lifetime summary that
+// spans ALL their trades (not just the current page).
+app.get('/api/admin/users/:id/trades', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const { id } = req.params;
+    const { status = '', page = 1, limit = 25 } = req.query;
+    const lim = Math.min(parseInt(limit) || 25, 100);
+    const pg  = Math.max(parseInt(page) || 1, 1);
+
+    let q = supabaseAdmin.from('trades')
+      .select(
+        'id, status, trade_type, amount_btc, amount_usd, amount_usdt, amount_local, local_currency, ' +
+        'currency, payment_method, gift_card_brand, trade_ref, fee_model, platform_fee_btc, platform_fee_usdt, ' +
+        'buyer_id, seller_id, created_at, completed_at, cancelled_at, cancel_reason, admin_notes, ' +
+        'listing:listing_id(id, listing_type, asset), ' +
+        'buyer:buyer_id(id, username), seller:seller_id(id, username)',
+        { count: 'exact' }
+      )
+      .or(`buyer_id.eq.${id},seller_id.eq.${id}`)
+      .order('created_at', { ascending: false })
+      .range((pg - 1) * lim, pg * lim - 1);
+    if (status) q = q.eq('status', status);
+
+    const { data, error, count } = await q;
+    if (error) return res.status(400).json({ error: error.message });
+
+    const trades = (data || []).map(t => ({
+      ...t,
+      role: t.buyer_id === id ? 'buyer' : 'seller',
+      counterparty: t.buyer_id === id ? (t.seller || null) : (t.buyer || null),
+    }));
+
+    // Lifetime summary — one light pass over every trade for this user.
+    const { data: allRows } = await supabaseAdmin.from('trades')
+      .select('status, amount_usd, platform_fee_btc, platform_fee_usdt, created_at, completed_at')
+      .or(`buyer_id.eq.${id},seller_id.eq.${id}`).limit(5000);
+    const rows = allRows || [];
+    const done = rows.filter(r => r.status === 'COMPLETED');
+    const durations = done
+      .filter(r => r.created_at && r.completed_at)
+      .map(r => (new Date(r.completed_at) - new Date(r.created_at)) / 60000)
+      .filter(m => m >= 0);
+    const summary = {
+      total:      rows.length,
+      completed:  done.length,
+      cancelled:  rows.filter(r => r.status === 'CANCELLED').length,
+      disputed:   rows.filter(r => r.status === 'DISPUTED').length,
+      open:       rows.filter(r => ['CREATED', 'FUNDS_LOCKED', 'PAYMENT_SENT'].includes(r.status)).length,
+      volumeUsd:  parseFloat(done.reduce((s, r) => s + parseFloat(r.amount_usd || 0), 0).toFixed(2)),
+      feesBtc:    parseFloat(done.reduce((s, r) => s + parseFloat(r.platform_fee_btc || 0), 0).toFixed(8)),
+      feesUsdt:   parseFloat(done.reduce((s, r) => s + parseFloat(r.platform_fee_usdt || 0), 0).toFixed(2)),
+      completionRate: rows.length ? Math.round((done.length / rows.length) * 100) : 0,
+      avgMinutesToComplete: durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : null,
+      capped: rows.length >= 5000,
+    };
+
+    res.json({ success: true, trades, total: count || 0, page: pg, limit: lim, summary });
+  } catch (e) {
+    console.error('[GET /api/admin/users/:id/trades]', e.message);
+    res.status(500).json({ error: 'Failed to load trade history: ' + e.message });
+  }
+});
+
+// GET /api/admin/users/:id/wallet-transactions — the full money ledger for one
+// user (every wallet_transactions row) plus the balance_audit trail. FULL ADMIN
+// ONLY — moderators open every other tab of the audit but never this one.
+app.get('/api/admin/users/:id/wallet-transactions', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const { id } = req.params;
+    const { type = '', page = 1, limit = 40 } = req.query;
+    const lim = Math.min(parseInt(limit) || 40, 200);
+    const pg  = Math.max(parseInt(page) || 1, 1);
+
+    let q = supabaseAdmin.from('wallet_transactions')
+      .select(
+        'id, type, currency, amount_btc, amount_usdt, platform_fee_btc, platform_fee_usdt, ' +
+        'destination_address, status, tx_hash, notes, rejection_reason, created_at, reviewed_at',
+        { count: 'exact' }
+      )
+      .eq('user_id', id)
+      .order('created_at', { ascending: false })
+      .range((pg - 1) * lim, pg * lim - 1);
+    if (type) q = q.eq('type', type);
+
+    const [txR, auditR, walletR] = await Promise.all([
+      q,
+      supabaseAdmin.from('balance_audit')
+        .select('id, change_btc, new_balance, reason, trade_id, created_at')
+        .eq('user_id', id).order('created_at', { ascending: false }).limit(100),
+      supabaseAdmin.from('wallets')
+        .select('balance_btc, locked_balance_btc, balance_usdt, locked_balance_usdt')
+        .eq('user_id', id).maybeSingle(),
+    ]);
+    if (txR.error) return res.status(400).json({ error: txR.error.message });
+
+    // Mirror-table drift snapshot (BTC only — that's what the mirrors carry).
+    const [ubR, uwR] = await Promise.all([
+      supabaseAdmin.from('user_balances').select('balance_btc').eq('user_id', id).maybeSingle(),
+      supabaseAdmin.from('user_wallets').select('balance_btc').eq('user_id', id).maybeSingle(),
+    ]);
+    const authBtc = parseFloat(walletR.data?.balance_btc || 0);
+    const mirrors = {
+      wallets_btc:       authBtc,
+      user_balances_btc: ubR.data ? parseFloat(ubR.data.balance_btc || 0) : null,
+      user_wallets_btc:  uwR.data ? parseFloat(uwR.data.balance_btc || 0) : null,
+    };
+    mirrors.drift = (
+      (mirrors.user_balances_btc != null && Math.abs(mirrors.user_balances_btc - authBtc) > 1e-8) ||
+      (mirrors.user_wallets_btc  != null && Math.abs(mirrors.user_wallets_btc  - authBtc) > 1e-8)
+    );
+
+    res.json({
+      success: true,
+      wallet: walletR.data || { balance_btc: 0, locked_balance_btc: 0, balance_usdt: 0, locked_balance_usdt: 0 },
+      transactions: txR.data || [],
+      total: txR.count || 0,
+      page: pg, limit: lim,
+      balanceAudit: auditR.data || [],
+      mirrors,
+    });
+  } catch (e) {
+    console.error('[GET /api/admin/users/:id/wallet-transactions]', e.message);
+    res.status(500).json({ error: 'Failed to load wallet ledger: ' + e.message });
+  }
+});
+
+// GET /api/admin/users/:id/activity — a single reverse-chronological timeline of
+// what this user has DONE: signup, logins (last_login / last_seen_at), listings
+// created, reviews written and received, KYC submission. Read-only, team-visible.
+app.get('/api/admin/users/:id/activity', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const { id } = req.params;
+
+    const { data: u } = await supabaseAdmin.from('users')
+      .select('created_at, last_login, last_seen_at, token_version, kyc_status, kyc_submitted_at').eq('id', id).maybeSingle();
+    if (!u) return res.status(404).json({ error: 'User not found' });
+
+    const [listingsR, revWrittenR, revReceivedR] = await Promise.all([
+      supabaseAdmin.from('listings').select('id, listing_type, asset, status, created_at')
+        .eq('seller_id', id).order('created_at', { ascending: false }).limit(50),
+      supabaseAdmin.from('reviews').select('id, rating, comment, reviewee_id, created_at')
+        .eq('reviewer_id', id).order('created_at', { ascending: false }).limit(50),
+      supabaseAdmin.from('reviews').select('id, rating, comment, reviewer_id, created_at')
+        .eq('reviewee_id', id).order('created_at', { ascending: false }).limit(50),
+    ]);
+
+    const events = [];
+    if (u.created_at)        events.push({ type: 'SIGNUP', at: u.created_at, label: 'Account created' });
+    if (u.kyc_submitted_at)  events.push({ type: 'KYC_SUBMIT', at: u.kyc_submitted_at, label: `KYC submitted (${u.kyc_status || 'pending'})` });
+    if (u.last_login)        events.push({ type: 'LOGIN', at: u.last_login, label: 'Last login' });
+    if (u.last_seen_at)      events.push({ type: 'SEEN', at: u.last_seen_at, label: 'Last seen' });
+    (listingsR.data || []).forEach(l => events.push({
+      type: 'LISTING', at: l.created_at,
+      label: `${(l.listing_type || '').includes('BUY') ? 'Buy' : 'Sell'} offer for ${l.asset || 'BTC'} — ${l.status}`,
+      ref: l.id,
+    }));
+    (revWrittenR.data || []).forEach(r => events.push({
+      type: 'REVIEW_OUT', at: r.created_at, label: `Left a ${r.rating}★ review`, ref: r.id,
+    }));
+    (revReceivedR.data || []).forEach(r => events.push({
+      type: 'REVIEW_IN', at: r.created_at, label: `Received a ${r.rating}★ review`, ref: r.id,
+    }));
+    events.sort((a, b) => new Date(b.at) - new Date(a.at));
+
+    res.json({
+      success: true,
+      sessionInvalidations: u.token_version || 0,
+      lastLogin: u.last_login || null,
+      lastSeen: u.last_seen_at || null,
+      events: events.slice(0, 120),
+    });
+  } catch (e) {
+    console.error('[GET /api/admin/users/:id/activity]', e.message);
+    res.status(500).json({ error: 'Failed to load activity: ' + e.message });
+  }
+});
+
+// GET /api/admin/users/:id/risk — everything that should make a reviewer pause:
+// restriction state + reason, open disputes, reconciliation flags, admin holds,
+// and uncredited on-chain deposits. Read-only, team-visible. Balance figures are
+// only included for a full admin.
+app.get('/api/admin/users/:id/risk', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const isFullAdmin = !!(admin.is_admin || admin.email === ADMIN_EMAIL);
+    const { id } = req.params;
+
+    const { data: u } = await supabaseAdmin.from('users').select('*').eq('id', id).maybeSingle();
+    if (!u) return res.status(404).json({ error: 'User not found' });
+
+    const [flagsR, disputesR, holdsR, depR] = await Promise.all([
+      supabaseAdmin.from('reconciliation_flags')
+        .select('id, currency, source_table, reason, status, diff, created_at')
+        .eq('user_id', id).order('created_at', { ascending: false }).limit(50),
+      supabaseAdmin.from('trades')
+        .select('id, trade_ref, status, amount_usd, buyer_id, seller_id, created_at')
+        .or(`buyer_id.eq.${id},seller_id.eq.${id}`).eq('status', 'DISPUTED')
+        .order('created_at', { ascending: false }).limit(25),
+      supabaseAdmin.from('balance_audit')
+        .select('id, change_btc, new_balance, reason, created_at')
+        .eq('user_id', id).ilike('reason', '%HOLD%')
+        .order('created_at', { ascending: false }).limit(25),
+      supabaseAdmin.from('deposit_tracking_v2')
+        .select('tx_hash, address, currency, amount, credited, detected_by, created_at')
+        .eq('user_id', id).eq('credited', false)
+        .order('created_at', { ascending: false }).limit(25),
+    ]);
+
+    const restricted = String(u.account_status || 'active').toLowerCase();
+    res.json({
+      success: true,
+      restriction: {
+        status: restricted,
+        isRestricted: restricted === 'banned' || restricted === 'frozen',
+        reason: u.ban_reason || u.freeze_reason || null,
+        since: u.banned_at || u.frozen_at || null,
+        hasWarning: !!u.has_warning,
+      },
+      flags: flagsR.data || [],
+      openDisputes: (disputesR.data || []).map(t => ({ ...t, role: t.buyer_id === id ? 'buyer' : 'seller' })),
+      holds: (holdsR.data || []).map(h => isFullAdmin ? h : { ...h, change_btc: undefined, new_balance: undefined }),
+      uncreditedDeposits: depR.data || [],
+      counts: {
+        flags: (flagsR.data || []).length,
+        openDisputes: (disputesR.data || []).length,
+        holds: (holdsR.data || []).length,
+        uncreditedDeposits: (depR.data || []).length,
+      },
+    });
+  } catch (e) {
+    console.error('[GET /api/admin/users/:id/risk]', e.message);
+    res.status(500).json({ error: 'Failed to load risk view: ' + e.message });
+  }
+});
+
 // PUT /api/admin/users/:id — update user (ban, make admin, verify, etc.)
 app.put('/api/admin/users/:id', verifyToken, async (req, res) => {
   try {
     const admin = await requireFullAdmin(req, res); if (!admin) return;
-    const allowed = ['account_status', 'is_admin', 'is_moderator', 'is_id_verified', 'is_email_verified', 'badge', 'kyc_status'];
+
+    // account_status is deliberately NOT in this generic allowlist. Setting it
+    // with a bare column write skips every cascade a restriction must carry
+    // (listings, open trades, session invalidation, notification/email) — that's
+    // exactly how banned/frozen users kept live offers in the market. Route any
+    // status change here through accountEnforcement instead, then continue with
+    // the remaining generic fields.
+    if (req.body.account_status !== undefined) {
+      const target = String(req.body.account_status || '').trim().toLowerCase();
+      const reason = req.body.reason || '';
+      try {
+        if (target === 'banned' || target === 'frozen') {
+          if (req.params.id === req.userId) return res.status(400).json({ error: `Cannot ${target === 'banned' ? 'ban' : 'freeze'} your own account` });
+          await accountEnforcement.setAccountState(req.params.id, target, { reason, adminId: req.userId });
+        } else if (target === 'active') {
+          await accountEnforcement.clearAccountState(req.params.id, { adminId: req.userId });
+        } else {
+          return res.status(400).json({ error: "account_status must be 'active', 'banned' or 'frozen'" });
+        }
+        _invalidateAcctGate(req.params.id);
+        logAdminAction(req, 'USER_STATUS', req.params.id, { account_status: target, reason }).catch(() => { });
+      } catch (encErr) {
+        return res.status(400).json({ error: `Failed to change account status: ${encErr.message}` });
+      }
+    }
+
+    const allowed = ['is_admin', 'is_moderator', 'is_id_verified', 'is_email_verified', 'badge', 'kyc_status'];
     const updates = {};
     for (const k of allowed) { if (req.body[k] !== undefined) updates[k] = req.body[k]; }
-    if (!Object.keys(updates).length) return res.status(400).json({ error: 'No valid fields' });
+
+    if (!Object.keys(updates).length) {
+      // account_status-only change already applied above.
+      if (req.body.account_status !== undefined) {
+        const { data: user } = await supabaseAdmin.from('users').select('*').eq('id', req.params.id).single();
+        return res.json({ success: true, user });
+      }
+      return res.status(400).json({ error: 'No valid fields' });
+    }
     // Only a FULL admin (not a moderator) may grant/revoke admin or moderator role —
     // requireAdmin() treats is_moderator as sufficient for admin-panel access in general,
     // but role changes themselves must not be self-serviceable by moderators.
@@ -10616,16 +11174,6 @@ app.put('/api/admin/users/:id', verifyToken, async (req, res) => {
     const { data, error } = await supabaseAdmin.from('users').update(updates).eq('id', req.params.id).select().single();
     if (error) return res.status(400).json({ error: error.message });
     logAdminAction(req, 'USER_UPDATE', req.params.id, updates).catch(() => { });
-    // Banning through this generic field-update path must carry the same notification/
-    // email side effects as the dedicated /ban route — otherwise a banned user only
-    // finds out when their next trade or withdrawal is silently blocked.
-    if (updates.account_status === 'banned' && data?.email) {
-      const reason = req.body.reason || '';
-      createNotification(req.params.id, 'security', '🚫 Account Banned',
-        reason ? `Your account has been banned. Reason: ${reason}` : 'Your account has been banned. Contact support if you believe this is a mistake.', '/').catch(() => { });
-      sendSystemAlert(req.params.id, '🚫 Account Banned', reason ? `Your account has been banned. Reason: ${reason}` : 'Your account has been banned.', 'https://praqen.com').catch(() => { });
-      emailService.sendAccountBannedEmail(data, reason).catch(() => { });
-    }
     res.json({ success: true, user: data });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -10965,7 +11513,8 @@ app.get('/api/admin/listings/all', verifyToken, async (req, res) => {
       if (l.status !== 'ACTIVE' || !btcRequiredTypes.includes(l.listing_type)) {
         return { ...l, effectively_visible: l.status === 'ACTIVE' };
       }
-      const balanceUsd = l.asset === 'USDT' ? (usdtBalMap[l.seller_id] || 0) : (balMap[l.seller_id] || 0) * livePriceUsd;
+      // ÷1.005 — additive fee model: seller needs amount + 0.5% to fund a trade.
+      const balanceUsd = (l.asset === 'USDT' ? (usdtBalMap[l.seller_id] || 0) : (balMap[l.seller_id] || 0) * livePriceUsd) / 1.005;
       const minUsd = parseFloat(l.min_limit_usd || 0);
       const hiddenForBalance = balanceUsd < 10 || (minUsd > 0 && balanceUsd < minUsd);
       return { ...l, effectively_visible: !hiddenForBalance, seller_balance_usd: balanceUsd };
@@ -11530,73 +12079,130 @@ app.post('/api/admin/phone/reject', verifyToken, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// PUT /api/admin/users/:id/ban — ban a user
+// PUT /api/admin/users/:id/ban — ban a user (PERMANENT, full restriction).
+// All cascades (listings terminated, open trades escalated to a moderator,
+// account_status + token_version, user notification + email) run inside
+// accountEnforcement.setAccountState — this route only adds the admin-side
+// concerns (self-ban guard, audit log, admin push). It does NOT move any
+// balance, escrow, or pending withdrawal.
 app.put('/api/admin/users/:id/ban', verifyToken, async (req, res) => {
   try {
     const admin = await requireFullAdmin(req, res); if (!admin) return;
     const { reason = '' } = req.body;
     if (req.params.id === req.userId) return res.status(400).json({ error: 'Cannot ban your own account' });
-    const { data, error } = await supabaseAdmin.from('users').update({ account_status: 'banned', updated_at: new Date() }).eq('id', req.params.id).select().single();
-    if (error) return res.status(400).json({ error: error.message });
-    logAdminAction(req, 'BAN', req.params.id, { reason }).catch(() => { });
-    // A banned account's listings used to stay ACTIVE and kept showing in the
-    // marketplace — /api/listings and /api/offers only ever check listing status,
-    // never the seller's account_status, so a ban alone never hid a banned user's
-    // offers. Pause them here instead of leaving that as a manual cleanup step.
-    supabaseAdmin.from('listings')
-      .update({ status: 'PAUSED', updated_at: new Date().toISOString() })
-      .eq('seller_id', req.params.id).eq('status', 'ACTIVE')
-      .then(({ error: listErr }) => { if (listErr) console.error('[BAN] Failed to pause listings for', req.params.id, ':', listErr.message); });
-    await createNotification(req.params.id, 'security', '🚫 Account Banned',
-      reason ? `Your account has been banned. Reason: ${reason}` : 'Your account has been banned. Contact support if you believe this is a mistake.', '/');
+
+    const result = await accountEnforcement.setAccountState(req.params.id, 'banned', { reason, adminId: req.userId });
+    _invalidateAcctGate(req.params.id); // kill live sessions immediately, don't wait for the TTL
+
+    logAdminAction(req, 'BAN', req.params.id, { reason, listingsTerminated: result.listingsTerminated, tradesDisputed: result.tradesDisputed, pendingWithdrawals: result.pendingWithdrawals.length }).catch(() => { });
     sendSystemAlert(req.params.id, '🚫 Account Banned', reason ? `Your account has been banned. Reason: ${reason}` : 'Your account has been banned. Contact support if you believe this is a mistake.', 'https://praqen.com').catch(() => { });
-    if (data?.email) emailService.sendAccountBannedEmail(data, reason).catch(() => {});
-    res.json({ success: true, user: data });
+
+    const { data: user } = await supabaseAdmin.from('users').select('*').eq('id', req.params.id).single();
+    res.json({ success: true, user, enforcement: result });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// PUT /api/admin/users/:id/unban — reinstate a banned user
+// PUT /api/admin/users/:id/unban — reinstate a banned user. Login is restored;
+// terminated listings are NOT brought back and open disputes stay with
+// moderators (see accountEnforcement.clearAccountState).
 app.put('/api/admin/users/:id/unban', verifyToken, async (req, res) => {
   try {
     const admin = await requireFullAdmin(req, res); if (!admin) return;
-    const { data, error } = await supabaseAdmin.from('users').update({ account_status: 'active', updated_at: new Date() }).eq('id', req.params.id).select().single();
-    if (error) return res.status(400).json({ error: error.message });
-    logAdminAction(req, 'UNBAN', req.params.id, null).catch(() => { });
-    await createNotification(req.params.id, 'system', '✅ Account Reinstated', 'Your account ban has been lifted. Welcome back to PRAQEN!', '/dashboard');
+
+    const result = await accountEnforcement.clearAccountState(req.params.id, { adminId: req.userId });
+    _invalidateAcctGate(req.params.id);
+
+    logAdminAction(req, 'UNBAN', req.params.id, { previousStatus: result.previousStatus }).catch(() => { });
     sendSystemAlert(req.params.id, '✅ Account Reinstated', 'Your account ban has been lifted. Welcome back to PRAQEN!', 'https://praqen.com/dashboard').catch(() => { });
-    res.json({ success: true, user: data });
+
+    const { data: user } = await supabaseAdmin.from('users').select('*').eq('id', req.params.id).single();
+    res.json({ success: true, user, enforcement: result });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/admin/users/:id/hold-balance — freeze a suspicious/erroneous BTC
-// credit so the user can't send/withdraw/trade it while it's under review.
-// Moves the amount into locked_balance_btc (same mechanism active-trade escrow
-// already uses) — it stays visible in the user's wallet as "held," it just
-// can't move. Body: { amountBtc, reason }.
+// PUT /api/admin/users/:id/freeze — freeze a user (TEMPORARY, reversible, full
+// restriction). Same cascade as ban EXCEPT the user's listings are left in place
+// (the marketplace seller-status filter hides them; /unfreeze un-hides them with
+// no DB work). No balance / escrow / withdrawal funds are touched.
+app.put('/api/admin/users/:id/freeze', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
+    const { reason = '' } = req.body;
+    if (req.params.id === req.userId) return res.status(400).json({ error: 'Cannot freeze your own account' });
+
+    const result = await accountEnforcement.setAccountState(req.params.id, 'frozen', { reason, adminId: req.userId });
+    _invalidateAcctGate(req.params.id);
+
+    logAdminAction(req, 'FREEZE', req.params.id, { reason, tradesDisputed: result.tradesDisputed, pendingWithdrawals: result.pendingWithdrawals.length }).catch(() => { });
+    sendSystemAlert(req.params.id, '❄️ Account Frozen', reason ? `Your account has been temporarily frozen. Reason: ${reason}` : 'Your account has been temporarily frozen while we review it.', 'https://praqen.com').catch(() => { });
+
+    const { data: user } = await supabaseAdmin.from('users').select('*').eq('id', req.params.id).single();
+    res.json({ success: true, user, enforcement: result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/admin/users/:id/unfreeze — lift a freeze. Full access is restored and
+// the user's listings return to the marketplace automatically. Open disputes are
+// left for a moderator to settle.
+app.put('/api/admin/users/:id/unfreeze', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireFullAdmin(req, res); if (!admin) return;
+
+    const result = await accountEnforcement.clearAccountState(req.params.id, { adminId: req.userId });
+    _invalidateAcctGate(req.params.id);
+
+    logAdminAction(req, 'UNFREEZE', req.params.id, { previousStatus: result.previousStatus }).catch(() => { });
+    sendSystemAlert(req.params.id, '✅ Account Unfrozen', 'Your account review is complete and full access has been restored.', 'https://praqen.com/dashboard').catch(() => { });
+
+    const { data: user } = await supabaseAdmin.from('users').select('*').eq('id', req.params.id).single();
+    res.json({ success: true, user, enforcement: result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/users/:id/hold-balance — hold a suspicious/erroneous credit so
+// the user can't send/withdraw/trade it while it's under review. Moves the amount
+// into locked_balance_btc / locked_balance_usdt (same mechanism active-trade
+// escrow already uses) — it stays visible in the user's wallet as "held," it
+// just can't move.
+// Body: { amountBtc, reason }  OR  { amountUsdt, reason }  (exactly one amount).
 app.post('/api/admin/users/:id/hold-balance', verifyToken, async (req, res) => {
   try {
     const admin = await requireFullAdmin(req, res); if (!admin) return;
-    const { amountBtc, reason } = req.body;
-    if (!amountBtc || parseFloat(amountBtc) <= 0) return res.status(400).json({ error: 'amountBtc must be a positive number' });
+    const { amountBtc, amountUsdt, reason } = req.body;
+    const hasBtc  = amountBtc  != null && parseFloat(amountBtc)  > 0;
+    const hasUsdt = amountUsdt != null && parseFloat(amountUsdt) > 0;
+    if (hasBtc === hasUsdt) {
+      return res.status(400).json({ error: 'Provide exactly one positive amount: amountBtc OR amountUsdt.' });
+    }
     if (!reason || !reason.trim()) return res.status(400).json({ error: 'A reason is required — the user will see it.' });
-    const result = await tradeEscrowService.holdSuspiciousBtc(req.params.id, amountBtc, reason.trim(), req.userId);
-    logAdminAction(req, 'HOLD_BALANCE', req.params.id, { amountBtc, reason }).catch(() => { });
+
+    const currency = hasUsdt ? 'USDT' : 'BTC';
+    const amount   = hasUsdt ? amountUsdt : amountBtc;
+    const result = await tradeEscrowService.holdSuspiciousFunds(req.params.id, amount, currency, reason.trim(), req.userId);
+    logAdminAction(req, 'HOLD_BALANCE', req.params.id, { currency, amount, reason }).catch(() => { });
     res.json(result);
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 // POST /api/admin/users/:id/resolve-hold — clear a hold placed by hold-balance.
-// Body: { amountBtc, action: 'RELEASE' | 'CLAWBACK', note }.
+// Body: { amountBtc | amountUsdt, action: 'RELEASE' | 'CLAWBACK', note }.
 // RELEASE gives the amount back to the user (hold was a false alarm).
 // CLAWBACK removes it permanently — it was a real system error.
 app.post('/api/admin/users/:id/resolve-hold', verifyToken, async (req, res) => {
   try {
     const admin = await requireFullAdmin(req, res); if (!admin) return;
-    const { amountBtc, action, note } = req.body;
-    if (!amountBtc || parseFloat(amountBtc) <= 0) return res.status(400).json({ error: 'amountBtc must be a positive number' });
+    const { amountBtc, amountUsdt, action, note } = req.body;
+    const hasBtc  = amountBtc  != null && parseFloat(amountBtc)  > 0;
+    const hasUsdt = amountUsdt != null && parseFloat(amountUsdt) > 0;
+    if (hasBtc === hasUsdt) {
+      return res.status(400).json({ error: 'Provide exactly one positive amount: amountBtc OR amountUsdt.' });
+    }
     if (!['RELEASE', 'CLAWBACK'].includes(action)) return res.status(400).json({ error: "action must be 'RELEASE' or 'CLAWBACK'" });
-    const result = await tradeEscrowService.resolveSuspiciousHold(req.params.id, amountBtc, action, req.userId, note);
-    logAdminAction(req, `RESOLVE_HOLD_${action}`, req.params.id, { amountBtc, note }).catch(() => { });
+
+    const currency = hasUsdt ? 'USDT' : 'BTC';
+    const amount   = hasUsdt ? amountUsdt : amountBtc;
+    const result = await tradeEscrowService.resolveSuspiciousFundsHold(req.params.id, amount, action, currency, req.userId, note);
+    logAdminAction(req, `RESOLVE_HOLD_${action}`, req.params.id, { currency, amount, note }).catch(() => { });
     res.json(result);
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
@@ -11947,22 +12553,52 @@ app.delete('/api/admin/suggestions/:id', verifyToken, async (req, res) => {
 // ============================================================
 
 // POST /api/support/tickets — create ticket + first message
+// Email-only flow: tickets created from the Support form are channel='email',
+// but they are created silently — no confirmation email is sent. The first
+// email the user receives is the agent's first reply from the dashboard.
 app.post('/api/support/tickets', verifyToken, async (req, res) => {
   try {
-    const { subject, category, message, department } = req.body;
+    const { subject, category, message, department, priority, trade_reference, username, email } = req.body;
     if (!subject?.trim()) return res.status(400).json({ error: 'Subject is required' });
     if (!message?.trim()) return res.status(400).json({ error: 'Message is required' });
+    const trimmedUsername = username?.trim();
+    const trimmedEmail = email?.trim();
+    if (!trimmedUsername) return res.status(400).json({ error: 'Username is required' });
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      return res.status(400).json({ error: 'Please enter a valid email address' });
+    }
 
-    // Try insert with department column; fall back without it if column doesn't exist yet
-    let ticketPayload = { user_id: req.userId, subject: subject.trim(), category: category || 'general', status: 'open' };
+    // Try insert with department/priority/trade_reference/contact columns; fall back
+    // progressively if any column doesn't exist yet in the live schema.
+    let ticketPayload = {
+      user_id: req.userId,
+      subject: subject.trim(),
+      category: category || 'general',
+      status: 'open',
+      channel: 'email',
+      submitted_username: trimmedUsername,
+      submitted_email: trimmedEmail,
+    };
     if (department) ticketPayload.department = department;
+    if (priority) ticketPayload.priority = priority;
+    if (trade_reference) ticketPayload.trade_reference = String(trade_reference).slice(0, 200);
     let { data: ticket, error: tErr } = await supabaseAdmin
       .from('support_tickets')
       .insert(ticketPayload)
       .select().single();
-    // If insert failed and we included department, retry without it (column may not exist)
-    if (tErr && department && tErr.message?.includes('department')) {
-      delete ticketPayload.department;
+    // Column-missing fallbacks: strip the offending optional fields and retry.
+    // Includes 'channel' so ticket creation still succeeds (untagged) in
+    // environments where the email-channel migration hasn't been applied yet.
+    // Match ONLY PostgREST missing-column errors ("Could not find the 'x'
+    // column …") — never constraint violations, whose text can contain column names.
+    const OPTIONAL_COLS = ['trade_reference', 'priority', 'department', 'submitted_username', 'submitted_email', 'channel'];
+    const isMissingCol = (err, col) => !!err && /could not find the/i.test(err.message || '') && (err.message || '').includes(`'${col}'`);
+    let stripped = 0;
+    while (tErr && stripped < OPTIONAL_COLS.length) {
+      const missing = OPTIONAL_COLS.find(c => ticketPayload[c] !== undefined && isMissingCol(tErr, c));
+      if (!missing) break;
+      delete ticketPayload[missing];
+      stripped++;
       ({ data: ticket, error: tErr } = await supabaseAdmin
         .from('support_tickets')
         .insert(ticketPayload)
@@ -11970,11 +12606,29 @@ app.post('/api/support/tickets', verifyToken, async (req, res) => {
     }
     if (tErr) return res.status(400).json({ error: tErr.message });
 
-    const { error: mErr } = await supabaseAdmin
+    // Bridge: pre-migration, PostgREST drops channel='email' on insert, so the
+    // reply endpoints' email gate would never fire. Remember it in-process
+    // (post-migration the DB column is authoritative and this is a no-op).
+    registerEmailChannelTicket(ticket.id);
+
+    const firstMessage = trade_reference
+      ? `${message.trim()}\n\n(Trade/Reference ID: ${String(trade_reference).slice(0, 200)})`
+      : message.trim();
+    // Message insert: 'channel' is dropped gracefully if the migration hasn't
+    // run in this environment (same degraded-mode behavior as the ticket insert).
+    let msgPayload = { ticket_id: ticket.id, sender_id: req.userId, is_admin: false, message: firstMessage, channel: 'email' };
+    let { error: mErr } = await supabaseAdmin
       .from('support_messages')
-      .insert({ ticket_id: ticket.id, sender_id: req.userId, is_admin: false, message: message.trim() });
+      .insert(msgPayload);
+    if (mErr && /could not find the/i.test(mErr.message || '') && mErr.message.includes("'channel'")) {
+      delete msgPayload.channel;
+      ({ error: mErr } = await supabaseAdmin.from('support_messages').insert(msgPayload));
+    }
     if (mErr) return res.status(400).json({ error: mErr.message });
 
+    // Form-created tickets are intentionally silent. The user sees the
+    // on-screen success state immediately, and the first email they receive is
+    // the agent's first reply from the dashboard.
     res.json({ success: true, ticket });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -12030,7 +12684,7 @@ app.get('/api/admin/support/tickets', verifyToken, async (req, res) => {
     const { status = '', page = 1, limit = 100 } = req.query;
     const offset = (page - 1) * limit;
     let query = supabaseAdmin.from('support_tickets')
-      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, email, avatar_url, phone_number, country, created_at)', { count: 'exact' })
+      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, email, avatar_url, phone, country, created_at)', { count: 'exact' })
       .order('updated_at', { ascending: false })
       .range(offset, offset + parseInt(limit) - 1);
     if (status) query = query.eq('status', status);
@@ -12039,11 +12693,11 @@ app.get('/api/admin/support/tickets', verifyToken, async (req, res) => {
     res.json({
       tickets: (data || []).map(t => ({
         ...t,
-        username: t.users?.username,
+        username: t.submitted_username || t.users?.username,
         full_name: t.users?.full_name,
-        user_email: t.users?.email,
+        user_email: t.submitted_email || t.users?.email,
         avatar_url: t.users?.avatar_url,
-        user_phone: t.users?.phone_number,
+        user_phone: t.users?.phone,
         user_country: t.users?.country,
         user_joined: t.users?.created_at,
       })),
@@ -12057,18 +12711,20 @@ app.get('/api/admin/support/tickets/:id/messages', verifyToken, async (req, res)
   try {
     const admin = await requireAdminOrCeo(req, res); if (!admin) return;
     const { data: ticket } = await supabaseAdmin.from('support_tickets')
-      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, email, avatar_url, phone_number, country, created_at)')
+      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, email, avatar_url, phone, country, created_at)')
       .eq('id', req.params.id).single();
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
     const { data: messages } = await supabaseAdmin.from('support_messages').select('*').eq('ticket_id', req.params.id).order('created_at', { ascending: true });
     res.json({
       ticket: {
         ...ticket,
-        username: ticket.users?.username,
+        username: ticket.submitted_username || ticket.users?.username,
         full_name: ticket.users?.full_name,
-        user_email: ticket.users?.email,
+        user_email: ticket.submitted_email || ticket.users?.email,
         avatar_url: ticket.users?.avatar_url,
-        user_phone: ticket.users?.phone_number,
+        // Pre-migration bridge: stamp email-channel so "via Email" badges render.
+        channel: ticket.channel || (isEmailChannelTicket(ticket) ? 'email' : ticket.channel),
+        user_phone: ticket.users?.phone,
         user_country: ticket.users?.country,
         user_joined: ticket.users?.created_at,
       },
@@ -12083,22 +12739,71 @@ app.post('/api/admin/support/tickets/:id/reply', verifyToken, async (req, res) =
     const admin = await requireAdminOrCeo(req, res); if (!admin) return;
     const { message } = req.body;
     if (!message?.trim()) return res.status(400).json({ error: 'Reply is required' });
-    const { data: ticket } = await supabaseAdmin.from('support_tickets').select('user_id, subject').eq('id', req.params.id).single();
+    const { data: ticket } = await supabaseAdmin.from('support_tickets').select('*').eq('id', req.params.id).single();
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
-    const { data: msg, error } = await supabaseAdmin.from('support_messages')
-      .insert({ ticket_id: req.params.id, sender_id: req.userId, is_admin: true, message: message.trim() })
+    const isEmailChannel = isEmailChannelTicket(ticket);
+    let msgPayload = { ticket_id: req.params.id, sender_id: req.userId, is_admin: true, message: message.trim(), ...(isEmailChannel ? { channel: 'email' } : {}) };
+    let { data: msg, error } = await supabaseAdmin.from('support_messages')
+      .insert(msgPayload)
       .select().single();
+    // Pre-migration tolerance: the channel column may not exist yet — retry
+    // without it rather than losing the reply entirely.
+    if (error && /could not find the 'channel' column/i.test(error.message || '')) {
+      delete msgPayload.channel;
+      ({ data: msg, error } = await supabaseAdmin.from('support_messages').insert(msgPayload).select().single());
+    }
     if (error) return res.status(400).json({ error: error.message });
     await supabaseAdmin.from('support_tickets').update({ updated_at: new Date(), status: 'active' }).eq('id', req.params.id);
+    // Email-channel tickets have no in-app chat view for the user — point them
+    // at their inbox instead of the Community Board.
     await createNotification(
       ticket.user_id, 'system',
       '💬 Support team replied to your ticket',
-      `Your ticket "${(ticket.subject || '').slice(0, 60)}" has a new reply. Open Community Board → Support to read it.`,
+      isEmailChannel
+        ? `Your ticket "${(ticket.subject || '').slice(0, 60)}" has a new reply. Check your email for the full message.`
+        : `Your ticket "${(ticket.subject || '').slice(0, 60)}" has a new reply. Open Community Board → Support to read it.`,
       '/'
     );
     sendSystemAlert(ticket.user_id, '💬 Support team replied to your ticket',
       `Your ticket "${(ticket.subject || '').slice(0, 60)}" has a new reply.`,
       'https://praqen.com').catch(() => { });
+
+    // Two-way email integration: email-channel tickets have no in-app chat view
+    // for the user, so replies from Admin/Ceo/Team dashboards must go out as
+    // actual emails too (mirrors the agent reply endpoint). Fire-and-forget.
+    if (isEmailChannel) {
+      supabaseAdmin.from('users').select('email, username, full_name').eq('id', req.userId).single()
+        .then(({ data: adminUser }) => adminUser?.username || adminUser?.full_name || null)
+        .catch(() => null)
+        .then(adminName => {
+          return supabaseAdmin.from('users').select('email').eq('id', ticket.user_id).single()
+            .then(({ data: ticketUser }) => {
+              const replyEmail = ticket.submitted_email || ticketUser?.email;
+              if (!replyEmail) throw new Error('ticket user has no email on file');
+              return emailService.sendTicketReplyEmail({
+                ticket,
+                userEmail: replyEmail,
+                message: message.trim(),
+                agentName: adminName,
+              });
+            });
+        })
+        .then(r => {
+          if (r && !r.success) {
+            console.warn(`[AdminReply] Email not sent for ticket ${req.params.id}: ${r.error}`);
+            return;
+          }
+          // Track the outbound Message-ID for In-Reply-To threading of the
+          // user's next reply (overwrites the previous ref — newest wins).
+          if (r?.messageId) {
+            supabaseAdmin.from('support_tickets')
+              .update({ inbound_email_ref: String(r.messageId).replace(/^<|>$/g, '') })
+              .eq('id', req.params.id)
+              .then(() => {}, () => {});
+          }
+        })
+        .catch(err => console.error(`[AdminReply] Reply email failed for ticket ${req.params.id}:`, err.message));
+    }
     res.json({ success: true, message: msg });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -12275,20 +12980,27 @@ app.post('/api/support/tickets/:id/assign-agent', verifyToken, async (req, res) 
         .eq('id', req.params.id);
     }
 
-    // Send an automatic agent introduction message
-    const memStatus = getAgentStatus(bestAgent.id);
-    const agentDisplayName = memStatus.display_name || bestAgent.full_name || bestAgent.username || 'Support Agent';
-    const greeting = `Hi! I'm ${agentDisplayName}, a support agent at PRAQEN. I'll be helping you today. Could you please share any transaction ID, trade reference, or specific details about your issue so I can assist you right away?`;
-    const { data: introMsg, error: introErr } = await supabaseAdmin
-      .from('support_messages')
-      .insert({
-        ticket_id: req.params.id,
-        sender_id: bestAgent.id,
-        is_admin: true,
-        message: greeting,
-      })
-      .select().single();
-    if (introErr) console.error('Failed to send agent intro:', introErr);
+    // Send an automatic agent introduction message — but NOT for email-channel
+    // tickets: those are email-only, so the first real /reply (which sends the
+    // actual email) serves as the introduction.
+    const isEmailChannel = isEmailChannelTicket(ticket);
+    let introMsg = null;
+    let introErr = null;
+    if (!isEmailChannel) {
+      const memStatus = getAgentStatus(bestAgent.id);
+      const agentDisplayName = memStatus.display_name || bestAgent.full_name || bestAgent.username || 'Support Agent';
+      const greeting = `Hi! I'm ${agentDisplayName}, a support agent at PRAQEN. I'll be helping you today. Could you please share any transaction ID, trade reference, or specific details about your issue so I can assist you right away?`;
+      ({ data: introMsg, error: introErr } = await supabaseAdmin
+        .from('support_messages')
+        .insert({
+          ticket_id: req.params.id,
+          sender_id: bestAgent.id,
+          is_admin: true,
+          message: greeting,
+        })
+        .select().single());
+      if (introErr) console.error('Failed to send agent intro:', introErr);
+    }
 
     res.json({
       agent: bestAgent,
@@ -12446,18 +13158,21 @@ app.get('/api/agent/dashboard', verifyToken, async (req, res) => {
     // accurate even if the raw list is ever capped.
     const { data, error } = await supabaseAdmin
       .from('support_tickets')
-      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, avatar_url, email, phone_number, country)')
+      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, avatar_url, email, phone, country)')
       .order('updated_at', { ascending: false })
       .limit(500);
     if (error) return res.status(400).json({ error: error.message });
 
     const tickets = (data || []).map(t => ({
       ...t,
+      // Pre-migration bridge: stamp email-channel so "via Email" badges render
+      // for form/email tickets even while the channel column is missing.
+      channel: t.channel || (isEmailChannelTicket(t) ? 'email' : t.channel),
       username: t.users?.username,
       full_name: t.users?.full_name,
       avatar_url: t.users?.avatar_url,
       user_email: t.users?.email,
-      user_phone: t.users?.phone_number,
+      user_phone: t.users?.phone,
       user_country: t.users?.country,
     }));
 
@@ -12527,16 +13242,22 @@ app.post('/api/agent/tickets/:id/accept', verifyToken, async (req, res) => {
     agentName = agentName || agentUser?.full_name || agentUser?.username || 'Support Agent';
     agentAvatar = agentAvatar || agentUser?.avatar_url || null;
 
-    // Check if we already sent an intro message from this agent
-    const { data: existingMsgs } = await supabaseAdmin
-      .from('support_messages')
-      .select('id')
-      .eq('ticket_id', req.params.id)
-      .eq('sender_id', req.userId)
-      .limit(1);
+    // Check if we already sent an intro message from this agent.
+    // Email-channel tickets skip the live-chat intro entirely — the user has no
+    // in-app chat for these; the agent's first /reply goes out as an actual email.
+    const isEmailChannel = isEmailChannelTicket(ticket);
+    let existingMsgs = null;
+    if (!isEmailChannel) {
+      ({ data: existingMsgs } = await supabaseAdmin
+        .from('support_messages')
+        .select('id')
+        .eq('ticket_id', req.params.id)
+        .eq('sender_id', req.userId)
+        .limit(1));
+    }
 
     let introMessage = null;
-    if (!existingMsgs || existingMsgs.length === 0) {
+    if (!isEmailChannel && (!existingMsgs || existingMsgs.length === 0)) {
       // Send agent introduction
       const greeting = `Hi! I'm ${agentName}, a support agent at PRAQEN. I'll be helping you today. Could you please share any transaction ID, trade reference, or specific details about your issue so I can assist you right away?`;
       const { data: msg, error: msgErr } = await supabaseAdmin
@@ -12600,6 +13321,47 @@ app.post('/api/agent/tickets/:id/reply', verifyToken, async (req, res) => {
     sendSystemAlert(ticket.user_id, '💬 Support agent replied to your chat',
       `Your support chat "${(ticket.subject || '').slice(0, 60)}" has a new reply.`,
       'https://praqen.com').catch(() => { });
+
+    const isEmailChannel = isEmailChannelTicket(ticket);
+    console.log(`[AgentReply] ticket=${req.params.id} rawChannel=${ticket.channel || 'null'} isEmailChannel=${isEmailChannel}`);
+
+    // Two-way email integration: on email-channel tickets the reply must land in
+    // the user's actual inbox — email users may never open the app. Chat tickets
+    // keep the in-app notification behavior only. Fire-and-forget so reply
+    // latency and success never depend on the email provider.
+    if (isEmailChannel) {
+      const agentMem = getAgentStatus(req.userId);
+      supabaseAdmin.from('users').select('email, username, full_name').eq('id', req.userId).single()
+        .then(({ data: agentUser }) => agentUser?.username || agentUser?.full_name || agentMem?.display_name || null)
+        .catch(() => agentMem?.display_name || null)
+        .then(agentName => {
+          return supabaseAdmin.from('users').select('email').eq('id', ticket.user_id).single()
+            .then(({ data: ticketUser }) => {
+              if (!ticketUser?.email) throw new Error('ticket user has no email on file');
+              return emailService.sendTicketReplyEmail({
+                ticket,
+                userEmail: ticketUser.email,
+                message: message.trim(),
+                agentName,
+              });
+            });
+        })
+        .then(r => {
+          if (r && !r.success) {
+            console.warn(`[AgentReply] Email not sent for ticket ${req.params.id}: ${r.error}`);
+            return;
+          }
+          // Track the outbound Message-ID for In-Reply-To threading of the
+          // user's next reply (overwrites the previous ref — newest wins).
+          if (r?.messageId) {
+            supabaseAdmin.from('support_tickets')
+              .update({ inbound_email_ref: String(r.messageId).replace(/^<|>$/g, '') })
+              .eq('id', req.params.id)
+              .then(() => {}, () => {});
+          }
+        })
+        .catch(err => console.error(`[AgentReply] Reply email failed for ticket ${req.params.id}:`, err.message));
+    }
 
     // Clear typing indicator for this agent on this ticket
     delete supportTypingState[`${req.params.id}:${req.userId}`];
@@ -12721,7 +13483,7 @@ app.get('/api/support/agents/online', verifyToken, async (req, res) => {
 // GIFT CARD CODE
 // ============================================================
 
-app.post('/api/trades/:id/send-code', verifyToken, async (req, res) => {
+app.post('/api/trades/:id/send-code', verifyToken, requireNotBanned, async (req, res) => {
   try {
     const { giftCardCode } = req.body;
     if (!giftCardCode) return res.status(400).json({ error: 'Code is required' });
@@ -12835,7 +13597,7 @@ app.post('/api/wallet/withdraw', verifyToken, authLimiter, requireEmailVerified,
 // POST /api/wallet/internal-transfer
 // FREE instant balance-to-balance transfer between two PRAQEN users.
 // No on-chain broadcast, no PRAQEN platform fee, no network miner fee.
-// Only trades (Buy/Sell) carry the 1% fee; Gift Card trades carry 2%.
+// Only trades (Buy/Sell) carry the 0.5% fee; Gift Card trades carry 1%.
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/wallet/internal-transfer', verifyToken, requireNotBanned, async (req, res) => {
   try {
@@ -13841,7 +14603,7 @@ app.post('/api/wallet/usdt/internal-transfer', verifyToken, requireNotBanned, as
 
     // ── Email notifications (fire-and-forget) ──────────────────────────────
     const txDate = new Date().toUTCString();
-    const emailFrom = `"PRAQEN" <${process.env.EMAIL_USER || 'support@praqen.com'}>`;
+    const emailFrom = `"PRAQEN" <${NOTIFICATION_FROM_ADDR}>`;
 
     const recipHtml = `<div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:520px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #E2E8F0">
   <div style="background:linear-gradient(135deg,#1B4332,#26A17B);padding:28px 32px;text-align:center">
@@ -14277,6 +15039,13 @@ if (
     // Runs 2 min after startup then every 30 min. Silent — never affects user balances.
     sweepService.start();
     console.log(`🧹 Sweep service: MAINNET — hot wallet ${hdWalletService.getHotWalletAddress()}`);
+
+    // ── Real-time balance anomaly monitor — spike/velocity/drift alerting ──
+    // Never writes to a balance; only reads and sends alerts (email/Telegram/
+    // admin notification). depositMonitor.js and usdtDepositMonitor.js already
+    // call balanceAnomalyMonitor.checkCreditEvent() on every successful credit;
+    // this starts its periodic ledger-vs-wallet drift check.
+    balanceAnomalyMonitor.start();
 
     // ── Daily balance integrity check ───────────────────────────────────────
     balanceIntegrity.start();
