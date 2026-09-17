@@ -37,20 +37,24 @@ const BLOG_POSTS = [
 
       { type: 'h2', text: 'How Escrow Protects Your Money' },
       { type: 'p', text: 'Safety comes first when trading crypto. PRAQEN uses an automatic escrow system for every trade:' },
-      { type: 'ol', items: [
-        'When you start a trade to buy Bitcoin, the seller’s BTC is locked in escrow.',
-        'The seller cannot cancel or withdraw the Bitcoin while the trade is active.',
-        'After you send payment via MTN MoMo, Vodafone Cash, or AirtelTigo and click "I Have Paid", the seller checks their wallet.',
-        'Once confirmed, the Bitcoin releases directly into your account.',
-      ] },
+      {
+        type: 'ol', items: [
+          'When you start a trade to buy Bitcoin, the seller’s BTC is locked in escrow.',
+          'The seller cannot cancel or withdraw the Bitcoin while the trade is active.',
+          'After you send payment via MTN MoMo, Vodafone Cash, or AirtelTigo and click "I Have Paid", the seller checks their wallet.',
+          'Once confirmed, the Bitcoin releases directly into your account.',
+        ]
+      },
 
       { type: 'h2', text: 'Step-by-Step: Buying Bitcoin with MoMo on PRAQEN' },
-      { type: 'steps', items: [
-        { title: 'Step 1: Create Your Free Account', body: 'Signing up takes less than a minute.', cta: { label: 'Create a Free PRAQEN Account', to: '/register' } },
-        { title: 'Step 2: Browse Offers', body: 'Go to our buy page and filter by Ghana or your Mobile Money provider (MTN, Vodafone, AirtelTigo).', cta: { label: 'Browse Live Offers on Buy Bitcoin', to: '/buy-bitcoin' } },
-        { title: 'Step 3: Send Payment & Confirm', body: 'Select a seller and open the trade to lock their Bitcoin in escrow. Send the payment to their Mobile Money number and mark the trade as paid.' },
-        { title: 'Step 4: Receive Your Bitcoin', body: 'Once the seller confirms the payment, the escrow system releases the Bitcoin straight to your PRAQEN wallet.' },
-      ] },
+      {
+        type: 'steps', items: [
+          { title: 'Step 1: Create Your Free Account', body: 'Signing up takes less than a minute.', cta: { label: 'Create a Free PRAQEN Account', to: '/register' } },
+          { title: 'Step 2: Browse Offers', body: 'Go to our buy page and filter by Ghana or your Mobile Money provider (MTN, Vodafone, AirtelTigo).', cta: { label: 'Browse Live Offers on Buy Bitcoin', to: '/buy-bitcoin' } },
+          { title: 'Step 3: Send Payment & Confirm', body: 'Select a seller and open the trade to lock their Bitcoin in escrow. Send the payment to their Mobile Money number and mark the trade as paid.' },
+          { title: 'Step 4: Receive Your Bitcoin', body: 'Once the seller confirms the payment, the escrow system releases the Bitcoin straight to your PRAQEN wallet.' },
+        ]
+      },
 
       { type: 'h2', text: 'Why Choose PRAQEN?' },
       { type: 'highlights', items: [
@@ -61,11 +65,13 @@ const BLOG_POSTS = [
         { emoji: '🌍', label: 'Global Reach', text: 'Available in 180+ countries worldwide.' },
       ] },
 
-      { type: 'faq', items: [
-        { q: 'Which Mobile Money services are supported in Ghana?', a: 'MTN Mobile Money (MoMo), Vodafone Cash, and AirtelTigo Money.' },
-        { q: 'Can I also sell Bitcoin back to Mobile Money?', a: 'Yes! You can cash out your BTC directly to your Mobile Money wallet anytime.', cta: { label: 'Sell Bitcoin on PRAQEN', to: '/sell-bitcoin' } },
-        { q: 'Is P2P Bitcoin trading safe in Ghana?', a: 'Yes. PRAQEN locks the seller’s Bitcoin in escrow before you ever send payment, so funds can’t be released until both sides confirm. Disputes are resolved by our support team within 24 hours.' },
-      ] },
+      {
+        type: 'faq', items: [
+          { q: 'Which Mobile Money services are supported in Ghana?', a: 'MTN Mobile Money (MoMo), Vodafone Cash, and AirtelTigo Money.' },
+          { q: 'Can I also sell Bitcoin back to Mobile Money?', a: 'Yes! You can cash out your BTC directly to your Mobile Money wallet anytime.', cta: { label: 'Sell Bitcoin on PRAQEN', to: '/sell-bitcoin' } },
+          { q: 'Is P2P Bitcoin trading safe in Ghana?', a: 'Yes. PRAQEN locks the seller’s Bitcoin in escrow before you ever send payment, so funds can’t be released until both sides confirm. Disputes are resolved by our support team within 24 hours.' },
+        ]
+      },
 
       { type: 'cta', heading: 'Ready to start?', text: 'Create your free account and buy your first Bitcoin with Mobile Money in minutes.', label: 'Create Free Account', to: '/register' },
     ],
@@ -149,35 +155,43 @@ const BLOG_POSTS = [
 
       { type: 'h2', text: 'What is P2P Bitcoin Trading?' },
       { type: 'p', text: 'P2P trading connects buyers and sellers directly.' },
-      { type: 'ul', items: [
-        { text: 'If you have local currency (like Naira, Cedi, KSh, or Rand) and want Bitcoin, you buy from a seller.' },
-        { text: 'If you have Bitcoin and need local currency, you sell to a buyer.' },
-      ] },
+      {
+        type: 'ul', items: [
+          { text: 'If you have local currency (like Naira, Cedi, KSh, or Rand) and want Bitcoin, you buy from a seller.' },
+          { text: 'If you have Bitcoin and need local currency, you sell to a buyer.' },
+        ]
+      },
       { type: 'p', text: 'The platform acts as a secure escrow provider to make sure both parties fulfill their side of the deal safely.' },
 
       { type: 'h2', text: 'Supported Payment Methods in Africa' },
       { type: 'p', text: 'PRAQEN supports popular local payment rails across the continent, so you can trade using bitcoin mobile money Africa tools you already use every day:' },
-      { type: 'ul', items: [
-        { label: 'Mobile Money', text: 'MTN MoMo, Vodafone Cash, AirtelTigo Money' },
-        { label: 'Mobile Wallets', text: 'M-Pesa' },
-        { label: 'Local Bank Transfers', text: 'Instant transfers across local African banks' },
-      ] },
+      {
+        type: 'ul', items: [
+          { label: 'Mobile Money', text: 'MTN MoMo, Vodafone Cash, AirtelTigo Money' },
+          { label: 'Mobile Wallets', text: 'M-Pesa' },
+          { label: 'Local Bank Transfers', text: 'Instant transfers across local African banks' },
+        ]
+      },
 
       { type: 'h2', text: 'How Escrow Protection Works (In Simple Terms)' },
       { type: 'p', text: 'Escrow is a temporary digital vault. Here is how it keeps every trade safe:' },
-      { type: 'ol', items: [
-        'Trade Initiated: The seller’s Bitcoin is locked inside the PRAQEN escrow vault.',
-        'Payment Sent: The buyer transfers local currency directly to the seller via Mobile Money or Bank Transfer.',
-        'Payment Verified: The seller checks their bank or mobile wallet to confirm funds arrived.',
-        'Crypto Released: Once confirmed, escrow releases the Bitcoin to the buyer.',
-      ] },
+      {
+        type: 'ol', items: [
+          'Trade Initiated: The seller’s Bitcoin is locked inside the PRAQEN escrow vault.',
+          'Payment Sent: The buyer transfers local currency directly to the seller via Mobile Money or Bank Transfer.',
+          'Payment Verified: The seller checks their bank or mobile wallet to confirm funds arrived.',
+          'Crypto Released: Once confirmed, escrow releases the Bitcoin to the buyer.',
+        ]
+      },
 
       { type: 'h2', text: 'How to Get Started on PRAQEN' },
-      { type: 'steps', items: [
-        { title: 'Create an Account', body: 'Sign up in seconds.', cta: { label: 'Create a Free Account', to: '/register' } },
-        { title: 'Choose Your Action', body: 'Want to buy? Go to Buy Bitcoin. Want to cash out? Go to Sell Bitcoin.', cta: { label: 'Buy Bitcoin', to: '/buy-bitcoin' }, cta2: { label: 'Sell Bitcoin', to: '/sell-bitcoin' } },
-        { title: 'Complete Trade', body: 'Follow the on-screen instructions to finish your trade in under 15 minutes.' },
-      ] },
+      {
+        type: 'steps', items: [
+          { title: 'Create an Account', body: 'Sign up in seconds.', cta: { label: 'Create a Free Account', to: '/register' } },
+          { title: 'Choose Your Action', body: 'Want to buy? Go to Buy Bitcoin. Want to cash out? Go to Sell Bitcoin.', cta: { label: 'Buy Bitcoin', to: '/buy-bitcoin' }, cta2: { label: 'Sell Bitcoin', to: '/sell-bitcoin' } },
+          { title: 'Complete Trade', body: 'Follow the on-screen instructions to finish your trade in under 15 minutes.' },
+        ]
+      },
 
       { type: 'h2', text: 'Why Traders Choose PRAQEN' },
       { type: 'highlights', items: [
@@ -188,21 +202,25 @@ const BLOG_POSTS = [
         { emoji: '🌍', label: 'Servicing 180+ Countries', text: 'A global P2P marketplace, not just local.' },
       ] },
 
-      { type: 'p', text: 'Beyond Bitcoin, PRAQEN also has a dedicated gift card marketplace where you can trade Amazon, iTunes, Steam and more for Bitcoin or cash — useful if you don’t have Bitcoin or local currency to start with. A full USDT trading guide is coming soon.', links: [
-        { label: 'gift card marketplace', to: '/gift-cards' },
-      ] },
+      {
+        type: 'p', text: 'Beyond Bitcoin, PRAQEN also has a dedicated gift card marketplace where you can trade Amazon, iTunes, Steam and more for Bitcoin or cash — useful if you don’t have Bitcoin or local currency to start with. A full USDT trading guide is coming soon.', links: [
+          { label: 'gift card marketplace', to: '/gift-cards' },
+        ]
+      },
 
-      { type: 'faq', items: [
-        { q: 'Is P2P Bitcoin trading safe in Africa?', a: 'Yes, as long as the platform uses escrow. PRAQEN locks the seller’s Bitcoin before any payment is made, so buyers can’t be scammed out of their money and sellers can’t be scammed out of their Bitcoin. Disputes are resolved by support within 24 hours.' },
-        { q: 'How long does a P2P Bitcoin trade take?', a: 'Most trades on PRAQEN complete in under 15 minutes from opening the trade to receiving Bitcoin or cash.' },
-        { q: "What's the minimum amount to trade?", a: 'Minimums vary by offer and payment method, but PRAQEN supports small everyday trade sizes as well as large ones — check individual offers on the Buy Bitcoin or Sell Bitcoin pages for exact limits.' },
-      ] },
+      {
+        type: 'faq', items: [
+          { q: 'Is P2P Bitcoin trading safe in Africa?', a: 'Yes, as long as the platform uses escrow. PRAQEN locks the seller’s Bitcoin before any payment is made, so buyers can’t be scammed out of their money and sellers can’t be scammed out of their Bitcoin. Disputes are resolved by support within 24 hours.' },
+          { q: 'How long does a P2P Bitcoin trade take?', a: 'Most trades on PRAQEN complete in under 15 minutes from opening the trade to receiving Bitcoin or cash.' },
+          { q: "What's the minimum amount to trade?", a: 'Minimums vary by offer and payment method, but PRAQEN supports small everyday trade sizes as well as large ones — check individual offers on the Buy Bitcoin or Sell Bitcoin pages for exact limits.' },
+        ]
+      },
 
       { type: 'cta', heading: 'Ready to start?', text: 'Create your free account and make your first P2P Bitcoin trade today.', label: 'Create Free Account', to: '/register' },
     ],
   },
 
- {
+  {
     slug: 'p2p-crypto-trading-fees',
     title: 'Understanding P2P Crypto Trading Fees & Charges',
     metaTitle: 'P2P Crypto Trading Fees Explained: PRAQEN’s Real Rates (2026)',
@@ -267,7 +285,7 @@ const BLOG_POSTS = [
       },
     ],
   },
- {
+  {
     slug: 'p2p-crypto-payment-methods-south-africa-uganda',
     title: 'Top P2P Crypto Payment Methods in South Africa and Uganda',
     metaTitle: 'P2P Crypto Payment Methods: South Africa & Uganda Guide (2026)',
@@ -284,16 +302,20 @@ const BLOG_POSTS = [
       { type: 'p', text: 'In this guide, we look at the top P2P payment methods used by traders in South Africa and Uganda, ensuring you can deposit and cash out securely using services you already trust.' },
       { type: 'h2', text: 'Popular Payment Methods in South Africa' },
       { type: 'p', text: 'South Africa features a well-developed banking sector alongside growing digital finance options:' },
-      { type: 'ul', items: [
-        { label: 'Instant EFT:', text: 'Allows buyers to make secure bank transfers that reflect immediately, speeding up escrow releases.' },
-        { label: 'Major Bank Transfers:', text: 'Direct transfers across standard national banking networks.' }
-      ] },
+      {
+        type: 'ul', items: [
+          { label: 'Instant EFT:', text: 'Allows buyers to make secure bank transfers that reflect immediately, speeding up escrow releases.' },
+          { label: 'Major Bank Transfers:', text: 'Direct transfers across standard national banking networks.' }
+        ]
+      },
       { type: 'h2', text: 'Popular Payment Methods in Uganda' },
       { type: 'p', text: 'In Uganda, mobile money ecosystems drive the vast majority of digital transactions:' },
-      { type: 'ul', items: [
-        { label: 'MTN Mobile Money:', text: 'Widely used for instant peer-to-peer funding and cash-outs.' },
-        { label: 'Airtel Money:', text: 'A major mobile wallet network offering fast, reliable transfers.' }
-      ] },
+      {
+        type: 'ul', items: [
+          { label: 'MTN Mobile Money:', text: 'Widely used for instant peer-to-peer funding and cash-outs.' },
+          { label: 'Airtel Money:', text: 'A major mobile wallet network offering fast, reliable transfers.' }
+        ]
+      },
       { type: 'h2', text: 'Tips for Safe and Low-Cost Transfers' },
       { type: 'p', text: '• Understand Your Costs: Always review transaction charges before initiating a transfer. For a detailed breakdown of expenses, read our guide on [Understanding P2P Crypto Trading Fees & Charges](/blog/p2p-crypto-trading-fees).' },
       { type: 'p', text: '• Secure Your Assets: Remember that automated escrow protects your capital during regional fiat transfers. Learn how this safeguards your trades in [How Escrow Security Works in Crypto P2P Trading](/blog/p2p-crypto-escrow-works).' },
@@ -312,16 +334,16 @@ const BLOG_POSTS = [
           { q: 'Where can I learn more about avoiding transaction risks?', a: 'Check out our comprehensive guide on [P2P Trading Scams and How to Avoid Them](/blog/p2p-trading-scams-and-how-to-avoid-themes).' }
         ] 
       },
-      { 
-        type: 'cta', 
-        heading: 'Ready to trade using your preferred local payment method?', 
+      {
+        type: 'cta',
+        heading: 'Ready to trade using your preferred local payment method?',
         text: 'Create your free account today and start trading securely!',
         label: 'Create Free Account',
         to: '/register'
       },
     ],
   },
- {
+  {
     slug: 'p2p-crypto-escrow-works',
     title: 'How Escrow Security Works in Crypto P2P Trading',
     metaTitle: 'How Crypto P2P Escrow Works: Ultimate Security Guide (2026)',
@@ -339,12 +361,14 @@ const BLOG_POSTS = [
       { type: 'h2', text: 'What is Crypto Escrow?' },
       { type: 'p', text: 'An escrow is a secure, neutral digital vault controlled by the platform. When a trade begins, the seller’s cryptocurrency is temporarily locked inside this vault. Neither the buyer nor the seller can access or withdraw the funds while the trade is active.' },
       { type: 'h2', text: 'Step-by-Step: How Escrow Secures a Trade' },
-      { type: 'ol', items: [
-        'Trade Creation: A seller locks their crypto into the platform escrow system when an active order is accepted.',
-        'Fiat Transfer: The buyer sends the agreed-upon local currency payment directly using methods like [P2P Crypto Payment Methods in South Africa and Uganda](/blog/p2p-crypto-payment-methods-south-africa-uganda).',
-        'Verification: The seller checks their bank or mobile wallet to confirm the payment has arrived safely.',
-        'Release: Once confirmed, the seller releases the locked crypto to the buyer instantly.'
-      ] },
+      {
+        type: 'ol', items: [
+          'Trade Creation: A seller locks their crypto into the platform escrow system when an active order is accepted.',
+          'Fiat Transfer: The buyer sends the agreed-upon local currency payment directly using methods like [P2P Crypto Payment Methods in South Africa and Uganda](/blog/p2p-crypto-payment-methods-south-africa-uganda).',
+          'Verification: The seller checks their bank or mobile wallet to confirm the payment has arrived safely.',
+          'Release: Once confirmed, the seller releases the locked crypto to the buyer instantly.'
+        ]
+      },
       { type: 'h2', text: 'Why Escrow Eliminates Trading Fraud' },
       { type: 'p', text: 'Escrow completely neutralizes common scam tactics. Because the seller cannot run away with your money once paid, and the buyer cannot steal crypto without sending fiat, both parties are fully protected.' },
       { type: 'p', text: '• To understand what fees apply to these secure transactions, check out our guide on [Understanding P2P Crypto Trading Fees & Charges](/blog/p2p-crypto-trading-fees).' },
@@ -362,18 +386,18 @@ const BLOG_POSTS = [
           { q: 'Can a seller run away with my money during a trade?', a: 'No. The seller’s crypto is locked in escrow before you ever send a single cent of fiat currency.' },
           { q: 'What happens if there is a payment dispute?', a: 'You can open a dispute ticket. Our support team will review transaction proofs and release funds to the rightful owner.' },
           { q: 'Does escrow cost extra to use?', a: 'No, automated escrow protection is built directly into our platform service with transparent, low trading rates.' }
-        ] 
+        ]
       },
-      { 
-        type: 'cta', 
-        heading: 'Experience 100% escrow-protected trading today', 
+      {
+        type: 'cta',
+        heading: 'Experience 100% escrow-protected trading today',
         text: 'Create your free account and trade with complete peace of mind!',
         label: 'Create Free Account',
         to: '/register'
       },
     ],
   },
- {
+  {
     slug: 'p2p-trading-scams-and-how-to-avoid-themes',
     title: 'P2P Trading Scams and How to Avoid Them',
     metaTitle: 'P2P Crypto Trading Scams: Safety & Prevention Guide (2026)',
@@ -397,24 +421,26 @@ const BLOG_POSTS = [
       { type: 'h2', text: '3. Chargeback and Reversal Fraud' },
       { type: 'p', text: 'Some traditional payment methods allow users to dispute transactions or request chargebacks. Fraudsters may use these methods to claw back fiat currency after receiving their crypto.' },
       { type: 'p', text: '• How to stay safe: Use trusted local payment rails and instant transfer networks that minimize reversal windows, and check platform guides like [Top P2P Crypto Payment Methods in South Africa and Uganda](/blog/p2p-crypto-payment-methods-south-africa-uganda).' },
-      { type: 'highlights', items: [
-        { emoji: '🔒', label: 'Escrow Protection', text: 'Keep funds locked safely until verified.' },
-        { emoji: '📱', label: 'Check App Balance', text: 'Always log into your official bank or mobile wallet.' },
-        { emoji: '🚫', label: 'No Third-Party Pay', text: 'Reject payments from unverified names.' },
-        { emoji: '⚠️', label: 'Stay Vigilant', text: 'Never rush a trade under pressure.' },
-        { emoji: '👥', label: 'Support Ready', text: 'Open dispute tickets if anything looks suspicious.' },
-      ], },
-      { 
-        type: 'faq', 
+      {
+        type: 'highlights', items: [
+          { emoji: '🔒', label: 'Escrow Protection', text: 'Keep funds locked safely until verified.' },
+          { emoji: '📱', label: 'Check App Balance', text: 'Always log into your official bank or mobile wallet.' },
+          { emoji: '🚫', label: 'No Third-Party Pay', text: 'Reject payments from unverified names.' },
+          { emoji: '⚠️', label: 'Stay Vigilant', text: 'Never rush a trade under pressure.' },
+          { emoji: '👥', label: 'Support Ready', text: 'Open dispute tickets if anything looks suspicious.' },
+        ],
+      },
+      {
+        type: 'faq',
         items: [
           { q: 'What should I do if a buyer sends a fake payment screenshot?', a: 'Do not release your crypto. Open a dispute immediately and provide screenshots of the chat to our support team.' },
           { q: 'Are P2P platforms safe if scammers exist?', a: 'Yes. Platform escrow protects you as long as you follow the golden rule: never release crypto until you verify funds inside your own financial app.' },
           { q: 'Where can I check trading fee policies to avoid hidden traps?', a: 'Review our transparent breakdown of platform costs in [Understanding P2P Crypto Trading Fees & Charges](/blog/p2p-crypto-trading-fees).' }
-        ] 
+        ]
       },
-      { 
-        type: 'cta', 
-        heading: 'Trade securely with built-in escrow protection', 
+      {
+        type: 'cta',
+        heading: 'Trade securely with built-in escrow protection',
         text: 'Create your free account and trade with total confidence today!',
         label: 'Create Free Account',
         to: '/register'
@@ -422,5 +448,7 @@ const BLOG_POSTS = [
     ]
   }
 ];
+
+module.exports = { BLOG_POSTS };
 
 module.exports = { BLOG_POSTS };
