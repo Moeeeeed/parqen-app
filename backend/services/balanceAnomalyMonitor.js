@@ -30,6 +30,10 @@ const MAX_BURST_COUNT     = parseInt(process.env.ANOMALY_BURST_COUNT || '5', 10)
 const BURST_WINDOW_MS     = 10 * 60 * 1000; // 10 minutes
 const HOURLY_WINDOW_MS    = 60 * 60 * 1000; // 60 minutes
 const OPS_ALERT_EMAIL     = process.env.OPS_ALERT_EMAIL || 'support@praqen.com';
+// Periodic drift check runs every 10 min but a genuine unresolved drift
+// doesn't need a fresh admin alert every cycle — re-alert at most this often
+// per user while the same drift persists.
+const DRIFT_ALERT_COOLDOWN_MS = parseInt(process.env.ANOMALY_DRIFT_COOLDOWN_MS || String(24 * 60 * 60 * 1000), 10);
 
 class BalanceAnomalyMonitor {
   constructor() {
@@ -37,6 +41,7 @@ class BalanceAnomalyMonitor {
     this.activeAlerts      = [];        // [{ id, userId, username, severity, title, message, amount, currency, txHash, createdAt, resolved }]
     this.isRunning         = false;
     this.sweepInterval     = null;
+    this.lastDriftAlertAt  = new Map(); // userId -> ms timestamp of last drift alert (cooldown gate)
   }
 
   start() {
@@ -173,18 +178,14 @@ class BalanceAnomalyMonitor {
       console.error('[BalanceAnomalyMonitor] Telegram alert dispatch failed:', e.message);
     }
 
-    // 3. Persist to DB table if available
-    try {
-      await supabaseAdmin.from('notifications').insert({
-        user_id:    fullAlert.userId,
-        type:       'system',
-        title:      `🛡️ Security notice on your account`,
-        message:    `A large balance adjustment was processed on your wallet.`,
-        action:     '/wallet',
-        is_read:    false,
-        created_at: fullAlert.createdAt,
-      });
-    } catch (_) {}
+    // NOTE: Deliberately does NOT notify the end user — this monitor is
+    // admin-only (email + Telegram above). A prior version inserted a
+    // "🛡️ Security notice on your account" row into the user's own
+    // notifications feed on every alert, which — combined with
+    // runPeriodicDriftCheck() having no cooldown — spammed the same users
+    // every 10 minutes indefinitely on routine, non-fraudulent drift.
+    // Fixed 2026-09-17: removed the user-facing insert, added a cooldown
+    // below so drift alerts don't repeat until the condition is re-checked.
   }
 
   // ── Periodic Drift Check (Compares ledger sum vs wallets) ───────────────────
@@ -221,6 +222,10 @@ class BalanceAnomalyMonitor {
 
         // If wallet balance is significantly higher than ledger records without explanation
         if (btcDiff > 0.005 || usdtDiff > 50) {
+          const lastAlert = this.lastDriftAlertAt.get(w.user_id) || 0;
+          if (Date.now() - lastAlert < DRIFT_ALERT_COOLDOWN_MS) continue; // already alerted recently — skip, don't spam
+          this.lastDriftAlertAt.set(w.user_id, Date.now());
+
           const { data: u } = await supabaseAdmin.from('users').select('username').eq('id', w.user_id).maybeSingle();
           const username = u?.username || w.user_id.slice(0, 8);
 
