@@ -5858,7 +5858,8 @@ app.post('/api/users/:userId/trust', verifyToken, async (req, res) => {
     }
 
     // Recount trusted_by for target user (always accurate)
-    const { count } = await supabaseAdmin.from('user_trust').select('id', { count: 'exact', head: true }).eq('target_id', targetId).eq('type', 'trust');
+    const { count, error: countErr } = await supabaseAdmin.from('user_trust').select('id', { count: 'exact', head: true }).eq('target_id', targetId).eq('type', 'trust');
+    console.log(`[trust] target=${targetId.slice(0,8)} trust_count=${count} error=${countErr?.message || 'none'}`);
     await supabaseAdmin.from('users').update({ trusted_by_count: count || 0 }).eq('id', targetId);
 
     res.json({ trusted: !existing, trusted_by_count: count || 0 });
@@ -5879,6 +5880,68 @@ app.get('/api/users/:userId/relationship', verifyToken, async (req, res) => {
     });
   } catch (err) {
     res.json({ is_trusted: false, is_blocked: false });
+  }
+});
+
+// Toggle block: POST /api/users/:userId/block
+app.post('/api/users/:userId/block', verifyToken, async (req, res) => {
+  try {
+    const targetId = req.params.userId;
+    if (targetId === req.userId) return res.status(400).json({ error: 'You cannot block yourself.' });
+
+    const { data: existing } = await supabaseAdmin
+      .from('user_trust').select('id').eq('user_id', req.userId).eq('target_id', targetId).eq('type', 'block').maybeSingle();
+
+    if (existing) {
+      await supabaseAdmin.from('user_trust').delete().eq('id', existing.id);
+    } else {
+      // If trusted, remove trust first
+      await supabaseAdmin.from('user_trust').delete().eq('user_id', req.userId).eq('target_id', targetId).eq('type', 'trust');
+      await supabaseAdmin.from('user_trust').insert({ user_id: req.userId, target_id: targetId, type: 'block' });
+    }
+
+    // Recount blocked_by for target
+    const { count: blockedCount, error: blockedCountErr } = await supabaseAdmin.from('user_trust').select('id', { count: 'exact', head: true }).eq('target_id', targetId).eq('type', 'block');
+    console.log(`[block] target=${targetId.slice(0,8)} blocked_count=${blockedCount} error=${blockedCountErr?.message || 'none'}`);
+    await supabaseAdmin.from('users').update({ blocked_by_count: blockedCount || 0 }).eq('id', targetId);
+
+    // Also recount trust in case we removed it
+    const { count: trustCount, error: trustCountErr } = await supabaseAdmin.from('user_trust').select('id', { count: 'exact', head: true }).eq('target_id', targetId).eq('type', 'trust');
+    console.log(`[block] target=${targetId.slice(0,8)} trust_count=${trustCount} error=${trustCountErr?.message || 'none'}`);
+    await supabaseAdmin.from('users').update({ trusted_by_count: trustCount || 0 }).eq('id', targetId);
+
+    res.json({ blocked: !existing, blocked_by_count: count || 0, trusted_by_count: trustCount || 0 });
+  } catch (err) {
+    console.error('[block] error:', err.message);
+    res.status(500).json({ error: 'Failed to update block status.' });
+  }
+});
+
+// Get shared trade history between logged-in user and another user
+app.get('/api/users/:userId/shared-trades', verifyToken, async (req, res) => {
+  try {
+    const otherId = req.params.userId;
+    if (otherId === req.userId) return res.json({ trades: [], total: 0 });
+
+    const { data, error } = await supabaseAdmin.from('trades')
+      .select(
+        `id, status, trade_type, trade_ref, listing_id, amount_btc, amount_usd, amount_local,
+         local_currency, currency_symbol, payment_method, gift_card_brand,
+         buyer_id, seller_id, created_at, expires_at, completed_at, cancelled_at,
+         cancel_reason, buyer_confirmed,
+         listing:listing_id(id, listing_type, gift_card_brand, payment_method, currency, currency_symbol),
+         buyer:buyer_id(id, username, avatar_url, badge, country),
+         seller:seller_id(id, username, avatar_url, badge, country)`
+      )
+      .or(`and(buyer_id.eq.${req.userId},seller_id.eq.${otherId}),and(buyer_id.eq.${otherId},seller_id.eq.${req.userId})`)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ trades: data || [], total: (data || []).length });
+  } catch (err) {
+    console.error('[shared-trades] error:', err.message);
+    res.status(500).json({ error: 'Failed to load trade history.' });
   }
 });
 
@@ -5943,12 +6006,88 @@ app.get('/api/users/:userId/avatar', async (req, res) => {
 
 app.get('/api/users/:userId/reviews', async (req, res) => {
   try {
-    const { data, error } = await supabaseAdmin.from('reviews')
-      .select('*, reviewer:reviewer_id(username)').eq('reviewee_id', req.params.userId)
+    const revieweeId = req.params.userId;
+
+    // 1) Fetch reviews — no FK join to avoid PostgREST id-column collision.
+    //    reviewer_id IS the reviewer's user ID.
+    const { data: rawReviews, error } = await supabaseAdmin.from('reviews')
+      .select('*')
+      .eq('reviewee_id', revieweeId)
       .order('created_at', { ascending: false });
     if (error) return res.json({ reviews: [] });
-    res.json({ reviews: data || [] });  // ← FIXED: was `reviews` (undefined), now `data`
-  } catch { res.json({ reviews: [] }); }
+    const reviews = rawReviews || [];
+    if (reviews.length === 0) return res.json({ reviews: [] });
+
+    // 2) Batch-fetch reviewer profiles (username, avatar_url, country)
+    const reviewerIds = [...new Set(reviews.map(r => r.reviewer_id).filter(Boolean))];
+    let reviewerMap = {};
+    if (reviewerIds.length > 0) {
+      const { data: reviewers } = await supabaseAdmin.from('users')
+        .select('id, username, avatar_url, country')
+        .in('id', reviewerIds);
+      (reviewers || []).forEach(u => { reviewerMap[u.id] = u; });
+    }
+
+    // 3) Batch-fetch trade data for each linked trade_id
+    const tradeIds = [...new Set(reviews.map(r => r.trade_id).filter(Boolean))];
+    let tradeMap = {};
+    if (tradeIds.length > 0) {
+      const { data: trades } = await supabaseAdmin.from('trades')
+        .select('id, amount_usd, local_currency, currency_symbol, listing_id, buyer_id, seller_id')
+        .in('id', tradeIds);
+      (trades || []).forEach(t => { tradeMap[t.id] = t; });
+    }
+
+    // 4) Batch-compute trade counts between each unique reviewer and the reviewee
+    const tradeCounts = {};
+    if (reviewerIds.length > 0) {
+      const [asBuyer, asSeller] = await Promise.allSettled([
+        supabaseAdmin.from('trades')
+          .select('buyer_id, seller_id')
+          .eq('status', 'COMPLETED')
+          .in('buyer_id', reviewerIds).eq('seller_id', revieweeId),
+        supabaseAdmin.from('trades')
+          .select('buyer_id, seller_id')
+          .eq('status', 'COMPLETED')
+          .in('seller_id', reviewerIds).eq('buyer_id', revieweeId),
+      ]);
+      const allTrades = [
+        ...(asBuyer.status === 'fulfilled' ? asBuyer.value.data || [] : []),
+        ...(asSeller.status === 'fulfilled' ? asSeller.value.data || [] : []),
+      ];
+      allTrades.forEach(t => {
+        const otherId = t.buyer_id === revieweeId ? t.seller_id : t.buyer_id;
+        tradeCounts[otherId] = (tradeCounts[otherId] || 0) + 1;
+      });
+    }
+
+    // 5) Enrich reviews with reviewer profile, trade data, and trade count
+    const enriched = reviews.map(r => {
+      const profile = reviewerMap[r.reviewer_id] || {};
+      const trade = tradeMap[r.trade_id] || {};
+      return {
+        ...r,
+        reviewer: {
+          id: r.reviewer_id,
+          username: profile.username || null,
+          avatar_url: profile.avatar_url || null,
+          country: profile.country || null,
+        },
+        trade: {
+          amount_usd: trade.amount_usd || null,
+          local_currency: trade.local_currency || null,
+          currency_symbol: trade.currency_symbol || null,
+          listing_id: trade.listing_id || null,
+        },
+        trade_count: tradeCounts[r.reviewer_id] || 0,
+      };
+    });
+
+    res.json({ reviews: enriched });
+  } catch (err) {
+    console.error('[reviews] Error:', err.message);
+    res.json({ reviews: [] });
+  }
 });
 
 // GET /api/users/:userId/listings — public: a user's ACTIVE marketplace offers, for their profile page
@@ -8095,7 +8234,7 @@ app.get('/api/my-trades', verifyToken, async (req, res) => {
 
     let query = supabaseAdmin.from('trades')
       .select(
-        `id, status, trade_type, trade_ref, amount_btc, amount_usd, amount_local,
+        `id, status, trade_type, trade_ref, listing_id, amount_btc, amount_usd, amount_local,
          local_currency, currency_symbol, payment_method, gift_card_brand,
          buyer_id, seller_id, created_at, expires_at, completed_at, cancelled_at,
          buyer_confirmed, cancel_reason,
@@ -8522,9 +8661,29 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
       escrowResult = await tradeEscrowService.lockFundsInEscrow(trade[0].id, btcProviderId, verifiedAmountBtc, listing.time_limit || 30, tradeCurrency);
     } catch (lockError) {
       console.error('❌ lockFundsInEscrow failed:', lockError.message);
+      // Sanitize error message - never store raw technical errors in cancel_reason
+      // that could leak to the UI. Use a safe, human-readable message instead.
+      let safeCancelReason = 'Escrow lock failed';
+      if (lockError.message && typeof lockError.message === 'string') {
+        // Check for common network/fetch errors and use a generic message
+        if (lockError.message.includes('fetch failed') || 
+            lockError.message.includes('network') ||
+            lockError.message.includes('ECONNRESET') ||
+            lockError.message.includes('ECONNREFUSED') ||
+            lockError.message.includes('Timeout') ||
+            lockError.message.includes('ETIMEDOUT')) {
+          safeCancelReason = 'Escrow lock failed — network error';
+        } else if (lockError.message.includes('insufficient') || 
+                   lockError.message.includes('balance')) {
+          safeCancelReason = 'Escrow lock failed — insufficient funds';
+        } else {
+          // For other errors, use a generic message (don't expose technical details)
+          safeCancelReason = 'Escrow lock failed';
+        }
+      }
       await supabaseAdmin.from('trades').update({
         status: 'CANCELLED',
-        cancel_reason: `Escrow lock failed: ${lockError.message}`,
+        cancel_reason: safeCancelReason,
         cancelled_at: new Date().toISOString(),
       }).eq('id', trade[0].id);
       return res.status(400).json({

@@ -7,7 +7,7 @@ const NAV_ITEMS = [
   { label: 'P2P',        icon: ArrowLeftRight,   to: '/buy-bitcoin' },
   { label: 'Gift Cards', icon: Gift,             to: '/gift-cards' },
   { label: 'Wallet',     icon: Wallet,           to: '/wallet' },
-  { label: 'Profile',    icon: User,             to: '/profile' },
+  { label: 'Profile',    icon: User,             to: '/menu' },
 ];
 
 function NavItem({ label, icon: Icon, to, active }) {
