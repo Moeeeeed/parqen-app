@@ -103,7 +103,9 @@ function ActiveAlert({trade, userId, onDismiss, onExpire}) {
   const sym        = SYM[cur]||'₵';
   const localAmt   = parseFloat(trade.amount_local||trade.local_amount||0);
   const btcAmt     = parseFloat(trade.amount_btc||0);
-  const btcNet     = btcAmt * 0.995; // after 0.5% fee
+  // Additive fee model: the seller pays the platform fee on top — the buyer
+  // always receives the full escrowed amount, nothing deducted.
+  const btcNet     = btcAmt;
   const isPaid     = ['PAYMENT_SENT','PAID'].includes(trade.status?.toUpperCase());
   const isDisputed = trade.status?.toUpperCase()==='DISPUTED';
   const isGift     = tradeTypeOf(trade)==='gift';
@@ -246,6 +248,9 @@ function ActiveAlert({trade, userId, onDismiss, onExpire}) {
                   ? `$${fmt(trade.amount_receive_usd,2)} USD`
                   : `${sym}${fmt(localAmt,0)} ${cur}`}
             </p>
+            {isBuyer && (
+              <p className="text-[9px] mt-0.5 leading-tight" style={{color:C.g400}}>full amount · seller pays the fee</p>
+            )}
           </div>
         </div>
 
@@ -279,7 +284,9 @@ function TradeCard({trade, userId}) {
   const lsym     = SYM[lcur]||'';
   const lamount  = parseFloat(trade.amount_local||trade.local_amount||0);
   const btcAmt   = parseFloat(trade.amount_btc||0);
-  const btcNet   = btcAmt * 0.995;
+  // Additive fee model: the seller pays the platform fee on top — the buyer
+  // always receives the full escrowed amount, nothing deducted.
+  const btcNet   = btcAmt;
   const cpFlag   = flag(cp?.country_code||trade.listing?.country_code||'');
 
   const payDisplay = (lamount&&lcur)
@@ -341,6 +348,9 @@ function TradeCard({trade, userId}) {
                 : payDisplay}
           </span>
         </div>
+        {isBuyer && (
+          <p className="text-[10px] text-right -mt-1" style={{color:C.g400}}>full amount · seller pays the fee</p>
+        )}
       </div>
 
       <div className="px-4 pb-3 flex items-center justify-between">
@@ -392,7 +402,9 @@ function ActiveTradeModal({ trades, userId, onClose }) {
             const sym      = SYM[cur]||'';
             const localAmt = trade.amount_local||trade.local_amount||0;
             const btcAmt   = parseFloat(trade.amount_btc||0);
-            const btcNet   = btcAmt * 0.995;
+            // Additive fee model: the seller pays the platform fee on top — the buyer
+            // always receives the full escrowed amount, nothing deducted.
+            const btcNet   = btcAmt;
             const payDisp  = localAmt ? `${sym}${fmt(localAmt)} ${cur}` : `$${fmt(trade.amount_usd||0)} USD`;
 
             return(
@@ -434,6 +446,9 @@ function ActiveTradeModal({ trades, userId, onClose }) {
                           : payDisp}
                     </span>
                   </div>
+                  {isBuyer && (
+                    <p className="text-[9px] text-right -mt-1" style={{color:C.g400}}>full amount · seller pays the fee</p>
+                  )}
                   <div className="flex justify-between text-xs">
                     <span style={{color:C.g500}}><BarChart3 size={10} className="inline mr-1"/>Status</span>
                     <span className="font-bold px-2 py-0.5 rounded-full"
@@ -988,7 +1003,7 @@ export default function MyTrades({user}) {
             <div>
               <p className="text-xs font-black mb-0.5" style={{color:C.forest}}>All trades are escrow-protected</p>
               <p className="text-xs leading-relaxed" style={{color:C.g500}}>
-                Bitcoin is locked in escrow from the moment a trade starts. It is only released when both parties confirm. 0.5% fee auto-deducted on completion.
+                Bitcoin is locked in escrow from the moment a trade starts. It is only released when both parties confirm. 2% fee auto-deducted on completion.
               </p>
             </div>
           </div>
@@ -1056,7 +1071,7 @@ export default function MyTrades({user}) {
             style={{borderColor:'rgba(255,255,255,0.08)'}}>
             <p className="text-xs" style={{color:'rgba(255,255,255,0.3)'}}>© {new Date().getFullYear()} PRAQEN. All rights reserved.</p>
             <p className="text-xs flex items-center gap-1" style={{color:'rgba(255,255,255,0.3)'}}>
-              <Shield size={10}/> Escrow Protected · 0.5% fee on completion only
+              <Shield size={10}/> Escrow Protected · 2% fee on completion only
             </p>
           </div>
         </div>

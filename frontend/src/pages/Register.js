@@ -271,13 +271,12 @@ function OTPInput({ value, onChange, hasError }) {
   );
 }
 
-// ─── Welcome gate for traders coming from Noones / Binance P2P / other ──────
+// ─── Welcome gate for traders coming from another P2P platform ──────────────
 // Shown once, before the normal signup form. Captures an email + a screenshot
-// of their existing P2P profile (so the admin can see their username and
+// of their existing P2P profile (so the team can see their username and
 // feedback/trade count) for manual review — it never blocks registration.
+// We never name a specific outside platform.
 const MIGRATION_PLATFORMS = [
-  { id: 'noones', label: 'Noones' },
-  { id: 'binance', label: 'Binance P2P' },
   { id: 'other', label: 'Another P2P platform' },
 ];
 
@@ -384,7 +383,7 @@ function P2PWelcomeGate({ userEmail, onDone }) {
                 {stage === 'intro' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <p style={{ fontSize: 13, color: C.g600, lineHeight: 1.6, margin: '0 0 4px', textAlign: 'center' }}>
-                      Already building a reputation on <strong style={{ color: C.g800 }}>Noones</strong> or <strong style={{ color: C.g800 }}>Binance P2P</strong>? Bring it with you and skip the cold start.
+                      Already building a reputation on <strong style={{ color: C.g800 }}>another P2P platform</strong>? Bring it with you and skip the cold start.
                     </p>
                     {MIGRATION_PLATFORMS.map(p => (
                       <button key={p.id} onClick={() => pickPlatform(p.id)}

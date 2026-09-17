@@ -107,6 +107,13 @@ async function updateOfferStatus(userId) {
     const usdtBalUsd = parseFloat(wallet?.balance_usdt || 0); // 1 USDT ≈ $1
     const lockedUsdt = parseFloat(wallet?.locked_balance_usdt || 0);
 
+    // A banned/frozen seller's listings must stay PAUSED no matter what their balance
+    // does — this hook fires on every deposit, and without this check a restricted
+    // seller could simply top up their wallet to have their offers silently reactivated.
+    const { data: sellerUser } = await supabaseAdmin
+      .from('users').select('account_status').eq('id', userId).maybeSingle();
+    const isBanned = ['banned', 'frozen'].includes(String(sellerUser?.account_status || '').trim().toLowerCase());
+
     const { data: offers } = await supabaseAdmin
       .from('listings')
       .select('id, status, listing_type, asset, margin')
@@ -118,7 +125,7 @@ async function updateOfferStatus(userId) {
 
     const balUsdFor = (o) => o.asset === 'USDT' ? usdtBalUsd : btcBalUsd;
     const toPause      = offers.filter(o => o.status === 'ACTIVE'  && balUsdFor(o) < MIN_USD).map(o => o.id);
-    const toReactivate = offers.filter(o => o.status === 'PAUSED'  && balUsdFor(o) >= MIN_USD && isListingMarginInBounds(o.listing_type, o.margin)).map(o => o.id);
+    const toReactivate = isBanned ? [] : offers.filter(o => o.status === 'PAUSED'  && balUsdFor(o) >= MIN_USD && isListingMarginInBounds(o.listing_type, o.margin)).map(o => o.id);
 
     if (toPause.length > 0) {
       await supabaseAdmin.from('listings')
@@ -185,6 +192,12 @@ async function syncAllOfferStatuses() {
     const { data: wallets } = await supabaseAdmin
       .from('wallets').select('user_id, balance_btc, balance_usdt').in('user_id', sellerIds);
 
+    // Banned sellers must never come back through this balance-based sweep — same reasoning
+    // as reactivateReturnedSellers() below, just missing here until now.
+    const { data: sellerUsers } = await supabaseAdmin
+      .from('users').select('id, account_status').in('id', sellerIds);
+    const bannedSellerIds = new Set((sellerUsers || []).filter(u => ['banned', 'frozen'].includes(String(u.account_status || '').trim().toLowerCase())).map(u => u.id));
+
     const balMap = {};
     const usdtBalMap = {};
     (wallets || []).forEach(w => {
@@ -206,7 +219,7 @@ async function syncAllOfferStatuses() {
       // Pause if balance < $10 or can't meet the offer's own minimum
       const cantFulfil = balUsd < MIN_USD || (minUsd > 0 && balUsd < minUsd);
       if (listing.status === 'ACTIVE'  && cantFulfil)  toPause.push(listing.id);
-      if (listing.status === 'PAUSED'  && !cantFulfil && isListingMarginInBounds(listing.listing_type, listing.margin)) toReactivate.push(listing.id);
+      if (listing.status === 'PAUSED'  && !cantFulfil && !bannedSellerIds.has(listing.seller_id) && isListingMarginInBounds(listing.listing_type, listing.margin)) toReactivate.push(listing.id);
 
       // NOTE: we intentionally do NOT permanently cap max_limit_usd/max_limit_local to the
       // live balance here. That used to clamp max down (with a $10 floor) but never restore
@@ -410,7 +423,7 @@ async function reactivateReturnedSellers() {
 
     const activeSellerIds = new Set(
       sellers
-        .filter(s => s.account_status !== 'banned' && s.account_status !== 'BANNED')
+        .filter(s => !['banned', 'frozen'].includes(String(s.account_status || '').trim().toLowerCase()))
         .filter(s => {
           const lastActive = s.last_seen_at || s.last_login;
           return lastActive && new Date(lastActive) >= new Date(TEN_DAYS_AGO);

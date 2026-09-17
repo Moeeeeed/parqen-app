@@ -3,6 +3,7 @@ import axios from 'axios';
 import { toast } from 'react-toastify';
 import { copyToClipboard } from '../utils/clipboard';
 import AdminTraderRecognition from '../components/AdminTraderRecognition';
+import UserProgressAudit from '../components/UserProgressAudit';
 import {
   LayoutDashboard, Users, ArrowLeftRight, ArrowUpRight, AlertTriangle,
   ShieldCheck, DollarSign, List, Megaphone, LogOut,
@@ -550,6 +551,25 @@ function UsersSection() {
     finally { setActing(false); }
   };
 
+  // Ban/unban must go through the dedicated /ban and /unban endpoints, never the
+  // generic account_status field-update above — only those endpoints also pause
+  // the user's active listings (and send the ban notification/email). Routing
+  // through `act` here used to leave a banned user's offers ACTIVE.
+  const toggleBan = async (u) => {
+    setActing(true);
+    const isBanned = u.account_status === 'banned';
+    const endpoint = isBanned ? 'unban' : 'ban';
+    const label = isBanned ? 'Unban' : 'Ban';
+    try {
+      await axios.put(`${API_URL}/admin/users/${u.id}/${endpoint}`, {}, { headers: authH() });
+      toast.success(`${label} successful`);
+      load();
+      const updates = { account_status: isBanned ? 'active' : 'banned' };
+      if (selected?.id === u.id) setSelected(s => ({ ...s, ...updates }));
+    } catch (e) { toast.error(e.response?.data?.error || 'Action failed'); }
+    finally { setActing(false); }
+  };
+
   const toggleWarning = async (u) => {
     setActing(true);
     try {
@@ -619,6 +639,7 @@ function UsersSection() {
           className="bg-white border rounded-xl px-3 py-2 text-sm font-semibold outline-none" style={{ borderColor: C.g200, color: C.g700 }}>
           <option value="">All status</option>
           <option value="active">Active</option>
+          <option value="frozen">Frozen</option>
           <option value="suspended">Suspended</option>
           <option value="banned">Banned</option>
           <option value="phone_pending">Phone Pending</option>
@@ -670,8 +691,8 @@ function UsersSection() {
                       <td className="px-4 py-3">
                         <div className="flex gap-1 flex-wrap">
                           <Pill label={u.account_status || 'active'}
-                            color={u.account_status === 'banned' ? '#991B1B' : u.account_status === 'suspended' ? '#92400E' : '#166534'}
-                            bg={u.account_status === 'banned' ? '#FEF2F2' : u.account_status === 'suspended' ? '#FFFBEB' : '#F0FDF4'} />
+                            color={u.account_status === 'banned' ? '#991B1B' : u.account_status === 'frozen' ? '#1D4ED8' : u.account_status === 'suspended' ? '#92400E' : '#166534'}
+                            bg={u.account_status === 'banned' ? '#FEF2F2' : u.account_status === 'frozen' ? '#EFF6FF' : u.account_status === 'suspended' ? '#FFFBEB' : '#F0FDF4'} />
                           {u.has_warning && <Pill label="warning" color="#92400E" bg="#FFFBEB" />}
                         </div>
                       </td>
@@ -690,7 +711,7 @@ function UsersSection() {
                       <td className="px-4 py-3 text-xs" style={{ color: C.g400 }}>{fmtDate(u.created_at)}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1">
-                          <button onClick={e => { e.stopPropagation(); act(u.id, { account_status: u.account_status === 'banned' ? 'active' : 'banned' }, u.account_status === 'banned' ? 'Unban' : 'Ban'); }}
+                          <button onClick={e => { e.stopPropagation(); toggleBan(u); }}
                             className="p-1.5 rounded-lg hover:bg-gray-100 transition" title={u.account_status === 'banned' ? 'Unban' : 'Ban'}>
                             <Ban size={13} style={{ color: u.account_status === 'banned' ? C.success : C.danger }} />
                           </button>
@@ -1006,6 +1027,31 @@ function UsersSection() {
                 style={{ backgroundColor: selected.account_status === 'banned' ? '#F0FDF4' : '#FEF2F2', color: selected.account_status === 'banned' ? '#166534' : '#991B1B' }}>
                 <Ban size={12} /> {selected.account_status === 'banned' ? 'Unban User' : 'Ban User'}
               </button>
+              {/* Freeze / Unfreeze — temporary, reversible full lock. Hidden while the
+                  account is banned (unban first). */}
+              {selected.account_status !== 'banned' && (
+                <button disabled={acting} onClick={async () => {
+                  const isFrozen = selected.account_status === 'frozen';
+                  let reason = '';
+                  if (!isFrozen) {
+                    reason = window.prompt('Reason for freezing this account (the user will see it):') || '';
+                    if (!reason.trim()) { toast.error('A reason is required to freeze.'); return; }
+                  }
+                  setActing(true);
+                  const endpoint = isFrozen ? 'unfreeze' : 'freeze';
+                  try {
+                    await axios.put(`${API_URL}/admin/users/${selected.id}/${endpoint}`, isFrozen ? {} : { reason }, { headers: authH() });
+                    toast.success(isFrozen ? 'Account unfrozen' : 'Account frozen');
+                    load();
+                    setSelected(s => ({ ...s, account_status: isFrozen ? 'active' : 'frozen' }));
+                  } catch (e) { toast.error(e.response?.data?.error || 'Action failed'); }
+                  finally { setActing(false); }
+                }}
+                  className="w-full py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5"
+                  style={{ backgroundColor: selected.account_status === 'frozen' ? '#F0FDF4' : '#EFF6FF', color: selected.account_status === 'frozen' ? '#166534' : '#1D4ED8' }}>
+                  <Ban size={12} /> {selected.account_status === 'frozen' ? 'Unfreeze Account' : 'Freeze Account'}
+                </button>
+              )}
               {/* KYC toggle */}
               <button disabled={acting} onClick={async () => {
                 setActing(true);
@@ -2132,10 +2178,11 @@ UPDATE users SET kyc_status = 'approved' WHERE is_id_verified = true AND kyc_sta
 }
 
 // ================================================================
-// P2P MIGRATION SECTION — leads from Noones / Binance P2P / other,
-// captured on /register before they create an account.
+// P2P MIGRATION SECTION — traders importing a reputation from another P2P
+// platform, captured on /register before they create an account. We never
+// name a specific outside platform.
 // ================================================================
-const MIGRATION_PLATFORM_LABEL = { noones: 'Noones', binance: 'Binance P2P', other: 'Other P2P' };
+const MIGRATION_PLATFORM_LABEL = { noones: 'External P2P', binance: 'External P2P', other: 'External P2P' };
 
 function P2PMigrationSection() {
   const [submissions, setSubs] = useState([]);
@@ -2266,7 +2313,7 @@ function P2PMigrationSection() {
         </div>
       )}
 
-      <SectionHead title="P2P Migration Requests" sub="Traders who submitted a screenshot from Noones / Binance P2P / other platforms before signing up"
+      <SectionHead title="P2P Migration Requests" sub="Traders who submitted proof of a reputation from another P2P platform before signing up"
         action={
           <div className="flex gap-2 items-center">
             {['pending', 'approved', 'rejected', 'all'].map(s => (
@@ -2540,7 +2587,7 @@ function PlatformWalletsCard() {
               </div>
               <div>
                 <p className="font-black text-xs" style={{ color: C.g700 }}>Fee Collection Wallet</p>
-                <p className="text-[11px]" style={{ color: C.g400 }}>1% on BTC trades · 2% on gift cards</p>
+                <p className="text-[11px]" style={{ color: C.g400 }}>2% on BTC trades · 3% on gift cards</p>
               </div>
             </div>
 
@@ -2970,7 +3017,7 @@ function FinanceSection() {
           <p className="text-[11px] font-black uppercase tracking-wide" style={{ color: C.g400 }}>Total Escrow Fees Collected</p>
           <p className="text-xl font-black" style={{ color: '#F59E0B' }}>₿{fmtBtc(totalFeesBtc)}</p>
           <p className="text-xs font-semibold" style={{ color: C.g500 }}>${fmt(totalFeesUsd, 2)} USD</p>
-          <p className="text-[10px] mt-1" style={{ color: C.g400 }}>1% BTC / 2% gift card — on completed trades only ({data.profits?.length || 0} trades)</p>
+          <p className="text-[10px] mt-1" style={{ color: C.g400 }}>2% BTC / 3% gift card — on completed trades only ({data.profits?.length || 0} trades)</p>
         </div>
       </div>
 
@@ -3072,7 +3119,7 @@ function FinanceSection() {
       <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
         <div className="px-5 py-4 border-b" style={{ borderColor: C.g100 }}>
           <h3 className="font-black text-sm" style={{ color: C.g800 }}>Escrow Fee Collections</h3>
-          <p className="text-xs mt-0.5" style={{ color: C.g400 }}>1% on BTC trades · 2% on gift card trades — credited to escrow wallet on completion</p>
+          <p className="text-xs mt-0.5" style={{ color: C.g400 }}>2% on BTC trades · 3% on gift card trades — credited to escrow wallet on completion</p>
         </div>
         {(data.profits || []).length === 0 ? <Empty icon={<Banknote size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No fee collections yet" /> : (
           <div className="overflow-x-auto">
@@ -3628,7 +3675,7 @@ function BroadcastSection() {
                   {[
                     { icon: '🎁', label: '$2 BTC Bonus' },
                     { icon: '🔗', label: 'Personal Link' },
-                    { icon: '💸', label: '0.5% Commission' },
+                    { icon: '💸', label: '1% Commission' },
                   ].map(({ icon, label }) => (
                     <div key={label} className="text-center p-2 rounded-xl" style={{ backgroundColor: '#FEF3C7' }}>
                       <p style={{ fontSize: 18, margin: '0 0 2px' }}>{icon}</p>
@@ -5067,6 +5114,7 @@ const NAV = [
   { id:'users',        label:'Users',         icon:Users           },
   { id:'newusers',     label:'New Users',     icon:UserPlus        },
   { id:'users-audit',  label:'Users Audit',   icon:History         },
+  { id:'progress-audit', label:'Progress Audit', icon:ClipboardList },
   { id:'trades',       label:'Trades',        icon:ArrowLeftRight  },
   { id:'disputes',     label:'Disputes',      icon:AlertTriangle   },
   { id:'deposits',     label:'Deposits',      icon:Lock            },
@@ -5131,6 +5179,7 @@ export default function AdminDashboard({ user: appUser, onLogin }) {
     users:       <UsersSection />,
     newusers:    <NewUsersSection />,
     'users-audit': <UsersAuditSection />,
+    'progress-audit': <UserProgressAudit mode="admin" apiUrl={API_URL} authH={authH} />,
     trades:      <TradesSection />,
     disputes:    <DisputesSection />,
     deposits:    <SellerDepositsSection />,
