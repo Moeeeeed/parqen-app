@@ -209,21 +209,31 @@ class USDTDepositMonitor {
       toScan = wallets;
     } else {
       const sinceISO = new Date(Date.now() - HOT_DAYS * 864e5).toISOString();
-      const [{ data: recentDep }, { data: recentDtv }, { data: openFlags }] = await Promise.all([
+      const [{ data: recentDep }, { data: recentDtv }, { data: openFlags }, { data: everTrackedUsdt }] = await Promise.all([
         supabaseAdmin.from('wallet_transactions').select('user_id')
           .eq('type', 'DEPOSIT').eq('currency', 'USDT').gte('created_at', sinceISO),
         supabaseAdmin.from('deposit_tracking_v2').select('user_id')
           .eq('currency', 'USDT').gte('created_at', sinceISO),
         supabaseAdmin.from('reconciliation_flags').select('user_id')
           .eq('currency', 'USDT').eq('status', 'RECONCILIATION_REQUIRED'),
+        // ALL-TIME, no date filter — used only to find users who have NEVER had
+        // a USDT deposit_tracking_v2 row. A first-time depositor has no "hot"
+        // signal from the checks above (nothing recent to be recent about), so
+        // without this they land in the cold pool and can sit unscanned for
+        // hours despite an on-chain deposit already having arrived — exactly
+        // what happened to a real deposit on 2026-09-17. Cost of this query
+        // grows with the table, same tradeoff already accepted elsewhere here.
+        supabaseAdmin.from('deposit_tracking_v2').select('user_id').eq('currency', 'USDT'),
       ]);
       const hotIds = new Set([
         ...(recentDep || []).map(r => r.user_id),
         ...(recentDtv || []).map(r => r.user_id),
         ...(openFlags || []).map(r => r.user_id),
       ]);
-      const hot  = wallets.filter(w => hotIds.has(w.user_id));
-      const cold = wallets.filter(w => !hotIds.has(w.user_id));
+      const everTrackedIds = new Set((everTrackedUsdt || []).map(r => r.user_id));
+      const isFirstTimer = w => !everTrackedIds.has(w.user_id);
+      const hot  = wallets.filter(w => hotIds.has(w.user_id) || isFirstTimer(w));
+      const cold = wallets.filter(w => !hotIds.has(w.user_id) && !isFirstTimer(w));
 
       const shardSize = Math.ceil(cold.length / SHARDS) || cold.length;
       const start = (this._coldCursor % SHARDS) * shardSize;
