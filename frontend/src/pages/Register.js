@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import SEO from '../components/SEO';
+import AuthLayout from '../components/AuthLayout';
 import axios from 'axios';
 import { API_URL } from '../App';
 import {
-  Mail, Lock, User, Eye, EyeOff, Shield, CheckCircle,
+  Mail, Lock, User, Eye, EyeOff, Shield, ShieldCheck, CheckCircle,
   ArrowRight, ArrowLeft, RefreshCw, AlertCircle, Smartphone,
-  AtSign, Check, X, Home, Gift, LogIn, Phone, ChevronDown,
-  Bitcoin, Zap, Globe, TrendingUp, Users, BadgeCheck, Star,
+  AtSign, Check, Gift, Phone, Headphones, Trophy,
+  Bitcoin, Zap, Globe, TrendingUp, Users, Star,
   ArrowUpRight, CircleDollarSign, Wallet, BarChart3, MapPin, PartyPopper,
   Upload, Bell
 } from 'lucide-react';
@@ -163,10 +164,11 @@ const STATS = [
   { icon: Star, value: '4.9/5', label: 'User Rating' },
 ];
 
-const BENEFITS = [
-  { icon: Shield, title: '100% Escrow Protected', desc: 'Your Bitcoin is locked in secure escrow until both parties confirm the trade' },
-  { icon: Zap, title: 'Lightning Fast Trades', desc: 'Complete your P2P trades in under 15 minutes with instant mobile money' },
-  { icon: TrendingUp, title: 'Best Market Rates', desc: 'Access competitive rates from verified traders across 180+ countries' },
+const FEATURES = [
+  { icon: ShieldCheck, title: 'Secure escrow', desc: 'Funds are held safely and released only when the trade is completed.' },
+  { icon: Zap, title: 'Trade protection', desc: 'Platform rules and safety checks help protect every transaction.' },
+  { icon: Headphones, title: '24/7 Support', desc: 'Our team is available anytime to help resolve issues.' },
+  { icon: Trophy, title: 'Partner Program', desc: 'Earn by inviting traders. Get lifetime commissions and shared rewards based on trading activity.' },
 ];
 
 const TESTIMONIALS = [
@@ -261,7 +263,7 @@ function OTPInput({ value, onChange, hasError }) {
             color: '#1B4332',
             background: hasError ? '#FEF2F2' : (d !== ' ' && d) ? 'rgba(45,106,79,0.04)' : '#FFFFFF',
             outline: 'none', transition: 'all 0.2s',
-            fontFamily: "'Inter', sans-serif",
+            fontFamily: "'IBM Plex Sans', sans-serif",
           }}
         />
       ))}
@@ -335,7 +337,7 @@ function P2PWelcomeGate({ userEmail, onDone }) {
     <div style={{
       minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center',
       padding: '24px 16px', background: 'linear-gradient(135deg, #F0F9F4 0%, #E8F5EC 100%)',
-      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+      fontFamily: "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif",
     }}>
       <style>{`@keyframes p2pSpin { to { transform: rotate(360deg); } } .p2p-spin { animation: p2pSpin 0.7s linear infinite; }`}</style>
       <div style={{ width: '100%', maxWidth: 460 }}>
@@ -385,7 +387,7 @@ function P2PWelcomeGate({ userEmail, onDone }) {
                     </p>
                     {MIGRATION_PLATFORMS.map(p => (
                       <button key={p.id} onClick={() => pickPlatform(p.id)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderRadius: 14, border: `2px solid ${C.g200}`, background: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 14, color: C.g800, fontFamily: "'Inter', sans-serif" }}>
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderRadius: 14, border: `2px solid ${C.g200}`, background: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 14, color: C.g800, fontFamily: "'IBM Plex Sans', sans-serif" }}>
                         <Globe size={18} style={{ color: C.g400, flexShrink: 0 }} />
                         <span style={{ flex: 1, textAlign: 'left' }}>{p.label}</span>
                         <ArrowRight size={16} style={{ color: C.g400 }} />
@@ -397,7 +399,7 @@ function P2PWelcomeGate({ userEmail, onDone }) {
                       <div style={{ flex: 1, height: 1, background: C.g100 }} />
                     </div>
                     <button onClick={finish}
-                      style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${C.green}, ${C.mint})`, color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: "'Inter', sans-serif" }}>
+                      style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${C.green}, ${C.mint})`, color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: "'IBM Plex Sans', sans-serif" }}>
                       I'm new here — let's go! <ArrowRight size={16} />
                     </button>
                   </div>
@@ -417,7 +419,7 @@ function P2PWelcomeGate({ userEmail, onDone }) {
                           <Mail size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: C.g400 }} />
                           <input type="email" value={email} onChange={e => { setEmail(e.target.value); setError(''); }}
                             placeholder="you@example.com"
-                            style={{ width: '100%', padding: '13px 14px 13px 44px', fontSize: 14, borderRadius: 14, border: `2px solid ${email ? C.green : C.g200}`, outline: 'none', color: C.g800, fontFamily: "'Inter', sans-serif" }} />
+                            style={{ width: '100%', padding: '13px 14px 13px 44px', fontSize: 14, borderRadius: 14, border: `2px solid ${email ? C.green : C.g200}`, outline: 'none', color: C.g800, fontFamily: "'IBM Plex Sans', sans-serif" }} />
                         </div>
                       </div>
                     )}
@@ -441,12 +443,12 @@ function P2PWelcomeGate({ userEmail, onDone }) {
                     </div>
 
                     <button onClick={submit} disabled={submitting}
-                      style={{ width: '100%', padding: 15, borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${C.green}, ${C.mint})`, color: '#fff', fontSize: 15, fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: "'Inter', sans-serif" }}>
+                      style={{ width: '100%', padding: 15, borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${C.green}, ${C.mint})`, color: '#fff', fontSize: 15, fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: "'IBM Plex Sans', sans-serif" }}>
                       {submitting ? <><RefreshCw size={16} className="p2p-spin" /> Submitting…</> : <>Submit for Review <ArrowRight size={16} /></>}
                     </button>
 
                     <button onClick={() => { setStage('intro'); setError(''); }}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: C.g500, fontFamily: "'Inter', sans-serif" }}>
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: C.g500, fontFamily: "'IBM Plex Sans', sans-serif" }}>
                       ← Back
                     </button>
                   </div>
@@ -456,7 +458,7 @@ function P2PWelcomeGate({ userEmail, onDone }) {
               {stage === 'form' && (
                 <div style={{ padding: '14px 28px', borderTop: `1px solid ${C.g100}`, background: C.g50, textAlign: 'center' }}>
                   <button onClick={finish}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: C.g500, fontFamily: "'Inter', sans-serif" }}>
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: C.g500, fontFamily: "'IBM Plex Sans', sans-serif" }}>
                     Changed your mind? Skip and create my account →
                   </button>
                 </div>
@@ -471,7 +473,6 @@ function P2PWelcomeGate({ userEmail, onDone }) {
 
 export default function Register({ onLogin }) {
   const navigate = useNavigate();
-  const location = useLocation();
   const [showMigrationGate, setShowMigrationGate] = useState(false);
   const pendingNavRef = useRef(null);
   const [mode, setMode] = useState('register');
@@ -493,35 +494,9 @@ export default function Register({ onLogin }) {
   const [otp, setOtp] = useState('');
   const [otpError, setOtpError] = useState('');
   const [resetToken, setResetToken] = useState('');
-  const [username, setUsername] = useState('');
-  const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [agreed, setAgreed] = useState(false);
   const [errs, setErrs] = useState({});
-  const [referralCode, setReferralCode] = useState('');
-  const [referrerInfo, setReferrerInfo] = useState(null);
-  const [wantsMigration, setWantsMigration] = useState(false);
-
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const refCode = params.get('ref');
-    if (refCode) {
-      setReferralCode(refCode);
-      localStorage.setItem('referralCode', refCode);
-    } else {
-      const stored = localStorage.getItem('referralCode');
-      if (stored) setReferralCode(stored);
-    }
-  }, [location.search]);
-
-  useEffect(() => {
-    if (!referralCode) { setReferrerInfo(null); return; }
-    axios.get(`${API_URL}/auth/referrer?code=${encodeURIComponent(referralCode)}`)
-      .then(r => { if (r.data.success) setReferrerInfo(r.data.referrer); })
-      .catch(() => { });
-  }, [referralCode]);
-
   useEffect(() => {
     if (otpTimer <= 0) return;
     const iv = setInterval(() => setOtpTimer(t => t - 1), 1000);
@@ -541,11 +516,9 @@ export default function Register({ onLogin }) {
     try {
       const res = await axios.post(`${API_URL}/auth/google`, {
         credential: response.credential,
-        referralCode: referralCode || undefined,
       });
       if (res.data.success && res.data.token) {
         localStorage.setItem('token', res.data.token);
-        localStorage.removeItem('referralCode');
         onLogin(res.data.user, res.data.token);
         pendingNavRef.current = () => navigate('/buy-bitcoin');
         setShowMigrationGate(true);
@@ -561,6 +534,8 @@ export default function Register({ onLogin }) {
     }
   };
 
+  const googleBtnRef = useRef(null);
+
   useEffect(() => {
     /* global google */
     const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
@@ -569,14 +544,16 @@ export default function Register({ onLogin }) {
         window.google.accounts.id.initialize({
           client_id: googleClientId,
           callback: handleGoogleResponse,
+          auto_select: false,
         });
-        const btnContainer = document.getElementById('googleBtnRegister');
-        if (btnContainer) {
-          window.google.accounts.id.renderButton(btnContainer, {
-            theme: 'outline',
+        // Render a hidden Google button so we have a reliable click target
+        if (googleBtnRef.current) {
+          window.google.accounts.id.renderButton(googleBtnRef.current, {
+            type: 'standard',
             size: 'large',
-            width: '100%',
-            text: 'continue_with',
+            shape: 'circle',
+            text: 'none',
+            width: 36,
           });
         }
       } catch (err) {
@@ -584,6 +561,14 @@ export default function Register({ onLogin }) {
       }
     }
   }, [mode, step]);
+
+  const triggerGoogleSignup = () => {
+    // Click the hidden Google button — this always works
+    const hiddenBtn = googleBtnRef.current?.querySelector('div[role="button"]');
+    if (hiddenBtn) {
+      hiddenBtn.click();
+    }
+  };
 
   const contact = method === 'email' ? email : `${phoneCode.code}${phone}`;
 
@@ -602,21 +587,10 @@ export default function Register({ onLogin }) {
 
   const validateAll = () => {
     const e = {};
-    if (method === 'email') {
-      if (!email) e.email = 'Email is required';
-      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) e.email = 'Enter a valid email';
-    } else {
-      if (!phone) e.phone = 'Phone number is required';
-      else if (phone.length < 7) e.phone = 'Enter a valid phone number';
-    }
-    if (!fullName.trim()) e.fullName = 'Full name is required';
-    if (!username.trim()) e.username = 'Username is required';
-    else if (username.length < 3) e.username = 'At least 3 characters';
-    else if (!/^[a-z0-9_.@-]+$/.test(username)) e.username = 'Letters, numbers, _ . @ - only';
+    if (!email) e.email = 'Email is required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) e.email = 'Enter a valid email';
     if (!password) e.password = 'Password is required';
     else if (PW_CHECKS.filter(c => c.test(password)).length < 3) e.password = 'Password is too weak';
-    if (password !== confirm) e.confirm = 'Passwords do not match';
-    if (!agreed) e.agreed = 'You must agree to continue';
     setErrs(e);
     return Object.keys(e).length === 0;
   };
@@ -681,15 +655,11 @@ export default function Register({ onLogin }) {
     setLoading(true); setGlobalError('');
     try {
       const res = await axios.post(`${API_URL}/auth/register`, {
-        email: method === 'email' ? email : undefined,
-        phone: method === 'phone' ? contact : undefined,
-        username: username.toLowerCase(),
-        fullName, password,
-        referralCode: referralCode || undefined,
+        email,
+        password,
       });
       if (res.data.success && res.data.token) {
         localStorage.setItem('token', res.data.token);
-        localStorage.removeItem('referralCode');
         // Don't call onLogin() yet — it sets `user` in App.js, and App.js's
         // /register route is `!user ? <Register/> : <Navigate to="/"/>`. Setting
         // user while we're still sitting on /register (to show the migration
@@ -699,22 +669,11 @@ export default function Register({ onLogin }) {
         // verification entirely. Deferring onLogin() to the same moment we
         // navigate ourselves means we're already leaving /register by the
         // time App.js's redirect would apply, so nothing races it.
-        if (method === 'email' && email) {
-          // Email users go to dedicated verification page
-          pendingNavRef.current = () => {
-            onLogin(res.data.user, res.data.token);
-            navigate(`/verify-email?email=${encodeURIComponent(email)}`);
-          };
-        } else {
-          // Phone users: the SMS code was already sent during registration —
-          // send them straight to Settings to enter it, instead of silently
-          // leaving the account unverified.
-          pendingNavRef.current = () => {
-            onLogin(res.data.user, res.data.token);
-            setStep(4);
-            setTimeout(() => navigate('/settings?tab=verification'), 1800);
-          };
-        }
+        // Email users go to dedicated verification page
+        pendingNavRef.current = () => {
+          onLogin(res.data.user, res.data.token);
+          navigate(`/verify-email?email=${encodeURIComponent(email)}`);
+        };
         setShowMigrationGate(true);
       }
     } catch (err) {
@@ -740,7 +699,7 @@ export default function Register({ onLogin }) {
 
   const startForgot = () => {
     setMode('forgot'); setStep('f1');
-    setEmail(''); setPhone(''); setOtp(''); setPassword(''); setConfirm(''); setResetToken('');
+    setEmail(''); setPhone(''); setOtp(''); setPassword(''); setResetToken('');
     setErrs({}); setGlobalError('');
   };
 
@@ -753,13 +712,13 @@ export default function Register({ onLogin }) {
     width: '100%',
     padding: '13px 14px 13px 44px',
     fontSize: 14,
-    borderRadius: 14,
-    border: `2px solid ${error ? '#EF4444' : filled ? '#2D6A4F' : '#E2E8F0'}`,
+    borderRadius: 12,
+    border: 'none',
     color: '#1E293B',
-    background: error ? '#FEF2F2' : filled ? '#F8FAFC' : '#FFFFFF',
+    background: error ? '#FEF2F2' : '#F1F5F9',
     outline: 'none',
     transition: 'all 0.2s ease',
-    fontFamily: "'Inter', sans-serif",
+    fontFamily: "'IBM Plex Sans', sans-serif",
   });
 
   const inputWithRightIcon = (filled, error) => ({
@@ -768,7 +727,7 @@ export default function Register({ onLogin }) {
   });
 
   if (showMigrationGate) {
-    return <P2PWelcomeGate userEmail={method === 'email' ? email : ''} onDone={() => {
+    return <P2PWelcomeGate userEmail={email} onDone={() => {
       setShowMigrationGate(false);
       pendingNavRef.current?.();
       pendingNavRef.current = null;
@@ -786,26 +745,12 @@ export default function Register({ onLogin }) {
         }
 
         html, body {
-          font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+          font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
           -webkit-font-smoothing: antialiased;
           -moz-osx-font-smoothing: grayscale;
           background: #F0F9F4;
           overscroll-behavior: none;
           -webkit-overflow-scrolling: touch;
-        }
-
-        .register-layout {
-          min-height: 100vh;
-          min-height: 100dvh;
-          display: flex;
-          flex-direction: column;
-          width: 100%;
-        }
-
-        @media (min-width: 1024px) {
-          .register-layout {
-            flex-direction: row;
-          }
         }
 
         @keyframes fadeInUp {
@@ -900,294 +845,25 @@ export default function Register({ onLogin }) {
           }
         }
 
-        /* Hero Panel - Desktop Only */
-        .hero-panel {
-          display: none;
-        }
-
-        @media (min-width: 1024px) {
-          .hero-panel {
-            display: flex;
-            width: 50%;
-            flex-shrink: 0;
-            flex-direction: column;
-            justify-content: center;
-            padding: 60px 56px;
-            position: relative;
-            overflow: hidden;
-            background: linear-gradient(160deg, #1B4332 0%, #1F4D3D 25%, #2D6A4F 60%, #40916C 100%);
-          }
-        }
-
-        .hero-bg-pattern {
-          position: absolute;
-          inset: 0;
-          opacity: 0.04;
-          background-image: 
-            radial-gradient(circle at 25% 25%, white 2px, transparent 2px),
-            radial-gradient(circle at 75% 75%, white 2px, transparent 2px);
-          background-size: 60px 60px;
-          background-position: 0 0, 30px 30px;
-        }
-
-        .hero-glow-1 {
-          position: absolute;
-          top: -150px;
-          right: -150px;
-          width: 500px;
-          height: 500px;
-          border-radius: 50%;
-          background: #F4A422;
-          opacity: 0.1;
-          filter: blur(100px);
-          pointer-events: none;
-        }
-
-        .hero-glow-2 {
-          position: absolute;
-          bottom: -100px;
-          left: -100px;
-          width: 400px;
-          height: 400px;
-          border-radius: 50%;
-          background: #40916C;
-          opacity: 0.15;
-          filter: blur(80px);
-          pointer-events: none;
-        }
-
-        .hero-content {
-          position: relative;
-          z-index: 2;
-        }
-
-        .hero-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 10px;
-          padding: 10px 22px;
-          border-radius: 50px;
-          background: rgba(255, 255, 255, 0.1);
-          border: 1.5px solid rgba(255, 255, 255, 0.2);
-          backdrop-filter: blur(10px);
-          margin-bottom: 36px;
-        }
-
-        .hero-title {
-          font-family: 'Outfit', sans-serif;
-          font-size: 44px;
-          font-weight: 900;
-          color: white;
-          line-height: 1.1;
-          margin: 0 0 16px;
-          letter-spacing: -1px;
-        }
-
-        .hero-title .highlight {
-          background: linear-gradient(135deg, #F4A422, #FBBF24);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-        }
-
-        .hero-description {
-          font-size: 16px;
-          color: rgba(255, 255, 255, 0.7);
-          line-height: 1.6;
-          margin: 0 0 40px;
-          font-weight: 400;
-        }
-
-        .stats-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 12px;
-          margin-bottom: 40px;
-        }
-
-        .stat-card {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-          padding: 14px 16px;
-          border-radius: 16px;
-          background: rgba(255, 255, 255, 0.08);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          backdrop-filter: blur(10px);
-          transition: transform 0.3s ease, background 0.3s ease;
-        }
-
-        .stat-card:hover {
-          background: rgba(255, 255, 255, 0.12);
-          transform: translateY(-2px);
-        }
-
-        .stat-icon {
-          width: 44px;
-          height: 44px;
-          border-radius: 12px;
-          background: rgba(244, 164, 34, 0.2);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #F4A422;
-          flex-shrink: 0;
-        }
-
-        .stat-value {
-          font-size: 18px;
-          font-weight: 800;
-          color: white;
-          line-height: 1.2;
-        }
-
-        .stat-label {
-          font-size: 11px;
-          color: rgba(255, 255, 255, 0.5);
-          font-weight: 500;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-
-        .testimonial-card {
-          padding: 20px;
-          border-radius: 20px;
-          background: rgba(255, 255, 255, 0.06);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          backdrop-filter: blur(10px);
-        }
-
-        .testimonial-quote {
-          font-size: 14px;
-          color: rgba(255, 255, 255, 0.8);
-          line-height: 1.7;
-          margin: 0 0 12px;
-          font-style: italic;
-        }
-
-        .testimonial-author {
-          font-size: 13px;
-          font-weight: 700;
-          color: white;
-        }
-
-        .testimonial-location {
-          font-size: 11px;
-          color: rgba(255, 255, 255, 0.5);
-        }
-
-        .testimonial-dots {
-          display: flex;
-          gap: 6px;
-          margin-top: 12px;
-        }
-
-        .testimonial-dot {
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          background: rgba(255, 255, 255, 0.2);
-          cursor: pointer;
-          transition: all 0.3s;
-        }
-
-        .testimonial-dot.active {
-          background: #F4A422;
-          width: 24px;
-          border-radius: 4px;
-        }
-
-        .hero-footer {
-          position: relative;
-          z-index: 2;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          color: rgba(255, 255, 255, 0.35);
-          font-size: 12px;
-          margin-top: auto;
-        }
-
-        /* Form Panel */
-        .form-panel {
-          flex: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 16px;
-          background: linear-gradient(180deg, #F0F9F4 0%, #E8F5EC 100%);
-          width: 100%;
-        }
-
-        @media (min-width: 1024px) {
-          .form-panel {
-            width: 50%;
-            padding: 40px;
-          }
-        }
-
-        /* Mobile Hero Strip - hidden on desktop */
-        .mobile-hero-strip {
-          margin-bottom: 16px;
-          width: 100%;
-          max-width: 460px;
-        }
-
-        @media (min-width: 1024px) {
-          .mobile-hero-strip {
-            display: none;
-          }
-        }
-
-        .mobile-benefits-strip {
-          display: flex;
-          gap: 8px;
-          overflow-x: auto;
-          padding: 4px 0;
-          -webkit-overflow-scrolling: touch;
-          scrollbar-width: none;
-          -ms-overflow-style: none;
-        }
-
-        .mobile-benefits-strip::-webkit-scrollbar {
-          display: none;
-        }
-
-        .mobile-benefit-pill {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          padding: 8px 14px;
-          border-radius: 50px;
-          background: linear-gradient(135deg, #1B4332, #2D6A4F);
-          color: white;
-          white-space: nowrap;
-          font-size: 11px;
-          font-weight: 600;
-          flex-shrink: 0;
-        }
-
         /* Form Card */
         .register-card {
           width: 100%;
-          max-width: 460px;
+          max-width: 440px;
           background: #FFFFFF;
-          border-radius: 24px;
+          border-radius: 20px;
           box-shadow: 0 4px 24px rgba(27, 67, 50, 0.08), 0 0 0 1px rgba(27, 67, 50, 0.04);
           overflow: visible;
         }
 
         @media (min-width: 1024px) {
           .register-card {
-            border-radius: 28px;
-            box-shadow: 0 20px 60px rgba(27, 67, 50, 0.12), 0 0 0 1px rgba(27, 67, 50, 0.06);
+            border-radius: 24px;
+            box-shadow: 0 20px 60px rgba(27, 67, 50, 0.1), 0 0 0 1px rgba(27, 67, 50, 0.05);
           }
         }
 
         .card-top {
           padding: 24px 24px 16px;
-          text-align: center;
-          border-bottom: 1px solid #F1F5F9;
         }
 
         @media (min-width: 1024px) {
@@ -1214,9 +890,10 @@ export default function Register({ onLogin }) {
           font-size: 22px;
           font-weight: 800;
           color: #1B4332;
+          text-align: center;
           margin: 0 0 4px;
           letter-spacing: -0.3px;
-          font-family: 'Outfit', sans-serif;
+          font-family: 'IBM Plex Sans', sans-serif;
         }
 
         .card-subtitle {
@@ -1251,13 +928,13 @@ export default function Register({ onLogin }) {
           }
         }
 
-        /* Method Toggle */
+        /* Method Toggle — clean segmented control */
         .method-toggle {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 6px;
-          padding: 4px;
-          border-radius: 12px;
+          gap: 4px;
+          padding: 3px;
+          border-radius: 10px;
           background: #F1F5F9;
           margin-bottom: 16px;
         }
@@ -1268,7 +945,7 @@ export default function Register({ onLogin }) {
           justify-content: center;
           gap: 6px;
           padding: 10px 14px;
-          border-radius: 10px;
+          border-radius: 8px;
           font-size: 13px;
           font-weight: 600;
           border: none;
@@ -1276,20 +953,22 @@ export default function Register({ onLogin }) {
           transition: all 0.2s ease;
           background: transparent;
           color: #64748B;
-          font-family: 'Inter', sans-serif;
+          font-family: 'IBM Plex Sans', sans-serif;
         }
 
         .method-btn.active {
           background: white;
           color: #2D6A4F;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+          box-shadow: 0 1px 4px rgba(0,0,0,0.08);
         }
 
         /* Input Focus */
         .form-input-focus:focus {
-          border-color: #2D6A4F !important;
-          box-shadow: 0 0 0 4px rgba(45, 106, 79, 0.08) !important;
+          background: #FFFFFF !important;
+          box-shadow: 0 0 0 2px rgba(45, 106, 79, 0.15) !important;
         }
+
+
 
         /* Submit Button */
         .submit-btn {
@@ -1309,7 +988,7 @@ export default function Register({ onLogin }) {
           transition: all 0.2s ease;
           box-shadow: 0 6px 20px rgba(45, 106, 79, 0.25);
           margin-top: 8px;
-          font-family: 'Inter', sans-serif;
+          font-family: 'IBM Plex Sans', sans-serif;
           position: relative;
           overflow: hidden;
         }
@@ -1367,918 +1046,476 @@ export default function Register({ onLogin }) {
         }
       `}</style>
 
-      <div className="register-layout">
-        {/* Desktop Left Hero Panel */}
-        <div className="hero-panel">
-          <div className="hero-bg-pattern" />
-          <div className="hero-glow-1" />
-          <div className="hero-glow-2" />
+      <AuthLayout>
 
-          <div className="hero-content">
-            <div className="hero-badge">
-              <Bitcoin size={22} className="pulse-gold" style={{ color: '#F4A422' }} />
-              <span style={{
-                color: 'white',
-                fontWeight: 800,
-                letterSpacing: '4px',
-                fontSize: 15,
-                textTransform: 'uppercase'
-              }}>
-                Praqen
-              </span>
+
+
+        {/* Main Registration Card */}
+        <div className="register-card animate-in">
+          {/* Heading row: title left, Google icon right */}
+          <div style={{ padding: '24px 24px 16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+            <div>
+              <h1 className="card-title">
+                {mode === 'register' ? 'Create your free PraQen account' : 'Reset Password'}
+              </h1>
+              {/* <p className="card-subtitle">
+                    {mode === 'register'
+                      ? 'Join the future of P2P trading'
+                      : "We'll help you get back in"
+                    }
+                  </p> */}
             </div>
+            {mode === 'register' && step === 1 && (
+              <div style={{ flexShrink: 0, position: 'relative' }}>
+                <div
+                  ref={googleBtnRef}
+                  style={{
+                    position: 'absolute',
+                    opacity: 0,
+                    width: 0,
+                    height: 0,
+                    overflow: 'hidden',
+                    pointerEvents: 'none',
+                  }}
+                />
 
-            <h1 className="hero-title">
-              Trade Bitcoin &amp; USDT<br />
-              <span className="highlight">Peer-to-Peer</span><br />
-              with Confidence
-            </h1>
+                <button
+                  onClick={triggerGoogleSignup}
+                  aria-label="Sign up with Google"
+                  style={{
+                    width: 40,
+                    height: 40,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 0,
 
-            <p className="hero-description">
-              Join the world's most trusted P2P Bitcoin &amp; USDT marketplace.
-              Trade directly with verified users, protected by
-              industry-leading escrow technology.
-            </p>
-
-            <div className="stats-grid">
-              {STATS.map(({ icon: Icon, value, label }) => (
-                <div key={label} className="stat-card">
-                  <div className="stat-icon">
-                    <Icon size={20} />
-                  </div>
-                  <div>
-                    <div className="stat-value">{value}</div>
-                    <div className="stat-label">{label}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="testimonial-card">
-              <p className="testimonial-quote">
-                "{TESTIMONIALS[currentTestimonial].text}"
-              </p>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <p className="testimonial-author">
-                    {TESTIMONIALS[currentTestimonial].name}
-                  </p>
-                  <p className="testimonial-location">
-                    <MapPin size={12} style={{ color: 'currentColor', verticalAlign: '-1px', flexShrink: 0 }} /> {TESTIMONIALS[currentTestimonial].location}
-                  </p>
-                </div>
-                <div className="testimonial-dots">
-                  {TESTIMONIALS.map((_, i) => (
-                    <div
-                      key={i}
-                      className={`testimonial-dot ${i === currentTestimonial ? 'active' : ''}`}
-                      onClick={() => setCurrentTestimonial(i)}
+                    // Remove button box/background
+                    border: 'none',
+                    outline: 'none',
+                    background: 'transparent',
+                    boxShadow: 'none',
+                  }}
+                >
+                  <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    style={{
+                      display: 'block',
+                    }}
+                  >
+                    <path
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
+                      fill="#4285F4"
                     />
-                  ))}
-                </div>
+                    <path
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                      fill="#34A853"
+                    />
+                    <path
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                      fill="#FBBC05"
+                    />
+                    <path
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                      fill="#EA4335"
+                    />
+                  </svg>
+                </button>
               </div>
-            </div>
+            )}
           </div>
 
-          <div className="hero-footer">
-            <Shield size={14} />
-            All data encrypted · SOC 2 Type II · ISO 27001
-          </div>
-        </div>
-
-        {/* Right Form Panel */}
-        <div className="form-panel">
-          <div style={{ width: '100%', maxWidth: 460 }}>
-            {/* Mobile Hero Strip */}
-            <div className="mobile-hero-strip">
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                marginBottom: 12,
-                flexWrap: 'wrap'
-              }}>
-                <div style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '6px 14px',
-                  borderRadius: 50,
-                  background: 'linear-gradient(135deg, #1B4332, #2D6A4F)',
-                }}>
-                  <Bitcoin size={16} style={{ color: '#F4A422' }} />
-                  <span style={{
-                    color: 'white',
-                    fontWeight: 700,
-                    fontSize: 12,
-                    letterSpacing: '2px'
+          <div className="card-body animate-fade" key={step}>
+            {/* REGISTER STEP 1 */}
+            {step === 1 && mode === 'register' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {globalError && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '10px 14px', borderRadius: 12, fontSize: 12,
+                    background: '#FEF2F2', color: '#EF4444',
+                    border: '1.5px solid #FECACA'
                   }}>
-                    PRAQEN
-                  </span>
-                </div>
-                <div style={{
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: '#2D6A4F',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4
-                }}>
-                  <Star size={12} fill="#F4A422" color="#F4A422" />
-                  4.9/5 · 50K+ traders
-                </div>
-              </div>
-
-              <div className="mobile-benefits-strip">
-                {BENEFITS.map(({ icon: Icon, title }) => (
-                  <div key={title} className="mobile-benefit-pill">
-                    <Icon size={12} style={{ color: '#F4A422', flexShrink: 0 }} />
-                    {title}
+                    <AlertCircle size={14} style={{ flexShrink: 0 }} />
+                    {globalError}
                   </div>
-                ))}
-              </div>
-            </div>
+                )}
 
-            {/* Main Registration Card */}
-            <div className="register-card animate-in">
-              <div className="card-top">
-                <div className="logo-badge" style={{ display: 'none' }}>
-                  <Bitcoin size={18} style={{ color: '#F4A422' }} />
-                  PRAQEN
+                {/* Email */}
+                <div
+                  style={{ position: 'relative' }}
+                  onMouseEnter={() => setHoveredField('email')}
+                  onMouseLeave={() => setHoveredField(null)}
+                >
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', letterSpacing: '0.5px' }}>
+                    Email
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <Mail size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
+                    <input
+                      type="email"
+                      value={email}
+                      placeholder="you@example.com"
+                      onFocus={() => setHoveredField('email')}
+                      onChange={e => setEmail(e.target.value)}
+                      className="form-input-focus"
+                      style={inputStyle(!!email, errs.email)}
+                    />
+                    {hoveredField === 'email' && (
+                      <FieldTooltip
+                        guide={FIELD_GUIDES.find(g => g.field === 'email')}
+                        onDismiss={() => setHoveredField(null)}
+                      />
+                    )}
+                  </div>
+                  {errs.email && (
+                    <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}>
+                      <AlertCircle size={10} />{errs.email}
+                    </p>
+                  )}
                 </div>
-                <h1 className="card-title">
-                  {mode === 'register' ? 'Create Account' : 'Reset Password'}
-                </h1>
-                <p className="card-subtitle">
-                  {mode === 'register'
-                    ? 'Join the future of P2P trading'
-                    : "We'll help you get back in"
-                  }
+
+                {/* Password */}
+                <div
+                  style={{ position: 'relative' }}
+                  onMouseEnter={() => setHoveredField('password')}
+                  onMouseLeave={() => setHoveredField(null)}
+                >
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', letterSpacing: '0.5px' }}>
+                    Password
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <Lock size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
+                    <input id="reg-password-input"
+                      type={showPw ? 'text' : 'password'}
+                      value={password}
+                      placeholder="Password"
+                      onChange={e => setPassword(e.target.value)}
+                      className="form-input-focus"
+                      style={inputWithRightIcon(!!password, errs.password)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPw(!showPw)}
+                      style={{
+                        position: 'absolute', right: 14, top: '50%',
+                        transform: 'translateY(-50%)', background: 'none',
+                        border: 'none', cursor: 'pointer', color: '#94A3B8',
+                        padding: 4, display: 'flex', alignItems: 'center'
+                      }}
+                    >
+                      {showPw ? <EyeOff size={17} /> : <Eye size={17} />}
+                    </button>
+                    {hoveredField === 'password' && (
+                      <FieldTooltip
+                        guide={FIELD_GUIDES.find(g => g.field === 'password')}
+                        onDismiss={() => setHoveredField(null)}
+                      />
+                    )}
+                  </div>
+                  {errs.password && (
+                    <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}>
+                      <AlertCircle size={10} />{errs.password}
+                    </p>
+                  )}
+                </div>
+
+                {/* Submit */}
+                <div
+                  style={{ position: 'relative' }}
+                  onMouseEnter={() => setHoveredField('submit')}
+                  onMouseLeave={() => setHoveredField(null)}
+                >
+                  <button
+                    id="reg-submit-btn"
+                    onClick={handleRegister}
+                    disabled={loading}
+                    className="submit-btn"
+                  >
+                    {loading ? (
+                      <>
+                        <RefreshCw size={16} className="animate-spin" />
+                        Creating Account…
+                      </>
+                    ) : (
+                      <>
+                        Create Account
+                        <ArrowRight size={16} />
+                      </>
+                    )}
+                  </button>
+                  {hoveredField === 'submit' && (
+                    <FieldTooltip
+                      guide={FIELD_GUIDES.find(g => g.field === 'submit')}
+                      onDismiss={() => setHoveredField(null)}
+                    />
+                  )}
+                </div>
+
+                {/* Sign In Link */}
+                <p style={{ textAlign: 'center', fontSize: 13, color: '#64748B', margin: 0 }}>
+                  Already have an account?{' '}
+                  <Link to="/login" style={{ color: '#2D6A4F', fontWeight: 700, textDecoration: 'none' }}>
+                    Sign In
+                  </Link>
                 </p>
               </div>
+            )}
 
-              {/* ── MOVE FEEDBACK OPTION ── always visible for traders coming from another P2P platform.
-                  Signing up (or logging in) always happens before any feedback/screenshot is uploaded. */}
-              {mode === 'register' && step === 1 && !wantsMigration && (
-                <div style={{ margin: '0 20px 4px', padding: '12px 14px', borderRadius: 12, background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 100%)` }}>
-                  <p style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 800, color: C.gold, margin: '0 0 8px' }}>
-                    <Globe size={14} style={{ color: C.gold, flexShrink: 0 }} />
-                    Moving from another P2P platform? Do you already have a PRAQEN account?
-                  </p>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button type="button" onClick={() => navigate('/login?next=migrate')}
-                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 10px', borderRadius: 10, border: 'none', background: C.gold, color: C.forest, fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
-                      <LogIn size={13} /> Yes, log in
-                    </button>
-                    <button type="button" onClick={() => setWantsMigration(true)}
-                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 10px', borderRadius: 10, border: '1.5px solid rgba(255,255,255,0.5)', background: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
-                      No, sign me up <ArrowRight size={13} />
-                    </button>
-                  </div>
-                </div>
-              )}
-              {mode === 'register' && step === 1 && wantsMigration && (
-                <div style={{ margin: '0 20px 4px', padding: '10px 14px', borderRadius: 12, background: `linear-gradient(135deg, ${C.forest} 0%, ${C.green} 100%)`, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <BadgeCheck size={14} style={{ color: C.gold, flexShrink: 0 }} />
-                  <p style={{ fontSize: 12, color: C.gold, fontWeight: 800, margin: 0 }}>
-                    Sign up below with the <u>same email</u> you use on your other P2P platform — once your account is created, you'll be able to upload your feedback for review.
-                  </p>
-                </div>
-              )}
-
-              {/* ── REFERRAL BANNER ── shown when arriving via an affiliate link */}
-              {referralCode && mode === 'register' && (
-                <div style={{
-                  margin: '0 0 4px',
-                  padding: '12px 16px',
-                  borderRadius: 14,
-                  background: 'linear-gradient(135deg, #1B4332 0%, #2D6A4F 100%)',
-                  border: '1.5px solid #40916C',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                }}>
+            {/* FORGOT PASSWORD f1 */}
+            {step === 'f1' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {globalError && (
                   <div style={{
-                    width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
-                    background: referrerInfo?.avatar_url ? `url(${referrerInfo.avatar_url}) center/cover` : 'linear-gradient(135deg,#F4A422,#E07C0E)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontWeight: 900, fontSize: 15, color: '#1B4332',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '10px 14px', borderRadius: 12, fontSize: 12,
+                    background: '#FEF2F2', color: '#EF4444',
+                    border: '1.5px solid #FECACA'
                   }}>
-                    {!referrerInfo?.avatar_url && (referrerInfo?.username?.charAt(0).toUpperCase() || <Gift size={18} style={{ color: '#1B4332' }} />)}
+                    <AlertCircle size={14} style={{ flexShrink: 0 }} />
+                    {globalError}
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {referrerInfo ? (
-                      <>
-                        <p style={{ color: '#F4A422', fontWeight: 800, fontSize: 13, margin: 0 }}>
-                          You were invited by <span style={{ color: '#fff' }}>@{referrerInfo.username}</span>!
-                        </p>
-                        <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, margin: '2px 0 0', fontWeight: 500 }}>
-                          Sign up now and start trading on the world's #1 P2P Bitcoin &amp; USDT platform
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <p style={{ color: '#F4A422', fontWeight: 800, fontSize: 13, margin: 0 }}>
-                          You have a referral invitation!
-                        </p>
-                        <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, margin: '2px 0 0', fontWeight: 500 }}>
-                          Sign up now and start trading on the world's #1 P2P Bitcoin &amp; USDT platform
-                        </p>
-                      </>
-                    )}
-                  </div>
-                  <div style={{
-                    flexShrink: 0, padding: '4px 10px', borderRadius: 20,
-                    background: 'rgba(244,164,34,0.2)', border: '1px solid rgba(244,164,34,0.4)',
-                    fontSize: 10, fontWeight: 800, color: '#F4A422', textTransform: 'uppercase', letterSpacing: '0.5px',
-                  }}>
-                    Referral
-                  </div>
+                )}
+
+                <div className="method-toggle">
+                  <button onClick={() => setMethod('email')} className={`method-btn ${method === 'email' ? 'active' : ''}`}>
+                    <Mail size={14} />Email
+                  </button>
+                  <button onClick={() => setMethod('phone')} className={`method-btn ${method === 'phone' ? 'active' : ''}`}>
+                    <Smartphone size={14} />Phone
+                  </button>
                 </div>
-              )}
 
-              <div className="card-body animate-fade" key={step}>
-                {/* REGISTER STEP 1 */}
-                {step === 1 && mode === 'register' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    {globalError && (
-                      <div style={{
-                        display: 'flex', alignItems: 'center', gap: 8,
-                        padding: '10px 14px', borderRadius: 12, fontSize: 12,
-                        background: '#FEF2F2', color: '#EF4444',
-                        border: '1.5px solid #FECACA'
-                      }}>
-                        <AlertCircle size={14} style={{ flexShrink: 0 }} />
-                        {globalError}
-                      </div>
-                    )}
-
-                    {/* Method Toggle */}
-                    <div className="method-toggle">
-                      <button
-                        onClick={() => { setMethod('email'); setErrs({}); }}
-                        className={`method-btn ${method === 'email' ? 'active' : ''}`}
-                      >
-                        <Mail size={14} />
-                        Email
-                      </button>
-                      <button
-                        onClick={() => { setMethod('phone'); setErrs({}); }}
-                        className={`method-btn ${method === 'phone' ? 'active' : ''}`}
-                      >
-                        <Smartphone size={14} />
-                        Phone
-                      </button>
-                    </div>
-
-                    {/* Google OAuth Button */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, margin: '6px 0 10px' }}>
-                      <div id="googleBtnRegister" style={{ minHeight: 40 }}></div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{ flex: 1, height: 1, background: '#E2E8F0' }}></div>
-                        <span style={{ fontSize: 11, color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Or register with</span>
-                        <div style={{ flex: 1, height: 1, background: '#E2E8F0' }}></div>
-                      </div>
-                    </div>
-
-                    {/* Email or Phone */}
-                    {method === 'email' ? (
-                      <div
-                        style={{ position: 'relative' }}
-                        onMouseEnter={() => setHoveredField('email')}
-                        onMouseLeave={() => setHoveredField(null)}
-                      >
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          Email Address
-                        </label>
-                        <div style={{ position: 'relative' }}>
-                          <Mail size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
-                          <input
-                            type="email"
-                            value={email}
-                            placeholder="you@example.com"
-                            onFocus={() => setHoveredField('email')}
-                            onChange={e => setEmail(e.target.value)}
-                            className="form-input-focus"
-                            style={inputStyle(!!email, errs.email)}
-                          />
-                          {hoveredField === 'email' && (
-                            <FieldTooltip
-                              guide={FIELD_GUIDES.find(g => g.field === 'email')}
-                              onDismiss={() => setHoveredField(null)}
-                            />
-                          )}
-                        </div>
-                        {errs.email && (
-                          <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}>
-                            <AlertCircle size={10} />{errs.email}
-                          </p>
-                        )}
-                      </div>
-                    ) : (
-                      <div
-                        style={{ position: 'relative' }}
-                        onMouseEnter={() => setHoveredField('phone')}
-                        onMouseLeave={() => setHoveredField(null)}
-                      >
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          Phone Number
-                        </label>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <div style={{ position: 'relative', flexShrink: 0 }}>
-                            <button
-                              onClick={() => setShowCodes(!showCodes)}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: 6,
-                                padding: '13px 14px', border: '2px solid #E2E8F0',
-                                borderRadius: 14, background: 'white', cursor: 'pointer',
-                                fontSize: 13, fontWeight: 600, color: '#334155',
-                                flexShrink: 0, transition: 'border-color 0.2s',
-                                fontFamily: "'Inter', sans-serif",
-                              }}
-                            >
-                              <span style={{ fontSize: 18 }}>{phoneCode.flag}</span>
-                              <span>{phoneCode.code}</span>
-                              <ChevronDown size={12} style={{ color: '#94A3B8' }} />
-                            </button>
-                            {showCodes && (
-                              <div style={{
-                                position: 'absolute', top: 'calc(100% + 8px)', left: 0,
-                                width: 280, maxWidth: 'calc(100vw - 32px)',
-                                background: 'white', borderRadius: 18,
-                                boxShadow: '0 20px 60px rgba(0,0,0,0.15)', zIndex: 100,
-                                border: '1px solid #F1F5F9', overflow: 'hidden'
-                              }}>
-                                <div className="phone-dropdown-scroll" style={{ maxHeight: 220, overflowY: 'auto' }}>
-                                  {PHONE_CODES.map(pc => (
-                                    <button
-                                      key={pc.code}
-                                      onClick={() => { setPhoneCode(pc); setShowCodes(false); }}
-                                      style={{
-                                        width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                                        padding: '11px 16px', background: phoneCode.code === pc.code ? 'rgba(45,106,79,0.06)' : 'transparent',
-                                        border: 'none', borderBottom: '1px solid #F8FAFC',
-                                        cursor: 'pointer', textAlign: 'left', fontSize: 13,
-                                        fontFamily: "'Inter', sans-serif",
-                                      }}
-                                    >
-                                      <span style={{ fontSize: 20 }}>{pc.flag}</span>
-                                      <span style={{ flex: 1, fontWeight: 600, color: '#334155' }}>{pc.name}</span>
-                                      <span style={{ fontSize: 12, fontWeight: 700, color: phoneCode.code === pc.code ? '#2D6A4F' : '#94A3B8' }}>
-                                        {pc.code}
-                                      </span>
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                          <div style={{ flex: 1, position: 'relative' }}>
-                            <Phone size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
-                            <input
-                              type="tel"
-                              value={phone}
-                              placeholder="244 123 4567"
-                              onFocus={() => setHoveredField('phone')}
-                              onChange={e => setPhone(e.target.value.replace(/\D/g, ''))}
-                              className="form-input-focus"
-                              style={{ ...inputStyle(!!phone, errs.phone), paddingLeft: 38 }}
-                            />
-                          </div>
-                        </div>
-                        {hoveredField === 'phone' && (
-                          <FieldTooltip
-                            guide={FIELD_GUIDES.find(g => g.field === 'phone')}
-                            onDismiss={() => setHoveredField(null)}
-                          />
-                        )}
-                        {errs.phone && (
-                          <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}>
-                            <AlertCircle size={10} />{errs.phone}
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Full Name */}
-                    <div
-                      style={{ position: 'relative' }}
-                      onMouseEnter={() => setHoveredField('fullName')}
-                      onMouseLeave={() => setHoveredField(null)}
-                    >
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Full Name
-                      </label>
-                      <div style={{ position: 'relative' }}>
-                        <User size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
-                        <input id="reg-fullname-input"
-                          type="text"
-                          value={fullName}
-                          placeholder="John Doe"
-                          onChange={e => setFullName(e.target.value)}
-                          className="form-input-focus"
-                          style={inputStyle(!!fullName, errs.fullName)}
-                        />
-                        {hoveredField === 'fullName' && (
-                          <FieldTooltip
-                            guide={FIELD_GUIDES.find(g => g.field === 'fullName')}
-                            onDismiss={() => setHoveredField(null)}
-                          />
-                        )}
-                      </div>
-                      {errs.fullName && (
-                        <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}>
-                          <AlertCircle size={10} />{errs.fullName}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Username */}
-                    <div
-                      style={{ position: 'relative' }}
-                      onMouseEnter={() => setHoveredField('username')}
-                      onMouseLeave={() => setHoveredField(null)}
-                    >
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Username
-                      </label>
-                      <div style={{ position: 'relative' }}>
-                        <AtSign size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
-                        <input id="reg-username-input"
-                          type="text"
-                          value={username}
-                          placeholder="john_doe"
-                          onChange={e => setUsername(e.target.value.toLowerCase())}
-                          className="form-input-focus"
-                          style={inputStyle(!!username, errs.username)}
-                        />
-                        {hoveredField === 'username' && (
-                          <FieldTooltip
-                            guide={FIELD_GUIDES.find(g => g.field === 'username')}
-                            onDismiss={() => setHoveredField(null)}
-                          />
-                        )}
-                      </div>
-                      {errs.username && (
-                        <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}>
-                          <AlertCircle size={10} />{errs.username}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Password */}
-                    <div
-                      style={{ position: 'relative' }}
-                      onMouseEnter={() => setHoveredField('password')}
-                      onMouseLeave={() => setHoveredField(null)}
-                    >
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Password
-                      </label>
-                      <div style={{ position: 'relative' }}>
-                        <Lock size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
-                        <input id="reg-password-input"
-                          type={showPw ? 'text' : 'password'}
-                          value={password}
-                          placeholder="••••••••"
-                          onChange={e => setPassword(e.target.value)}
-                          className="form-input-focus"
-                          style={inputWithRightIcon(!!password, errs.password)}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPw(!showPw)}
-                          style={{
-                            position: 'absolute', right: 14, top: '50%',
-                            transform: 'translateY(-50%)', background: 'none',
-                            border: 'none', cursor: 'pointer', color: '#94A3B8',
-                            padding: 4, display: 'flex', alignItems: 'center'
-                          }}
-                        >
-                          {showPw ? <EyeOff size={17} /> : <Eye size={17} />}
-                        </button>
-                        {hoveredField === 'password' && (
-                          <FieldTooltip
-                            guide={FIELD_GUIDES.find(g => g.field === 'password')}
-                            onDismiss={() => setHoveredField(null)}
-                          />
-                        )}
-                      </div>
-                      {errs.password && (
-                        <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}>
-                          <AlertCircle size={10} />{errs.password}
-                        </p>
-                      )}
-                      <PwStrength password={password} />
-                    </div>
-
-                    {/* Confirm Password */}
-                    <div
-                      style={{ position: 'relative' }}
-                      onMouseEnter={() => setHoveredField('confirm')}
-                      onMouseLeave={() => setHoveredField(null)}
-                    >
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Confirm Password
-                      </label>
-                      <div style={{ position: 'relative' }}>
-                        <Lock size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
-                        <input id="reg-confirm-password-input"
-                          type={showConfirm ? 'text' : 'password'}
-                          value={confirm}
-                          placeholder="Repeat your password"
-                          onChange={e => setConfirm(e.target.value)}
-                          className="form-input-focus"
-                          style={inputWithRightIcon(!!confirm, errs.confirm)}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowConfirm(!showConfirm)}
-                          style={{
-                            position: 'absolute', right: 14, top: '50%',
-                            transform: 'translateY(-50%)', background: 'none',
-                            border: 'none', cursor: 'pointer', color: '#94A3B8',
-                            padding: 4, display: 'flex', alignItems: 'center'
-                          }}
-                        >
-                          {showConfirm ? <EyeOff size={17} /> : <Eye size={17} />}
-                        </button>
-                        {hoveredField === 'confirm' && (
-                          <FieldTooltip
-                            guide={FIELD_GUIDES.find(g => g.field === 'confirm')}
-                            onDismiss={() => setHoveredField(null)}
-                          />
-                        )}
-                      </div>
-                      {errs.confirm && (
-                        <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}>
-                          <AlertCircle size={10} />{errs.confirm}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Terms */}
-                    <div
-                      style={{ position: 'relative' }}
-                      onMouseEnter={() => setHoveredField('agreed')}
-                      onMouseLeave={() => setHoveredField(null)}
-                    >
-                      <div
-                        id="reg-terms-checkbox"
-                        onClick={() => setAgreed(!agreed)}
-                        style={{
-                          display: 'flex', alignItems: 'flex-start', gap: 10,
-                          cursor: 'pointer', padding: 4, borderRadius: 10,
-                          transition: 'background 0.2s'
-                        }}
-                      >
-                        <div style={{
-                          width: 22, height: 22, borderRadius: 7,
-                          border: `2px solid ${errs.agreed ? '#EF4444' : agreed ? '#2D6A4F' : '#CBD5E1'}`,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          flexShrink: 0, marginTop: 1, transition: 'all 0.2s',
-                          cursor: 'pointer', background: agreed ? '#2D6A4F' : 'transparent'
-                        }}>
-                          {agreed && <Check size={12} color="white" />}
-                        </div>
-                        <p style={{ fontSize: 12, lineHeight: 1.5, color: '#64748B', margin: 0 }}>
-                          I agree to the{' '}
-                          <a href="/terms" style={{ color: '#2D6A4F', fontWeight: 700, textDecoration: 'none' }} onClick={e => e.stopPropagation()}>
-                            Terms of Service
-                          </a>
-                          {' '}and{' '}
-                          <a href="/privacy" style={{ color: '#2D6A4F', fontWeight: 700, textDecoration: 'none' }} onClick={e => e.stopPropagation()}>
-                            Privacy Policy
-                          </a>.
-                          I understand all trades are escrow-protected.
-                        </p>
-                      </div>
-                      {hoveredField === 'agreed' && (
-                        <FieldTooltip
-                          guide={FIELD_GUIDES.find(g => g.field === 'agreed')}
-                          onDismiss={() => setHoveredField(null)}
-                        />
-                      )}
-                      {errs.agreed && (
-                        <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}>
-                          <AlertCircle size={10} />{errs.agreed}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Submit */}
-                    <div
-                      style={{ position: 'relative' }}
-                      onMouseEnter={() => setHoveredField('submit')}
-                      onMouseLeave={() => setHoveredField(null)}
-                    >
-                      <button
-                        id="reg-submit-btn"
-                        onClick={handleRegister}
-                        disabled={loading}
-                        className="submit-btn"
-                      >
-                        {loading ? (
-                          <>
-                            <RefreshCw size={16} className="animate-spin" />
-                            Creating Account…
-                          </>
-                        ) : (
-                          <>
-                            Create Account
-                            <ArrowRight size={16} />
-                          </>
-                        )}
-                      </button>
-                      {hoveredField === 'submit' && (
-                        <FieldTooltip
-                          guide={FIELD_GUIDES.find(g => g.field === 'submit')}
-                          onDismiss={() => setHoveredField(null)}
-                        />
-                      )}
-                    </div>
-
-                    {/* Sign In Link */}
-                    <p style={{ textAlign: 'center', fontSize: 13, color: '#64748B', margin: 0 }}>
-                      Already have an account?{' '}
-                      <Link to="/login" style={{ color: '#2D6A4F', fontWeight: 700, textDecoration: 'none' }}>
-                        Sign In
-                      </Link>
-                    </p>
-                  </div>
-                )}
-
-                {/* FORGOT PASSWORD f1 */}
-                {step === 'f1' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    {globalError && (
-                      <div style={{
-                        display: 'flex', alignItems: 'center', gap: 8,
-                        padding: '10px 14px', borderRadius: 12, fontSize: 12,
-                        background: '#FEF2F2', color: '#EF4444',
-                        border: '1.5px solid #FECACA'
-                      }}>
-                        <AlertCircle size={14} style={{ flexShrink: 0 }} />
-                        {globalError}
-                      </div>
-                    )}
-
-                    <div className="method-toggle">
-                      <button onClick={() => setMethod('email')} className={`method-btn ${method === 'email' ? 'active' : ''}`}>
-                        <Mail size={14} />Email
-                      </button>
-                      <button onClick={() => setMethod('phone')} className={`method-btn ${method === 'phone' ? 'active' : ''}`}>
-                        <Smartphone size={14} />Phone
-                      </button>
-                    </div>
-
-                    {method === 'email' ? (
-                      <div>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          Email Address
-                        </label>
-                        <div style={{ position: 'relative' }}>
-                          <Mail size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
-                          <input id="reg-email-input" type="email" value={email} placeholder="you@example.com"
-                            onChange={e => setEmail(e.target.value)} className="form-input-focus"
-                            style={inputStyle(!!email, errs.email)} />
-                        </div>
-                        {errs.email && <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}><AlertCircle size={10} />{errs.email}</p>}
-                      </div>
-                    ) : (
-                      <div>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          Phone Number
-                        </label>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <button onClick={() => setShowCodes(!showCodes)} style={{
-                            display: 'flex', alignItems: 'center', gap: 6,
-                            padding: '13px 14px', border: '2px solid #E2E8F0',
-                            borderRadius: 14, background: 'white', cursor: 'pointer',
-                            fontSize: 13, fontWeight: 600, color: '#334155', flexShrink: 0,
-                            fontFamily: "'Inter', sans-serif",
-                          }}>
-                            <span style={{ fontSize: 18 }}>{phoneCode.flag}</span>
-                            <span>{phoneCode.code}</span>
-                          </button>
-                          <div style={{ flex: 1, position: 'relative' }}>
-                            <Phone size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
-                            <input type="tel" value={phone} placeholder="244 123 4567"
-                              onChange={e => setPhone(e.target.value.replace(/\D/g, ''))} className="form-input-focus"
-                              style={{ ...inputStyle(!!phone, errs.phone), paddingLeft: 38 }} />
-                          </div>
-                        </div>
-                        {errs.phone && <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}><AlertCircle size={10} />{errs.phone}</p>}
-                      </div>
-                    )}
-
-                    <button onClick={sendOTP} disabled={loading} className="submit-btn">
-                      {loading ? <><RefreshCw size={16} className="animate-spin" />Sending code…</> : <>Send Reset Code <ArrowRight size={16} /></>}
-                    </button>
-
-                    <button onClick={backToRegister} style={{
-                      width: '100%', background: 'none', border: 'none', cursor: 'pointer',
-                      fontSize: 13, fontWeight: 600, color: '#64748B', padding: 8,
-                      fontFamily: "'Inter', sans-serif",
-                    }}>
-                      ← Back to Register
-                    </button>
-                  </div>
-                )}
-
-                {/* FORGOT f2 OTP */}
-                {step === 'f2' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{
-                        width: 56, height: 56, borderRadius: 16,
-                        background: 'rgba(45,106,79,0.08)', display: 'flex',
-                        alignItems: 'center', justifyContent: 'center',
-                        margin: '0 auto 12px', fontSize: 26
-                      }}>
-                        {method === 'email' ? <Mail size={26} style={{ color: '#2D6A4F' }} /> : <Smartphone size={26} style={{ color: '#2D6A4F' }} />}
-                      </div>
-                      <p style={{ fontSize: 12, color: '#64748B', margin: '0 0 4px' }}>We sent a 6-digit code to</p>
-                      <p style={{ fontSize: 14, fontWeight: 700, color: '#1B4332', margin: 0, wordBreak: 'break-all' }}>{contact}</p>
-                    </div>
-
-                    {globalError && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 12, fontSize: 12, background: '#FEF2F2', color: '#EF4444' }}>
-                        <AlertCircle size={14} />{globalError}
-                      </div>
-                    )}
-
-                    <OTPInput value={otp} onChange={setOtp} hasError={!!otpError} />
-
-                    {otpError && (
-                      <p style={{ textAlign: 'center', fontSize: 12, fontWeight: 600, color: '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, margin: 0 }}>
-                        <AlertCircle size={11} />{otpError}
-                      </p>
-                    )}
-
-                    <button onClick={verifyOTP} disabled={loading || otp.length < 6} className="submit-btn">
-                      {loading ? <><RefreshCw size={16} className="animate-spin" />Verifying…</> : <>Verify Code <ArrowRight size={16} /></>}
-                    </button>
-
-                    <div style={{ textAlign: 'center' }}>
-                      {otpTimer > 0 ? (
-                        <p style={{ fontSize: 12, color: '#94A3B8', margin: 0 }}>
-                          Resend in <span style={{ fontWeight: 700, color: '#2D6A4F' }}>{otpTimer}s</span>
-                        </p>
-                      ) : (
-                        <button onClick={() => { setOtp(''); sendOTP(); }} style={{
-                          background: 'none', border: 'none', cursor: 'pointer',
-                          fontSize: 12, fontWeight: 700, color: '#2D6A4F',
-                          display: 'flex', alignItems: 'center', gap: 5, margin: '0 auto',
-                          fontFamily: "'Inter', sans-serif",
-                        }}>
-                          <RefreshCw size={11} />Resend Code
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* FORGOT f3 New Password */}
-                {step === 'f3' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    {globalError && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 12, fontSize: 12, background: '#FEF2F2', color: '#EF4444' }}>
-                        <AlertCircle size={14} />{globalError}
-                      </div>
-                    )}
-
-                    <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        New Password
-                      </label>
-                      <div style={{ position: 'relative' }}>
-                        <Lock size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
-                        <input type={showPw ? 'text' : 'password'} value={password}
-                          placeholder="Create a new strong password"
-                          onChange={e => setPassword(e.target.value)} className="form-input-focus"
-                          style={inputWithRightIcon(!!password, errs.password)} />
-                        <button type="button" onClick={() => setShowPw(!showPw)} style={{
-                          position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
-                          background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8',
-                          padding: 4, display: 'flex', alignItems: 'center'
-                        }}>
-                          {showPw ? <EyeOff size={17} /> : <Eye size={17} />}
-                        </button>
-                      </div>
-                      {errs.password && <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}><AlertCircle size={10} />{errs.password}</p>}
-                      <PwStrength password={password} />
-                    </div>
-
-                    <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Confirm New Password
-                      </label>
-                      <div style={{ position: 'relative' }}>
-                        <Lock size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
-                        <input type={showConfirm ? 'text' : 'password'} value={confirm}
-                          placeholder="Repeat your password"
-                          onChange={e => setConfirm(e.target.value)} className="form-input-focus"
-                          style={inputWithRightIcon(!!confirm, errs.confirm)} />
-                        <button type="button" onClick={() => setShowConfirm(!showConfirm)} style={{
-                          position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
-                          background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8',
-                          padding: 4, display: 'flex', alignItems: 'center'
-                        }}>
-                          {showConfirm ? <EyeOff size={17} /> : <Eye size={17} />}
-                        </button>
-                      </div>
-                      {errs.confirm && <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}><AlertCircle size={10} />{errs.confirm}</p>}
-                    </div>
-
-                    <button onClick={handleResetPassword} disabled={loading} className="submit-btn">
-                      {loading ? <><RefreshCw size={16} className="animate-spin" />Resetting…</> : <>Reset Password <ArrowRight size={16} /></>}
-                    </button>
-                  </div>
-                )}
-
-                {/* Success States */}
-                {step === 4 && (
-                  <div style={{ textAlign: 'center', padding: '16px 0' }}>
-                    <div style={{
-                      width: 80, height: 80, borderRadius: '50%',
-                      background: 'rgba(16,185,129,0.1)', display: 'flex',
-                      alignItems: 'center', justifyContent: 'center',
-                      margin: '0 auto 20px'
-                    }}>
-                      <CheckCircle size={42} style={{ color: '#10B981' }} />
-                    </div>
-                    <h3 style={{ fontSize: 24, fontWeight: 800, color: '#1B4332', margin: '0 0 8px', fontFamily: "'Outfit', sans-serif" }}>
-                      Welcome to <span className="shimmer-text">PRAQEN</span>! <PartyPopper size={18} style={{ color: '#F4A422', verticalAlign: 'middle' }} />
-                    </h3>
-                    <p style={{ fontSize: 14, color: '#64748B', margin: '0 0 16px', lineHeight: 1.6 }}>
-                      Your account is ready. Redirecting to the marketplace…
-                    </p>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 12, color: '#94A3B8' }}>
-                      <RefreshCw size={12} className="animate-spin" />
-                      Taking you to live offers…
-                    </div>
-                  </div>
-                )}
-
-                {step === 'f4' && (
-                  <div style={{ textAlign: 'center', padding: '16px 0' }}>
-                    <div style={{
-                      width: 80, height: 80, borderRadius: '50%',
-                      background: 'rgba(16,185,129,0.1)', display: 'flex',
-                      alignItems: 'center', justifyContent: 'center',
-                      margin: '0 auto 20px'
-                    }}>
-                      <CheckCircle size={42} style={{ color: '#10B981' }} />
-                    </div>
-                    <h3 style={{ fontSize: 24, fontWeight: 800, color: '#1B4332', margin: '0 0 8px', fontFamily: "'Outfit', sans-serif" }}>
-                      Password Reset! <CheckCircle size={18} style={{ color: '#10B981', verticalAlign: 'middle' }} />
-                    </h3>
-                    <p style={{ fontSize: 14, color: '#64748B', margin: '0 0 20px', lineHeight: 1.6 }}>
-                      You can now log in with your new password.
-                    </p>
-                    <button onClick={() => navigate('/login')} className="submit-btn">
-                      Go to Login <ArrowRight size={16} />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Card Footer */}
-              {step !== 4 && step !== 'f4' && (
-                <div className="card-footer-bar">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#94A3B8' }}>
-                    <Shield size={11} />
-                    <span>SSL · Zero fraud</span>
-                  </div>
+                {method === 'email' ? (
                   <div>
-                    {mode === 'register' && step === 1 && (
-                      <button onClick={startForgot} style={{
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        fontSize: 12, fontWeight: 600, color: '#2D6A4F',
-                        fontFamily: "'Inter', sans-serif", padding: '4px 8px',
-                        borderRadius: 8, transition: 'background 0.2s'
-                      }}>
-                        Forgot password?
-                      </button>
-                    )}
-                    {mode === 'forgot' && (
-                      <button onClick={backToRegister} style={{
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        fontSize: 12, fontWeight: 600, color: '#64748B',
-                        fontFamily: "'Inter', sans-serif", padding: '4px 8px',
-                        borderRadius: 8,
-                      }}>
-                        ← Register instead
-                      </button>
-                    )}
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Email Address
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <Mail size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
+                      <input id="reg-email-input" type="email" value={email} placeholder="you@example.com"
+                        onChange={e => setEmail(e.target.value)} className="form-input-focus"
+                        style={inputStyle(!!email, errs.email)} />
+                    </div>
+                    {errs.email && <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}><AlertCircle size={10} />{errs.email}</p>}
                   </div>
+                ) : (
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Phone Number
+                    </label>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => setShowCodes(!showCodes)} style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        padding: '13px 14px', border: '2px solid #E2E8F0',
+                        borderRadius: 14, background: 'white', cursor: 'pointer',
+                        fontSize: 13, fontWeight: 600, color: '#334155', flexShrink: 0,
+                        fontFamily: "'IBM Plex Sans', sans-serif",
+                      }}>
+                        <span style={{ fontSize: 18 }}>{phoneCode.flag}</span>
+                        <span>{phoneCode.code}</span>
+                      </button>
+                      <div style={{ flex: 1, position: 'relative' }}>
+                        <Phone size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
+                        <input type="tel" value={phone} placeholder="244 123 4567"
+                          onChange={e => setPhone(e.target.value.replace(/\D/g, ''))} className="form-input-focus"
+                          style={{ ...inputStyle(!!phone, errs.phone), paddingLeft: 38 }} />
+                      </div>
+                    </div>
+                    {errs.phone && <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}><AlertCircle size={10} />{errs.phone}</p>}
+                  </div>
+                )}
+
+                <button onClick={sendOTP} disabled={loading} className="submit-btn">
+                  {loading ? <><RefreshCw size={16} className="animate-spin" />Sending code…</> : <>Send Reset Code <ArrowRight size={16} /></>}
+                </button>
+
+                <button onClick={backToRegister} style={{
+                  width: '100%', background: 'none', border: 'none', cursor: 'pointer',
+                  fontSize: 13, fontWeight: 600, color: '#64748B', padding: 8,
+                  fontFamily: "'IBM Plex Sans', sans-serif",
+                }}>
+                  ← Back to Register
+                </button>
+              </div>
+            )}
+
+            {/* FORGOT f2 OTP */}
+            {step === 'f2' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{
+                    width: 56, height: 56, borderRadius: 16,
+                    background: 'rgba(45,106,79,0.08)', display: 'flex',
+                    alignItems: 'center', justifyContent: 'center',
+                    margin: '0 auto 12px', fontSize: 26
+                  }}>
+                    {method === 'email' ? <Mail size={26} style={{ color: '#2D6A4F' }} /> : <Smartphone size={26} style={{ color: '#2D6A4F' }} />}
+                  </div>
+                  <p style={{ fontSize: 12, color: '#64748B', margin: '0 0 4px' }}>We sent a 6-digit code to</p>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: '#1B4332', margin: 0, wordBreak: 'break-all' }}>{contact}</p>
                 </div>
-              )}
-            </div>
+
+                {globalError && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 12, fontSize: 12, background: '#FEF2F2', color: '#EF4444' }}>
+                    <AlertCircle size={14} />{globalError}
+                  </div>
+                )}
+
+                <OTPInput value={otp} onChange={setOtp} hasError={!!otpError} />
+
+                {otpError && (
+                  <p style={{ textAlign: 'center', fontSize: 12, fontWeight: 600, color: '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, margin: 0 }}>
+                    <AlertCircle size={11} />{otpError}
+                  </p>
+                )}
+
+                <button onClick={verifyOTP} disabled={loading || otp.length < 6} className="submit-btn">
+                  {loading ? <><RefreshCw size={16} className="animate-spin" />Verifying…</> : <>Verify Code <ArrowRight size={16} /></>}
+                </button>
+
+                <div style={{ textAlign: 'center' }}>
+                  {otpTimer > 0 ? (
+                    <p style={{ fontSize: 12, color: '#94A3B8', margin: 0 }}>
+                      Resend in <span style={{ fontWeight: 700, color: '#2D6A4F' }}>{otpTimer}s</span>
+                    </p>
+                  ) : (
+                    <button onClick={() => { setOtp(''); sendOTP(); }} style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      fontSize: 12, fontWeight: 700, color: '#2D6A4F',
+                      display: 'flex', alignItems: 'center', gap: 5, margin: '0 auto',
+                      fontFamily: "'IBM Plex Sans', sans-serif",
+                    }}>
+                      <RefreshCw size={11} />Resend Code
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* FORGOT f3 New Password */}
+            {step === 'f3' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {globalError && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 12, fontSize: 12, background: '#FEF2F2', color: '#EF4444' }}>
+                    <AlertCircle size={14} />{globalError}
+                  </div>
+                )}
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    New Password
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <Lock size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
+                    <input type={showPw ? 'text' : 'password'} value={password}
+                      placeholder="Create a new strong password"
+                      onChange={e => setPassword(e.target.value)} className="form-input-focus"
+                      style={inputWithRightIcon(!!password, errs.password)} />
+                    <button type="button" onClick={() => setShowPw(!showPw)} style={{
+                      position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
+                      background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8',
+                      padding: 4, display: 'flex', alignItems: 'center'
+                    }}>
+                      {showPw ? <EyeOff size={17} /> : <Eye size={17} />}
+                    </button>
+                  </div>
+                  {errs.password && <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}><AlertCircle size={10} />{errs.password}</p>}
+                  <PwStrength password={password} />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Confirm New Password
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <Lock size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none', zIndex: 1 }} />
+                    <input type={showConfirm ? 'text' : 'password'} value={confirm}
+                      placeholder="Repeat your password"
+                      onChange={e => setConfirm(e.target.value)} className="form-input-focus"
+                      style={inputWithRightIcon(!!confirm, errs.confirm)} />
+                    <button type="button" onClick={() => setShowConfirm(!showConfirm)} style={{
+                      position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
+                      background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8',
+                      padding: 4, display: 'flex', alignItems: 'center'
+                    }}>
+                      {showConfirm ? <EyeOff size={17} /> : <Eye size={17} />}
+                    </button>
+                  </div>
+                  {errs.confirm && <p style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 5, fontWeight: 500 }}><AlertCircle size={10} />{errs.confirm}</p>}
+                </div>
+
+                <button onClick={handleResetPassword} disabled={loading} className="submit-btn">
+                  {loading ? <><RefreshCw size={16} className="animate-spin" />Resetting…</> : <>Reset Password <ArrowRight size={16} /></>}
+                </button>
+              </div>
+            )}
+
+            {/* Success States */}
+            {step === 4 && (
+              <div style={{ textAlign: 'center', padding: '16px 0' }}>
+                <div style={{
+                  width: 80, height: 80, borderRadius: '50%',
+                  background: 'rgba(16,185,129,0.1)', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                  margin: '0 auto 20px'
+                }}>
+                  <CheckCircle size={42} style={{ color: '#10B981' }} />
+                </div>
+                <h3 style={{ fontSize: 24, fontWeight: 800, color: '#1B4332', margin: '0 0 8px', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                  Welcome to <span className="shimmer-text">PRAQEN</span>! <PartyPopper size={18} style={{ color: '#F4A422', verticalAlign: 'middle' }} />
+                </h3>
+                <p style={{ fontSize: 14, color: '#64748B', margin: '0 0 16px', lineHeight: 1.6 }}>
+                  Your account is ready. Redirecting to the marketplace…
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 12, color: '#94A3B8' }}>
+                  <RefreshCw size={12} className="animate-spin" />
+                  Taking you to live offers…
+                </div>
+              </div>
+            )}
+
+            {step === 'f4' && (
+              <div style={{ textAlign: 'center', padding: '16px 0' }}>
+                <div style={{
+                  width: 80, height: 80, borderRadius: '50%',
+                  background: 'rgba(16,185,129,0.1)', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                  margin: '0 auto 20px'
+                }}>
+                  <CheckCircle size={42} style={{ color: '#10B981' }} />
+                </div>
+                <h3 style={{ fontSize: 24, fontWeight: 800, color: '#1B4332', margin: '0 0 8px', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                  Password Reset! <CheckCircle size={18} style={{ color: '#10B981', verticalAlign: 'middle' }} />
+                </h3>
+                <p style={{ fontSize: 14, color: '#64748B', margin: '0 0 20px', lineHeight: 1.6 }}>
+                  You can now log in with your new password.
+                </p>
+                <button onClick={() => navigate('/login')} className="submit-btn">
+                  Go to Login <ArrowRight size={16} />
+                </button>
+              </div>
+            )}
           </div>
+
+          {/* Card Footer */}
+          {step !== 4 && step !== 'f4' && mode === 'forgot' && (
+            <div style={{ padding: '12px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={backToRegister} style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: 12, fontWeight: 600, color: '#64748B',
+                fontFamily: "'IBM Plex Sans', sans-serif", padding: '4px 8px',
+                borderRadius: 8,
+              }}>
+                ← Register instead
+              </button>
+            </div>
+          )}
         </div>
-      </div>
+      </AuthLayout>
     </>
   );
 }

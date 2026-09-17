@@ -1132,6 +1132,19 @@ export default function Notifications({ user }) {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  // ── External "open notifications" requests (e.g. dashboard news card "View more") ──
+  // Any component can dispatch window event 'praqen:open-notifications' to open
+  // this panel, keeping all notification content in one place.
+  useEffect(() => {
+    const onOpenRequest = () => {
+      setShowDrop(true);
+      load();
+    };
+    window.addEventListener('praqen:open-notifications', onOpenRequest);
+    return () => window.removeEventListener('praqen:open-notifications', onOpenRequest);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Track first user interaction (click/tap) so we can play audio later.
   useEffect(() => {
     const resumeAudio = () => {

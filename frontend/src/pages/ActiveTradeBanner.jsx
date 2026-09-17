@@ -63,7 +63,7 @@ function TradeCard({ trade, user, onClose, onExpire }) {
   const st        = getStatus(trade.status);
   const cp        = isBuyer ? (trade.seller||{}) : (trade.buyer||{});
   const cpName    = cp.username||(isBuyer?trade.seller_name:trade.buyer_name)||'—';
-  const cpFlag    = flag(cp.country_code||trade.listing?.country_code||'');
+  const cpFlag    = flag(cp.country||trade.listing?.country||'');
   const isGift    = isGiftTrade(trade);
   const typeColor = tradeColor(isGift, isBuyer);
   const typeLabel = isGift ? '🎁 GIFT CARD' : isBuyer ? '🛒 BUYING BTC' : '💰 SELLING BTC';
