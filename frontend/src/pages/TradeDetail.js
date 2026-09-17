@@ -1591,19 +1591,19 @@ export default function TradeDetail({user}) {
                   {label:'Trade opened — Buyer\'s BTC locked in escrow',  done:true},
                   {label:'Card seller sends gift card code to buyer',      done:isPaid||isCompleted},
                   {label:'Buyer verifies the code is valid',              done:isCompleted},
-                  {label:`Buyer releases BTC to card seller (${(FEE_RATE*100).toFixed(0)}% platform fee)`,  done:isCompleted},
+                  {label:'Buyer releases BTC to card seller',  done:isCompleted},
                 ] : [
                   {label:'Trade opened — Seller\'s BTC locked in escrow', done:true},
                   {label:'Card buyer sends gift card code to seller',      done:isPaid||isCompleted},
                   {label:'Seller verifies the code is valid',             done:isCompleted},
-                  {label:`Seller releases BTC to card buyer (${(FEE_RATE*100).toFixed(0)}% platform fee)`,  done:isCompleted},
+                  {label:'Seller releases BTC to card buyer',  done:isCompleted},
                 ]) : [
                   {label:'Trade opened — BTC locked in escrow',           done:true},
                   {label:`Buyer sends payment via ${payMethod}`,          done:isPaid||isCompleted},
                   {label:'Seller confirms payment received',              done:isPaid||isCompleted},
                   {label:isAdditiveFee
-                    ? `Bitcoin released to buyer — full amount (seller paid the ${(FEE_RATE*100).toFixed(0)}% fee)`
-                    : `Bitcoin released to buyer (${(FEE_RATE*100).toFixed(0)}% fee deducted)`, done:isCompleted},
+                    ? 'Bitcoin released to buyer — full amount'
+                    : 'Bitcoin released to buyer', done:isCompleted},
                 ]).map(({label,done},i)=>(
                   <div key={i} className="flex items-center gap-2.5">
                     <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
@@ -1717,7 +1717,6 @@ export default function TradeDetail({user}) {
                   style={{background:`linear-gradient(135deg,${C.forest},${C.mint})`}}>
                   <CheckCircle size={24} className="mx-auto mb-1"/>
                   <p className="font-black text-sm">Trade Complete</p>
-                  <p className="text-xs text-white/60 mt-0.5">{(FEE_RATE*100).toFixed(0)}% platform fee {isAdditiveFee ? 'paid by the seller' : 'collected by escrow'}</p>
                   {!trade?.user_gave_feedback&&!localStorage.getItem('fb_done_'+id)&&(
                     <button onClick={()=>setShowFb(true)} className="mt-2 text-xs underline text-white/80">
                       Leave feedback →
@@ -1831,7 +1830,6 @@ export default function TradeDetail({user}) {
                 <><Lock size={12} style={{flexShrink:0}}/> BTC locked in escrow when trade opens</>,
                 <><DollarSign size={12} style={{flexShrink:0}}/> Buyer pays via agreed payment method</>,
                 <><CheckCircle size={12} style={{flexShrink:0}}/> Seller confirms → releases BTC to buyer</>,
-                <><DollarSign size={12} style={{flexShrink:0}}/> {(FEE_RATE*100).toFixed(0)}% platform fee {isAdditiveFee ? 'added on top — paid by the BTC sender' : 'auto-collected by escrow'}</>,
                 <><AlertTriangle size={12} style={{flexShrink:0}}/> Open dispute if problem — resolved in 24h</>,
               ].map((t,i)=><p key={i} className="text-xs flex items-center gap-1.5" style={{color:C.g600}}>{t}</p>)}
 
@@ -2587,8 +2585,8 @@ export default function TradeDetail({user}) {
             {icon:<CheckCircle size={16}/>, text:'Only release Bitcoin AFTER you have confirmed the payment in your bank or mobile money account.'},
             {icon:<AlertTriangle size={16} style={{color:C.warn}}/>, text:'This action is PERMANENT and cannot be reversed. Bitcoin will leave escrow immediately.'},
             {icon:<Lock size={16}/>, text:isAdditiveFee
-              ? `The ${(FEE_RATE*100).toFixed(0)}% platform fee is added on top and paid by you — the buyer receives the full amount.`
-              : `A ${(FEE_RATE*100).toFixed(0)}% fee will be automatically deducted by the escrow system.`},
+              ? 'The platform fee is added on top and paid by you — the buyer receives the full amount.'
+              : 'A fee will be automatically deducted by the escrow system.'},
             {icon:<Shield size={16}/>, text:'A security code will be sent to your email to confirm this action.'},
           ]}
           confirmLabel={sending2FA?'Sending code…':'Send Security Code'}

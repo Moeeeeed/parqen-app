@@ -7,7 +7,7 @@ import {
   HeadphonesIcon, Check, ChevronRight, Star,
   MessageCircle, Award, Flame, Play, CheckCircle,
   Smartphone, Building2, CreditCard, Mail,
-  Copy, UserPlus, Share2, Search, Percent, ArrowLeftRight, Link2,
+  Copy, UserPlus, Share2, Search, ArrowLeftRight, Link2,
 } from 'lucide-react';
 import { copyToClipboard } from '../utils/clipboard';
 /* ─── palette ─────────────────────────────────────────────────────────── */
@@ -215,7 +215,6 @@ export default function LandingPage({ user }) {
                 {[
                   { Icon: Lock, t: 'Escrow' },
                   { Icon: Zap, t: '15 min' },
-                  { Icon: Percent, t: '2%' },
                   { Icon: Globe, t: '180+ countries' },
                 ].map(({ Icon, t }) => (
                   <span key={t} className="text-xs px-2.5 py-1 rounded-full flex-shrink-0 flex items-center gap-1" style={{ color: 'rgba(255,255,255,.75)', background: 'rgba(255,255,255,.1)' }}>
@@ -326,7 +325,6 @@ export default function LandingPage({ user }) {
           <div className="max-w-5xl mx-auto px-4 py-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { v: '180+', l: 'Countries' },
-              { v: '2%', l: 'Flat Fee Only' },
             ].map(({ v, l }) => (
               <div key={l} className="text-center">
                 <p className="text-xl md:text-3xl font-black grad-text mb-0.5">{v}</p>
@@ -1056,7 +1054,7 @@ style={{background:`${color}12`}}>{React.createElement(icon, {size:15, style:{co
               style={{ background: '#EF4444', color: '#fff' }}>BETA</span>
           </div>
           <p className="text-xs mb-5" style={{ color: 'rgba(255,255,255,.45)' }}>
-            The world's most trusted P2P Bitcoin &amp; USDT platform · Escrow-protected · 2% flat fee
+            The world's most trusted P2P Bitcoin &amp; USDT platform · Escrow-protected
           </p>
 
           {/* key links */}
