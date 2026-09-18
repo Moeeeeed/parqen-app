@@ -5566,9 +5566,9 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
     const essentialCols = 'id, email, username, full_name, avatar_url, average_rating, total_trades, completion_rate, created_at, is_admin, is_moderator, is_id_verified, is_email_verified, total_feedback_count, positive_feedback, negative_feedback, last_login, two_factor_enabled, two_factor_method, account_status, has_warning';
 
     // The core profile fetch (with its column-missing fallback), the optional
-    // extra fields, and the wallet balance don't depend on each other — run all
-    // three round-trips at once instead of one-after-another.
-    const [{ data, error }, extraFields, balance] = await Promise.all([
+    // extra fields, the lock flags, and the wallet balance don't depend on each
+    // other — run all four round-trips at once instead of one-after-another.
+    const [{ data, error }, extraFields, lockFlags, balance] = await Promise.all([
       (async () => {
         let { data, error } = await supabaseAdmin.from('users').select(coreCols).eq('id', req.userId).single();
         // Fallback if a column doesn't exist in the DB (e.g. is_phone_verified, badge, country)
@@ -5588,6 +5588,30 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
             .eq('id', req.userId).single();
           return extra || {};
         } catch { return {}; }
+      })(),
+      (async () => {
+        // One-time username lock flag + withdrawal lock — isolated queries so a
+        // missing column never breaks the profile response (same defensive pattern
+        // as extraFields above). hasChangedUsername comes from the persisted
+        // has_changed_username boolean, with username_changed_at as a fallback
+        // derivation so the lock still holds even if one column is unavailable.
+        const flags = {};
+        try {
+          const { data: hc } = await supabaseAdmin.from('users').select('has_changed_username').eq('id', req.userId).single();
+          if (hc) flags.has_changed_username = !!hc.has_changed_username;
+        } catch { }
+        try {
+          const { data: uch } = await supabaseAdmin.from('users').select('username_changed_at').eq('id', req.userId).single();
+          if (uch) flags.username_changed_at = uch.username_changed_at || null;
+        } catch { }
+        const locked = !!(flags.has_changed_username || flags.username_changed_at);
+        flags.username_changed = locked;
+        flags.hasChangedUsername = locked;
+        try {
+          const { data: wl } = await supabaseAdmin.from('users').select('withdrawal_locked_until').eq('id', req.userId).maybeSingle();
+          if (wl) flags.withdrawal_locked_until = wl.withdrawal_locked_until || null;
+        } catch { }
+        return flags;
       })(),
       (async () => {
         // Balance — read from wallets, the source of truth (matches Wallet page,
@@ -5614,6 +5638,7 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
       user: {
         ...data,
         ...extraFields,
+        ...lockFlags,
         is_admin: data.is_admin || false,
         is_moderator: data.is_moderator || false,
       },
@@ -5748,20 +5773,26 @@ app.get('/api/users/:userId', async (req, res) => {
 
 app.put('/api/users/profile', verifyToken, async (req, res) => {
   try {
-    const { username, full_name, fullName, bio, location, website, phone, hide_full_name, name_display } = req.body;
+    const { username, full_name, fullName, bio, location, website, phone, hide_full_name, name_display, email, withdrawal_lock } = req.body;
 
-    // Fetch current user to enforce rules
-    const { data: current } = await supabaseAdmin.from('users').select('username, full_name, username_changed_at, is_id_verified, full_name_changed_at, location').eq('id', req.userId).single();
+    // Fetch current user to enforce rules (has_changed_username = persisted
+    // one-time-username-lock flag, checked server-side regardless of client input)
+    const { data: current } = await supabaseAdmin.from('users').select('username, full_name, username_changed_at, has_changed_username, is_id_verified, full_name_changed_at, location, email').eq('id', req.userId).single();
 
     const updateData = {};
 
-    // Username: allowed only if never changed before
+    // Username: allowed only if never changed before. The lock flag is checked
+    // HERE on the server — the request is rejected with 403 no matter what the
+    // frontend sends. The flag (has_changed_username = true) and the timestamp
+    // are set in the SAME update as the username itself, so a successful change
+    // can never complete without also persisting the lock.
     if (username !== undefined && username.trim() !== current?.username) {
-      if (current?.username_changed_at) {
+      if (current?.has_changed_username || current?.username_changed_at) {
         return res.status(403).json({ error: 'Username can only be changed once.' });
       }
       updateData.username = username.trim();
       updateData.username_changed_at = new Date().toISOString();
+      updateData.has_changed_username = true;
     }
 
     // Full name: locked after first change OR after ID verification. The edit form
@@ -5794,9 +5825,41 @@ app.put('/api/users/profile', verifyToken, async (req, res) => {
       updateData.location = location;
     }
     if (website !== undefined) updateData.website = website;
-    if (phone !== undefined) updateData.phone = phone;
     if (hide_full_name !== undefined) updateData.hide_full_name = hide_full_name;
     if (name_display !== undefined) updateData.name_display = name_display;
+
+    // Email change — NoOnes-style flow: the new email is saved directly and a
+    // 24-hour wallet-withdrawal lock kicks in. The lock uses max(existing, now+24h)
+    // so changing both email and phone inside the same window never stacks locks.
+    if (email !== undefined) {
+      const newEmail = String(email).trim().toLowerCase();
+      const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!newEmail || !EMAIL_RE.test(newEmail)) {
+        return res.status(400).json({ error: 'Enter a valid email address.' });
+      }
+      if (newEmail !== (current?.email || '').toLowerCase()) {
+        updateData.email = newEmail;
+      }
+    }
+
+    if (phone !== undefined) updateData.phone = phone;
+
+    // 24-hour withdrawal lock — triggered when the user explicitly confirms an
+    // email or phone change (withdrawal_lock: true) AND that field actually changed.
+    if (withdrawal_lock === true) {
+      const emailChanged = updateData.email !== undefined;
+      const phoneChanged = updateData.phone !== undefined && String(updateData.phone) !== String(current?.phone || '');
+      if (emailChanged || phoneChanged) {
+        const newLock = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        const { data: lockRow } = await supabaseAdmin.from('users').select('withdrawal_locked_until').eq('id', req.userId).maybeSingle();
+        const existingLock = lockRow?.withdrawal_locked_until ? new Date(lockRow.withdrawal_locked_until) : null;
+        // Always take the max of the current lock and 24h-from-now — never shorten,
+        // never extend beyond a single window.
+        updateData.withdrawal_locked_until = existingLock && existingLock > new Date(newLock)
+          ? existingLock.toISOString()
+          : newLock;
+      }
+    }
     updateData.updated_at = new Date().toISOString();
 
     let { data, error } = await supabaseAdmin.from('users').update(updateData).eq('id', req.userId).select().single();
@@ -14133,6 +14196,30 @@ app.post('/api/wallet/usdt/send', verifyToken, requireNotBanned, async (req, res
       code: 'USDT_SENDS_DISABLED',
     });
   }
+  // ── Withdrawal lock after email/phone change (NoOnes behavior) ─────────────
+  // Blocks on-chain USDT withdrawals for 24h after a confirmed contact change.
+  try {
+    const { data: usdtLockRow } = await supabaseAdmin
+      .from('users')
+      .select('withdrawal_locked_until')
+      .eq('id', req.userId)
+      .single();
+    const usdtLockedUntil = usdtLockRow?.withdrawal_locked_until ? new Date(usdtLockRow.withdrawal_locked_until) : null;
+    if (usdtLockedUntil && usdtLockedUntil > new Date()) {
+      const hrs = Math.ceil((usdtLockedUntil - Date.now()) / 3600000);
+      return res.status(403).json({
+        error: `Withdrawals are temporarily disabled for 24 hours after changing your email or phone number. Try again in about ${hrs} hour(s).`,
+        withdrawalLocked: true,
+        lockedUntil: usdtLockedUntil.toISOString(),
+      });
+    }
+  } catch (usdtLockErr) {
+    // withdrawal_locked_until column may not exist yet (migration not run) — fail open.
+    if (!/does not exist|schema cache/i.test(usdtLockErr.message || '')) {
+      console.warn('[wallet/usdt/send] withdrawal lock check failed:', usdtLockErr.message);
+    }
+  }
+
   const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.008'); // 0.8% — no flat-dollar floor
   const MIN_SEND = parseFloat(process.env.USDT_MIN_SEND || '5.0');  // minimum $5
 
