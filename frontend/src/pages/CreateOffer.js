@@ -302,7 +302,7 @@ const GC_CURRENCIES = [
   { region: 'Steam USA', currency: 'USD', symbol: '$', flag: '🇺🇸' },
   { region: 'Steam Europe', currency: 'EUR', symbol: '€', flag: '🇪🇺' },
   { region: 'Steam UK', currency: 'GBP', symbol: '£', flag: '🇬🇧' },
-  { region: 'Razer Gold Global', currency: 'USD', symbol: '$', flag: <Globe size={14} className="inline-block" /> },
+  { region: 'Razer Gold Global', currency: 'USD', symbol: '$', flag: '🌐' },
   { region: 'Vanilla Visa USA', currency: 'USD', symbol: '$', flag: '🇺🇸' },
   { region: 'Vanilla Visa Europe', currency: 'EUR', symbol: '€', flag: '🇪🇺' },
 ];

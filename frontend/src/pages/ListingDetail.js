@@ -838,7 +838,7 @@ const loadAll = useCallback(async (isBackground = false) => {
                             fontWeight: 700, fontSize: 12, color: active ? C.forest : C.g600,
                             transition: 'all 0.15s',
                           }}>
-                          <span style={{ fontSize: 16 }}>{rc.flag}</span>
+                          <span style={{ fontSize: 16 }}>{typeof rc.flag === 'string' ? rc.flag : '🌐'}</span>
                           <span>{rc.region}</span>
                           <span style={{ fontWeight: 900, fontSize: 11, color: active ? C.mint : C.g400 }}>{rc.symbol} {rc.currency}</span>
                         </button>
