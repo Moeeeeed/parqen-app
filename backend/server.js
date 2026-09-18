@@ -401,7 +401,7 @@ const hdWalletService = require('./services/hdWalletService');
 const depositMonitor = require('./services/depositMonitor');
 const realtimeDepositService = require('./services/realtimeDepositService');
 const sweepService = require('./services/sweepService');
-const balanceAnomalyMonitor = require('./services/balanceAnomalyMonitor');
+const balanceAnomalyMonitor = require('./services/balanceAnomalyMonitor'); // real-time balance spike & anomaly detection
 const hdWalletRoutes = require('./routes/hdWalletRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const tradeEscrowService = require('./services/tradeEscrowService');
@@ -412,14 +412,15 @@ const balanceIntegrity = require('./services/balanceIntegrityService');
 const depositReconciliation = require('./services/depositReconciliationService');
 const depositHealthMonitor = require('./services/depositHealthMonitor'); // read-only heartbeat / alerting for the deposit pipeline
 const walletProvisioningReconciler = require('./services/walletProvisioningReconciler'); // fills missing BTC/Tron deposit addresses
-const balanceAnomalyMonitor = require('./services/balanceAnomalyMonitor'); // real-time balance spike & anomaly detection
 const { checkAndAwardBadges } = require('./services/badgeService');
 const { syncAllOfferStatuses, deactivateStaleOffers, reactivateReturnedSellers, setCacheBuster, setBtcPriceGetter, updateOfferStatus } = require('./services/offerStatusService');
 const traderOfWeekService = require('./services/traderOfWeekService');
 const telegramService = require('./services/telegramService');
 setCacheBuster(bustCache);
-// Start real-time balance anomaly monitor
-balanceAnomalyMonitor.start();
+// balanceAnomalyMonitor.start() moved into the production-only services guard
+// below — this unconditional call ran even in local dev (no NODE_ENV=production
+// needed), triggering real ledger-drift scans and real ops alert emails against
+// whatever Supabase DB .env pointed at, which for most setups is production.
 // Was never wired up — offerStatusService's pause sweep was silently running on the
 // $88k hardcoded fallback instead of the live price used everywhere else (GET /api/listings,
 // offer creation), so its pause/reactivate decisions could disagree with what buyers saw.
@@ -15200,7 +15201,7 @@ if (
     console.log(`🔍 USDT Deposit monitor: ${tronConfig.isTestnet ? 'TESTNET (Nile)' : 'MAINNET (Tron)'} — polls every 5 min | Email + Push alerts enabled`);
 
     // ── Deposit sweeper — moves confirmed deposits to hot wallet ───────────
-    // Runs 2 min after startup then every 30 min. Silent — never affects user balances.
+    // Runs 2 min after startup then every 60 min (SWEEP_INTERVAL_MS). Silent — never affects user balances.
     sweepService.start();
     console.log(`🧹 Sweep service: MAINNET — hot wallet ${hdWalletService.getHotWalletAddress()}`);
 
