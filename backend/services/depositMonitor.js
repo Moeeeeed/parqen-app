@@ -28,7 +28,12 @@ const supabaseAdmin = createClient(
 );
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const POLL_INTERVAL_MS    = 30 * 60 * 1000; // 30 minutes — WebSocket handles real-time; this is safety net only
+// 2026-09-18: was 30 min on the assumption the realtime WebSocket (realtimeDepositService.js)
+// handled fast detection and this was just a safety net. That WebSocket is now disabled
+// (mempool.space's public API can't hold a subscription at our address volume — see
+// DISABLE_REASON in realtimeDepositService.js), so this poller is the ONLY BTC detection
+// path. Lowered back to 5 min, matching usdtDepositMonitor.js's interval.
+const POLL_INTERVAL_MS    = 5 * 60 * 1000; // 5 minutes — sole detection path while the realtime WebSocket is disabled
 const DUST_THRESHOLD_SATS = 546;           // ignore sub-dust outputs
 
 // Email is sent via emailService (Resend → Brevo SMTP), required above. The old
@@ -298,8 +303,13 @@ class DepositMonitor {
 
       // Batch of 3 / 1.2s gap (was 5 / 1s): the tighter pacing lowers the peak
       // burst rate against mempool.space/blockstream.info — this is what was
-      // tripping their rate limits in production. Cycle time for ~1400 addresses
-      // still comfortably fits inside the 15-minute poll interval.
+      // tripping their rate limits in production. At current address counts
+      // (~1700+) a full cycle takes roughly 12-15 minutes — longer than
+      // POLL_INTERVAL_MS (5 min) — so _cycleInProgress causes it to run
+      // back-to-back continuously rather than literally every 5 minutes.
+      // That's fine (no overlap, no double-processing), but it means real
+      // worst-case detection latency is closer to one full cycle (~12-15 min)
+      // than the 5-minute constant alone would suggest.
       const BATCH = 3;
       for (let i = 0; i < valid.length; i += BATCH) {
         const batch = valid.slice(i, i + BATCH);
