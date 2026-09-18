@@ -539,13 +539,7 @@ export default function Register({ onLogin }) {
   useEffect(() => {
     /* global google */
     const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
-    const isGoogleAuthEnabled = Boolean(
-      googleClientId &&
-      !googleClientId.includes('your-') &&
-      googleClientId.includes('.apps.googleusercontent.com')
-    );
-
-    if (isGoogleAuthEnabled && window.google && window.google.accounts) {
+    if (googleClientId && window.google && window.google.accounts) {
       try {
         window.google.accounts.id.initialize({
           client_id: googleClientId,
@@ -563,7 +557,7 @@ export default function Register({ onLogin }) {
           });
         }
       } catch (err) {
-        console.warn('Google Sign-In initialization skipped/failed:', err);
+        console.error('Google Sign-In initialization failed:', err);
       }
     }
   }, [mode, step]);

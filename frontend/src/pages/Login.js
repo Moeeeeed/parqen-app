@@ -83,24 +83,6 @@ export default function Login({ onLogin }) {
     else navigate('/buy-bitcoin');
   };
 
-  useEffect(() => {
-    const directToken = searchParams.get('token') || searchParams.get('auth_token');
-    if (directToken) {
-      localStorage.setItem('token', directToken);
-      axios.defaults.headers.common['Authorization'] = `Bearer ${directToken}`;
-      axios.get(`${API_URL}/users/profile`)
-        .then(res => {
-          if (res.data?.user) {
-            onLogin(res.data.user, directToken);
-            postLoginRedirect(res.data.user);
-          }
-        })
-        .catch(err => {
-          console.error('Direct token login failed:', err);
-        });
-    }
-  }, [searchParams, onLogin]);
-
   const go = newStep => {
     setStep(newStep); setError(''); setNotice('');
     setEmailOtp('');
@@ -124,22 +106,16 @@ export default function Login({ onLogin }) {
     }
   }, [onLogin, navigate, postLoginRedirect]);
 
-  const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
-  const isGoogleAuthEnabled = Boolean(
-    googleClientId &&
-    !googleClientId.includes('your-') &&
-    googleClientId.includes('.apps.googleusercontent.com')
-  );
   const googleInitialized = useRef(false);
   const googleBtnRef = useRef(null);
 
-  // Initialize Google Identity Services once on mount if a valid Client ID is configured
+  // Initialize Google Identity Services once on mount
   useEffect(() => {
     /* global google */
-    if (isGoogleAuthEnabled && window.google?.accounts && !googleInitialized.current) {
+    if (window.google?.accounts && !googleInitialized.current) {
       try {
         window.google.accounts.id.initialize({
-          client_id: googleClientId,
+          client_id: process.env.REACT_APP_GOOGLE_CLIENT_ID || '',
           callback: handleGoogleResponse,
           auto_select: false,
         });
@@ -155,10 +131,10 @@ export default function Login({ onLogin }) {
           });
         }
       } catch (err) {
-        console.warn('Google Sign-In initialization skipped/failed:', err);
+        console.error('Google Sign-In initialization failed:', err);
       }
     }
-  }, [handleGoogleResponse, isGoogleAuthEnabled, googleClientId]);
+  }, [handleGoogleResponse]);
 
   const triggerGoogleLogin = () => {
     // Click the hidden Google button — this always works
@@ -180,13 +156,7 @@ export default function Login({ onLogin }) {
         setPendingEmail(data.email || email);
         setEmailOtp('');
         setStep('email-otp');
-        const devOtp = data.otp || data.debugOtp;
-        if (devOtp) {
-          console.log(`[PRAQEN Dev Login OTP]: ${devOtp}`);
-          setNotice(`A 6-digit code was sent to ${data.email || email} (Dev OTP: ${devOtp})`);
-        } else {
-          setNotice(`A 6-digit code was sent to ${data.email || email}`);
-        }
+        setNotice(`A 6-digit code was sent to ${data.email || email}`);
       } else if (data.success) {
         if (remember) localStorage.setItem('remember_contact', email);
         onLogin(data.user, data.token);
@@ -259,14 +229,7 @@ export default function Login({ onLogin }) {
     setLoading(true);
     try {
       const { data } = await axios.post(`${API_URL}/auth/login`, { email: pendingEmail, password });
-      if (data.requiresOtp) {
-        const devOtp = data.otp || data.debugOtp;
-        if (devOtp) {
-          setNotice(`New code sent to ${pendingEmail} (Dev OTP: ${devOtp})`);
-        } else {
-          setNotice(`New code sent to ${pendingEmail}`);
-        }
-      }
+      if (data.requiresOtp) setNotice(`New code sent to ${pendingEmail}`);
     } catch (err) {
       setError(err.response?.data?.error || 'Could not resend code. Try logging in again.');
     } finally { setLoading(false); }
