@@ -479,6 +479,9 @@ class USDTDepositMonitor {
     this.sendDepositEmail(userId, username, depositUsdt, newUsdt, address)
         .catch(err => console.error('[USDTMonitor] Email error:', err.message));
 
+    this.alertOpsOfNewDeposit(username, userId, depositUsdt, 'USDT', newUsdt, address)
+        .catch(err => console.error('[USDTMonitor] Ops alert error:', err.message));
+
     console.log(`✅ [USDTMonitor] Credited $${depositUsdt} USDT to ${username} | New balance: $${newUsdt.toFixed(2)} USDT | TX: ${txHash.slice(0, 16)}…`);
 
     // ── Sweep deposit → hot wallet (non-fatal, fire-and-forget) ─────────────
@@ -488,6 +491,26 @@ class USDTDepositMonitor {
     tronHotWallet.sweepFromUserAddress(userId, address, depositUsdt)
       .then(r => { if (r?.deferred) console.log(`[USDTMonitor] Sweep queued for ${username}: ${r.reason}`); })
       .catch(e => console.error(`[USDTMonitor] Sweep trigger error (non-fatal): ${e.message}`));
+  }
+
+  // ── Ops notification: every new user deposit, BTC or USDT ─────────────────
+  // Requested by CEO — a heads-up email any time any user deposits, separate
+  // from the user's own "deposit received" confirmation email.
+  async alertOpsOfNewDeposit(username, userId, amount, currency, newBalance, address) {
+    try {
+      await emailService.sendEmail({
+        to:      process.env.OPS_ALERT_EMAIL || 'support@praqen.com',
+        subject: `💰 New deposit — ${amount} ${currency} — ${username}`,
+        type:    'ops_new_deposit_alert',
+        html: `<p><strong>A user deposit was just credited.</strong></p>
+               <p>User: ${username} (${userId})<br/>
+               Amount: ${amount} ${currency}<br/>
+               New balance: ${newBalance} ${currency}<br/>
+               Address: ${address}</p>`,
+      });
+    } catch (e) {
+      console.error('[USDTMonitor] alertOpsOfNewDeposit error:', e.message);
+    }
   }
 
   // ── Critical alert: a real on-chain deposit failed to credit the user's balance ──

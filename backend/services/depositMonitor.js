@@ -610,6 +610,7 @@ class DepositMonitor {
     Promise.allSettled([
       this.sendDepositSMS(userId, depositBTC, newBalanceBTC),
       this.sendDepositEmail(userId, username, depositBTC, newBalanceBTC, address),
+      this.alertOpsOfNewDeposit(username, userId, depositBTC, 'BTC', newBalanceBTC, address),
     ]).then(results => {
       results.forEach(r => {
         if (r.status === 'rejected') console.error('[DepositMonitor] Notification error:', r.reason?.message);
@@ -643,6 +644,26 @@ class DepositMonitor {
       });
     } catch (e) {
       console.error('🚨 [DepositMonitor] Even the ops alert email failed:', e.message);
+    }
+  }
+
+  // ── Ops notification: every new user deposit, BTC or USDT ─────────────────
+  // Requested by CEO — a heads-up email any time any user deposits, separate
+  // from the user's own "deposit received" confirmation email.
+  async alertOpsOfNewDeposit(username, userId, amount, currency, newBalance, address) {
+    try {
+      await emailService.sendEmail({
+        to:      process.env.OPS_ALERT_EMAIL || 'support@praqen.com',
+        subject: `💰 New deposit — ${amount} ${currency} — ${username}`,
+        type:    'ops_new_deposit_alert',
+        html: `<p><strong>A user deposit was just credited.</strong></p>
+               <p>User: ${username} (${userId})<br/>
+               Amount: ${amount} ${currency}<br/>
+               New balance: ${newBalance} ${currency}<br/>
+               Address: ${address}</p>`,
+      });
+    } catch (e) {
+      console.error('[DepositMonitor] alertOpsOfNewDeposit error:', e.message);
     }
   }
 
