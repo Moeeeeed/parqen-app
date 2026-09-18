@@ -16,32 +16,53 @@ const C = {
   borderWarning: 'rgba(245, 158, 11, 0.2)',
 };
 
-function normalizeToastMessage(message) {
-  if (message === null || message === undefined) return '';
-  if (React.isValidElement(message)) return message;
-  if (typeof message === 'string' || typeof message === 'number') return String(message);
-  if (message instanceof Error) return message.message || 'Something went wrong';
-
-  if (typeof message === 'object') {
-    const text = message.text ?? message.message ?? message.error ?? message.title ?? message.content ?? message.detail ?? message.body;
-    return typeof text === 'string' || typeof text === 'number' ? String(text) : '';
+function formatToastContent(content, toastId, dismissToast) {
+  if (content === null || content === undefined) return '';
+  if (React.isValidElement(content)) return content;
+  if (typeof content === 'function') {
+    try {
+      const result = content({ closeToast: () => dismissToast(toastId) });
+      if (React.isValidElement(result)) return result;
+      if (typeof result === 'object' && result !== null) return result.message || JSON.stringify(result);
+      return String(result ?? '');
+    } catch {
+      return '';
+    }
   }
-
-  return String(message);
+  if (typeof content === 'object') {
+    if (content instanceof Error) return content.message;
+    const text = content.text ?? content.message ?? content.error ?? content.title ?? content.content ?? content.detail ?? content.body;
+    if (typeof text === 'string' || typeof text === 'number') return String(text);
+    try {
+      return JSON.stringify(content);
+    } catch {
+      return String(content);
+    }
+  }
+  return String(content);
 }
 
 export default function CustomToastContainer() {
   const [toasts, setToasts] = useState([]);
 
+  const dismissToast = (id) => {
+    setToasts((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, isExiting: true } : t))
+    );
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 300);
+  };
+
   useEffect(() => {
     const handleNewToast = (e) => {
-      const { message, type, options } = e.detail;
+      const { message, type, options } = e.detail || {};
       const id = options?.toastId || Math.random().toString(36).substring(2, 9);
       const autoClose = options?.autoClose !== undefined ? options.autoClose : 4000;
 
       const newToast = {
         id,
-        message: normalizeToastMessage(message),
+        message,
         type,
         autoClose,
         createdAt: Date.now(),
@@ -79,15 +100,6 @@ export default function CustomToastContainer() {
       window.removeEventListener('custom-toast-dismiss', handleDismissToast);
     };
   }, []);
-
-  const dismissToast = (id) => {
-    setToasts((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, isExiting: true } : t))
-    );
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 300);
-  };
 
   if (toasts.length === 0) return null;
 
@@ -194,7 +206,7 @@ export default function CustomToastContainer() {
             <div style={{ flexShrink: 0, marginTop: '2px' }}>{icon}</div>
             
             <div style={{ flex: 1, fontSize: '13px', fontWeight: 600, color: '#1E293B', lineHeight: '1.4' }}>
-              {toast.message}
+              {formatToastContent(toast.message, toast.id, dismissToast)}
             </div>
 
             <button

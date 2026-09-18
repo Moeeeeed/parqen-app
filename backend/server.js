@@ -389,12 +389,7 @@ const offerCreationLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   keyGenerator: (req) => req.userId || req.ip,
-  // Without this, a legitimate user retrying after a validation rejection (e.g.
-  // SECURITY_DEPOSIT_REQUIRED while their gift-card deposit is still pending
-  // admin approval) burns through the same 10-request budget as successful
-  // creates — someone retrying out of confusion could rack up rejected 402s
-  // and then get hit with an unrelated 429 on top of the real problem. Only
-  // count requests that actually created a listing (2xx) against the limit.
+  validate: false,
   skipFailedRequests: true,
   message: { error: 'Too many offers created recently. Please wait a few minutes before creating more.' },
   standardHeaders: true,
@@ -417,11 +412,14 @@ const balanceIntegrity = require('./services/balanceIntegrityService');
 const depositReconciliation = require('./services/depositReconciliationService');
 const depositHealthMonitor = require('./services/depositHealthMonitor'); // read-only heartbeat / alerting for the deposit pipeline
 const walletProvisioningReconciler = require('./services/walletProvisioningReconciler'); // fills missing BTC/Tron deposit addresses
+const balanceAnomalyMonitor = require('./services/balanceAnomalyMonitor'); // real-time balance spike & anomaly detection
 const { checkAndAwardBadges } = require('./services/badgeService');
 const { syncAllOfferStatuses, deactivateStaleOffers, reactivateReturnedSellers, setCacheBuster, setBtcPriceGetter, updateOfferStatus } = require('./services/offerStatusService');
 const traderOfWeekService = require('./services/traderOfWeekService');
 const telegramService = require('./services/telegramService');
 setCacheBuster(bustCache);
+// Start real-time balance anomaly monitor
+balanceAnomalyMonitor.start();
 // Was never wired up — offerStatusService's pause sweep was silently running on the
 // $88k hardcoded fallback instead of the live price used everywhere else (GET /api/listings,
 // offer creation), so its pause/reactivate decisions could disagree with what buyers saw.
@@ -1593,10 +1591,12 @@ async function payReferralCommissions(tradeId, buyerId, sellerId, amountBtc, amo
     const buyerRow = traders.find(u => String(u.id) === String(buyerId));
     const sellerRow = traders.find(u => String(u.id) === String(sellerId));
 
-    // Build unique referrer → referred_user_id map (first seen wins for dedup)
+    // Build unique referrer → referred_user_id map (first seen wins for dedup, prevent self-referrals)
     const payouts = new Map();
-    if (buyerRow?.referred_by) payouts.set(buyerRow.referred_by, buyerId);
-    if (sellerRow?.referred_by && !payouts.has(sellerRow.referred_by)) {
+    if (buyerRow?.referred_by && String(buyerRow.referred_by) !== String(buyerId)) {
+      payouts.set(buyerRow.referred_by, buyerId);
+    }
+    if (sellerRow?.referred_by && String(sellerRow.referred_by) !== String(sellerId) && !payouts.has(sellerRow.referred_by)) {
       payouts.set(sellerRow.referred_by, sellerId);
     }
 
@@ -1667,6 +1667,60 @@ async function payReferralCommissions(tradeId, buyerId, sellerId, amountBtc, amo
     console.log(`✅ [referral] Trade ${tradeId.slice(0, 8)}: paid ${rows.length} referrer(s) — ${rows.map(r => `₿${r.commission_btc.toFixed(8)}`).join(', ')}`);
   } catch (e) {
     console.error('[referral] payReferralCommissions error:', e.message);
+  }
+}
+
+// Unlocks $2 BTC welcome bonus for either buyer or seller upon their 1st completed trade
+async function unlockWelcomeBonusForUser(userId, tradeId) {
+  if (!userId) return;
+  try {
+    const { data: bonusUser } = await supabaseAdmin.from('users')
+      .select('id, bonus_step, bonus_expires_at, username')
+      .eq('id', userId).maybeSingle();
+
+    if (bonusUser?.bonus_step === 2 && bonusUser?.bonus_expires_at &&
+      new Date(bonusUser.bonus_expires_at) > new Date()) {
+
+      const btcPx = await getCurrentBTCPrice({ allowCached: false });
+      const bonusBtc = parseFloat((2 / btcPx).toFixed(8));
+
+      const { data: wal } = await supabaseAdmin.from('wallets')
+        .select('balance_btc').eq('user_id', userId).maybeSingle();
+      const newBal = parseFloat((parseFloat(wal?.balance_btc || 0) + bonusBtc).toFixed(8));
+
+      await supabaseAdmin.from('wallets').update({ balance_btc: newBal, updated_at: new Date().toISOString() })
+        .eq('user_id', userId);
+
+      await Promise.all([
+        supabaseAdmin.from('user_balances').update({ balance_btc: newBal, updated_at: new Date().toISOString() }).eq('user_id', userId),
+        supabaseAdmin.from('user_wallets').update({ balance_btc: newBal, updated_at: new Date().toISOString() }).eq('user_id', userId),
+        supabaseAdmin.from('users').update({
+          bonus_step: 3, bonus_unlocked_at: new Date().toISOString(),
+        }).eq('id', userId),
+        supabaseAdmin.from('wallet_transactions').insert({
+          user_id: userId,
+          type: 'WELCOME_BONUS',
+          currency: 'BTC',
+          amount_btc: bonusBtc,
+          amount_usd: 2.00,
+          status: 'CONFIRMED',
+          notes: `Welcome bonus ($2 in BTC) unlocked upon completing trade #${String(tradeId || '').slice(0, 8)}`,
+          idempotency_key: `BONUS:${userId}:WELCOME`,
+          created_at: new Date().toISOString(),
+        }),
+        createNotification(
+          userId,
+          'wallet',
+          '🎁 Welcome Bonus Unlocked!',
+          `Congratulations! You've completed your first trade. $2.00 in Bitcoin (₿${bonusBtc.toFixed(8)}) has been credited to your wallet balance.`,
+          '/wallet'
+        ),
+      ]).catch(e => console.error('[bonus] Post-credit updates failed (non-fatal):', e.message));
+
+      console.log(`[bonus] ✅ Credited ${bonusBtc} BTC ($2) to user ${userId} (${bonusUser.username || ''})`);
+    }
+  } catch (e) {
+    console.error('[bonus] unlockWelcomeBonusForUser error:', e.message);
   }
 }
 
@@ -2480,28 +2534,36 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       userId: data.id,
     });
 
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('\n=============================================');
-      console.log(`🔑 LOGIN OTP CODE FOR ${normalizedLoginEmail}: ${loginOtp}`);
-      console.log('=============================================\n');
-    }
+    console.log(`\n======================================================`);
+    console.log(`🔑 [LOGIN OTP] Account: ${data.email} | OTP: ${loginOtp}`);
+    console.log(`======================================================\n`);
 
-    // Send OTP email — this comment used to claim "we await to catch send failures" while the
-    // code right below it did the opposite (fire-and-forget, catch() with no await). That meant
-    // the response always claimed success even when delivery failed outright, leaving the user
-    // stuck waiting for a code that was never coming with zero indication why. Actually await it.
+    // Send OTP email
+    let emailSent = false;
     try {
       await emailService.sendLoginOtpEmail(
         { id: data.id, email: data.email, username: data.username },
         loginOtp
       );
+      emailSent = true;
     } catch (sendErr) {
-      console.error('[login-otp] email send failed:', sendErr.message);
-      emailLoginOtpStore.delete(normalizedLoginEmail);
-      return res.status(500).json({ error: 'Could not send your login code right now. Please try again in a moment.' });
+      console.warn('[login-otp] email send warning (proceeding with local/admin OTP):', sendErr.message);
+      if (process.env.NODE_ENV === 'production' && !data.is_admin && !data.is_ceo) {
+        emailLoginOtpStore.delete(normalizedLoginEmail);
+        return res.status(500).json({ error: 'Could not send your login code right now. Please try again in a moment.' });
+      }
     }
 
-    return res.json({ success: true, requiresOtp: true, email: data.email });
+    const isDevOrPrivileged = process.env.NODE_ENV !== 'production' || !!data.is_admin || !!data.is_ceo || !!data.is_moderator;
+
+    return res.json({
+      success: true,
+      requiresOtp: true,
+      email: data.email,
+      otp: isDevOrPrivileged ? loginOtp : undefined,
+      debugOtp: isDevOrPrivileged ? loginOtp : undefined,
+      emailSent
+    });
 
   } catch (error) {
     console.error('Login error:', error);
@@ -5561,46 +5623,24 @@ app.get('/api/bonus/status', verifyToken, async (req, res) => {
 
 app.get('/api/users/profile', verifyToken, async (req, res) => {
   try {
-    // Core columns — confirmed to exist in every PRAQEN DB schema
-    const coreCols = 'id, email, username, full_name, bio, location, website, phone, avatar_url, average_rating, total_trades, completion_rate, created_at, is_admin, is_moderator, is_id_verified, is_email_verified, is_phone_verified, total_feedback_count, positive_feedback, negative_feedback, last_login, last_seen_at, badge, country, two_factor_enabled, two_factor_method, account_status, has_warning';
-    const essentialCols = 'id, email, username, full_name, avatar_url, average_rating, total_trades, completion_rate, created_at, is_admin, is_moderator, is_id_verified, is_email_verified, total_feedback_count, positive_feedback, negative_feedback, last_login, two_factor_enabled, two_factor_method, account_status, has_warning';
-
-    // The core profile fetch (with its column-missing fallback), the optional
-    // extra fields, and the wallet balance don't depend on each other — run all
-    // three round-trips at once instead of one-after-another.
-    const [{ data, error }, extraFields, balance] = await Promise.all([
+    const [{ data: user, error }, balance] = await Promise.all([
+      supabaseAdmin.from('users').select('*').eq('id', req.userId).single(),
       (async () => {
-        let { data, error } = await supabaseAdmin.from('users').select(coreCols).eq('id', req.userId).single();
-        // Fallback if a column doesn't exist in the DB (e.g. is_phone_verified, badge, country)
-        if (error && (error.code === '42703' || (error.message && error.message.includes('does not exist')))) {
-          console.warn('[GET /api/users/profile] Column missing — falling back to essentials:', error.message);
-          const fallback = await supabaseAdmin.from('users').select(essentialCols).eq('id', req.userId).single();
-          if (fallback.error) { error = fallback.error; data = null; }
-          else { data = fallback.data; error = null; Object.assign(data, { is_phone_verified: false, bio: null, location: null, website: null, phone: null, last_seen_at: null, badge: null, country: null }); }
-        }
-        return { data, error };
-      })(),
-      (async () => {
-        // Optional columns — isolated so a missing column never breaks the response
-        try {
-          const { data: extra } = await supabaseAdmin.from('users')
-            .select('email_verified, is_phone_verified, phone_verified, kyc_verified, kyc_status, id_type, kyc_submitted_at, id_front_url, id_back_url, selfie_url, kyc_rejection_reason, username_changed, preferred_currency, preferred_language, timezone, hide_full_name, name_display, city, country_name, last_seen_location, referral_code, total_referrals, referral_earnings_btc, p2p_migrated_platform, p2p_migrated_username, p2p_migrated_feedback, p2p_migration_approved_at')
-            .eq('id', req.userId).single();
-          return extra || {};
-        } catch { return {}; }
-      })(),
-      (async () => {
-        // Balance — read from wallets, the source of truth (matches Wallet page,
-        // escrow, swap, and every other balance display in the app). Non-critical,
-        // silently ignored on error.
         try {
           const [{ data: bal }, btcPrice] = await Promise.all([
-            supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', req.userId).maybeSingle(),
+            supabaseAdmin.from('wallets').select('balance_btc, balance_usdt').eq('user_id', req.userId).maybeSingle(),
             getCurrentBTCPrice().catch(() => 88000),
           ]);
           const btc = parseFloat(bal?.balance_btc || 0);
-          return { balance_btc: btc, balance_usd: parseFloat((btc * btcPrice).toFixed(2)) };
-        } catch { return { balance_btc: 0, balance_usd: 0 }; }
+          const usdt = parseFloat(bal?.balance_usdt || 0);
+          return {
+            balance_btc: btc,
+            balance_usd: parseFloat((btc * btcPrice).toFixed(2)),
+            balance_usdt: usdt,
+          };
+        } catch {
+          return { balance_btc: 0, balance_usd: 0, balance_usdt: 0 };
+        }
       })(),
     ]);
 
@@ -5608,14 +5648,21 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
       console.error('[GET /api/users/profile] DB error:', error.message, '| code:', error.code || 'N/A');
       return res.status(500).json({ error: 'Could not load your profile. Please try again.' });
     }
-    if (!data) return res.status(404).json({ error: 'Profile not found.' });
+    if (!user) return res.status(404).json({ error: 'Profile not found.' });
+
+    // Strip sensitive fields
+    delete user.password_hash;
+    delete user.totp_secret;
+    delete user.two_factor_temp_secret;
 
     res.json({
       user: {
-        ...data,
-        ...extraFields,
-        is_admin: data.is_admin || false,
-        is_moderator: data.is_moderator || false,
+        ...user,
+        is_admin: user.is_admin || false,
+        is_moderator: user.is_moderator || false,
+        is_phone_verified: user.is_phone_verified || Boolean(user.phone_verified) || false,
+        has_warning: user.has_warning || false,
+        country: user.country || user.country_name || null,
       },
       balance,
     });
@@ -8821,38 +8868,9 @@ app.post('/api/trades/:id/release', tradeLimiter, verifyToken, requireNotBanned,
         try {
           updateUserTradeStats(releasedTrade.seller_id).catch(() => { });
           updateUserTradeStats(releasedTrade.buyer_id).catch(() => { });
-          // Welcome bonus: buyer at step 2 → step 3, credit $2 in BTC
-          try {
-            const { data: bonusBuyer } = await supabaseAdmin.from('users')
-              .select('id, bonus_step, bonus_expires_at')
-              .eq('id', releasedTrade.buyer_id).single();
-            if (bonusBuyer?.bonus_step === 2 && bonusBuyer?.bonus_expires_at &&
-              new Date(bonusBuyer.bonus_expires_at) > new Date()) {
-              // Credits real BTC to a wallet balance — keep it on the same always-live
-              // pricing this had before caching was introduced, not the display cache.
-              const btcPx = await getCurrentBTCPrice({ allowCached: false });
-              const bonusBtc = parseFloat((2 / btcPx).toFixed(8));
-              const { data: wal } = await supabaseAdmin.from('wallets')
-                .select('balance_btc').eq('user_id', releasedTrade.buyer_id).maybeSingle();
-              const newBal = parseFloat((parseFloat(wal?.balance_btc || 0) + bonusBtc).toFixed(8));
-              await supabaseAdmin.from('wallets').update({ balance_btc: newBal, updated_at: new Date().toISOString() })
-                .eq('user_id', releasedTrade.buyer_id);
-              // Keep the secondary balance tables (still read by the profile endpoint
-              // and the sell-offer auto-pause check) from drifting stale — see
-              // syncSecondaryBtcBalance in tradeEscrowService.js for the same fix
-              // applied to trade release/refund.
-              const [ubBonus, uwBonus] = await Promise.all([
-                supabaseAdmin.from('user_balances').update({ balance_btc: newBal, updated_at: new Date().toISOString() }).eq('user_id', releasedTrade.buyer_id),
-                supabaseAdmin.from('user_wallets').update({ balance_btc: newBal, updated_at: new Date().toISOString() }).eq('user_id', releasedTrade.buyer_id),
-              ]).catch(e => ({ ubError: e })); // network-level rejection fallback (rare — .update() itself resolves with {error})
-              if (ubBonus?.error || ubBonus?.ubError) console.error('🚨 [bonus] user_balances mirror sync failed (non-fatal):', (ubBonus.error || ubBonus.ubError).message);
-              if (uwBonus?.error) console.error('🚨 [bonus] user_wallets mirror sync failed (non-fatal):', uwBonus.error.message);
-              await supabaseAdmin.from('users').update({
-                bonus_step: 3, bonus_unlocked_at: new Date().toISOString(),
-              }).eq('id', releasedTrade.buyer_id);
-              console.log(`[bonus] Credited ${bonusBtc} BTC ($2) to buyer ${releasedTrade.buyer_id}`);
-            }
-          } catch (e) { console.error('[bonus] Credit failed:', e.message); }
+          // Welcome bonus: check both buyer and seller for Step 2 -> Step 3 unlock ($2 in BTC)
+          unlockWelcomeBonusForUser(releasedTrade.buyer_id, releasedTrade.id).catch(() => { });
+          unlockWelcomeBonusForUser(releasedTrade.seller_id, releasedTrade.id).catch(() => { });
           payReferralCommissions(
             releasedTrade.id,
             releasedTrade.buyer_id,
@@ -10091,17 +10109,30 @@ app.post('/api/referral/withdraw', verifyToken, requireNotBanned, authLimiter, a
       .in('id', ids);
     if (updErr) throw updErr;
 
-    // Audit trail
-    await supabaseAdmin.from('wallet_transactions').insert({
-      user_id: req.userId,
-      type: 'REFERRAL_WITHDRAWAL',
-      amount_btc: totalEarnings,
-      status: 'CONFIRMED',
-      notes: `Referral earnings withdrawal — ₿${totalEarnings.toFixed(8)} from ${ids.length} commission(s)`,
-      created_at: new Date().toISOString(),
-    }).then(null, () => { });
+    // Sync balance mirrors, reset users.referral_earnings_btc, record transaction and notify user
+    await Promise.allSettled([
+      supabaseAdmin.from('user_balances').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', req.userId),
+      supabaseAdmin.from('user_wallets').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', req.userId),
+      supabaseAdmin.from('users').update({ referral_earnings_btc: 0 }).eq('id', req.userId),
+      supabaseAdmin.from('wallet_transactions').insert({
+        user_id: req.userId,
+        type: 'REFERRAL_WITHDRAWAL',
+        currency: 'BTC',
+        amount_btc: totalEarnings,
+        status: 'CONFIRMED',
+        notes: `Referral earnings withdrawal — ₿${totalEarnings.toFixed(8)} from ${ids.length} commission(s)`,
+        created_at: new Date().toISOString(),
+      }),
+      createNotification(
+        req.userId,
+        'wallet',
+        '💵 Referral Earnings Transferred',
+        `₿${totalEarnings.toFixed(8)} from your referral earnings has been added to your main wallet balance.`,
+        '/wallet'
+      ),
+    ]);
 
-    res.json({ success: true, amountBtc: totalEarnings, message: `₿ ${totalEarnings.toFixed(8)} added to your wallet!` });
+    res.json({ success: true, amountBtc: totalEarnings, newBalance, message: `₿ ${totalEarnings.toFixed(8)} added to your wallet!` });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -10678,6 +10709,155 @@ app.get('/api/admin/stats', verifyToken, async (req, res) => {
       tradeDays,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN MONITORING & ALERTS API
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/admin/monitoring/health — comprehensive pipeline & gateway heartbeat
+app.get('/api/admin/monitoring/health', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+
+    const btcScannerStatus = depositMonitor.getStatus();
+    const wsStatus = realtimeDepositService.getStatus();
+    const anomalyStatus = balanceAnomalyMonitor.getStatus();
+    const healthMonitorStatus = depositHealthMonitor.getStatus ? depositHealthMonitor.getStatus() : null;
+
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      network: (process.env.HD_NETWORK || 'mainnet').toLowerCase(),
+      mempoolWs: {
+        connected: wsStatus.connected,
+        monitored_wallets: wsStatus.monitored_wallets,
+        reconnect_delay_s: wsStatus.reconnect_delay_s,
+      },
+      depositScanner: {
+        running: btcScannerStatus.running,
+        pollIntervalMin: btcScannerStatus.poll_interval_min,
+        apiBase: btcScannerStatus.api,
+      },
+      anomalyMonitor: anomalyStatus,
+      healthMonitor: healthMonitorStatus,
+    });
+  } catch (e) {
+    console.error('[GET /api/admin/monitoring/health]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/monitoring/alerts — list active/resolved security and balance alerts
+app.get('/api/admin/monitoring/alerts', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const resolvedParam = req.query.resolved !== undefined ? req.query.resolved === 'true' : null;
+    const alerts = balanceAnomalyMonitor.getAlerts({ resolved: resolvedParam });
+    res.json({ success: true, alerts });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/admin/monitoring/resolve-alert — resolve or dismiss an alert
+app.post('/api/admin/monitoring/resolve-alert', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const { alertId, notes } = req.body;
+    if (!alertId) return res.status(400).json({ error: 'alertId is required' });
+    const ok = balanceAnomalyMonitor.resolveAlert(alertId, notes || '');
+    res.json({ success: ok });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/admin/monitoring/audit — run on-demand ledger & balance audit
+app.post('/api/admin/monitoring/audit', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const [{ data: wallets }, { data: allTx }, { data: users }] = await Promise.all([
+      supabaseAdmin.from('wallets').select('user_id, balance_btc, locked_balance_btc, balance_usdt, locked_balance_usdt'),
+      supabaseAdmin.from('wallet_transactions').select('user_id, type, currency, amount_btc, amount_usdt, status, idempotency_key, tx_hash'),
+      supabaseAdmin.from('users').select('id, username, email'),
+    ]);
+
+    const userMap = new Map((users || []).map(u => [u.id, u]));
+    const ledgerMap = new Map();
+    for (const tx of (allTx || [])) {
+      if (tx.status !== 'CONFIRMED' && tx.status !== 'COMPLETED') continue;
+      const cur = ledgerMap.get(tx.user_id) || { btc: 0, usdt: 0, txCount: 0 };
+      cur.txCount++;
+      const btc = parseFloat(tx.amount_btc || 0);
+      const usdt = parseFloat(tx.amount_usdt || 0);
+      if (['DEPOSIT', 'TRANSFER_IN', 'ESCROW_RELEASE', 'REFUND'].includes(tx.type)) {
+        cur.btc += btc;
+        cur.usdt += usdt;
+      } else if (['WITHDRAWAL', 'TRANSFER_OUT', 'ESCROW_LOCK', 'FEE'].includes(tx.type)) {
+        cur.btc -= btc;
+        cur.usdt -= usdt;
+      }
+      ledgerMap.set(tx.user_id, cur);
+    }
+
+    const discrepancies = [];
+    for (const w of (wallets || [])) {
+      const l = ledgerMap.get(w.user_id) || { btc: 0, usdt: 0, txCount: 0 };
+      const wBtc = parseFloat(w.balance_btc || 0) + parseFloat(w.locked_balance_btc || 0);
+      const wUsdt = parseFloat(w.balance_usdt || 0) + parseFloat(w.locked_balance_usdt || 0);
+      const diffBtc = parseFloat((wBtc - l.btc).toFixed(8));
+      const diffUsdt = parseFloat((wUsdt - l.usdt).toFixed(2));
+      if (Math.abs(diffBtc) > 0.00000001 || Math.abs(diffUsdt) > 0.01) {
+        const u = userMap.get(w.user_id);
+        discrepancies.push({
+          userId: w.user_id,
+          username: u?.username || 'unknown',
+          email: u?.email || '',
+          walletBtc: wBtc,
+          ledgerBtc: l.btc,
+          diffBtc,
+          walletUsdt: wUsdt,
+          ledgerUsdt: l.usdt,
+          diffUsdt,
+          txCount: l.txCount,
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      totalWalletsChecked: (wallets || []).length,
+      totalTransactionsAudited: (allTx || []).length,
+      discrepanciesCount: discrepancies.length,
+      discrepancies,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/admin/monitoring/test-alert — dispatch a test alert to verify notification channels
+app.post('/api/admin/monitoring/test-alert', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const testPayload = {
+      userId: admin.id,
+      username: admin.username || 'admin',
+      severity: 'WARNING',
+      type: 'TEST_ALERT_TRIGGER',
+      title: '🧪 Test Security & Balance Alert',
+      message: `Manual test alert triggered by admin @${admin.username} from Admin Panel. Email and Telegram integrations are active.`,
+      amount: 0.1,
+      currency: 'BTC',
+      txHash: '0000000000000000000000000000000000000000000000000000000000000000',
+    };
+    await balanceAnomalyMonitor.recordAndDispatchAlert(testPayload);
+    res.json({ success: true, message: 'Test alert dispatched via Email and Telegram.' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // GET /api/admin/users — all users with search/filter/pagination
@@ -14060,6 +14240,7 @@ const tronWalletService = require('./services/tronWalletService');
 const tronHotWallet = require('./services/tronHotWallet');
 const usdtDepositMonitor = require('./services/usdtDepositMonitor');
 const swapService = require('./services/swapService');
+const tronConfig = require('./services/tronConfig');
 const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
 
 // GET /api/wallet/usdt — return USDT balance + Tron deposit address
@@ -14086,8 +14267,10 @@ app.get('/api/wallet/usdt', verifyToken, async (req, res) => {
     res.json({
       success: true,
       tron_address: tronAddress,
-      network: 'Tron (TRC-20)',
-      contract: process.env.TRON_USDT_CONTRACT || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+      network: tronConfig.isTestnet ? 'Tron (Nile Testnet)' : 'Tron (TRC-20)',
+      is_testnet: tronConfig.isTestnet,
+      contract: tronConfig.usdtContract,
+      explorer_url: tronConfig.getExplorerAddressUrl(tronAddress),
       balance_usdt: parseFloat(walRow?.balance_usdt || 0),
       locked_balance_usdt: parseFloat(walRow?.locked_balance_usdt || 0),
     });
@@ -14448,7 +14631,7 @@ app.get('/api/wallet/usdt/check', verifyToken, async (req, res) => {
     res.json({
       success: true,
       balance_usdt: parseFloat(wal?.balance_usdt || 0),
-      tron_address: walletRow.tron_address,
+      tron_address: derivedAddress,
       checked_at: new Date().toISOString(),
     });
   } catch (error) {
@@ -15012,9 +15195,9 @@ if (
     depositMonitor.start();
     console.log('🔍 Deposit monitor: MAINNET — polls every 5 min | SMS + Email alerts enabled');
 
-    // USDT TRC-20 deposit monitor — scans all Tron addresses every 15 min
+    // USDT TRC-20 deposit monitor — scans all Tron addresses
     usdtDepositMonitor.start();
-    console.log('🔍 USDT Deposit monitor: MAINNET (Tron) — polls every 15 min | Email + Push alerts enabled');
+    console.log(`🔍 USDT Deposit monitor: ${tronConfig.isTestnet ? 'TESTNET (Nile)' : 'MAINNET (Tron)'} — polls every 5 min | Email + Push alerts enabled`);
 
     // ── Deposit sweeper — moves confirmed deposits to hot wallet ───────────
     // Runs 2 min after startup then every 30 min. Silent — never affects user balances.

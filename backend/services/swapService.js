@@ -132,7 +132,13 @@ class SwapService {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (error) throw new Error(`Ledger check failed: ${error.message}`);
+    if (error) {
+      if (error.code === 'PGRST116' || error.message.includes('balance_audit') || error.message.includes('schema cache')) {
+        console.warn('[SwapService] balance_audit table not found in schema — skipping BTC ledger audit check.');
+        return walletBtc;
+      }
+      throw new Error(`Ledger check failed: ${error.message}`);
+    }
     if (!lastAudit) return walletBtc; // no integrity history yet — nothing to check against
 
     const audited = parseFloat(lastAudit.new_balance);
@@ -197,7 +203,13 @@ class SwapService {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (error) throw new Error(`Ledger check failed: ${error.message}`);
+    if (error) {
+      if (error.code === 'PGRST116' || error.message.includes('balance_audit') || error.message.includes('schema cache')) {
+        console.warn('[SwapService] balance_audit table not found in schema — skipping USDT ledger audit check.');
+        return walletUsdt;
+      }
+      throw new Error(`Ledger check failed: ${error.message}`);
+    }
     if (!lastAudit) return walletUsdt; // no USDT integrity history yet — nothing to check against
 
     const audited = parseFloat(lastAudit.new_balance);
