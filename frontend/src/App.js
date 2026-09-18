@@ -1,13 +1,18 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate, useLocation } from 'react-router-dom';
+import {
+  HelpCircle, Sparkles, Disc, Bell, CreditCard, ShieldCheck,
+  TrendingUp, Info, Medal, Share2, ArrowLeftRight, ArrowRight,
+  Send, MoveRight, Award,
+} from 'lucide-react';
 import { HelmetProvider } from 'react-helmet-async';
 import { RatesProvider } from './contexts/RatesContext';
+import { useLastVisitedTracker } from './hooks/useLastVisited';
 import axios from 'axios';
 import {
   identifyUser,
   unidentifyUser,
   initOneSignal,
-  requestNotificationPermission,
   getNotificationPermission,
   sendTestNotification
 } from './utils/notifications';
@@ -27,9 +32,10 @@ const SuggestionsPanel = lazyRetry(() => import('./components/SuggestionsPanel')
 
 // Resets the ErrorBoundary on every route change, so a crash on one page
 // doesn't leave every subsequent page stuck on the fallback screen.
-function RouteErrorBoundary({ children }) {
-  const location = useLocation();
-  return <ErrorBoundary key={location.pathname}>{children}</ErrorBoundary>;
+function RouteErrorBoundary({ children, user }) {
+  const currentLoc = useLocation();
+  useLastVisitedTracker(user, currentLoc);
+  return <ErrorBoundary key={currentLoc.pathname}>{children}</ErrorBoundary>;
 }
 
 // ── Monkeypatch react-toastify ──────────────────────────────────────────────
@@ -156,6 +162,10 @@ const SellUSDT = lazyRetry(() => import('./pages/SellUSDT'));
 // eslint-disable-next-line import/first
 const SellGiftCardMarketplace = lazyRetry(() => import('./pages/SellGiftCardMarketplace'));
 // eslint-disable-next-line import/first
+const MenuPage = lazyRetry(() => import('./pages/MenuPage'));
+// eslint-disable-next-line import/first
+const TraderSettings = lazyRetry(() => import('./pages/TraderSettings'));
+// eslint-disable-next-line import/first
 const AgentDashboard = lazyRetry(() => import('./pages/AgentDashboard'));
 // eslint-disable-next-line import/first
 const AccountantDashboard = lazyRetry(() => import('./pages/AccountantDashboard'));
@@ -167,6 +177,13 @@ const ResetPassword = lazyRetry(() => import('./pages/ResetPassword'));
 const EmailConfirmation = lazyRetry(() => import('./pages/EmailConfirmation'));
 // eslint-disable-next-line import/first
 const CheckEmail = lazyRetry(() => import('./pages/CheckEmail'));
+// eslint-disable-next-line import/first
+const PlaceholderPage = lazyRetry(() => import('./pages/PlaceholderPage'));
+
+// Note: ArrowLeftRight, Send, MoveRight, Award, CircleHelp, Sparkles,
+// Disc, Bell, CreditCard, ShieldCheck, TrendingUp, Info, Medal, Share2
+// are imported via lazy-loaded pages; only the ones needed at App level
+// are imported here directly.
 
 // ── Page Loader ──────────────────────────────────────────────────────────────
 function PageLoader() {
@@ -198,6 +215,8 @@ export const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/a
 
 // ── Ref Redirect ─────────────────────────────────────────────────────────────
 function RefRedirect() {
+  const currentLoc = useLocation();
+
   const { username } = useParams();
   const navigate = useNavigate();
 
@@ -216,11 +235,47 @@ function RefRedirect() {
 }
 
 // ── App Shell ─────────────────────────────────────────────────────────────────
+const AUTH_ROUTES = ['/login', '/register', '/signup', '/forgot-password'];
+
 function AppShell({ children }) {
   return (
     <div className="min-h-screen pb-nav-mobile"
       style={{ overflowX: 'hidden', maxWidth: '100vw', paddingTop: 'var(--navbar-h)' }}>
       {children}
+    </div>
+  );
+}
+
+function AuthAwareShell({ children, user, onLogout, showBonusModal, setShowBonusModal, showWelcome, setShowWelcome }) {
+  const location = useLocation();
+  const isAuthPage = AUTH_ROUTES.includes(location.pathname);
+  return (
+    <div className={isAuthPage ? 'auth-shell' : 'min-h-screen pb-nav-mobile'}
+      style={{ overflowX: 'hidden', maxWidth: '100vw', paddingTop: isAuthPage ? 0 : 'var(--navbar-h)', position: 'relative' }}>
+      {!isAuthPage && <Navbar user={user} onLogout={onLogout} />}
+
+      {showBonusModal && user && (
+        <WelcomeBonusModal user={user} onClose={() => {
+          localStorage.setItem(`prq_bonus_shown_${user.id}`, '1');
+          setShowBonusModal(false);
+          if (!localStorage.getItem(`prq_welcomed_${user.id}`)) {
+            setShowWelcome(true);
+          }
+        }} />
+      )}
+
+      {showWelcome && user && !showBonusModal && (
+        <WelcomeModal user={user} onClose={() => setShowWelcome(false)} />
+      )}
+
+      {user && <NotificationPrompt userId={user.id} />}
+      <AndroidInstallBanner />
+      <IOSInstallGuide />
+
+      {children}
+
+      <BottomNav user={user} />
+      <SuggestionsPanel user={user} />
     </div>
   );
 }
@@ -232,7 +287,6 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [showWelcome, setShowWelcome] = useState(false);
   const [showBonusModal, setShowBonusModal] = useState(false);
-
   // ── ✅ OneSignal Init on Mount ────────────────────────────────────────────
   useEffect(() => {
     if (token && user?.id) {
@@ -256,6 +310,50 @@ function App() {
       delete axios.defaults.headers.common['Authorization'];
     }
   }, [token]);
+
+  // ── Force-logout on a mid-session account restriction ────────────────────
+  // The backend now rejects an authenticated request from a banned/frozen
+  // account (403 ACCOUNT_BANNED / ACCOUNT_FROZEN with `self: true`) or a session
+  // whose token was invalidated (401 SESSION_EXPIRED). Clear the local session
+  // and bounce the user to /login with the server's own explanation, once.
+  //
+  // The `self` check matters: the same 403 code is also raised ABOUT A THIRD
+  // PARTY (e.g. trying to trade against a banned seller, or a CEO approving a
+  // banned user's withdrawal) — those carry no `self` flag and must NOT log the
+  // caller out.
+  useEffect(() => {
+    let handled = false;
+    const id = axios.interceptors.response.use(
+      (r) => r,
+      (error) => {
+        const status = error?.response?.status;
+        const data = error?.response?.data || {};
+        const code = data.error;
+        const isRestricted =
+          (status === 403 && data.self === true && (code === 'ACCOUNT_BANNED' || code === 'ACCOUNT_FROZEN')) ||
+          (status === 401 && code === 'SESSION_EXPIRED');
+        if (isRestricted && !handled && localStorage.getItem('token')) {
+          handled = true;
+          const msg = error?.response?.data?.message ||
+            (code === 'ACCOUNT_FROZEN'
+              ? 'Your account is temporarily frozen and under review.'
+              : code === 'ACCOUNT_BANNED'
+                ? 'Your account has been suspended.'
+                : 'Your session has ended. Please sign in again.');
+          try {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            delete axios.defaults.headers.common['Authorization'];
+          } catch { }
+          try { toast.error(msg); } catch { }
+          window.dispatchEvent(new Event('userUpdated'));
+          setTimeout(() => { window.location.assign('/login'); }, 800);
+        }
+        return Promise.reject(error);
+      }
+    );
+    return () => axios.interceptors.response.eject(id);
+  }, []);
 
   // ── Cleanup market cache ──────────────────────────────────────────────────
   useEffect(() => {
@@ -534,28 +632,11 @@ function App() {
 
               {/* ── ALL OTHER ROUTES — wrapped in main app chrome ── */}
               <Route path="*" element={
-                <AppShell>
-                  <Navbar user={user} onLogout={logout} />
+                <AuthAwareShell user={user} onLogout={logout}
+                  showBonusModal={showBonusModal} setShowBonusModal={setShowBonusModal}
+                  showWelcome={showWelcome} setShowWelcome={setShowWelcome}>
 
-                  {showBonusModal && user && (
-                    <WelcomeBonusModal user={user} onClose={() => {
-                      localStorage.setItem(`prq_bonus_shown_${user.id}`, '1');
-                      setShowBonusModal(false);
-                      if (!localStorage.getItem(`prq_welcomed_${user.id}`)) {
-                        setShowWelcome(true);
-                      }
-                    }} />
-                  )}
-
-                  {showWelcome && user && !showBonusModal && (
-                    <WelcomeModal user={user} onClose={() => setShowWelcome(false)} />
-                  )}
-
-                  {user && <NotificationPrompt userId={user.id} />}
-                  <AndroidInstallBanner />
-                  <IOSInstallGuide />
-
-                  <RouteErrorBoundary>
+                  <RouteErrorBoundary user={user}>
                   <Routes>
                     <Route path="/" element={<LandingPage user={user} />} />
                     <Route path="/listing/:id" element={<ListingDetail user={user} />} />
@@ -581,6 +662,8 @@ function App() {
                     <Route path="/dashboard" element={user ? <Dashboard user={user} /> : <Navigate to="/login" />} />
                     <Route path="/wallet" element={user ? <WalletPage user={user} /> : <Navigate to="/login" />} />
                     <Route path="/settings" element={user ? <Settings user={user} setUser={setUser} /> : <Navigate to="/login" />} />
+                    <Route path="/menu" element={user ? <MenuPage user={user} /> : <Navigate to="/login" />} />
+                    <Route path="/trader-settings" element={user ? <TraderSettings user={user} /> : <Navigate to="/login" />} />
                     <Route path="/profile/:id" element={<Profile />} />
                     <Route path="/profile" element={user ? <Profile userId={user.id} /> : <Navigate to="/login" />} />
                     <Route path="/create-listing" element={user ? <CreateListing user={user} /> : <Navigate to="/login" />} />
@@ -594,13 +677,27 @@ function App() {
                     <Route path="/admin" element={<AdminDashboard user={user} onLogin={login} />} />
                     <Route path="/escrow/:id" element={user ? <EscrowVerification user={user} /> : <Navigate to="/login" />} />
                     <Route path="/ref/:username" element={<RefRedirect />} />
+                    {/* ── Placeholder pages for dashboard tiles (Part C) ── */}
+                    <Route path="/contact" element={user ? <PlaceholderPage title="Contact Support" description="Our support team is here to help. Send us a message and we'll get back to you within 24 hours." icon={HelpCircle} overrideColor="#F59E0B" /> : <Navigate to="/login" />} />
+                    <Route path="/fees" element={user ? <PlaceholderPage title="Fees" description="Trading fees, withdrawal fees, and all cost details will appear here once the finance team publishes them." icon={Info} overrideColor="#F59E0B" /> : <Navigate to="/login" />} />
+                    <Route path="/medals" element={user ? <PlaceholderPage title="Medals" description="Badges and achievements you've earned on PRAQEN will show up here. Keep trading to collect them all." icon={Medal} overrideColor="#F4A422" /> : <Navigate to="/login" />} />
+                    <Route path="/quick-start" element={user ? <PlaceholderPage title="Quick Start" description="A step-by-step guide to get you trading in minutes. Everything you need to know about buying and selling Bitcoin on PRAQEN." icon={Sparkles} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
+                    <Route path="/trade-insights" element={user ? <PlaceholderPage title="Trade Insights" description="Analytics, trends, and insights about your trading activity will appear here." icon={TrendingUp} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
+                    <Route path="/payment-accounts" element={user ? <PlaceholderPage title="Payment Accounts" description="Manage your linked bank accounts and payment methods for P2P trading." icon={CreditCard} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
+                    <Route path="/devices" element={user ? <PlaceholderPage title="Devices" description="Manage your trusted devices and view active sessions across your account." icon={ShieldCheck} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
+                    <Route path="/security" element={user ? <PlaceholderPage title="Security" description="Two-factor authentication, login history, and security settings to keep your account safe." icon={ShieldCheck} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
+                    <Route path="/discord" element={user ? <PlaceholderPage title="Discord" description="Join our Discord community to chat with other traders, get support, and stay updated on new features." icon={Disc} overrideColor="#8B5CF6" /> : <Navigate to="/login" />} />
+                    <Route path="/status" element={user ? <PlaceholderPage title="Status" description="Check the current status of PRAQEN services, including trading, withdrawals, and the website." icon={Bell} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
+                    <Route path="/invite" element={user ? <PlaceholderPage title="Invite & Earn" description="Share your referral link and earn BTC commission every time your friends trade on PRAQEN." icon={Share2} overrideColor="#8B5CF6" /> : <Navigate to="/login" />} />
+                    <Route path="/swap" element={user ? <PlaceholderPage title="Swap" description="Swap between cryptocurrencies instantly at competitive rates. Coming soon." icon={ArrowLeftRight} overrideColor="#1B4332" /> : <Navigate to="/login" />} />
+                    <Route path="/receive" element={user ? <PlaceholderPage title="Receive" description="Generate a deposit address to receive Bitcoin in your PRAQEN wallet." icon={ArrowRight} overrideColor="#1B4332" /> : <Navigate to="/login" />} />
+                    <Route path="/send" element={user ? <PlaceholderPage title="Send" description="Send Bitcoin to any address or trade directly with other users." icon={Send} overrideColor="#1B4332" /> : <Navigate to="/login" />} />
+                    <Route path="/transfer" element={user ? <PlaceholderPage title="Transfer" description="Transfer funds between your PRAQEN wallet and external wallets." icon={MoveRight} overrideColor="#1B4332" /> : <Navigate to="/login" />} />
+                    <Route path="/partner-program" element={user ? <PlaceholderPage title="Partner Program" description="Earn bonuses, discounts, and exclusive perks by reaching higher levels in the PRAQEN partner program." icon={Award} overrideColor="#8B5CF6" /> : <Navigate to="/login" />} />
                     <Route path="*" element={<Navigate to="/" />} />
                   </Routes>
                   </RouteErrorBoundary>
-
-                  <BottomNav user={user} />
-                  <SuggestionsPanel user={user} />
-                </AppShell>
+                </AuthAwareShell>
               } />
             </Routes>
           </Suspense>

@@ -7,7 +7,7 @@ import {
   HeadphonesIcon, Check, ChevronRight, Star,
   MessageCircle, Award, Flame, Play, CheckCircle,
   Smartphone, Building2, CreditCard, Mail,
-  Copy, UserPlus, Share2, Search, Percent, ArrowLeftRight, Link2,
+  Copy, UserPlus, Share2, Search, ArrowLeftRight, Link2,
 } from 'lucide-react';
 import { copyToClipboard } from '../utils/clipboard';
 /* ─── palette ─────────────────────────────────────────────────────────── */
@@ -215,7 +215,6 @@ export default function LandingPage({ user }) {
                 {[
                   { Icon: Lock, t: 'Escrow' },
                   { Icon: Zap, t: '15 min' },
-                  { Icon: Percent, t: '0.5%' },
                   { Icon: Globe, t: '180+ countries' },
                 ].map(({ Icon, t }) => (
                   <span key={t} className="text-xs px-2.5 py-1 rounded-full flex-shrink-0 flex items-center gap-1" style={{ color: 'rgba(255,255,255,.75)', background: 'rgba(255,255,255,.1)' }}>
@@ -326,7 +325,6 @@ export default function LandingPage({ user }) {
           <div className="max-w-5xl mx-auto px-4 py-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { v: '180+', l: 'Countries' },
-              { v: '0.5%', l: 'Flat Fee Only' },
             ].map(({ v, l }) => (
               <div key={l} className="text-center">
                 <p className="text-xl md:text-3xl font-black grad-text mb-0.5">{v}</p>
@@ -497,7 +495,7 @@ export default function LandingPage({ user }) {
               { icon: Zap, title: 'Trades Under 15 Minutes', desc: 'No intermediaries. No complicated requirements. Match with a trader and complete your transaction in minutes.', color: C.gold },
               { icon: MessageCircle, title: 'Fast Dispute Resolution', desc: 'Our neutral team reviews both sides and resolves every dispute within 24 hours. Your funds stay safe throughout.', color: C.success },
               { icon: HeadphonesIcon, title: '24/7 Human Support', desc: 'Real people. Real solutions. Our global team is always online via in-app chat, WhatsApp and Discord — any time.', color: C.purple },
-              { icon: Lock, title: 'Zero Hidden Fees', desc: 'Flat 0.5% fee on completed trades only. No listing fees, no withdrawal fees, no monthly plans. Pay only when you win.', color: C.danger },
+              { icon: Lock, title: 'Zero Hidden Fees', desc: 'Flat 2% fee on completed trades only (3% on gift-card trades). No listing fees, no withdrawal fees, no monthly plans. Pay only when you win.', color: C.danger },
             ].map(({ icon: Icon, title, desc, color }, i) => (
               <div key={title}
                 className={`card-up bg-white rounded-2xl p-6 border ${featOn ? 'anim-up' : ''}`}
@@ -1003,7 +1001,7 @@ style={{background:`${color}12`}}>{React.createElement(icon, {size:15, style:{co
             {[
               { q: 'Is PRAQEN safe to use?', a: 'Absolutely. Every trade uses our escrow system — Bitcoin is locked before any money changes hands. Our dispute team resolves any issue within 24 hours. Your funds are always 100% protected.' },
               { q: 'How does escrow work?', a: "When a trade starts, the seller's Bitcoin is automatically locked in our escrow. You send your payment. Once the seller confirms receipt, BTC is instantly released to your wallet. Neither party can touch the funds during the trade." },
-              { q: 'What are the fees?', a: 'We charge a flat 0.5% fee on completed trades only. No listing fees, no withdrawal fees, no monthly subscriptions. You pay absolutely nothing until a trade succeeds.' },
+              { q: 'What are the fees?', a: 'We charge a flat 2% fee on completed Bitcoin/USDT trades (3% on gift-card trades) — added on top, paid by the seller. No listing fees, no withdrawal fees, no monthly subscriptions. You pay absolutely nothing until a trade succeeds.' },
               { q: 'How long does a trade take?', a: 'Mobile money trades (MTN, M-Pesa, OPay) typically complete in 5–15 minutes. Bank transfers take 15–30 minutes. We average under 8 minutes across all payment methods.' },
               { q: 'What happens if there is a dispute?', a: 'Open a dispute inside the trade chat with evidence. Our neutral support team reviews both sides and resolves it quickly — your Bitcoin stays locked safe in escrow throughout the entire process.' },
               { q: 'Which countries are supported?', a: '180+ countries worldwide. We have deep local payment support in Africa (Ghana, Nigeria, Kenya, South Africa), Asia (China, India, Japan, UAE), Europe (Germany, UK, France) and the Americas (USA, Canada, Brazil) — with more regions added regularly.' },
@@ -1056,7 +1054,7 @@ style={{background:`${color}12`}}>{React.createElement(icon, {size:15, style:{co
               style={{ background: '#EF4444', color: '#fff' }}>BETA</span>
           </div>
           <p className="text-xs mb-5" style={{ color: 'rgba(255,255,255,.45)' }}>
-            The world's most trusted P2P Bitcoin &amp; USDT platform · Escrow-protected · 0.5% flat fee
+            The world's most trusted P2P Bitcoin &amp; USDT platform · Escrow-protected
           </p>
 
           {/* key links */}

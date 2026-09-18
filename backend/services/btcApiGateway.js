@@ -63,9 +63,9 @@ const parseEndpoints = () => {
         'https://mempool.space/testnet/api',
       ]
     : [
-        'https://mempool.space/api',
         'https://blockstream.info/api',
         'https://mempool.emzy.de/api',
+        'https://mempool.space/api',
       ];
 
   const list = cleaned.length ? cleaned : defaultEndpoints;

@@ -76,12 +76,14 @@ async function getLiveBtcPrice() {
     return _btcPriceCache.price; // return last known price rather than hard-coded fallback
 }
 
-// ── Withdrawal fee — flat 1.2% — returns { feeUsd, feeBtc, label } ─────────────
+// ── Withdrawal fee — flat 2.2%, additive (added on top, receiver gets the
+// full requested amount) — returns { feeUsd, feeBtc, label }. Changed from
+// deductive 1.2% on 2026-09-17.
 function calcWithdrawalFee(amountBtc, btcPrice) {
   const amountUsd = Math.round(amountBtc * btcPrice * 100) / 100;
-  const feeUsd = amountUsd * 0.012;
+  const feeUsd = amountUsd * 0.022;
   const feeBtc = parseFloat((feeUsd / btcPrice).toFixed(8));
-  return { feeUsd: parseFloat(feeUsd.toFixed(2)), feeBtc, label: '1.2% fee' };
+  return { feeUsd: parseFloat(feeUsd.toFixed(2)), feeBtc, label: '2.2% fee' };
 }
 
 // ============================================================
@@ -110,7 +112,7 @@ async function autoHealOrphanedEscrows(userId) {
         // lock — with several stale locks this loop was the wallet page's slowest
         // part, doing N sequential DB round trips before the wallet data even loaded.
         const { data: tradesData } = await supabaseAdmin
-            .from('trades').select('id, status').in('id', locks.map(l => l.trade_id));
+            .from('trades').select('id, status, fee_model, platform_fee_btc').in('id', locks.map(l => l.trade_id));
         const tradeById = new Map((tradesData || []).map(t => [t.id, t]));
 
         let healed = 0;
@@ -121,7 +123,12 @@ async function autoHealOrphanedEscrows(userId) {
             // Only auto-refund when the trade is definitively over
             if (!['CANCELLED', 'COMPLETED'].includes(trade.status)) continue;
 
-            const amount = parseFloat(lock.amount_btc || 0);
+            // lock.amount_btc is the trade amount. Additive-fee trades locked
+            // (amount + fee), so the reserve to unwind is amount + platform_fee_btc.
+            const baseAmount = parseFloat(lock.amount_btc || 0);
+            const amount = trade.fee_model === 'additive'
+                ? parseFloat((baseAmount + parseFloat(trade.platform_fee_btc || 0)).toFixed(8))
+                : baseAmount;
             if (amount <= 0) continue;
 
             console.log(`[AutoHeal] Orphaned escrow found — trade=${lock.trade_id.slice(0,8)} status=${trade.status} amount=${amount} — refunding to ${userId.slice(0,8)}`);
@@ -653,13 +660,17 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
 
     available = parseFloat(bal?.balance_btc || 0);
 
-    // ── Tiered PRAQEN withdrawal fee ─────────────────────────────────────────
+    // ── Tiered PRAQEN withdrawal fee — additive: the fee is added ON TOP of
+    // the requested amount. The receiver gets the FULL amount requested;
+    // the sender's balance is debited (amount + fee). Changed from
+    // deductive 1.2% -> additive 2.2% on 2026-09-17.
     const liveBtcPrice = await getLiveBtcPrice();
     const feeResult = calcWithdrawalFee(amount, liveBtcPrice);
     platformFee = feeResult.feeBtc;
     platformFeeUsd = feeResult.feeUsd;
     feeLabel = feeResult.label;
-    amountUserReceives = parseFloat((amount - platformFee).toFixed(8));
+    amountUserReceives = amount; // additive — receiver gets the full requested amount, nothing deducted
+    const totalDeduct = parseFloat((amount + platformFee).toFixed(8));
 
     // Bitcoin's dust relay policy rejects any on-chain output below ~546 sats —
     // the network itself will never broadcast one. Nothing upstream of this
@@ -671,21 +682,21 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
     const MIN_ONCHAIN_SEND_SATS = 1000; // safely above the 546-sat dust limit
     if (Math.round(amountUserReceives * 1e8) < MIN_ONCHAIN_SEND_SATS) {
       return res.status(400).json({
-        error: `Withdrawal too small to send on-chain. After the ${feeLabel} fee, ₿${amountUserReceives.toFixed(8)} would be sent — Bitcoin's network minimum is ₿${(MIN_ONCHAIN_SEND_SATS / 1e8).toFixed(8)}. Please withdraw a larger amount.`,
+        error: `Withdrawal too small to send on-chain. ₿${amountUserReceives.toFixed(8)} is below Bitcoin's network minimum of ₿${(MIN_ONCHAIN_SEND_SATS / 1e8).toFixed(8)}. Please withdraw a larger amount.`,
       });
     }
 
-    if (available < amount) {
+    if (available < totalDeduct) {
       return res.status(400).json({
-        error: `Insufficient balance. Available: ₿${available.toFixed(8)}, requested ₿${amount.toFixed(8)} (includes ${feeLabel} = ₿${platformFee.toFixed(8)})`,
+        error: `Insufficient balance. Need ₿${totalDeduct.toFixed(8)} (₿${amount.toFixed(8)} + ${feeLabel} = ₿${platformFee.toFixed(8)}). Available: ₿${available.toFixed(8)}`,
       });
     }
 
     if (amountUserReceives <= 0) {
-      return res.status(400).json({ error: 'Amount too small after fee deduction.' });
+      return res.status(400).json({ error: 'Amount too small.' });
     }
 
-    console.log(`[hdWalletRoutes] On-chain send: ₿${amountUserReceives} (+ ₿${platformFee} ${feeLabel}) from ${userId.slice(0,8)} → ${toAddress}`);
+    console.log(`[hdWalletRoutes] On-chain send: ₿${amountUserReceives} (+ ₿${platformFee} ${feeLabel} added on top) from ${userId.slice(0,8)} → ${toAddress}`);
 
     // ── Deduct BEFORE broadcasting, with an optimistic lock ────────────────────
     // Broadcasting first and deducting only after success (the old order) let two
@@ -693,7 +704,7 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
     // check above, and both broadcast a real on-chain send before either
     // deduction landed — an actual double-spend of hot-wallet funds. Deducting
     // first (and restoring it on any genuine failure below) closes that race.
-    newBalance = parseFloat((available - amount).toFixed(8));
+    newBalance = parseFloat((available - totalDeduct).toFixed(8));
     const { data: deductRows, error: deductErr } = await supabaseAdmin
       .from('wallets')
       .update({ balance_btc: newBalance, updated_at: new Date().toISOString() })
@@ -717,7 +728,7 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
     // withdrawal drifts wallets.balance_btc away from the last escrow/swap-stamped figure
     // and falsely blocks this account's next BTC->USDT swap attempt.
     supabaseAdmin.from('balance_audit').insert({
-      user_id: userId, change_btc: -amount, new_balance: newBalance,
+      user_id: userId, change_btc: -totalDeduct, new_balance: newBalance,
       reason: 'WITHDRAWAL', created_at: new Date().toISOString(),
     }).then(null, e => console.error('[hd-wallet/send] ledger stamp failed:', e.message));
     // Immediately re-check this seller's gift-card listings against their new (lower)

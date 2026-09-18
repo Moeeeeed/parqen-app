@@ -4,13 +4,15 @@
 
 -- Support tickets
 CREATE TABLE IF NOT EXISTS support_tickets (
-  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  subject     TEXT        NOT NULL,
-  category    TEXT        NOT NULL DEFAULT 'general',
-  status      TEXT        NOT NULL DEFAULT 'open',
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subject           TEXT        NOT NULL,
+  category          TEXT        NOT NULL DEFAULT 'general',
+  status            TEXT        NOT NULL DEFAULT 'open',
+  submitted_username TEXT,
+  submitted_email    TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_support_tickets_user_id ON support_tickets(user_id);

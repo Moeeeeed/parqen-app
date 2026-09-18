@@ -302,7 +302,7 @@ const GC_CURRENCIES = [
   { region: 'Steam USA', currency: 'USD', symbol: '$', flag: '🇺🇸' },
   { region: 'Steam Europe', currency: 'EUR', symbol: '€', flag: '🇪🇺' },
   { region: 'Steam UK', currency: 'GBP', symbol: '£', flag: '🇬🇧' },
-  { region: 'Razer Gold Global', currency: 'USD', symbol: '$', flag: <Globe size={14} className="inline-block" /> },
+  { region: 'Razer Gold Global', currency: 'USD', symbol: '$', flag: '🌐' },
   { region: 'Vanilla Visa USA', currency: 'USD', symbol: '$', flag: '🇺🇸' },
   { region: 'Vanilla Visa Europe', currency: 'EUR', symbol: '€', flag: '🇪🇺' },
 ];
@@ -1825,8 +1825,15 @@ export default function CreateOffer({ user }) {
                     {/* ── Trade Breakdown — crystal clear profit explanation ── */}
                     {curr && (() => {
                       const exampleCash = 100;
-                      const buyerGetsUSD = (exampleCash / (1 + margin / 100)) * 0.995;
-                      const yourProfitUSD = exampleCash - buyerGetsUSD;
+                      // Additive fee model (2% BTC/USDT trades): the buyer always
+                      // receives the full priced amount — nothing deducted from them.
+                      // The seller pays the 2% platform fee ON TOP, so it comes out
+                      // of the seller's margin profit instead.
+                      const PLATFORM_FEE_RATE = 0.02;
+                      const buyerGetsUSD = exampleCash / (1 + margin / 100);
+                      const yourProfitUSD = offerType === 'sell'
+                        ? exampleCash - buyerGetsUSD * (1 + PLATFORM_FEE_RATE)
+                        : exampleCash - buyerGetsUSD;
                       const yourProfitPct = (yourProfitUSD / exampleCash) * 100;
                       return (
                         <div
@@ -2323,7 +2330,7 @@ export default function CreateOffer({ user }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, paddingBottom: 24 }}>
           <Shield size={12} style={{ color: C.g400, flexShrink: 0 }} />
           <p style={{ fontSize: 11, color: C.g400, textAlign: 'center', margin: 0 }}>
-            All trades escrow-protected · 0.5% fee on completed trades only
+            All trades escrow-protected · 2% fee on completed trades only
           </p>
         </div>
       </div>

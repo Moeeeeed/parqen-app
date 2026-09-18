@@ -31,7 +31,8 @@ function formatToastContent(content, toastId, dismissToast) {
   }
   if (typeof content === 'object') {
     if (content instanceof Error) return content.message;
-    if (content.message && typeof content.message === 'string') return content.message;
+    const text = content.text ?? content.message ?? content.error ?? content.title ?? content.content ?? content.detail ?? content.body;
+    if (typeof text === 'string' || typeof text === 'number') return String(text);
     try {
       return JSON.stringify(content);
     } catch {

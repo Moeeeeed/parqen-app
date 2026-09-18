@@ -1,6 +1,6 @@
-﻿// src/pages/Settings.js - COMPLETE CLEAN FILE
+// src/pages/Settings.js - COMPLETE CLEAN FILE
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import {
@@ -17,7 +17,8 @@ import {
   FileText, DollarSign, Languages, MapPin, X,
   ToggleLeft, ToggleRight,
   Ban, WifiOff, MessageCircle, Car, Plane, Zap,
-  AlertTriangle, Circle, Send, Unlink, Link
+  AlertTriangle, Circle, Send, Unlink, Link,
+  Edit3, ChevronDown, Menu
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -57,6 +58,54 @@ const maskEmail = (email) => {
   const masked = local.slice(0, show) + "•".repeat(Math.max(3, local.length - show));
   return `${masked}@${domain}`;
 };
+
+// Small-screen account rows deliberately use the same inline-edit interaction as
+// the desktop settings fields, without turning each row into a separate card.
+function MobileAccountField({ label, value, onSave, readOnly = false, type = 'text', status }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value || '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setDraft(value || ''); }, [value]);
+
+  const save = async () => {
+    if (draft === (value || '')) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      await onSave(draft);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+      <div className="py-2">
+        <div className="flex items-center gap-1.5 mb-1">
+          <p className="text-sm font-normal" style={{ color: C.g500 }}>{label}</p>
+          {status}
+        </div>
+        {editing ? (
+            <div className="flex items-center gap-2">
+              <input type={type} value={draft} onChange={e => setDraft(e.target.value)}
+                     onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false); }}
+                     disabled={saving} autoFocus
+                     className="min-w-0 flex-1 px-3 py-2.5 rounded-lg text-sm font-medium focus:outline-none"
+                     style={{ border: `2px solid ${C.green}`, color: C.g800, backgroundColor: C.white }} />
+              <button type="button" onClick={() => setEditing(false)} disabled={saving} className="text-xs font-bold" style={{ color: C.g500 }}>Cancel</button>
+              <button type="button" onClick={save} disabled={saving} className="text-xs font-bold" style={{ color: C.green }}>
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+        ) : (
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ backgroundColor: '#F1F1F1' }}>
+              <p className="flex-1 min-w-0 truncate text-sm font-bold" style={{ color: C.g800 }}>{value || '—'}</p>
+              {!readOnly && <button type="button" onClick={() => setEditing(true)} aria-label={`Edit ${label}`} className="flex-shrink-0 p-0.5" style={{ color: C.g400 }}><Edit3 size={15} /></button>}
+            </div>
+        )}
+      </div>
+  );
+}
 
 // ─── Verification Step ────────────────────────────────────────────────────────
 function VerifStep({ n, title, desc, done, active, badge }) {
@@ -624,6 +673,7 @@ export default function Settings({ user, setUser }) {
     currency: localStorage.getItem("praqen_currency") || "USD",
     language: localStorage.getItem("praqen_language") || "en",
     timezone: localStorage.getItem("praqen_timezone") || "Africa/Accra",
+    showOnline: true,
   }));
 
   // Notifications State with localStorage
@@ -690,6 +740,7 @@ export default function Settings({ user, setUser }) {
   }, [activeTab]);
 
   const [hideFullName, setHideFullName] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Phone verification flow
   const [phoneStep, setPhoneStep] = useState(() => {
@@ -698,6 +749,68 @@ export default function Settings({ user, setUser }) {
   });
   const [phoneOtpMethod, setPhoneOtpMethod] = useState(user?.email ? "email" : "sms");
   const [phoneOtpCode, setPhoneOtpCode] = useState("");
+
+  // Avatar upload
+  const fileRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState(null);
+  const [bioDraft, setBioDraft] = useState("");
+  const [bioEditing, setBioEditing] = useState(false);
+  const [bioSaving, setBioSaving] = useState(false);
+
+  const compressAvatar = (file, maxPx = 800, quality = 0.8) =>
+    new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > maxPx || h > maxPx) { const s = maxPx / Math.max(w, h); w = Math.round(w * s); h = Math.round(h * s); }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image load failed'));
+      };
+      img.src = url;
+    });
+
+  const handleAvatarClick = () => fileRef.current?.click();
+  const handleAvatarUpload = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f || !f.type.startsWith('image/')) return;
+    if (f.size > 8 * 1024 * 1024) { toast.error('Image must be under 8MB'); return; }
+    setAvatarPreview(URL.createObjectURL(f));
+    setUploading(true);
+    try {
+      const b64 = await compressAvatar(f);
+      const tk = localStorage.getItem('token');
+      const r = await axios.post(`${API_URL}/users/upload-avatar`, { image: b64, userId: user?.id }, { headers: { Authorization: `Bearer ${tk}` } });
+      if (r.data.success) {
+        const url = r.data.avatar_url;
+        if (url) { setUser(u => ({ ...u, avatar_url: url })); const cu = JSON.parse(localStorage.getItem('user') || '{}'); cu.avatar_url = url; localStorage.setItem('user', JSON.stringify(cu)); window.dispatchEvent(new Event('userUpdated')); }
+        toast.success('Avatar updated!');
+      }
+    } catch (err) { toast.error('Upload failed'); setAvatarPreview(null); }
+    finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
+  };
+
+  const saveBioOnly = async () => {
+    setBioSaving(true);
+    try {
+      const r = await axios.put(`${API_URL}/users/profile`, { bio: bioDraft }, { headers: authH() });
+      if (r.data.success) {
+        setAccountForm(p => ({ ...p, bio: bioDraft }));
+        if (setUser) setUser(u => ({ ...u, bio: bioDraft }));
+        const cu = JSON.parse(localStorage.getItem('user') || '{}'); cu.bio = bioDraft; localStorage.setItem('user', JSON.stringify(cu));
+        window.dispatchEvent(new Event('userUpdated'));
+        toast.success('Bio updated!');
+        setBioEditing(false);
+      }
+    } catch (e) { toast.error(e?.response?.data?.error || 'Failed to update bio'); }
+    finally { setBioSaving(false); }
+  };
 
   // Email verification
   const [emailVerifyStep, setEmailVerifyStep] = useState("idle");
@@ -834,7 +947,7 @@ export default function Settings({ user, setUser }) {
               if (language) localStorage.setItem("praqen_language", language);
               if (timezone) localStorage.setItem("praqen_timezone", timezone);
               if (nameDisplay) localStorage.setItem("praqen_name_display", nameDisplay);
-              return { ...p, currency, language, timezone, nameDisplay };
+              return { ...p, currency, language, timezone, nameDisplay, showOnline: fresh.show_online !== false };
             });
             if (setUser) setUser((u) => ({ ...u, ...fresh }));
             const stored = JSON.parse(localStorage.getItem("user") || "{}");
@@ -935,6 +1048,38 @@ export default function Settings({ user, setUser }) {
       toast.error(e?.response?.data?.error || "Failed to update");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveMobileAccountField = async (field, value) => {
+    if (field === 'username' && !value.trim()) {
+      toast.error('Username is required');
+      throw new Error('Username is required');
+    }
+    const next = { ...accountForm, [field]: value };
+    const phoneIsLocked = phoneVerified || phoneStep === 'done';
+    const locationLocked = kycVerified || !!(user?.is_id_verified || user?.kyc_verified || user?.kyc_status === 'approved');
+    const payload = { username: next.username, fullName: next.fullName, bio: next.bio };
+    if (!phoneIsLocked) payload.phone = next.phone;
+    if (!locationLocked) payload.location = next.location;
+
+    try {
+      await axios.put(`${API_URL}/users/profile`, payload, { headers: authH() });
+      setAccountForm(next);
+      const userUpdate = {
+        username: next.username,
+        full_name: next.fullName,
+        ...(phoneIsLocked ? {} : { phone: next.phone }),
+        ...(locationLocked ? {} : { location: next.location }),
+      };
+      if (setUser) setUser(u => ({ ...u, ...userUpdate }));
+      const stored = JSON.parse(localStorage.getItem('user') || '{}');
+      localStorage.setItem('user', JSON.stringify({ ...stored, ...userUpdate }));
+      window.dispatchEvent(new Event('userUpdated'));
+      toast.success(`${field === 'fullName' ? 'Full name' : field[0].toUpperCase() + field.slice(1)} updated!`);
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to update');
+      throw e;
     }
   };
 
@@ -1213,8 +1358,8 @@ export default function Settings({ user, setUser }) {
     }
   };
 
-  const saveNameDisplay = async () => {
-    const mode = prefs.nameDisplay;
+  const saveNameDisplay = async (selectedMode = prefs.nameDisplay) => {
+    const mode = selectedMode;
     setNameDisplaySaving(true);
     setNameDisplaySaved(false);
     try {
@@ -1295,20 +1440,26 @@ export default function Settings({ user, setUser }) {
     }
   };
 
-  const handleSavePreferences = async () => {
+  const handleSavePreferences = async (preferences = prefs) => {
     setLoading(true);
     try {
-      await axios.put(`${API_URL}/users/preferences`, prefs, { headers: authH() });
-      localStorage.setItem("praqen_currency", prefs.currency);
-      localStorage.setItem("praqen_language", prefs.language);
-      localStorage.setItem("praqen_timezone", prefs.timezone);
-      if (setUser) setUser((u) => ({ ...u, preferred_currency: prefs.currency, preferred_language: prefs.language, timezone: prefs.timezone }));
+      await axios.put(`${API_URL}/users/preferences`, { ...preferences, show_online: preferences.showOnline }, { headers: authH() });
+      localStorage.setItem("praqen_currency", preferences.currency);
+      localStorage.setItem("praqen_language", preferences.language);
+      localStorage.setItem("praqen_timezone", preferences.timezone);
+      if (setUser) setUser((u) => ({ ...u, preferred_currency: preferences.currency, preferred_language: preferences.language, timezone: preferences.timezone, show_online: preferences.showOnline }));
       toast.success("Preferences saved!");
     } catch (e) {
       toast.error("Failed to save preferences");
     } finally {
       setLoading(false);
     }
+  };
+
+  const updatePreference = (updates) => {
+    const next = { ...prefs, ...updates };
+    setPrefs(next);
+    handleSavePreferences(next);
   };
 
   // Fetch Notifications Function
@@ -1383,46 +1534,36 @@ export default function Settings({ user, setUser }) {
     { id: "notifications", icon: Bell, label: "Notifications" },
   ];
 
-  const inputCls = "w-full px-4 py-2.5 border-2 rounded-xl text-sm focus:outline-none transition";
-  const inputStyle = (active) => ({
-    borderColor: active ? C.green : C.g200,
+  const inputCls = "w-full px-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:border-green-500 transition";
+  const inputStyle = () => ({
+    borderColor: C.g200,
     color: C.g800,
+    backgroundColor: C.g50,
   });
-  const labelCls = "block text-sm font-bold mb-1.5 text-gray-700";
+  const labelCls = "block text-xs font-semibold mb-1.5";
 
   return (
-      <div className="min-h-screen flex flex-col" style={{ backgroundColor: C.mist, fontFamily: "'DM Sans',sans-serif" }}>
-        <div className="max-w-5xl mx-auto w-full px-4 py-4 md:py-8">
-          {/* Header */}
-          <div className="mb-4 md:mb-8">
-            <h1 className="text-2xl md:text-3xl font-black" style={{ color: C.forest, fontFamily: "'Syne',sans-serif" }}>Settings</h1>
-            <p className="text-sm mt-1" style={{ color: C.g500 }}>Manage your account, security and preferences</p>
+      <div className="min-h-screen flex flex-col md:overflow-x-hidden" style={{ backgroundColor: C.mist, fontFamily: "'DM Sans',sans-serif" }}>
+        <div className="max-w-6xl mx-auto w-full px-4 py-4 md:max-w-none md:w-auto md:mx-8 md:py-8">
+          {/* Header row — mobile: 'Account settings' + hamburger | desktop: 'Settings' heading + subtitle */}
+          <div className="mb-2 md:mb-8 flex items-center justify-between">
+            {/* Mobile heading */}
+            <h1 className="md:hidden text-xl font-black" style={{ color: C.forest, fontFamily: "'Syne',sans-serif" }}>Account settings</h1>
+            {/* Desktop heading + subtitle */}
+            <div className="hidden md:block">
+              <h1 className="text-2xl md:text-3xl font-black" style={{ color: C.forest, fontFamily: "'Syne',sans-serif" }}>Settings</h1>
+              <p className="text-sm mt-1" style={{ color: C.g500 }}>Manage your account, security and preferences</p>
+            </div>
+            {/* Hamburger menu — mobile only */}
+            <button onClick={() => setMobileMenuOpen(true)}
+                    className="md:hidden flex items-center justify-center w-10 h-10 rounded-xl transition hover:bg-white/80"
+                    style={{ flexShrink: 0 }}>
+              <Menu size={22} style={{ color: C.g700 }} />
+            </button>
           </div>
 
-          <div className="flex flex-col md:flex-row gap-4 md:gap-6">
-            {/* Sidebar tabs */}
+          <div className="flex flex-col md:flex-row gap-4 md:gap-6">            {/* Sidebar tabs — horizontal pill bar removed on mobile (hamburger menu replaces it) */}
             <div className="md:w-52 flex-shrink-0">
-              {/* Mobile: horizontal scrollable pill tab bar */}
-              <div className="md:hidden flex gap-2 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
-                {TABS.map(({ id, icon: Icon, label }) => (
-                    <button key={id} onClick={() => setActiveTab(id)}
-                            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold whitespace-nowrap transition"
-                            style={{
-                              backgroundColor: activeTab === id ? C.green : C.white,
-                              color: activeTab === id ? '#fff' : C.g500,
-                              border: `1.5px solid ${activeTab === id ? C.green : C.g200}`,
-                            }}>
-                      <Icon size={13} style={{ flexShrink: 0 }} />
-                      {label}
-                    </button>
-                ))}
-                <button onClick={handleLogout}
-                        className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold whitespace-nowrap"
-                        style={{ backgroundColor: '#FEF2F2', color: '#EF4444', border: '1.5px solid #FECACA' }}>
-                  <LogOut size={13} style={{ flexShrink: 0 }} />
-                  Logout
-                </button>
-              </div>
 
               {/* Desktop: vertical sidebar */}
               <div className="hidden md:block bg-white rounded-2xl shadow-sm border overflow-hidden" style={{ borderColor: C.g200 }}>
@@ -1438,12 +1579,6 @@ export default function Settings({ user, setUser }) {
                       <span className="text-sm font-bold" style={{ color: activeTab === id ? C.green : C.g600 }}>{label}</span>
                     </button>
                 ))}
-                <button onClick={handleLogout}
-                        className="w-full flex items-center gap-3 px-4 py-3 text-left transition hover:bg-red-50"
-                        style={{ borderTop: `1px solid ${C.g100}` }}>
-                  <LogOut size={16} className="text-red-400" />
-                  <span className="text-sm font-bold text-red-500">Log Out</span>
-                </button>
               </div>
             </div>
 
@@ -1452,62 +1587,267 @@ export default function Settings({ user, setUser }) {
               {/* ── ACCOUNT ─────────────────────────────────────────── */}
               {activeTab === 'account' && (
                   <>
-                    {/* Account information */}
-                    <div className="bg-white rounded-2xl shadow-sm border p-6" style={{ borderColor: C.g200 }}>
-                      <h2 className="text-lg font-black mb-5" style={{ color: C.forest }}>Account Information</h2>
-                      <form onSubmit={handleAccountUpdate} className="space-y-4">
-                        <div className="grid md:grid-cols-2 gap-4">
+                    <input ref={fileRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: 'none' }} />
+
+                    {/* ── Top row: Avatar + Bio (side-by-side on desktop ≥1024px) ── */}
+                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-5">
+                      {/* Avatar card */}
+                      <div className="bg-white rounded-2xl shadow-sm border p-5" style={{ borderColor: C.g200 }}>
+                        <div className="flex flex-col gap-3">
+                          <div onClick={handleAvatarClick} className="cursor-pointer" style={{ width: 96, height: 96, borderRadius: 12, overflow: 'hidden', border: `2px solid ${C.g200}`, background: C.g100, position: 'relative', flexShrink: 0 }}>
+                            {(avatarPreview || user?.avatar_url) ? (
+                                <img src={avatarPreview || user?.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `linear-gradient(135deg, ${C.gold}, #FBBF24)` }}>
+                                  <span style={{ fontSize: 32, fontWeight: 900, color: C.forest }}>{user?.username?.charAt(0)?.toUpperCase() || 'U'}</span>
+                                </div>
+                            )}
+                            {uploading && (
+                                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  <RefreshCw size={20} color="#fff" className="animate-spin" />
+                                </div>
+                            )}
+                          </div>
                           <div>
-                            <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                              Username {user?.username_changed && <Lock size={12} style={{ color: C.g400 }} />}
+                            <h2 className="text-sm font-bold" style={{ color: C.g800 }}>Avatar</h2>
+                            <p className="text-xs mt-0.5" style={{ color: C.g500, lineHeight: 1.5 }}>
+                              Upload a clear photo, preferably of yourself. Please avoid explicit or inappropriate images — they will be removed immediately.
+                            </p>
+                          </div>
+                          <button onClick={handleAvatarClick} disabled={uploading}
+                                  className="self-start flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition hover:opacity-90 disabled:opacity-50"
+                                  style={{ border: `1px solid ${C.g200}`, backgroundColor: C.white, color: C.g700 }}>
+                            {uploading ? <><RefreshCw size={13} className="animate-spin" /> Uploading…</> : <><Upload size={13} /> Upload image</>}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Bio card */}
+                      <div className="bg-white rounded-2xl shadow-sm border p-5 flex flex-col" style={{ borderColor: C.g200 }}>
+                        <textarea
+                            value={bioEditing ? bioDraft : (accountForm.bio || '')}
+                            onChange={e => {
+                              const val = e.target.value;
+                              if (val.length <= 150) setBioDraft(val);
+                            }}
+                            readOnly={!bioEditing}
+                            placeholder="Tell traders a bit about yourself…"
+                            rows={3}
+                            className="w-full px-4 py-3 border rounded-lg text-sm resize-none focus:outline-none focus:border-green-500 transition"
+                            style={{
+                              borderColor: C.g200,
+                              color: bioEditing ? C.g800 : C.g500,
+                              backgroundColor: C.g50,
+                              cursor: bioEditing ? 'text' : 'default',
+                              fontFamily: "'DM Sans',sans-serif",
+                            }} />
+                        <div className="flex items-center justify-between mt-2.5">
+                          <p className="text-xs" style={{ color: (bioDraft || '').length >= 150 ? C.danger : C.g400 }}>Maximum 150 characters</p>
+                          <div className="flex gap-2">
+                            <button type="button"
+                                    onClick={() => { if (bioEditing) { setBioDraft(accountForm.bio || ''); setBioEditing(false); } else { setBioDraft(accountForm.bio || ''); setBioEditing(true); } }}
+                                    className="px-4 py-2 rounded-xl text-sm font-bold transition"
+                                    style={{ backgroundColor: bioEditing ? '#fff' : C.green, color: bioEditing ? C.g600 : '#fff', border: bioEditing ? `1px solid ${C.g200}` : 'none' }}>
+                              {bioEditing ? 'Cancel' : <><Edit3 size={13} className="inline" /> Edit</>}
+                            </button>
+                            <button type="button" onClick={saveBioOnly}
+                                    disabled={!bioEditing || bioSaving || bioDraft === (accountForm.bio || '')}
+                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition"
+                                    style={{ backgroundColor: (!bioEditing || bioDraft === (accountForm.bio || '')) ? C.g200 : C.green }}>
+                              {bioSaving ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />} Save
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Mobile: one compact page flow, without section cards. */}
+                    <div className="md:hidden" style={{ backgroundColor: C.white }}>
+                      <section className="px-4 pt-3 pb-2">
+                        <MobileAccountField label="Name" value={accountForm.fullName}
+                                            readOnly={kycVerified} onSave={value => saveMobileAccountField('fullName', value)} />
+                        <MobileAccountField label="Username" value={accountForm.username}
+                                            readOnly={user?.username_changed} onSave={value => saveMobileAccountField('username', value)} />
+                        <MobileAccountField label="E-mail" value={accountForm.email} readOnly
+                                            status={emailVerified ? <span className="text-xs" style={{ color: C.success }}>✓ Verified</span> : <span className="text-xs" style={{ color: C.warn }}>Unverified</span>} />
+                        {!emailVerified && emailVerifyStep === 'idle' && (
+                            <button type="button" onClick={handleSendEmailCode} disabled={emailCodeLoading} className="mb-2 text-xs font-bold" style={{ color: C.paid }}>
+                              {emailCodeLoading ? 'Sending code…' : 'Verify e-mail'}
+                            </button>
+                        )}
+                        {(emailVerifyStep === 'otp' || emailVerifyStep === 'verifying') && (
+                            <div className="flex gap-2 items-center pb-2">
+                              <input type="text" inputMode="numeric" maxLength={6} placeholder="Verification code" value={emailCode}
+                                     onChange={e => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                     className="min-w-0 flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none" style={{ border: `1px solid ${C.g200}` }} />
+                              <button type="button" onClick={handleVerifyEmailCode} disabled={emailVerifyStep === 'verifying' || emailCode.length < 6} className="text-xs font-bold" style={{ color: C.green }}>
+                                {emailVerifyStep === 'verifying' ? 'Verifying…' : 'Confirm'}
+                              </button>
+                            </div>
+                        )}
+                        <MobileAccountField label="Phone number" value={accountForm.phone}
+                                            type="tel" readOnly={phoneVerified || phoneStep === 'done'}
+                                            status={(phoneVerified || phoneStep === 'done') && <span className="text-xs" style={{ color: C.success }}>✓ Verified</span>}
+                                            onSave={value => saveMobileAccountField('phone', value)} />
+                      </section>
+
+                      <section className="px-4 pt-2 pb-5">
+                        <h2 className="text-base font-semibold" style={{ color: C.g800 }}>Account preferences</h2>
+                        <div className="mt-2 mb-3" style={{ borderBottom: `1px solid ${C.g200}` }} />
+                        <p className="text-sm font-normal mb-1.5" style={{ color: C.g500 }}>Name display</p>
+                        <div className="space-y-1.5">
+                          {(() => {
+                            const full = accountForm.fullName || user?.full_name || '';
+                            const parts = full.trim().split(/\s+/).filter(Boolean);
+                            const initial = parts.length > 1 ? `${parts[0]} ${parts.slice(1).map(part => `${part[0]}.`).join(' ')}` : full;
+                            return [
+                              { val: 'initial', text: `Show first name and last name initial${initial ? ` (${initial})` : ''}` },
+                              { val: 'full', text: `Show full name${full ? ` (${full})` : ''}` },
+                              { val: 'hide', text: `Hide full name${accountForm.username ? ` (${accountForm.username})` : ''}` },
+                            ];
+                          })().map(({ val, text }) => (
+                              <label key={val} className="flex items-start gap-2 cursor-pointer text-sm leading-5" style={{ color: C.g700 }}>
+                                <input type="radio" name="mobileNameDisplay" value={val} checked={prefs.nameDisplay === val}
+                                       disabled={nameDisplaySaving}
+                                       onChange={() => { setPrefs(p => ({ ...p, nameDisplay: val })); saveNameDisplay(val); }}
+                                       className="accent-green-600 flex-shrink-0" style={{ width: 18, height: 18, marginTop: 1 }} />
+                                <span>{text}</span>
+                              </label>
+                          ))}
+                        </div>
+                        <div className="mt-4 space-y-3">
+                          <div>
+                            <label className="block text-sm font-normal mb-1" style={{ color: C.g500 }}>Preferred currency</label>
+                            <select value={prefs.currency} onChange={e => updatePreference({ currency: e.target.value })} className="w-full px-3 py-2.5 rounded-xl text-sm font-bold" style={{ border: 'none', backgroundColor: '#F1F1F1', color: C.g800 }}>
+                              {CURRENCIES.map(({ code, label, symbol, flag }) => <option key={code} value={code}>{flag} {label} ({symbol})</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-normal mb-1" style={{ color: C.g500 }}>Language</label>
+                            <select value={prefs.language} onChange={e => updatePreference({ language: e.target.value })} className="w-full px-3 py-2.5 rounded-xl text-sm font-bold" style={{ border: 'none', backgroundColor: '#F1F1F1', color: C.g800 }}>
+                              {LANGUAGES.map(({ code, label, native }) => <option key={code} value={code}>{label}{native !== label ? ` — ${native}` : ''}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-normal mb-1" style={{ color: C.g500 }}>Timezone</label>
+                            <select value={prefs.timezone} onChange={e => updatePreference({ timezone: e.target.value })} className="w-full px-3 py-2.5 rounded-xl text-sm font-bold" style={{ border: 'none', backgroundColor: '#F1F1F1', color: C.g800 }}>
+                              {Object.entries(TIMEZONE_GROUPS).map(([region, zones]) => <optgroup key={region} label={region}>{zones.map(({ tz, label }) => <option key={tz} value={tz}>{label}</option>)}</optgroup>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between mt-4">
+                          <span className="text-sm" style={{ color: C.g700 }}>Show online</span>
+                          <Toggle checked={prefs.showOnline} onChange={showOnline => updatePreference({ showOnline })} label="Show online" />
+                        </div>
+                      </section>
+                    </div>
+
+                    {/* Desktop account page visual treatment, matching the two-column reference. */}
+                    <style>{`
+                      @media (min-width: 768px) {
+                        .desktop-account-grid .desktop-account-card { border-radius: 0; box-shadow: none; }
+                        .desktop-account-grid .desktop-field-label {
+                          font-size: 16px !important;
+                          font-weight: 400 !important;
+                          line-height: 22px;
+                        }
+                        .desktop-account-grid .desktop-field {
+                          min-height: 50px;
+                          background: #F1F1F1 !important;
+                          border-color: transparent !important;
+                          border-radius: 12px !important;
+                        }
+                        .desktop-account-grid .desktop-field input {
+                          min-height: 50px;
+                          padding: 12px 14px !important;
+                          background: transparent !important;
+                          border-color: transparent !important;
+                          border-radius: 12px !important;
+                          font-size: 16px !important;
+                          font-weight: 700 !important;
+                        }
+                        .desktop-account-grid .desktop-field > span { font-size: 16px; font-weight: 700; }
+                        .desktop-account-grid .desktop-preference-field {
+                          min-height: 50px;
+                          padding: 12px 14px !important;
+                          border-color: transparent !important;
+                          border-radius: 12px !important;
+                          background: #F1F1F1 !important;
+                          font-size: 16px !important;
+                          font-weight: 700 !important;
+                        }
+                        .desktop-account-grid .desktop-name-option { font-size: 16px; line-height: 22px; }
+                        .desktop-account-grid .desktop-show-online > span { font-size: 16px; }
+                        .desktop-account-grid form > div > p { display: none; }
+                      }
+                    `}</style>
+
+                    {/* ── Bottom row: Account info + Preferences (desktop ≥768px) ── */}
+                    <div className="desktop-account-grid hidden md:grid grid-cols-1 lg:grid-cols-2 gap-7 -mt-1 pb-32">
+                      {/* Account information */}
+                      <div className="desktop-account-card bg-white rounded-2xl shadow-sm border p-6" style={{ borderColor: C.g200 }}>
+                        <h2 className="text-[20px] font-semibold mb-0.5" style={{ color: C.g800 }}>Account information</h2>
+                        <div style={{ borderBottom: `1px solid ${C.g100}`, marginBottom: 14 }} />
+                        <form onSubmit={handleAccountUpdate} className="space-y-2">
+                          {/* Username */}
+                          <div>
+                            <label className={`${labelCls} desktop-field-label`} style={{ display: 'flex', alignItems: 'center', gap: 5, color: C.g500, marginBottom: 2 }}>
+                              Username {user?.username_changed && <Lock size={11} style={{ color: C.g400 }} />}
                             </label>
                             {user?.username_changed ? (
-                                <div className="px-4 py-2.5 border-2 rounded-xl text-sm font-medium flex items-center justify-between"
-                                     style={{ borderColor: C.g200, backgroundColor: C.g100, color: C.g500 }}>
+                                <div className="desktop-field px-4 py-2.5 border rounded-lg text-sm font-medium flex items-center justify-between"
+                                     style={{ borderColor: C.g200, backgroundColor: C.g50, color: C.g500 }}>
                                   <span>{accountForm.username}</span>
                                   <Lock size={13} style={{ color: C.g400 }} />
                                 </div>
                             ) : (
-                                <input type="text" value={accountForm.username}
-                                       onChange={e => setAccountForm({ ...accountForm, username: e.target.value })}
-                                       className={inputCls} required style={inputStyle(accountForm.username)} />
+                                <div className="desktop-field relative">
+                                  <input type="text" value={accountForm.username}
+                                         onChange={e => setAccountForm({ ...accountForm, username: e.target.value })}
+                                         className={inputCls} required style={{ ...inputStyle(), paddingRight: 36 }} />
+                                  <Edit3 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.g400 }} />
+                                </div>
                             )}
                             {user?.username_changed ?
                                 <p className="text-xs mt-1 flex items-center gap-1" style={{ color: C.g400 }}><Lock size={9} />Username is permanently locked.</p> :
                                 <p className="text-xs mt-1 flex items-center gap-1" style={{ color: '#D97706' }}><AlertTriangle size={12} className="inline-block" />You can only change your username once. Choose carefully.</p>
                             }
                           </div>
+
+                          {/* Full Name */}
                           <div>
-                            <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                              Full Name {kycVerified && <Lock size={12} style={{ color: C.g400 }} />}
+                            <label className={`${labelCls} desktop-field-label`} style={{ display: 'flex', alignItems: 'center', gap: 5, color: C.g500, marginBottom: 2 }}>
+                              Full Name {kycVerified && <Lock size={11} style={{ color: C.g400 }} />}
                             </label>
                             {kycVerified ? (
-                                <div className="px-4 py-2.5 border-2 rounded-xl text-sm font-medium flex items-center justify-between"
-                                     style={{ borderColor: C.g200, backgroundColor: C.g100, color: C.g500 }}>
+                                <div className="desktop-field px-4 py-2.5 border rounded-lg text-sm font-medium flex items-center justify-between"
+                                     style={{ borderColor: C.g200, backgroundColor: C.g50, color: C.g500 }}>
                                   <span>{accountForm.fullName}</span>
                                   <Lock size={13} style={{ color: C.g400 }} />
                                 </div>
                             ) : (
-                                <input type="text" value={accountForm.fullName}
-                                       onChange={e => setAccountForm({ ...accountForm, fullName: e.target.value })}
-                                       className={inputCls} style={inputStyle(accountForm.fullName)} />
+                                <div className="desktop-field relative">
+                                  <input type="text" value={accountForm.fullName}
+                                         onChange={e => setAccountForm({ ...accountForm, fullName: e.target.value })}
+                                         className={inputCls} style={{ ...inputStyle(), paddingRight: 36 }} />
+                                  <Edit3 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.g400 }} />
+                                </div>
                             )}
                             {kycVerified ?
                                 <p className="text-xs mt-1 flex items-center gap-1" style={{ color: C.g400 }}><Lock size={9} />Locked after ID verification.</p> :
                                 <p className="text-xs mt-1" style={{ color: C.g500 }}>ℹ Full name cannot be changed after ID verification.</p>
                             }
                           </div>
-                        </div>
 
-                        <div className="grid md:grid-cols-2 gap-4">
+                          {/* Email Address */}
                           <div>
-                            <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <label className={`${labelCls} desktop-field-label`} style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.g500, marginBottom: 2 }}>
                               Email Address
                               {emailVerified ?
-                                  <span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: '#ECFDF5', color: C.success }}>✓ Verified</span> :
+                                  <span className="text-xs font-medium" style={{ color: C.success }}>✓ Verified</span> :
                                   <span className="text-xs font-black px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ backgroundColor: '#FFF7ED', color: C.warn }}><AlertTriangle size={11} className="inline-block" />Unverified</span>}
                             </label>
-                            <div className="px-4 py-2.5 border-2 rounded-xl text-sm font-medium flex items-center justify-between"
+                            <div className="desktop-field px-4 py-2.5 border rounded-lg text-sm font-medium flex items-center justify-between"
                                  style={{ borderColor: emailVerified ? '#DCFCE7' : '#FDE68A', backgroundColor: C.g50, color: C.g700 }}>
                               <span className="truncate">{maskEmail(accountForm.email)}</span>
                               {emailVerified ?
@@ -1549,136 +1889,153 @@ export default function Settings({ user, setUser }) {
                             )}
                           </div>
 
+                          {/* Phone Number */}
                           <div>
-                            <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <label className={`${labelCls} desktop-field-label`} style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.g500, marginBottom: 2 }}>
                               Phone Number
                               {phoneVerified || phoneStep === 'done' ?
-                                  <span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: '#ECFDF5', color: C.success }}>✓ Verified</span> :
+                                  <span className="text-xs font-medium" style={{ color: C.success }}>✓ Verified</span> :
                                   accountForm.phone ?
                                       <span className="text-xs font-black px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ backgroundColor: '#FFF7ED', color: C.warn }}><AlertTriangle size={11} className="inline-block" />Unverified</span> : null}
                             </label>
                             {phoneVerified || phoneStep === 'done' ? (
-                                <div className="px-4 py-2.5 border-2 rounded-xl text-sm font-medium flex items-center justify-between"
+                                <div className="desktop-field px-4 py-2.5 border rounded-lg text-sm font-medium flex items-center justify-between"
                                      style={{ borderColor: '#DCFCE7', backgroundColor: C.g50, color: C.g700 }}>
                                   <span>{accountForm.phone || 'Your number has been verified'}</span>
                                   <CheckCircle size={14} style={{ color: C.success, flexShrink: 0 }} />
                                 </div>
                             ) : (
-                                <input type="tel" value={accountForm.phone}
-                                       onChange={e => setAccountForm({ ...accountForm, phone: e.target.value })}
-                                       placeholder="+[country code] your number — e.g. +233XXXXXXXXX"
-                                       className={inputCls} style={inputStyle(accountForm.phone)} />
+                                <div className="desktop-field relative">
+                                  <input type="tel" value={accountForm.phone}
+                                         onChange={e => setAccountForm({ ...accountForm, phone: e.target.value })}
+                                         placeholder="+[country code] your number — e.g. +233XXXXXXXXX"
+                                         className={inputCls} style={{ ...inputStyle(), paddingRight: 36 }} />
+                                  <Edit3 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.g400 }} />
+                                </div>
                             )}
                             {phoneVerified || phoneStep === 'done' ?
                                 <p className="text-xs mt-1 flex items-center gap-1" style={{ color: C.g400 }}><Lock size={9} />Phone number locked after verification.</p> :
                                 <p className="text-xs mt-1" style={{ color: C.g400 }}>Go to the Verification tab to verify your phone number instantly.</p>}
                           </div>
-                        </div>
 
-                        {(() => {
-                          const locationLocked = kycVerified || !!(user?.is_id_verified || user?.kyc_verified || user?.kyc_status === 'approved');
-                          return (
-                              <div>
-                                <label className={labelCls} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                                  Location {locationLocked && <Lock size={12} style={{ color: C.g400 }} />}
-                                </label>
-                                {locationLocked ? (
-                                    <div className="px-4 py-2.5 border-2 rounded-xl text-sm font-medium flex items-center justify-between"
-                                         style={{ borderColor: C.g200, backgroundColor: C.g100, color: C.g500 }}>
-                                      <span>{accountForm.location || '—'}</span>
-                                      <Lock size={13} style={{ color: C.g400 }} />
-                                    </div>
-                                ) : (
-                                    <input type="text" value={accountForm.location}
-                                           onChange={e => setAccountForm({ ...accountForm, location: e.target.value })}
-                                           placeholder="e.g. Accra, Ghana"
-                                           className={inputCls} style={inputStyle(accountForm.location)} />
-                                )}
-                                {locationLocked ?
-                                    <p className="text-xs mt-1 flex items-center gap-1" style={{ color: C.g400 }}><Lock size={9} />Location locked after ID verification.</p> :
-                                    <p className="text-xs mt-1" style={{ color: C.g500 }}>ℹ Location will be locked once your ID is verified.</p>
-                                }
-                              </div>
-                          );
-                        })()}
-
-                        <div>
-                          <label className={labelCls}>Bio <span className="font-normal text-gray-400">(optional)</span></label>
-                          <textarea
-                              value={accountForm.bio}
-                              onChange={e => {
-                                const val = e.target.value;
-                                const wc = val.trim() === '' ? 0 : val.trim().split(/\s+/).length;
-                                if (wc <= 100) setAccountForm({ ...accountForm, bio: val });
-                              }}
-                              placeholder="Tell traders a bit about yourself… (max 100 words)"
-                              rows={2}
-                              className={inputCls + " resize-none"} style={inputStyle(accountForm.bio)} />
-                          <p className="text-xs mt-0.5 text-right"
-                             style={{ color: (accountForm.bio || '').trim() === '' ? C.g400 : (accountForm.bio || '').trim().split(/\s+/).length >= 100 ? C.danger : C.g400 }}>
-                            {(accountForm.bio || '').trim() === '' ? 0 : (accountForm.bio || '').trim().split(/\s+/).length}/100 words
-                          </p>
-                        </div>
-
-                        <button type="submit" disabled={loading}
-                                className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-bold text-sm hover:opacity-90 disabled:opacity-50"
-                                style={{ backgroundColor: C.green }}>
-                          {loading ? <><RefreshCw size={15} className="animate-spin" /> Saving…</> : <><Save size={15} /> Save Changes</>}
-                        </button>
-                      </form>
-                    </div>
-
-                    {/* Name display preferences */}
-                    <div className="bg-white rounded-2xl shadow-sm border p-6" style={{ borderColor: C.g200 }}>
-                      <h2 className="text-lg font-black mb-1" style={{ color: C.forest }}>Name Display</h2>
-                      <p className="text-xs text-gray-400 mb-4">How your name appears to other traders on the platform</p>
-
-                      <div className="space-y-2 mb-4">
-                        {(() => {
-                          const full = accountForm.fullName || user?.full_name || '';
-                          const initial = full ? full.trim().split(/\s+/).map((w, i) => i === 0 ? w : w[0] + '.').join(' ') : 'Samuel K.';
-                          return [
-                            { val: 'full', label: 'Show full name', desc: 'Your full name is visible to all traders', example: full || 'Samuel Kwame' },
-                            { val: 'initial', label: 'Show first name and last initial', desc: 'Only first name + last initial shown', example: initial },
-                            { val: 'hide', label: 'Hide full name', desc: 'Only your username is shown', example: accountForm.username || user?.username || 'samuel123' },
-                          ];
-                        })().map(({ val, label, desc, example }) => (
-                            <label key={val} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition ${prefs.nameDisplay === val ? 'border-green-300 bg-green-50' : 'border-gray-100 hover:border-gray-200'}`}>
-                              <input type="radio" name="nameDisplay" value={val} checked={prefs.nameDisplay === val}
-                                     onChange={() => setPrefs(p => ({ ...p, nameDisplay: val }))}
-                                     className="accent-green-600" />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-bold text-gray-800">{label}</p>
-                                <p className="text-xs text-gray-500">{desc}</p>
-                              </div>
-                              <span className="text-xs font-mono px-2 py-0.5 rounded-lg flex-shrink-0" style={{ backgroundColor: C.g100, color: C.g600 }}>{example}</span>
-                            </label>
-                        ))}
-                      </div>
-
-                      <div className="mb-4 px-4 py-3 rounded-xl border" style={{ backgroundColor: C.mist, borderColor: C.g200 }}>
-                        <p className="text-xs font-bold mb-1" style={{ color: C.g500 }}>Preview — what traders see:</p>
-                        <p className="text-sm font-black" style={{ color: C.forest }}>
+                          {/* Location */}
                           {(() => {
-                            const full = accountForm.fullName || user?.full_name || '';
-                            const username = accountForm.username || user?.username || '';
-                            if (prefs.nameDisplay === 'hide' || !full) return username;
-                            if (prefs.nameDisplay === 'initial') {
-                              const parts = full.trim().split(/\s+/);
-                              return parts.length < 2 ? full : parts[0] + ' ' + parts.slice(1).map(p => p[0] + '.').join(' ');
-                            }
-                            return full;
+                            const locationLocked = kycVerified || !!(user?.is_id_verified || user?.kyc_verified || user?.kyc_status === 'approved');
+                            return (
+                                <div>
+                                  <label className={`${labelCls} desktop-field-label`} style={{ display: 'flex', alignItems: 'center', gap: 5, color: C.g500, marginBottom: 2 }}>
+                                    Location {locationLocked && <Lock size={11} style={{ color: C.g400 }} />}
+                                  </label>
+                                  {locationLocked ? (
+                                      <div className="desktop-field px-4 py-2.5 border rounded-xl text-sm font-medium flex items-center justify-between"
+                                           style={{ borderColor: C.g200, backgroundColor: C.g50, color: C.g500 }}>
+                                        <span>{accountForm.location || '—'}</span>
+                                        <Lock size={13} style={{ color: C.g400 }} />
+                                      </div>
+                                  ) : (
+                                      <div className="desktop-field relative">
+                                        <input type="text" value={accountForm.location}
+                                               onChange={e => setAccountForm({ ...accountForm, location: e.target.value })}
+                                               placeholder="e.g. Accra, Ghana"
+                                               className={inputCls} style={{ ...inputStyle(), paddingRight: 36 }} />
+                                        <Edit3 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.g400 }} />
+                                      </div>
+                                  )}
+                                  {locationLocked ?
+                                      <p className="text-xs mt-1 flex items-center gap-1" style={{ color: C.g400 }}><Lock size={9} />Location locked after ID verification.</p> :
+                                      <p className="text-xs mt-1" style={{ color: C.g500 }}>ℹ Location will be locked once your ID is verified.</p>
+                                  }
+                                </div>
+                            );
                           })()}
-                        </p>
+
+                          <button type="submit" disabled={loading}
+                                  className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-bold text-sm hover:opacity-90 disabled:opacity-50"
+                                  style={{ backgroundColor: C.green }}>
+                            {loading ? <><RefreshCw size={15} className="animate-spin" /> Saving…</> : <><Save size={15} /> Save Changes</>}
+                          </button>
+                        </form>
                       </div>
 
-                      <button onClick={saveNameDisplay} disabled={nameDisplaySaving}
-                              className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-bold text-sm hover:opacity-90 disabled:opacity-50 transition"
-                              style={{ backgroundColor: nameDisplaySaved ? C.success : C.green }}>
-                        {nameDisplaySaving ? <><RefreshCw size={15} className="animate-spin" /> Saving…</> :
-                            nameDisplaySaved ? <><CheckCircle size={15} /> Saved!</> :
-                                <><Save size={15} /> Save Name Display</>}
-                      </button>
+                      {/* Account preferences */}
+                      <div className="desktop-account-card bg-white rounded-2xl shadow-sm border p-6" style={{ borderColor: C.g200 }}>
+                        <h2 className="text-[20px] font-semibold mb-0.5" style={{ color: C.g800 }}>Account preferences</h2>
+                        <div style={{ borderBottom: `1px solid ${C.g100}`, marginBottom: 14 }} />
+
+                        {/* Name display */}
+                        <div className="mb-5">
+                          <p className="desktop-field-label text-xs font-semibold mb-2" style={{ color: C.g600 }}>Name display</p>
+                          <div className="flex flex-col gap-0">
+                            {(() => {
+                              const full = accountForm.fullName || user?.full_name || '';
+                              const initial = full ? full.trim().split(/\s+/).map((w, i) => i === 0 ? w : w[0] + '.').join(' ') : 'Samuel K.';
+                              return [
+                                { val: 'initial', label: `Show first name and last name initial`, example: full ? `${full.split(' ')[0]} ${(full.split(' ')[1] || '').charAt(0)}.` : 'Zeinudeen H.' },
+                                { val: 'full', label: 'Show full name', example: full || 'Zeinudeen Hamisu' },
+                                { val: 'hide', label: 'Hide full name', example: accountForm.username || user?.username || 'Iraqiy_Gh' },
+                              ];
+                            })().map(({ val, label, example }) => (
+                                <label key={val} className="desktop-name-option flex items-start gap-2 py-1.5 cursor-pointer transition hover:bg-gray-50 -mx-1 px-1 rounded-lg leading-5">
+                                  <input type="radio" name="nameDisplay" value={val} checked={prefs.nameDisplay === val}
+                                         onChange={() => { setPrefs(p => ({ ...p, nameDisplay: val })); saveNameDisplay(val); }}
+                                         className="accent-green-600 flex-shrink-0" style={{ width: 16, height: 16, marginTop: 2 }} />
+                                  <span className="min-w-0 text-sm break-words" style={{ color: C.g800 }}>{label} <span style={{ color: C.g400 }}>({example})</span></span>
+                                </label>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Preferred currency */}
+                        <div className="mb-5">
+                          <label className={`${labelCls} desktop-field-label`} style={{ color: C.g500 }}>Preferred currency</label>
+                          <div className="relative">
+                            <select value={prefs.currency} onChange={e => updatePreference({ currency: e.target.value })}
+                                    className={`${inputCls} desktop-preference-field`} style={{ ...inputStyle(true), appearance: 'none', paddingRight: 36 }}>
+                              {CURRENCIES.map(({ code, label, symbol, flag }) => (
+                                  <option key={code} value={code}>{flag} {label} ({symbol})</option>
+                              ))}
+                            </select>
+                            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.g400 }} />
+                          </div>
+                        </div>
+
+                        {/* Language */}
+                        <div className="mb-5">
+                          <label className={`${labelCls} desktop-field-label`} style={{ color: C.g500 }}>Language</label>
+                          <div className="relative">
+                            <select value={prefs.language} onChange={e => updatePreference({ language: e.target.value })}
+                                    className={`${inputCls} desktop-preference-field`} style={{ ...inputStyle(true), appearance: 'none', paddingRight: 36 }}>
+                              {LANGUAGES.map(({ code, label, native }) => (
+                                  <option key={code} value={code}>{label}{native !== label ? ` — ${native}` : ''}</option>
+                              ))}
+                            </select>
+                            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.g400 }} />
+                          </div>
+                        </div>
+
+                        {/* Timezone */}
+                        <div className="mb-5">
+                          <label className={`${labelCls} desktop-field-label`} style={{ color: C.g500 }}>Timezone</label>
+                          <div className="relative">
+                            <select value={prefs.timezone} onChange={e => updatePreference({ timezone: e.target.value })}
+                                    className={`${inputCls} desktop-preference-field`} style={{ ...inputStyle(true), appearance: 'none', paddingRight: 36 }}>
+                              {Object.entries(TIMEZONE_GROUPS).map(([region, zones]) => (
+                                  <optgroup key={region} label={region}>
+                                    {zones.map(({ tz, label }) => (
+                                        <option key={tz} value={tz}>{label}</option>
+                                    ))}
+                                  </optgroup>
+                              ))}
+                            </select>
+                            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.g400 }} />
+                          </div>
+                        </div>
+
+                        <div className="desktop-show-online flex items-center justify-between pt-1">
+                          <span className="text-sm" style={{ color: C.g700 }}>Show online</span>
+                          <Toggle checked={prefs.showOnline} onChange={showOnline => updatePreference({ showOnline })} label="Show online" />
+                        </div>
+                      </div>
                     </div>
                   </>
               )}
@@ -2643,7 +3000,7 @@ export default function Settings({ user, setUser }) {
                 <span className="text-white">PRA</span><span style={{ color: C.gold }}>QEN</span>
               </span>
                 <p className="text-xs leading-relaxed my-3" style={{ color: 'rgba(255,255,255,0.4)' }}>
-                  The world's most trusted P2P Bitcoin platform. Escrow-protected. 0.5% fee only.
+                  The world's most trusted P2P Bitcoin platform. Escrow-protected. 2% fee only.
                 </p>
                 <div className="flex gap-2 flex-wrap">
                   {[
@@ -2682,11 +3039,63 @@ export default function Settings({ user, setUser }) {
             <div className="flex flex-col md:flex-row items-center justify-between gap-2 pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
               <p className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>© {new Date().getFullYear()} PRAQEN. All rights reserved.</p>
               <p className="text-xs flex items-center gap-1" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                <Shield size={10} /> Escrow Protected · 0.5% fee on completion only
+                <Shield size={10} /> Escrow Protected · 2% fee on completion only
               </p>
             </div>
           </div>
         </footer>
+
+        {/* ── Mobile bottom sheet menu ── */}
+        {mobileMenuOpen && (
+            <>
+              {/* Backdrop */}
+              <div onClick={() => setMobileMenuOpen(false)}
+                   style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 998 }} />
+              {/* Sheet */}
+              <div style={{
+                position: 'fixed', bottom: 0, left: 0, right: 0,
+                background: '#fff', zIndex: 999,
+                borderRadius: '20px 20px 0 0',
+                maxHeight: '85vh', overflowY: 'auto',
+                paddingBottom: 'env(safe-area-inset-bottom, 16px)',
+                animation: 'slideUp 0.25s cubic-bezier(0.16,1,0.3,1)',
+              }}>
+                <style>{`
+                  @keyframes slideUp {
+                    from { transform: translateY(100%); opacity: 0; }
+                    to { transform: translateY(0); opacity: 1; }
+                  }
+                `}</style>
+                {/* Handle bar */}
+                <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 12, paddingBottom: 4 }}>
+                  <div style={{ width: 36, height: 4, borderRadius: 2, background: C.g200 }} />
+                </div>
+                {/* Header */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 20px 16px' }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, color: C.g800, margin: 0 }}>Settings</h3>
+                  <button onClick={() => setMobileMenuOpen(false)}
+                          style={{ width: 32, height: 32, borderRadius: 8, border: 'none', background: C.g100, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <X size={18} color={C.g600} />
+                  </button>
+                </div>
+                {/* Tab items */}
+                <div style={{ padding: '0 12px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {TABS.map(({ id, icon: Icon, label }) => (
+                      <button key={id} onClick={() => { setActiveTab(id); setMobileMenuOpen(false); }}
+                              style={{
+                                width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                                padding: '12px 16px', borderRadius: 12, border: 'none',
+                                background: activeTab === id ? C.green : 'transparent',
+                                cursor: 'pointer', textAlign: 'left', transition: 'background 0.15s',
+                              }}>
+                        <Icon size={18} style={{ color: activeTab === id ? '#fff' : C.g400, flexShrink: 0 }} />
+                        <span style={{ fontSize: 14, fontWeight: 700, color: activeTab === id ? '#fff' : C.g700 }}>{label}</span>
+                      </button>
+                  ))}
+                </div>
+              </div>
+            </>
+        )}
       </div>
   );
 }

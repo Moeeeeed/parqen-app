@@ -211,21 +211,31 @@ class USDTDepositMonitor {
       toScan = wallets;
     } else {
       const sinceISO = new Date(Date.now() - HOT_DAYS * 864e5).toISOString();
-      const [{ data: recentDep }, { data: recentDtv }, { data: openFlags }] = await Promise.all([
+      const [{ data: recentDep }, { data: recentDtv }, { data: openFlags }, { data: everTrackedUsdt }] = await Promise.all([
         supabaseAdmin.from('wallet_transactions').select('user_id')
           .eq('type', 'DEPOSIT').eq('currency', 'USDT').gte('created_at', sinceISO),
         supabaseAdmin.from('deposit_tracking_v2').select('user_id')
           .eq('currency', 'USDT').gte('created_at', sinceISO),
         supabaseAdmin.from('reconciliation_flags').select('user_id')
           .eq('currency', 'USDT').eq('status', 'RECONCILIATION_REQUIRED'),
+        // ALL-TIME, no date filter — used only to find users who have NEVER had
+        // a USDT deposit_tracking_v2 row. A first-time depositor has no "hot"
+        // signal from the checks above (nothing recent to be recent about), so
+        // without this they land in the cold pool and can sit unscanned for
+        // hours despite an on-chain deposit already having arrived — exactly
+        // what happened to a real deposit on 2026-09-17. Cost of this query
+        // grows with the table, same tradeoff already accepted elsewhere here.
+        supabaseAdmin.from('deposit_tracking_v2').select('user_id').eq('currency', 'USDT'),
       ]);
       const hotIds = new Set([
         ...(recentDep || []).map(r => r.user_id),
         ...(recentDtv || []).map(r => r.user_id),
         ...(openFlags || []).map(r => r.user_id),
       ]);
-      const hot  = wallets.filter(w => hotIds.has(w.user_id));
-      const cold = wallets.filter(w => !hotIds.has(w.user_id));
+      const everTrackedIds = new Set((everTrackedUsdt || []).map(r => r.user_id));
+      const isFirstTimer = w => !everTrackedIds.has(w.user_id);
+      const hot  = wallets.filter(w => hotIds.has(w.user_id) || isFirstTimer(w));
+      const cold = wallets.filter(w => !hotIds.has(w.user_id) && !isFirstTimer(w));
 
       const shardSize = Math.ceil(cold.length / SHARDS) || cold.length;
       const start = (this._coldCursor % SHARDS) * shardSize;
@@ -485,6 +495,9 @@ class USDTDepositMonitor {
     this.sendDepositEmail(userId, username, depositUsdt, newUsdt, address)
         .catch(err => console.error('[USDTMonitor] Email error:', err.message));
 
+    this.alertOpsOfNewDeposit(username, userId, depositUsdt, 'USDT', newUsdt, address)
+        .catch(err => console.error('[USDTMonitor] Ops alert error:', err.message));
+
     console.log(`✅ [USDTMonitor] Credited $${depositUsdt} USDT to ${username} | New balance: $${newUsdt.toFixed(2)} USDT | TX: ${txHash.slice(0, 16)}…`);
 
     // ── Sweep deposit → hot wallet (non-fatal, fire-and-forget) ─────────────
@@ -494,6 +507,26 @@ class USDTDepositMonitor {
     tronHotWallet.sweepFromUserAddress(userId, address, depositUsdt)
       .then(r => { if (r?.deferred) console.log(`[USDTMonitor] Sweep queued for ${username}: ${r.reason}`); })
       .catch(e => console.error(`[USDTMonitor] Sweep trigger error (non-fatal): ${e.message}`));
+  }
+
+  // ── Ops notification: every new user deposit, BTC or USDT ─────────────────
+  // Requested by CEO — a heads-up email any time any user deposits, separate
+  // from the user's own "deposit received" confirmation email.
+  async alertOpsOfNewDeposit(username, userId, amount, currency, newBalance, address) {
+    try {
+      await emailService.sendEmail({
+        to:      process.env.OPS_ALERT_EMAIL || 'support@praqen.com',
+        subject: `💰 New deposit — ${amount} ${currency} — ${username}`,
+        type:    'ops_new_deposit_alert',
+        html: `<p><strong>A user deposit was just credited.</strong></p>
+               <p>User: ${username} (${userId})<br/>
+               Amount: ${amount} ${currency}<br/>
+               New balance: ${newBalance} ${currency}<br/>
+               Address: ${address}</p>`,
+      });
+    } catch (e) {
+      console.error('[USDTMonitor] alertOpsOfNewDeposit error:', e.message);
+    }
   }
 
   // ── Critical alert: a real on-chain deposit failed to credit the user's balance ──

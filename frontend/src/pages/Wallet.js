@@ -82,11 +82,12 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
     ? parseFloat((parseFloat(usdAmount || 0) / price).toFixed(8))
     : parseFloat(amount || 0);
 
-  // Flat 1.2% withdrawal fee — mirrors backend calcWithdrawalFee()
+  // Flat 2.2% withdrawal fee, additive (added on top of the send amount) —
+  // mirrors backend calcWithdrawalFee(). Changed from deductive 1.2% on 2026-09-17.
   // Use raw USD input when in USD mode to avoid BTC round-trip floating-point boundary errors
   const calcFeeByUsd = (usd) => {
     if (usd <= 0) return { feeUsd: 0, feeBtc: 0, label: '' };
-    return { feeUsd: usd * 0.012, feeBtc: (usd * 0.012) / price, label: '1.2% fee' };
+    return { feeUsd: usd * 0.022, feeBtc: (usd * 0.022) / price, label: '2.2% fee' };
   };
   const calcFee = (btc) => {
     // Round to nearest cent before tier comparison to avoid floating-point boundary mismatches
@@ -100,9 +101,9 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
   const totalUsd  = total * price;
   const hasEnough = total <= parseFloat(balance || 0);
 
-  // Max button: our fee comes out of the balance, not on top of it — find the largest send
-  // amount whose send+fee still fits what's actually in the wallet, so clicking Max never
-  // trips the insufficient-balance check below.
+  // Max button: additive fee model — the fee is added ON TOP of the send amount, so
+  // find the largest send amount whose send+fee still fits what's actually in the
+  // wallet, so clicking Max never trips the insufficient-balance check below.
   const calcMaxSend = () => {
     const bal = parseFloat(balance || 0);
     if (bal <= 0) return 0;
@@ -4148,7 +4149,7 @@ export default function WalletPage({ user }) {
               © {new Date().getFullYear()} PRAQEN. All rights reserved.
             </p>
             <p className="text-xs flex items-center gap-1" style={{ color: 'rgba(255,255,255,0.3)' }}>
-              <Shield size={10} /> Self-Custodial HD Wallet · 0.2% fee on trades
+              <Shield size={10} /> Self-Custodial HD Wallet · 2% fee on trades
             </p>
           </div>
         </div>
