@@ -1,7 +1,27 @@
 // services/realtimeDepositService.js
 // PRAQEN — Real-Time Bitcoin Deposit Detection via mempool.space WebSocket
 //
-// How it works:
+// DISABLED as of 2026-09-18 — see DISABLE_REASON below. The class/logic is
+// left intact (subscribeAddress, message handling, dedupe) in case a future
+// enterprise mempool.space sponsorship raises MAX_TRACKED_ADDRESSES enough
+// to make bulk track-addresses viable again; only the actual connection
+// attempt in start() is skipped.
+//
+// DISABLE_REASON: mempool.space's public WebSocket API defaults
+// MAX_TRACKED_ADDRESSES to a very small number (documented default: 1;
+// higher limits require an enterprise sponsorship). This service sends ALL
+// monitored addresses (1,700+) in a single `track-addresses` message, which
+// always exceeds that limit — mempool.space immediately closes the
+// connection with code 1009 ("Message Too Big"). Because the backoff timer
+// resets on every successful *connection* (which always succeeds — the
+// failure happens one step later, on subscribe), it never backs off: the
+// service was stuck reconnecting every ~5s, 24/7, without ever holding a
+// working subscription. It was never actually providing instant crediting
+// at this address volume — depositMonitor.js's 5-minute poller has been the
+// real detection path the whole time. Disabling this stops the pointless
+// reconnect churn without removing any working functionality.
+//
+// How it worked (when it could hold a connection):
 //   1. Opens ONE persistent WebSocket to wss://mempool.space/api/v1/ws
 //   2. Subscribes to ALL user wallet addresses with {"track-addresses": [...]}
 //   3. mempool.space fires events the INSTANT a tx touches any subscribed address
@@ -10,11 +30,6 @@
 //                       which credits the balance and sends full notifications
 //   6. Auto-reconnects with exponential backoff on disconnect
 //   7. 5-minute scanner in depositMonitor.js remains as safety net
-//
-// Latency comparison:
-//   Before: up to 5 minutes (polling interval)
-//   After:  1-3 seconds after transaction enters mempool
-//           + instant credit once block confirms
 
 require('dotenv').config();
 const { WebSocket }    = require('ws');
@@ -82,18 +97,19 @@ class RealtimeDepositService {
   }
 
   // ── Public: start the service ─────────────────────────────────────────────
+  // The WebSocket connection itself is disabled — see DISABLE_REASON at the
+  // top of this file. loadAllAddresses() still runs so addressToUser stays
+  // populated (subscribeAddress() calls elsewhere remain harmless no-ops
+  // instead of erroring), but connect() is never called, so there is no
+  // reconnect loop and no wasted connection churn.
   async start() {
     if (this.isRunning) return;
     this.isRunning = true;
 
     await this.loadAllAddresses();
-    await this._loadPersistedDedupe();
-    this._startDedupeCleanup();
-    this.connect();
 
-    console.log(`\n⚡ [RealtimeDeposit] Service started`);
-    console.log(`   Monitoring ${this.addressToUser.size} address(es) via mempool.space WebSocket`);
-    console.log(`   Confirmed deposits will credit user wallets INSTANTLY\n`);
+    console.log(`\n⚡ [RealtimeDeposit] Service disabled (mempool.space public API address-tracking limit — see DISABLE_REASON in this file)`);
+    console.log(`   ${this.addressToUser.size} address(es) loaded but NOT subscribed — relying on depositMonitor.js's 5-minute poller instead\n`);
   }
 
   // ── Public: subscribe a newly created wallet address ─────────────────────
