@@ -5,12 +5,9 @@
 // Handles: address generation, USDT balance checks, USDT external sends.
 
 require('dotenv').config();
-const bip39  = require('bip39');
-const crypto = require('crypto');
-
-const TRON_USDT_CONTRACT = process.env.TRON_USDT_CONTRACT || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
-const TRONGRID_API_KEY   = process.env.TRONGRID_API_KEY   || '';
-const TRONGRID_BASE      = 'https://api.trongrid.io';
+const bip39      = require('bip39');
+const crypto     = require('crypto');
+const tronConfig = require('./tronConfig');
 
 // Lazy-load TronWeb — avoids startup crash and supports both v4 (default export)
 // and v5 (named export { TronWeb }).
@@ -24,9 +21,7 @@ function getTronWebClass() {
 }
 
 function tronHeaders() {
-  const h = { 'Content-Type': 'application/json' };
-  if (TRONGRID_API_KEY) h['TRON-PRO-API-KEY'] = TRONGRID_API_KEY;
-  return h;
+  return tronConfig.getHeaders();
 }
 
 // ── Wait for a broadcast tx to actually land on-chain ─────────────────────
@@ -42,7 +37,7 @@ function tronHeaders() {
 // successful sweeps to be reported as failed and left the deposit re-queued.
 async function waitForConfirmation(txid, { timeoutMs = 90000, intervalMs = 3000 } = {}) {
   const TronWeb = getTronWebClass();
-  const tw      = new TronWeb({ fullHost: TRONGRID_BASE, headers: tronHeaders() });
+  const tw      = new TronWeb({ fullHost: tronConfig.trongridUrl, headers: tronHeaders() });
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
@@ -90,8 +85,8 @@ class TronWalletService {
     const seed            = bip39.mnemonicToSeedSync(mnemonic);
     this.masterPrivateKey = seed.slice(0, 32);
     this.initialized      = true;
-    console.log('✅ Tron Wallet Service initialized — MAINNET');
-    console.log(`   USDT contract: ${TRON_USDT_CONTRACT}`);
+    console.log(`✅ Tron Wallet Service initialized — ${tronConfig.isTestnet ? 'TESTNET (Nile)' : 'MAINNET'}`);
+    console.log(`   USDT contract: ${tronConfig.usdtContract}`);
   }
 
   // ── Deterministic private key — same algorithm as hdWalletService ─────────
@@ -111,13 +106,13 @@ class TronWalletService {
     const privKeyHex = this.getPrivateKeyHex(identifier);
 
     // Use a minimal TronWeb instance just for the address utility
-    const tw      = new TronWeb({ fullHost: TRONGRID_BASE });
+    const tw      = new TronWeb({ fullHost: tronConfig.trongridUrl });
     const address = tw.address.fromPrivateKey(privKeyHex);
 
     return {
       address,
       identifier,
-      network: 'mainnet',
+      network: tronConfig.network,
       format:  'Tron Base58 (T…)',
     };
   }
@@ -140,10 +135,10 @@ class TronWalletService {
   // Throws on network/API errors so callers can distinguish from genuine zero.
   async getUSDTBalance(address) {
     const TronWeb = getTronWebClass();
-    const tw      = new TronWeb({ fullHost: TRONGRID_BASE, headers: tronHeaders() });
+    const tw      = new TronWeb({ fullHost: tronConfig.trongridUrl, headers: tronHeaders() });
 
     const call = () => tw.transactionBuilder.triggerConstantContract(
-      TRON_USDT_CONTRACT,
+      tronConfig.usdtContract,
       'balanceOf(address)',
       {},
       [{ type: 'address', value: address }],
@@ -195,8 +190,8 @@ class TronWalletService {
 
     // Build a TronWeb instance signed as the sender
     const tw = new TronWeb({
-      fullHost:   TRONGRID_BASE,
-      headers:    TRONGRID_API_KEY ? { 'TRON-PRO-API-KEY': TRONGRID_API_KEY } : {},
+      fullHost:   tronConfig.trongridUrl,
+      headers:    tronConfig.getHeaders(),
       privateKey: privateKeyHex,
     });
 
@@ -210,7 +205,7 @@ class TronWalletService {
 
     // Build the TRC-20 transfer call
     const { transaction, result } = await tw.transactionBuilder.triggerSmartContract(
-      TRON_USDT_CONTRACT,
+      tronConfig.usdtContract,
       'transfer(address,uint256)',
       { feeLimit: 40_000_000 }, // 40 TRX max fee — sufficient for any USDT transfer
       [
@@ -232,7 +227,7 @@ class TronWalletService {
     }
 
     const txid       = receipt.txid || receipt.transaction?.txID;
-    const explorerUrl = `https://tronscan.org/#/transaction/${txid}`;
+    const explorerUrl = tronConfig.getExplorerTxUrl(txid);
 
     // A txid back from sendRawTransaction only means it was accepted for
     // broadcast — confirm it actually landed before reporting success.

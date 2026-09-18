@@ -796,7 +796,7 @@ function TelegramCard() {
         </div>
         <div className="mt-3 p-3 rounded-xl text-xs space-y-1" style={{ backgroundColor: 'rgba(8,145,178,0.08)', color: '#155E75' }}>
           <p className="font-bold">Steps:</p>
-          <p>1. Open Telegram and search for <span className="font-bold">@Praqen_alerts_bot</span></p>
+          <p>1. Open Telegram and search for <span className="font-bold">@PraqenAssistBot</span></p>
           <p>2. Send this code: <span className="font-bold">{linkingCode}</span></p>
           <p>3. Wait a few seconds — we'll detect it automatically</p>
         </div>

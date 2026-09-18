@@ -20,6 +20,7 @@ const tronHotWallet       = require('./tronHotWallet');
 const emailService        = require('./emailService');            // working transport: Resend → Brevo SMTP (+ email_logs)
 const { isDepositTooOld, MAX_DEPOSIT_AGE_HOURS } = require('./depositAgeGuard'); // containment guard, see depositAgeGuard.js
 const balanceAnomalyMonitor = require('./balanceAnomalyMonitor');
+const tronConfig            = require('./tronConfig');
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -39,7 +40,7 @@ const DUST_THRESHOLD   = 0.01;            // ignore deposits < $0.01 USDT
 
 // ── Email HTML for USDT deposit ───────────────────────────────────────────────
 function depositEmailHtml(username, depositUsdt, newBalance, address) {
-  const explorerUrl = `https://tronscan.org/#/address/${address}`;
+  const explorerUrl = tronConfig.getExplorerAddressUrl(address);
   const year        = new Date().getFullYear();
   return `<!DOCTYPE html>
 <html>
@@ -113,7 +114,8 @@ class USDTDepositMonitor {
     }
     this.isRunning = true;
 
-    console.log(`\n🔍 USDT Deposit Monitor started — MAINNET (Tron)`);
+    console.log(`\n🔍 USDT Deposit Monitor started — ${tronConfig.isTestnet ? 'TESTNET (Nile)' : 'MAINNET (Tron)'}`);
+    console.log(`   Contract: ${tronConfig.usdtContract}`);
     console.log(`   Polling every ${POLL_INTERVAL_MS / 60000} minutes`);
 
     // Run immediately, then on interval
@@ -268,19 +270,33 @@ class USDTDepositMonitor {
   // outgoing transfers — critical, since a sweep sends USDT OUT of this exact
   // address and must never be mistaken for an incoming deposit.
   async _fetchIncomingTransfers(address) {
-    const headers = { 'Content-Type': 'application/json' };
-    if (process.env.TRONGRID_API_KEY) headers['TRON-PRO-API-KEY'] = process.env.TRONGRID_API_KEY;
-    const resp = await axios.get(`https://api.trongrid.io/v1/accounts/${address}/transactions/trc20`, {
-      headers,
-      params: {
-        contract_address: process.env.TRON_USDT_CONTRACT || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
-        limit: 20,
-        only_confirmed: true,
-        only_to: true,
-      },
+    const params = {
+      limit: 20,
+      only_confirmed: true,
+      only_to: true,
+    };
+    if (!tronConfig.isTestnet) {
+      params.contract_address = tronConfig.usdtContract;
+    }
+    const resp = await axios.get(`${tronConfig.trongridUrl}/v1/accounts/${address}/transactions/trc20`, {
+      headers: tronConfig.getHeaders(),
+      params,
       timeout: 14000,
     });
-    return resp.data?.data || [];
+    const transfers = resp.data?.data || [];
+    if (tronConfig.isTestnet) {
+      const validContracts = new Set([
+        (tronConfig.usdtContract || '').toLowerCase(),
+        'txyzopyrdj2d9xrtbg411xzz3km5vkaebf',
+        'txlaq63xg1nazckpwkhvzw7csemlemeqcdj',
+      ]);
+      return transfers.filter(t => {
+        const cAddr = (t.token_info?.address || '').toLowerCase();
+        const sym = (t.token_info?.symbol || '').toUpperCase();
+        return validContracts.has(cAddr) || sym === 'USDT';
+      });
+    }
+    return transfers;
   }
 
   // ── Check one Tron address for new USDT deposits (transaction-hash tracking) ──

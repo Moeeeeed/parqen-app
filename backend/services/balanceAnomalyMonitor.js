@@ -30,6 +30,7 @@ const MAX_BURST_COUNT     = parseInt(process.env.ANOMALY_BURST_COUNT || '5', 10)
 const BURST_WINDOW_MS     = 10 * 60 * 1000; // 10 minutes
 const HOURLY_WINDOW_MS    = 60 * 60 * 1000; // 60 minutes
 const OPS_ALERT_EMAIL     = process.env.OPS_ALERT_EMAIL || 'support@praqen.com';
+
 // Periodic drift check runs every 10 min but a genuine unresolved drift
 // doesn't need a fresh admin alert every cycle — re-alert at most this often
 // per user while the same drift persists.

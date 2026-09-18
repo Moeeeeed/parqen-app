@@ -56,20 +56,19 @@ const parseEndpoints = () => {
     .map((s) => (s || '').trim().replace(/\/+$/, '')) // strip trailing slash(es)
     .filter(Boolean);
 
-  // Default order: blockstream.info first. mempool.space was observed timing
-  // out (15s, hitting the full GET timeout) on nearly every request during a
-  // 2026-09-16 platform-wide audit — every one of those calls paid the full
-  // timeout before falling back, inflating cycle time and 429 pressure on the
-  // endpoints tried after it. blockstream.info was consistently responsive in
-  // the same session. Override with BTC_API_PRIMARY/BTC_API_FALLBACKS if this
-  // ever needs to change without a code edit.
-  const list = cleaned.length
-    ? cleaned
+  const isTestnet = (process.env.HD_NETWORK || '').toLowerCase() === 'testnet';
+  const defaultEndpoints = isTestnet
+    ? [
+        'https://blockstream.info/testnet/api',
+        'https://mempool.space/testnet/api',
+      ]
     : [
         'https://blockstream.info/api',
         'https://mempool.emzy.de/api',
         'https://mempool.space/api',
       ];
+
+  const list = cleaned.length ? cleaned : defaultEndpoints;
 
   return [...new Set(list)]; // de-dupe, keep order
 };
@@ -83,7 +82,10 @@ const NO_BC_HANDLER = Symbol('no-blockcypher-handler');
 class BlockCypherAdapter {
   constructor(token) {
     this.token = token || process.env.BLOCKCYPHER_TOKEN || '';
-    this.baseUrl = 'https://api.blockcypher.com/v1/btc/main';
+    const isTestnet = (process.env.HD_NETWORK || '').toLowerCase() === 'testnet';
+    this.baseUrl = isTestnet
+      ? 'https://api.blockcypher.com/v1/btc/test3'
+      : 'https://api.blockcypher.com/v1/btc/main';
   }
 
   _auth(sep) {

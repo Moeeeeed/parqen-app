@@ -229,14 +229,14 @@
     <script>
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         OneSignalDeferred.push(async function(OneSignal) {
-            try {
-                const isLocalhost = window.location.hostname === 'localhost'
-                    || window.location.hostname === '127.0.0.1'
-                    || window.location.hostname === '0.0.0.0';
-                const ONESIGNAL_APP_ID = isLocalhost
-                    ? 'fb043c82-e1f5-4d84-b88f-1cb9fb6bec64'   // Local testing
-                    : '5fc11b99-516c-4178-8443-b06c08865b99';  // Production
+            const isLocalhost = window.location.hostname === 'localhost'
+                || window.location.hostname === '127.0.0.1'
+                || window.location.hostname === '0.0.0.0';
+            const ONESIGNAL_APP_ID = isLocalhost
+                ? 'fb043c82-e1f5-4d84-b88f-1cb9fb6bec64'   // Local testing
+                : '5fc11b99-516c-4178-8443-b06c08865b99';  // Production
 
+            try {
                 console.log('[OneSignal] Initializing with App ID:', ONESIGNAL_APP_ID);
 
                 await OneSignal.init({
@@ -252,13 +252,13 @@
                 // that the SDK is fully bootstrapped and login()/User work.
                 window.dispatchEvent(new CustomEvent('onesignal:ready'));
             } catch (e) {
-                const msg = e.message || String(e);
-                console.error('[OneSignal] Init error:', msg);
-                if (msg.includes('Can only be used on')) {
-                    console.error(
-                        '[OneSignal] ⚠️ The current origin (' + window.location.origin + ') is NOT in the allowed origins list for this App ID.',
-                        'Go to OneSignal Dashboard → Settings → Platforms → Web Push → Allowed Origins and add ' + window.location.origin
+                const msg = e ? (e.message || String(e)) : 'Unknown error';
+                if (typeof msg === 'string' && msg.includes('Can only be used on')) {
+                    console.warn(
+                        '[OneSignal] ℹ️ Local origin (' + window.location.origin + ') is not whitelisted in OneSignal for App ID ' + ONESIGNAL_APP_ID + '. Push notifications disabled for local dev.'
                     );
+                } else {
+                    console.warn('[OneSignal] Init notice:', msg);
                 }
                 // Signal error so waitForOS() resolves with null instead of
                 // hanging for the full timeout and then resolving with an

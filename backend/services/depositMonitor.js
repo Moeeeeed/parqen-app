@@ -168,10 +168,12 @@ class DepositMonitor {
       return;
     }
 
-    this.network = 'mainnet';
-    this.apiBase = 'https://mempool.space/api';
+    this.network = (process.env.HD_NETWORK || 'mainnet').toLowerCase();
+    this.apiBase = this.network === 'testnet'
+      ? 'https://mempool.space/testnet/api'
+      : 'https://mempool.space/api';
 
-    console.log(`\n🔍 DepositMonitor started — MAINNET`);
+    console.log(`\n🔍 DepositMonitor started — ${this.network.toUpperCase()}`);
     console.log(`   Polling every ${POLL_INTERVAL_MS / 1000 / 60} minutes`);
     console.log(`   API: ${this.apiBase}\n`);
 
@@ -313,10 +315,16 @@ class DepositMonitor {
     }
   }
 
-  // ── Validate mainnet address ───────────────────────────────────────────────
+  // ── Validate address for current network (mainnet or testnet) ────────────
   isValidMainnetAddress(address) {
     if (!address || typeof address !== 'string') return false;
-    if (/^bc1[a-z0-9]{25,87}$/.test(address)) return true;           // Native SegWit
+    const isTestnet = (process.env.HD_NETWORK || '').toLowerCase() === 'testnet';
+    if (isTestnet) {
+      if (/^tb1[a-z0-9]{25,87}$/i.test(address)) return true;           // Testnet SegWit
+      if (/^[mn2][a-zA-HJ-NP-Z1-9]{25,34}$/.test(address)) return true; // Testnet Legacy / P2SH
+      return false;
+    }
+    if (/^bc1[a-z0-9]{25,87}$/i.test(address)) return true;           // Native SegWit
     if (/^[13][a-zA-HJ-NP-Z1-9]{25,34}$/.test(address)) return true; // Legacy / P2SH
     return false;
   }
