@@ -28,12 +28,10 @@ const supabaseAdmin = createClient(
 );
 
 // ── Config ────────────────────────────────────────────────────────────────────
-// 2026-09-18: was 30 min on the assumption the realtime WebSocket (realtimeDepositService.js)
-// handled fast detection and this was just a safety net. That WebSocket is now disabled
-// (mempool.space's public API can't hold a subscription at our address volume — see
-// DISABLE_REASON in realtimeDepositService.js), so this poller is the ONLY BTC detection
-// path. Lowered back to 5 min, matching usdtDepositMonitor.js's interval.
-const POLL_INTERVAL_MS    = 5 * 60 * 1000; // 5 minutes — sole detection path while the realtime WebSocket is disabled
+// 2026-09-18: Realtime WebSocket (realtimeDepositService.js) is disabled due to mempool.space limits.
+// Hot/Cold sharding (2.3b) partitions addresses into a small hot pool + 1 cold slice,
+// allowing fast 90-second cycles (~20-40s duration) without tripping API rate limits.
+const POLL_INTERVAL_MS    = parseInt(process.env.BTC_POLL_INTERVAL_MS || String(90 * 1000), 10); // 90 seconds — hot/cold sharding keeps each cycle fast
 const DUST_THRESHOLD_SATS = 546;           // ignore sub-dust outputs
 
 // Email is sent via emailService (Resend → Brevo SMTP), required above. The old
@@ -139,6 +137,7 @@ class DepositMonitor {
     this.network          = null;
     this.apiBase          = null;
     this._cycleInProgress = false;
+    this._coldCursor      = 0;
     // Fallback APIs tried in order when primary times out
     this._apiFallbacks = [
       'https://mempool.space/api',
@@ -154,15 +153,15 @@ class DepositMonitor {
   // 429 cooldown — which this method used to do by hand — now live in the
   // gateway, shared with every other blockchain caller so their combined request
   // rate stays under the free-tier limit.
-  async _fetchAddress(address) {
-    return btcApiGateway.get(`/address/${address}`, { priority: 'low' });
+  async _fetchAddress(address, priority = 'low') {
+    return btcApiGateway.get(`/address/${address}`, { priority });
   }
 
   // Transaction list (esplora /address/{addr}/txs — 25 most recent, confirmed +
   // unconfirmed). This is what makes tx-hash tracking possible: a balance-only
   // read tells us THAT the balance changed, never WHICH transaction caused it.
-  async _fetchAddressTxs(address) {
-    const txs = await btcApiGateway.get(`/address/${address}/txs`, { priority: 'low' });
+  async _fetchAddressTxs(address, priority = 'low') {
+    const txs = await btcApiGateway.get(`/address/${address}/txs`, { priority });
     return txs || [];
   }
 
@@ -301,20 +300,73 @@ class DepositMonitor {
         return true;
       });
 
+      // ── Hot / Cold Address Sharding ──────────────────────────────────────────
+      // Don't scan all addresses sequentially every cycle. Split into:
+      //   HOT  — users who received a BTC deposit recently, have an active trade,
+      //          have an open reconciliation flag, or are first-time wallet users.
+      //          → scanned EVERY cycle (near-real-time ~90s).
+      //   COLD — everyone else → 1/BTC_SCAN_SHARDS per cycle, round-robin, so
+      //          every cold address is still covered within a few cycles.
+      // Set BTC_SCAN_ALL=true to revert to "scan everything every cycle".
+      const SHARDS   = Math.max(1, parseInt(process.env.BTC_SCAN_SHARDS || '6', 10));
+      const HOT_DAYS = Math.max(1, parseInt(process.env.BTC_HOT_LOOKBACK_DAYS || '10', 10));
+      const SCAN_ALL = process.env.BTC_SCAN_ALL === 'true';
+
+      let toScan;
+      if (SCAN_ALL) {
+        toScan = valid;
+      } else {
+        const sinceISO = new Date(Date.now() - HOT_DAYS * 864e5).toISOString();
+        const [{ data: recentDep }, { data: recentDtv }, { data: openFlags }, { data: everTrackedBtc }, { data: activeTrades }] = await Promise.all([
+          supabaseAdmin.from('wallet_transactions').select('user_id')
+            .eq('type', 'DEPOSIT').eq('currency', 'BTC').gte('created_at', sinceISO),
+          supabaseAdmin.from('deposit_tracking_v2').select('user_id')
+            .eq('currency', 'BTC').gte('created_at', sinceISO),
+          supabaseAdmin.from('reconciliation_flags').select('user_id')
+            .eq('currency', 'BTC').eq('status', 'RECONCILIATION_REQUIRED'),
+          // ALL-TIME, no date filter — used to find users who have NEVER had
+          // a BTC deposit_tracking_v2 row (first-time depositors).
+          supabaseAdmin.from('deposit_tracking_v2').select('user_id').eq('currency', 'BTC'),
+          // Also include users in active trades (buyer or seller)
+          supabaseAdmin.from('trades').select('buyer_id, seller_id')
+            .in('status', ['PENDING', 'FUNDS_LOCKED', 'PAYMENT_SENT', 'DISPUTED']),
+        ]);
+
+        const tradeUserIds = [];
+        for (const t of (activeTrades || [])) {
+          if (t.buyer_id) tradeUserIds.push(t.buyer_id);
+          if (t.seller_id) tradeUserIds.push(t.seller_id);
+        }
+
+        const hotIds = new Set([
+          ...(recentDep || []).map(r => r.user_id),
+          ...(recentDtv || []).map(r => r.user_id),
+          ...(openFlags || []).map(r => r.user_id),
+          ...tradeUserIds,
+        ]);
+        const everTrackedIds = new Set((everTrackedBtc || []).map(r => r.user_id));
+        const isFirstTimer = w => !everTrackedIds.has(w.userId);
+        const hot  = valid.filter(w => hotIds.has(w.userId) || isFirstTimer(w));
+        const cold = valid.filter(w => !hotIds.has(w.userId) && !isFirstTimer(w));
+
+        const shardSize = Math.ceil(cold.length / SHARDS) || cold.length;
+        const start = (this._coldCursor % SHARDS) * shardSize;
+        const coldSlice = cold.slice(start, start + shardSize);
+        this._coldCursor = (this._coldCursor + 1) % SHARDS;
+
+        toScan = [...hot, ...coldSlice];
+        console.log(`[DepositMonitor] 2.3b — scanning ${toScan.length} (hot ${hot.length} + cold slice ${coldSlice.length} of ${cold.length}) this cycle`);
+      }
+      if (SCAN_ALL) console.log(`[DepositMonitor] Scanning ${toScan.length} Bitcoin address(es) (BTC_SCAN_ALL)...`);
+
       // Batch of 3 / 1.2s gap (was 5 / 1s): the tighter pacing lowers the peak
       // burst rate against mempool.space/blockstream.info — this is what was
-      // tripping their rate limits in production. At current address counts
-      // (~1700+) a full cycle takes roughly 12-15 minutes — longer than
-      // POLL_INTERVAL_MS (5 min) — so _cycleInProgress causes it to run
-      // back-to-back continuously rather than literally every 5 minutes.
-      // That's fine (no overlap, no double-processing), but it means real
-      // worst-case detection latency is closer to one full cycle (~12-15 min)
-      // than the 5-minute constant alone would suggest.
+      // tripping their rate limits in production.
       const BATCH = 3;
-      for (let i = 0; i < valid.length; i += BATCH) {
-        const batch = valid.slice(i, i + BATCH);
+      for (let i = 0; i < toScan.length; i += BATCH) {
+        const batch = toScan.slice(i, i + BATCH);
         await Promise.allSettled(batch.map(entry => this.checkUserDeposit(entry)));
-        if (i + BATCH < valid.length) await this.sleep(1200);
+        if (i + BATCH < toScan.length) await this.sleep(1200);
       }
 
       // 2.3a: retry any addresses parked by a previous failed cycle.
@@ -348,7 +400,7 @@ class DepositMonitor {
   // instead (deposit_tracking_v2) means once a deposit's txid has been seen,
   // it can never become invisible again, regardless of what a sweep does to
   // the address's balance afterward.
-  async checkUserDeposit({ userId, address, username }) {
+  async checkUserDeposit({ userId, address, username, priority = 'low' }) {
     try {
       // Resolve username if not provided (fallback for manual checkAddressNow path)
       if (!username) {
@@ -358,7 +410,7 @@ class DepositMonitor {
       }
 
       // ── Step 1: Fetch this address's transaction history ──────────────────
-      const txs = await this._fetchAddressTxs(address);
+      const txs = await this._fetchAddressTxs(address, priority);
       if (!txs.length) return;
 
       // ── Step 2: Find confirmed transactions that actually pay this address ──
@@ -428,7 +480,7 @@ class DepositMonitor {
       // the codebase that still reads it for display/diagnostics. It is no
       // longer used to DECIDE whether a deposit is new — deposit_tracking_v2 is —
       // so a stale value here can no longer cause a missed or duplicate credit.
-      const chain = await this._fetchAddress(address).catch(() => null);
+      const chain = await this._fetchAddress(address, priority).catch(() => null);
       if (chain?.chain_stats) {
         const onchainBal = parseFloat((((chain.chain_stats.funded_txo_sum || 0) - (chain.chain_stats.spent_txo_sum || 0)) / 1e8).toFixed(8));
         supabaseAdmin.from('user_wallets').update({ last_onchain_btc: onchainBal }).eq('user_id', userId).then(null, () => {});
@@ -804,7 +856,7 @@ class DepositMonitor {
 
     if (!address) throw new Error('No wallet address found — generate one first');
 
-    await this.checkUserDeposit({ userId, address, username });
+    await this.checkUserDeposit({ userId, address, username, priority: 'high' });
 
     const { data: wal } = await supabaseAdmin
       .from('wallets').select('balance_btc').eq('user_id', userId).maybeSingle();
