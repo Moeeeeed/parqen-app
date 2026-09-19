@@ -31,7 +31,15 @@ const supabaseAdmin = createClient(
 // 2026-09-18: Realtime WebSocket (realtimeDepositService.js) is disabled due to mempool.space limits.
 // Hot/Cold sharding (2.3b) partitions addresses into a small hot pool + 1 cold slice,
 // allowing fast 90-second cycles (~20-40s duration) without tripping API rate limits.
-const POLL_INTERVAL_MS    = parseInt(process.env.BTC_POLL_INTERVAL_MS || String(90 * 1000), 10); // 90 seconds — hot/cold sharding keeps each cycle fast
+// 2026-09-19: defaults to 5 min, not 90s. The hot pool is still large for BTC
+// specifically (most balance activity here is internal trades, not real
+// on-chain deposits, so very few addresses ever leave "never deposited"
+// status — see the isFirstTimer note below), so a cycle doesn't reliably
+// finish inside 90s without BTC_POLL_INTERVAL_MS explicitly tuned down for
+// this environment's real address count. 5 min is safe either way —
+// _cycleInProgress means a shorter interval than the real cycle time just
+// runs back-to-back, never causes overlap or double-processing.
+const POLL_INTERVAL_MS    = parseInt(process.env.BTC_POLL_INTERVAL_MS || String(5 * 60 * 1000), 10);
 const DUST_THRESHOLD_SATS = 546;           // ignore sub-dust outputs
 
 // Email is sent via emailService (Resend → Brevo SMTP), required above. The old
@@ -311,21 +319,51 @@ class DepositMonitor {
       const SHARDS   = Math.max(1, parseInt(process.env.BTC_SCAN_SHARDS || '6', 10));
       const HOT_DAYS = Math.max(1, parseInt(process.env.BTC_HOT_LOOKBACK_DAYS || '10', 10));
       const SCAN_ALL = process.env.BTC_SCAN_ALL === 'true';
+      // 2026-09-19: "first-timer" used to mean "has NEVER had a tracked BTC
+      // deposit, ever" — correct for safety (a genuine first deposit must
+      // always be hot-scanned) but confirmed to classify 1,735 of 1,797 BTC
+      // wallet holders as first-timer forever (most PRAQEN balance activity
+      // is internal trades, not real on-chain BTC deposits, so very few
+      // addresses ever leave "never deposited" status). That made the hot
+      // pool ~97% of all addresses, defeating the point of sharding.
+      // Narrowing this to "wallet created recently" alone (as first proposed)
+      // would reintroduce the exact bug already documented and fixed once in
+      // usdtDepositMonitor.js: an account that signed up long ago and makes
+      // its first-ever deposit today would get NO hot signal at all and could
+      // sit in the cold rotation for hours — a real incident already happened
+      // this way (see usdtDepositMonitor.js's isFirstTimer comment, dated
+      // 2026-09-17). Compromise: widen the window to FIRST_TIMER_WINDOW_DAYS
+      // (default 90, generous on purpose) instead of HOT_DAYS (10) for the
+      // first-timer signal specifically — shrinks the permanently-hot set for
+      // long-dormant accounts while still covering the large majority of
+      // realistic "new user, first deposit" cases. The residual risk (an
+      // account >90 days old making a genuine first deposit lands in cold
+      // instead of hot) is bounded, not open-ended: depositReconciliationService.js
+      // independently re-scans every address on its own cycle regardless of
+      // sharding, specifically to catch anything the primary monitor misses.
+      const FIRST_TIMER_WINDOW_DAYS = Math.max(1, parseInt(process.env.BTC_FIRST_TIMER_WINDOW_DAYS || '90', 10));
 
       let toScan;
       if (SCAN_ALL) {
         toScan = valid;
       } else {
         const sinceISO = new Date(Date.now() - HOT_DAYS * 864e5).toISOString();
-        const [{ data: recentDep }, { data: recentDtv }, { data: openFlags }, { data: everTrackedBtc }, { data: activeTrades }] = await Promise.all([
+        const firstTimerSinceISO = new Date(Date.now() - FIRST_TIMER_WINDOW_DAYS * 864e5).toISOString();
+        const [{ data: recentDep }, { data: recentDtv }, { data: openFlags }, { data: recentWallets }, { data: everTrackedBtc }, { data: activeTrades }] = await Promise.all([
           supabaseAdmin.from('wallet_transactions').select('user_id')
             .eq('type', 'DEPOSIT').eq('currency', 'BTC').gte('created_at', sinceISO),
           supabaseAdmin.from('deposit_tracking_v2').select('user_id')
             .eq('currency', 'BTC').gte('created_at', sinceISO),
           supabaseAdmin.from('reconciliation_flags').select('user_id')
             .eq('currency', 'BTC').eq('status', 'RECONCILIATION_REQUIRED'),
-          // ALL-TIME, no date filter — used to find users who have NEVER had
-          // a BTC deposit_tracking_v2 row (first-time depositors).
+          // Wallets created within the (generous) first-timer window.
+          supabaseAdmin.from('user_wallets').select('user_id').gte('created_at', firstTimerSinceISO),
+          // ALL-TIME, no date filter — still needed to know WHICH of those
+          // recent wallets have never actually deposited (a recent wallet
+          // that already deposited isn't a first-timer risk any more; it's
+          // already covered by recentDtv/recentDep if truly recent, or by
+          // neither if its one deposit predates HOT_DAYS — acceptable, since
+          // it's not a "first deposit ever missed" scenario any more).
           supabaseAdmin.from('deposit_tracking_v2').select('user_id').eq('currency', 'BTC'),
           // Also include users in active trades (buyer or seller)
           supabaseAdmin.from('trades').select('buyer_id, seller_id')
@@ -344,8 +382,9 @@ class DepositMonitor {
           ...(openFlags || []).map(r => r.user_id),
           ...tradeUserIds,
         ]);
+        const recentWalletIds = new Set((recentWallets || []).map(r => r.user_id));
         const everTrackedIds = new Set((everTrackedBtc || []).map(r => r.user_id));
-        const isFirstTimer = w => !everTrackedIds.has(w.userId);
+        const isFirstTimer = w => recentWalletIds.has(w.userId) && !everTrackedIds.has(w.userId);
         const hot  = valid.filter(w => hotIds.has(w.userId) || isFirstTimer(w));
         const cold = valid.filter(w => !hotIds.has(w.userId) && !isFirstTimer(w));
 
