@@ -5680,8 +5680,6 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
         // Balance — read from wallets, the source of truth (matches Wallet page,
         // escrow, swap, and every other balance display in the app). Non-critical,
         // silently ignored on error.
-      const [balance] = await Promise.all([
-      (async () => {
         try {
           const [{ data: bal }, btcPrice] = await Promise.all([
             supabaseAdmin.from('wallets').select('balance_btc, balance_usdt').eq('user_id', req.userId).maybeSingle(),
@@ -5704,12 +5702,12 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
       console.error('[GET /api/users/profile] DB error:', error.message, '| code:', error.code || 'N/A');
       return res.status(500).json({ error: 'Could not load your profile. Please try again.' });
     }
-    if (!user) return res.status(404).json({ error: 'Profile not found.' });
+    if (!data) return res.status(404).json({ error: 'Profile not found.' });
 
     // Strip sensitive fields
-    delete user.password_hash;
-    delete user.totp_secret;
-    delete user.two_factor_temp_secret;
+    delete data.password_hash;
+    delete data.totp_secret;
+    delete data.two_factor_temp_secret;
 
     res.json({
       user: {
