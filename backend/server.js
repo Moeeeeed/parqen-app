@@ -10871,21 +10871,45 @@ app.post('/api/admin/monitoring/resolve-alert', verifyToken, async (req, res) =>
 app.post('/api/admin/monitoring/audit', verifyToken, async (req, res) => {
   try {
     const admin = await requireAdmin(req, res); if (!admin) return;
-    const [{ data: wallets }, { data: allTx }, { data: users }] = await Promise.all([
-      supabaseAdmin.from('wallets').select('user_id, balance_btc, locked_balance_btc, balance_usdt, locked_balance_usdt'),
-      supabaseAdmin.from('wallet_transactions').select('user_id, type, currency, amount_btc, amount_usdt, status, idempotency_key, tx_hash'),
-      supabaseAdmin.from('users').select('id, username, email'),
+
+    // A plain .select() with no .range() silently caps at Supabase/PostgREST's
+    // default row limit (1000) — confirmed 2026-09-19 truncating this exact
+    // query shape in balanceAnomalyMonitor.js's drift check. Same fix here.
+    const pageAllRows = async (table, columns, filter) => {
+      let out = [], from = 0;
+      for (;;) {
+        let q = supabaseAdmin.from(table).select(columns).range(from, from + 999);
+        if (filter) q = filter(q);
+        const { data, error } = await q;
+        if (error) { console.error(`[admin/monitoring/audit] pageAllRows(${table}):`, error.message); break; }
+        out = out.concat(data || []);
+        if (!data || data.length < 1000) break;
+        from += 1000;
+      }
+      return out;
+    };
+
+    const [wallets, allTx, users] = await Promise.all([
+      // Excludes wallet_role='fee' (house fee-collection wallet) — FEE-type
+      // transactions mean money ARRIVING for that wallet, the opposite of
+      // what they mean for a regular user.
+      pageAllRows('wallets', 'user_id, balance_btc, locked_balance_btc, balance_usdt, locked_balance_usdt, wallet_role',
+        q => q.neq('wallet_role', 'fee')),
+      pageAllRows('wallet_transactions', 'user_id, type, currency, amount_btc, amount_usdt, status, idempotency_key, tx_hash'),
+      pageAllRows('users', 'id, username, email'),
     ]);
 
-    const userMap = new Map((users || []).map(u => [u.id, u]));
+    const userMap = new Map(users.map(u => [u.id, u]));
     const ledgerMap = new Map();
-    for (const tx of (allTx || [])) {
+    for (const tx of allTx) {
       if (tx.status !== 'CONFIRMED' && tx.status !== 'COMPLETED') continue;
       const cur = ledgerMap.get(tx.user_id) || { btc: 0, usdt: 0, txCount: 0 };
       cur.txCount++;
       const btc = parseFloat(tx.amount_btc || 0);
       const usdt = parseFloat(tx.amount_usdt || 0);
-      if (['DEPOSIT', 'TRANSFER_IN', 'ESCROW_RELEASE', 'REFUND'].includes(tx.type)) {
+      // ESCROW_REFUND (not just REFUND) is this codebase's actual cancelled-
+      // trade-refund type. SWAP rows already store SIGNED amounts.
+      if (['DEPOSIT', 'TRANSFER_IN', 'ESCROW_RELEASE', 'REFUND', 'ESCROW_REFUND', 'SWAP'].includes(tx.type)) {
         cur.btc += btc;
         cur.usdt += usdt;
       } else if (['WITHDRAWAL', 'TRANSFER_OUT', 'ESCROW_LOCK', 'FEE'].includes(tx.type)) {
@@ -10896,7 +10920,7 @@ app.post('/api/admin/monitoring/audit', verifyToken, async (req, res) => {
     }
 
     const discrepancies = [];
-    for (const w of (wallets || [])) {
+    for (const w of wallets) {
       const l = ledgerMap.get(w.user_id) || { btc: 0, usdt: 0, txCount: 0 };
       const wBtc = parseFloat(w.balance_btc || 0) + parseFloat(w.locked_balance_btc || 0);
       const wUsdt = parseFloat(w.balance_usdt || 0) + parseFloat(w.locked_balance_usdt || 0);

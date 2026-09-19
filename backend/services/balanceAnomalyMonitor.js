@@ -21,6 +21,27 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
 
+// A plain .select() with no .range() silently caps at Supabase/PostgREST's
+// default row limit (1000) — confirmed 2026-09-19 to be truncating both the
+// wallets query (1794 real rows) and the wallet_transactions query (5155+
+// real rows) in runPeriodicDriftCheck() below, with no guaranteed row order,
+// which made the drift check flag real users (e.g. peace001, a single
+// legitimate $249 deposit) as "unaccounted surplus" simply because their
+// data fell outside whichever 1000 rows Postgres happened to return.
+async function pageAll(table, columns, filter) {
+  let out = [], from = 0;
+  for (;;) {
+    let q = supabaseAdmin.from(table).select(columns).range(from, from + 999);
+    if (filter) q = filter(q);
+    const { data, error } = await q;
+    if (error) { console.error(`[BalanceAnomalyMonitor] pageAll(${table}) error:`, error.message); break; }
+    out = out.concat(data || []);
+    if (!data || data.length < 1000) break;
+    from += 1000;
+  }
+  return out;
+}
+
 // ── Configurable Thresholds ──────────────────────────────────────────────────
 const SPIKE_SINGLE_BTC    = parseFloat(process.env.ANOMALY_SPIKE_BTC  || '0.5');
 const SPIKE_SINGLE_USDT   = parseFloat(process.env.ANOMALY_SPIKE_USDT || '5000');
@@ -192,13 +213,16 @@ class BalanceAnomalyMonitor {
   // ── Periodic Drift Check (Compares ledger sum vs wallets) ───────────────────
   async runPeriodicDriftCheck() {
     try {
-      const { data: wallets } = await supabaseAdmin.from('wallets').select('user_id, balance_btc, balance_usdt');
-      const { data: allTx } = await supabaseAdmin
-        .from('wallet_transactions')
-        .select('user_id, type, currency, amount_btc, amount_usdt, status')
-        .in('status', ['CONFIRMED', 'COMPLETED']);
+      // Excludes wallet_role='fee' (the platform's own house fee-collection
+      // wallet) — FEE-type transactions mean money ARRIVING for that wallet,
+      // the opposite of what they mean for a regular user, so no generic
+      // credit/debit mapping can be correct for both at once.
+      const wallets = await pageAll('wallets', 'user_id, balance_btc, balance_usdt, wallet_role',
+        q => q.neq('wallet_role', 'fee'));
+      const allTx = await pageAll('wallet_transactions', 'user_id, type, currency, amount_btc, amount_usdt, status',
+        q => q.in('status', ['CONFIRMED', 'COMPLETED']));
 
-      if (!wallets || !allTx) return;
+      if (!wallets.length || !allTx.length) return;
 
       const ledgerMap = new Map();
       for (const tx of allTx) {
@@ -206,7 +230,15 @@ class BalanceAnomalyMonitor {
         const btc = parseFloat(tx.amount_btc || 0);
         const usdt = parseFloat(tx.amount_usdt || 0);
 
-        if (tx.type === 'DEPOSIT' || tx.type === 'TRANSFER_IN' || tx.type === 'ESCROW_RELEASE' || tx.type === 'REFUND') {
+        // ESCROW_REFUND (not just REFUND) is this codebase's actual type for a
+        // cancelled trade returning funds — omitting it made the ledger sum go
+        // deeply negative for any user who'd ever had a trade cancelled.
+        if (tx.type === 'DEPOSIT' || tx.type === 'TRANSFER_IN' || tx.type === 'ESCROW_RELEASE' || tx.type === 'REFUND' || tx.type === 'ESCROW_REFUND') {
+          cur.btc += btc;
+          cur.usdt += usdt;
+        } else if (tx.type === 'SWAP') {
+          // SWAP rows already store SIGNED amounts (negative = sold, positive
+          // = received) — add both directly, no direction parsing needed.
           cur.btc += btc;
           cur.usdt += usdt;
         } else if (tx.type === 'WITHDRAWAL' || tx.type === 'TRANSFER_OUT' || tx.type === 'ESCROW_LOCK' || tx.type === 'FEE') {
