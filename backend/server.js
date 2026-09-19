@@ -14458,7 +14458,7 @@ app.post('/api/wallet/usdt/send', verifyToken, requireNotBanned, async (req, res
     }
   }
 
-  const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.008'); // 0.8% — no flat-dollar floor
+  const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.018'); // 1.8% — no flat-dollar floor
   const MIN_SEND = parseFloat(process.env.USDT_MIN_SEND || '5.0');  // minimum $5
 
   // ── Fee calculator: straight percentage, no flat-dollar floor ─────────────

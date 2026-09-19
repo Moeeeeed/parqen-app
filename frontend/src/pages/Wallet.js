@@ -1666,7 +1666,7 @@ function UsdtWithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoF
 
   // Fee = flat 2% of amount, no flat-dollar floor — mirrors backend calcFee()
   // in POST /api/wallet/usdt/send.
-  const FEE_PERCENT = 0.008;
+  const FEE_PERCENT = 0.018;
   const MIN_SEND    = 5.00;
 
   const calcFee = (amt) => parseFloat((amt * FEE_PERCENT).toFixed(2));
@@ -2977,7 +2977,7 @@ export default function WalletPage({ user }) {
   });
 
   // USDT + Swap state — SWAP_FEE_PERCENT mirrors backend swapService.js
-  const SWAP_FEE_PERCENT = 0.004; // 0.4%
+  const SWAP_FEE_PERCENT = 0.01; // 1%
   const [activeCoin,    setActiveCoin]    = useState('BTC');
   const [usdtData,      setUsdtData]      = useState(null);
   const [swapRate,      setSwapRate]      = useState(null);
