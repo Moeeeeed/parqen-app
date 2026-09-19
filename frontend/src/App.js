@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigat
 import {
   HelpCircle, Sparkles, Disc, Bell, CreditCard, ShieldCheck,
   TrendingUp, Info, Medal, Share2, ArrowLeftRight, ArrowRight,
-  Send, MoveRight, Award,
+  Send, MoveRight, Award, Clock,
 } from 'lucide-react';
 import { HelmetProvider } from 'react-helmet-async';
 import { RatesProvider } from './contexts/RatesContext';
@@ -685,6 +685,7 @@ function App() {
                     <Route path="/trade-insights" element={user ? <PlaceholderPage title="Trade Insights" description="Analytics, trends, and insights about your trading activity will appear here." icon={TrendingUp} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
                     <Route path="/payment-accounts" element={user ? <PlaceholderPage title="Payment Accounts" description="Manage your linked bank accounts and payment methods for P2P trading." icon={CreditCard} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
                     <Route path="/devices" element={user ? <PlaceholderPage title="Devices" description="Manage your trusted devices and view active sessions across your account." icon={ShieldCheck} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
+                    <Route path="/activity-log" element={user ? <PlaceholderPage title="Activity log" description="A timeline of your account activity — logins, trades, and security events — will appear here." icon={Clock} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
                     <Route path="/security" element={user ? <PlaceholderPage title="Security" description="Two-factor authentication, login history, and security settings to keep your account safe." icon={ShieldCheck} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
                     <Route path="/discord" element={user ? <PlaceholderPage title="Discord" description="Join our Discord community to chat with other traders, get support, and stay updated on new features." icon={Disc} overrideColor="#8B5CF6" /> : <Navigate to="/login" />} />
                     <Route path="/status" element={user ? <PlaceholderPage title="Status" description="Check the current status of PRAQEN services, including trading, withdrawals, and the website." icon={Bell} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />

@@ -611,6 +611,31 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
 
     // ── EXTERNAL SEND — on-chain broadcast ───────────────────────────────────
 
+    // ── Withdrawal lock after email/phone change (NoOnes behavior) ────────────
+    // Internal PRAQEN→PRAQEN transfers are unaffected (they returned above); this
+    // only blocks on-chain withdrawals for 24h after a confirmed contact change.
+    try {
+      const { data: lockRow } = await supabaseAdmin
+        .from('users')
+        .select('withdrawal_locked_until')
+        .eq('id', userId)
+        .single();
+      const lockedUntil = lockRow?.withdrawal_locked_until ? new Date(lockRow.withdrawal_locked_until) : null;
+      if (lockedUntil && lockedUntil > new Date()) {
+        const hrs = Math.ceil((lockedUntil - Date.now()) / 3600000);
+        return res.status(403).json({
+          error: `Withdrawals are temporarily disabled for 24 hours after changing your email or phone number. Try again in about ${hrs} hour(s).`,
+          withdrawalLocked: true,
+          lockedUntil: lockedUntil.toISOString(),
+        });
+      }
+    } catch (lockErr) {
+      // withdrawal_locked_until column may not exist yet (migration not run) — fail open.
+      if (!/does not exist|schema cache/i.test(lockErr.message || '')) {
+        console.warn('[hd-wallet/send] withdrawal lock check failed:', lockErr.message);
+      }
+    }
+
     // ── 2FA: enforce that user has 2FA enabled before sending BTC ──────────
     const { data: sendUser2FA } = await supabaseAdmin
       .from('users')

@@ -1,6 +1,7 @@
 // src/pages/Settings.js - COMPLETE CLEAN FILE
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import {
@@ -50,6 +51,193 @@ const authH = () => {
   return t ? { Authorization: `Bearer ${t}` } : {};
 };
 
+// Country dial codes for the phone-change modal's searchable country picker
+// (flag + name + dial code, ordered alphabetically like the NoOnes reference).
+const PHONE_CODES = [
+  { flag: '🇦🇫', code: '+93', name: 'Afghanistan' },
+  { flag: '🇦🇱', code: '+355', name: 'Albania' },
+  { flag: '🇩🇿', code: '+213', name: 'Algeria' },
+  { flag: '🇦🇸', code: '+1684', name: 'American Samoa' },
+  { flag: '🇦🇩', code: '+376', name: 'Andorra' },
+  { flag: '🇦🇴', code: '+244', name: 'Angola' },
+  { flag: '🇦🇮', code: '+1264', name: 'Anguilla' },
+  { flag: '🇦🇬', code: '+1268', name: 'Antigua & Barbuda' },
+  { flag: '🇦🇷', code: '+54', name: 'Argentina' },
+  { flag: '🇦🇲', code: '+374', name: 'Armenia' },
+  { flag: '🇦🇼', code: '+297', name: 'Aruba' },
+  { flag: '🇦🇺', code: '+61', name: 'Australia' },
+  { flag: '🇦🇹', code: '+43', name: 'Austria' },
+  { flag: '🇦🇿', code: '+994', name: 'Azerbaijan' },
+  { flag: '🇧🇸', code: '+1242', name: 'Bahamas' },
+  { flag: '🇧🇭', code: '+973', name: 'Bahrain' },
+  { flag: '🇧🇩', code: '+880', name: 'Bangladesh' },
+  { flag: '🇧🇧', code: '+1246', name: 'Barbados' },
+  { flag: '🇧🇾', code: '+375', name: 'Belarus' },
+  { flag: '🇧🇪', code: '+32', name: 'Belgium' },
+  { flag: '🇧🇿', code: '+501', name: 'Belize' },
+  { flag: '🇧🇯', code: '+229', name: 'Benin' },
+  { flag: '🇧🇲', code: '+1441', name: 'Bermuda' },
+  { flag: '🇧🇹', code: '+975', name: 'Bhutan' },
+  { flag: '🇧🇴', code: '+591', name: 'Bolivia' },
+  { flag: '🇧🇦', code: '+387', name: 'Bosnia & Herzegovina' },
+  { flag: '🇧🇼', code: '+267', name: 'Botswana' },
+  { flag: '🇧🇷', code: '+55', name: 'Brazil' },
+  { flag: '🇧🇳', code: '+673', name: 'Brunei' },
+  { flag: '🇧🇬', code: '+359', name: 'Bulgaria' },
+  { flag: '🇧🇫', code: '+226', name: 'Burkina Faso' },
+  { flag: '🇧🇮', code: '+257', name: 'Burundi' },
+  { flag: '🇰🇭', code: '+855', name: 'Cambodia' },
+  { flag: '🇨🇲', code: '+237', name: 'Cameroon' },
+  { flag: '🇨🇦', code: '+1', name: 'Canada' },
+  { flag: '🇨🇻', code: '+238', name: 'Cape Verde' },
+  { flag: '🇰🇾', code: '+1345', name: 'Cayman Islands' },
+  { flag: '🇨🇫', code: '+236', name: 'Central African Republic' },
+  { flag: '🇹🇩', code: '+235', name: 'Chad' },
+  { flag: '🇨🇱', code: '+56', name: 'Chile' },
+  { flag: '🇨🇳', code: '+86', name: 'China' },
+  { flag: '🇨🇴', code: '+57', name: 'Colombia' },
+  { flag: '🇨🇬', code: '+242', name: 'Congo' },
+  { flag: '🇨🇷', code: '+506', name: 'Costa Rica' },
+  { flag: '🇭🇷', code: '+385', name: 'Croatia' },
+  { flag: '🇨🇺', code: '+53', name: 'Cuba' },
+  { flag: '🇨🇾', code: '+357', name: 'Cyprus' },
+  { flag: '🇨🇿', code: '+420', name: 'Czech Republic' },
+  { flag: '🇩🇰', code: '+45', name: 'Denmark' },
+  { flag: '🇩🇯', code: '+253', name: 'Djibouti' },
+  { flag: '🇩🇲', code: '+1767', name: 'Dominica' },
+  { flag: '🇩🇴', code: '+1809', name: 'Dominican Republic' },
+  { flag: '🇪🇨', code: '+593', name: 'Ecuador' },
+  { flag: '🇪🇬', code: '+20', name: 'Egypt' },
+  { flag: '🇸🇻', code: '+503', name: 'El Salvador' },
+  { flag: '🇬🇶', code: '+240', name: 'Equatorial Guinea' },
+  { flag: '🇪🇷', code: '+291', name: 'Eritrea' },
+  { flag: '🇪🇪', code: '+372', name: 'Estonia' },
+  { flag: '🇪🇹', code: '+251', name: 'Ethiopia' },
+  { flag: '🇫🇯', code: '+679', name: 'Fiji' },
+  { flag: '🇫🇮', code: '+358', name: 'Finland' },
+  { flag: '🇫🇷', code: '+33', name: 'France' },
+  { flag: '🇬🇦', code: '+241', name: 'Gabon' },
+  { flag: '🇬🇲', code: '+220', name: 'Gambia' },
+  { flag: '🇬🇪', code: '+995', name: 'Georgia' },
+  { flag: '🇩🇪', code: '+49', name: 'Germany' },
+  { flag: '🇬🇭', code: '+233', name: 'Ghana' },
+  { flag: '🇬🇷', code: '+30', name: 'Greece' },
+  { flag: '🇬🇩', code: '+1473', name: 'Grenada' },
+  { flag: '🇬🇹', code: '+502', name: 'Guatemala' },
+  { flag: '🇬🇳', code: '+224', name: 'Guinea' },
+  { flag: '🇬🇾', code: '+592', name: 'Guyana' },
+  { flag: '🇭🇹', code: '+509', name: 'Haiti' },
+  { flag: '🇭🇳', code: '+504', name: 'Honduras' },
+  { flag: '🇭🇰', code: '+852', name: 'Hong Kong' },
+  { flag: '🇭🇺', code: '+36', name: 'Hungary' },
+  { flag: '🇮🇸', code: '+354', name: 'Iceland' },
+  { flag: '🇮🇳', code: '+91', name: 'India' },
+  { flag: '🇮🇩', code: '+62', name: 'Indonesia' },
+  { flag: '🇮🇷', code: '+98', name: 'Iran' },
+  { flag: '🇮🇶', code: '+964', name: 'Iraq' },
+  { flag: '🇮🇪', code: '+353', name: 'Ireland' },
+  { flag: '🇮🇱', code: '+972', name: 'Israel' },
+  { flag: '🇮🇹', code: '+39', name: 'Italy' },
+  { flag: '🇯🇲', code: '+1876', name: 'Jamaica' },
+  { flag: '🇯🇵', code: '+81', name: 'Japan' },
+  { flag: '🇯🇴', code: '+962', name: 'Jordan' },
+  { flag: '🇰🇿', code: '+7', name: 'Kazakhstan' },
+  { flag: '🇰🇪', code: '+254', name: 'Kenya' },
+  { flag: '🇰🇼', code: '+965', name: 'Kuwait' },
+  { flag: '🇰🇬', code: '+996', name: 'Kyrgyzstan' },
+  { flag: '🇱🇦', code: '+856', name: 'Laos' },
+  { flag: '🇱🇻', code: '+371', name: 'Latvia' },
+  { flag: '🇱🇧', code: '+961', name: 'Lebanon' },
+  { flag: '🇱🇸', code: '+266', name: 'Lesotho' },
+  { flag: '🇱🇷', code: '+231', name: 'Liberia' },
+  { flag: '🇱🇾', code: '+218', name: 'Libya' },
+  { flag: '🇱🇮', code: '+423', name: 'Liechtenstein' },
+  { flag: '🇱🇹', code: '+370', name: 'Lithuania' },
+  { flag: '🇱🇺', code: '+352', name: 'Luxembourg' },
+  { flag: '🇲🇴', code: '+853', name: 'Macao' },
+  { flag: '🇲🇬', code: '+261', name: 'Madagascar' },
+  { flag: '🇲🇼', code: '+265', name: 'Malawi' },
+  { flag: '🇲🇾', code: '+60', name: 'Malaysia' },
+  { flag: '🇲🇱', code: '+223', name: 'Mali' },
+  { flag: '🇲🇹', code: '+356', name: 'Malta' },
+  { flag: '🇲🇷', code: '+222', name: 'Mauritania' },
+  { flag: '🇲🇺', code: '+230', name: 'Mauritius' },
+  { flag: '🇲🇽', code: '+52', name: 'Mexico' },
+  { flag: '🇲🇩', code: '+373', name: 'Moldova' },
+  { flag: '🇲🇨', code: '+377', name: 'Monaco' },
+  { flag: '🇲🇳', code: '+976', name: 'Mongolia' },
+  { flag: '🇲🇪', code: '+382', name: 'Montenegro' },
+  { flag: '🇲🇦', code: '+212', name: 'Morocco' },
+  { flag: '🇲🇿', code: '+258', name: 'Mozambique' },
+  { flag: '🇲🇲', code: '+95', name: 'Myanmar' },
+  { flag: '🇳🇦', code: '+264', name: 'Namibia' },
+  { flag: '🇳🇵', code: '+977', name: 'Nepal' },
+  { flag: '🇳🇱', code: '+31', name: 'Netherlands' },
+  { flag: '🇳🇿', code: '+64', name: 'New Zealand' },
+  { flag: '🇳🇮', code: '+505', name: 'Nicaragua' },
+  { flag: '🇳🇪', code: '+227', name: 'Niger' },
+  { flag: '🇳🇬', code: '+234', name: 'Nigeria' },
+  { flag: '🇰🇵', code: '+850', name: 'North Korea' },
+  { flag: '🇲🇰', code: '+389', name: 'North Macedonia' },
+  { flag: '🇳🇴', code: '+47', name: 'Norway' },
+  { flag: '🇴🇲', code: '+968', name: 'Oman' },
+  { flag: '🇵🇰', code: '+92', name: 'Pakistan' },
+  { flag: '🇵🇸', code: '+970', name: 'Palestine' },
+  { flag: '🇵🇦', code: '+507', name: 'Panama' },
+  { flag: '🇵🇬', code: '+675', name: 'Papua New Guinea' },
+  { flag: '🇵🇾', code: '+595', name: 'Paraguay' },
+  { flag: '🇵🇪', code: '+51', name: 'Peru' },
+  { flag: '🇵🇭', code: '+63', name: 'Philippines' },
+  { flag: '🇵🇱', code: '+48', name: 'Poland' },
+  { flag: '🇵🇹', code: '+351', name: 'Portugal' },
+  { flag: '🇵🇷', code: '+1787', name: 'Puerto Rico' },
+  { flag: '🇶🇦', code: '+974', name: 'Qatar' },
+  { flag: '🇷🇴', code: '+40', name: 'Romania' },
+  { flag: '🇷🇺', code: '+7', name: 'Russia' },
+  { flag: '🇷🇼', code: '+250', name: 'Rwanda' },
+  { flag: '🇸🇦', code: '+966', name: 'Saudi Arabia' },
+  { flag: '🇸🇳', code: '+221', name: 'Senegal' },
+  { flag: '🇷🇸', code: '+381', name: 'Serbia' },
+  { flag: '🇸🇨', code: '+248', name: 'Seychelles' },
+  { flag: '🇸🇱', code: '+232', name: 'Sierra Leone' },
+  { flag: '🇸🇬', code: '+65', name: 'Singapore' },
+  { flag: '🇸🇰', code: '+421', name: 'Slovakia' },
+  { flag: '🇸🇮', code: '+386', name: 'Slovenia' },
+  { flag: '🇸🇴', code: '+252', name: 'Somalia' },
+  { flag: '🇿🇦', code: '+27', name: 'South Africa' },
+  { flag: '🇰🇷', code: '+82', name: 'South Korea' },
+  { flag: '🇸🇸', code: '+211', name: 'South Sudan' },
+  { flag: '🇪🇸', code: '+34', name: 'Spain' },
+  { flag: '🇱🇰', code: '+94', name: 'Sri Lanka' },
+  { flag: '🇸🇩', code: '+249', name: 'Sudan' },
+  { flag: '🇸🇪', code: '+46', name: 'Sweden' },
+  { flag: '🇨🇭', code: '+41', name: 'Switzerland' },
+  { flag: '🇸🇾', code: '+963', name: 'Syria' },
+  { flag: '🇹🇼', code: '+886', name: 'Taiwan' },
+  { flag: '🇹🇯', code: '+992', name: 'Tajikistan' },
+  { flag: '🇹🇿', code: '+255', name: 'Tanzania' },
+  { flag: '🇹🇭', code: '+66', name: 'Thailand' },
+  { flag: '🇹🇬', code: '+228', name: 'Togo' },
+  { flag: '🇹🇹', code: '+1868', name: 'Trinidad & Tobago' },
+  { flag: '🇹🇳', code: '+216', name: 'Tunisia' },
+  { flag: '🇹🇷', code: '+90', name: 'Turkey' },
+  { flag: '🇹🇲', code: '+993', name: 'Turkmenistan' },
+  { flag: '🇺🇬', code: '+256', name: 'Uganda' },
+  { flag: '🇺🇦', code: '+380', name: 'Ukraine' },
+  { flag: '🇦🇪', code: '+971', name: 'United Arab Emirates' },
+  { flag: '🇬🇧', code: '+44', name: 'United Kingdom' },
+  { flag: '🇺🇸', code: '+1', name: 'United States' },
+  { flag: '🇺🇾', code: '+598', name: 'Uruguay' },
+  { flag: '🇺🇿', code: '+998', name: 'Uzbekistan' },
+  { flag: '🇻🇪', code: '+58', name: 'Venezuela' },
+  { flag: '🇻🇳', code: '+84', name: 'Vietnam' },
+  { flag: '🇾🇪', code: '+967', name: 'Yemen' },
+  { flag: '🇿🇲', code: '+260', name: 'Zambia' },
+  { flag: '🇿🇼', code: '+263', name: 'Zimbabwe' },
+];
+
+const INTERNAL_TABS = ['account', 'verification', 'security', 'notifications'];
+
 const maskEmail = (email) => {
   if (!email) return "—";
   const [local, domain] = email.split("@");
@@ -61,7 +249,210 @@ const maskEmail = (email) => {
 
 // Small-screen account rows deliberately use the same inline-edit interaction as
 // the desktop settings fields, without turning each row into a separate card.
-function MobileAccountField({ label, value, onSave, readOnly = false, type = 'text', status }) {
+// `locked` keeps the pencil icon VISIBLE but non-functional: clicking it does
+// nothing (no edit field, no typing, no save) — used for the one-time username
+// lock so users can still see where the edit affordance would be.
+// Shared viewport/keyboard tracking for Account Settings bottom sheets.
+// Returns { innerPx, vvHeight, kbOverlap }:
+//   innerPx   — layout viewport height in px (window.innerHeight)
+//   vvHeight  — visual viewport height in px (window.visualViewport.height)
+//   kbOverlap — how many px of the layout viewport's bottom are covered by the
+//               on-screen keyboard (visual viewport shorter than layout viewport)
+function useSheetViewport() {
+  const [vp, setVp] = useState(() => {
+    const inner = typeof window !== 'undefined' ? (window.innerHeight || 800) : 800;
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+    const vvHeight = vv ? Math.round(vv.height) : inner;
+    const overlap = vv ? Math.max(0, Math.round(inner - (vv.height + (vv.offsetTop || 0)))) : 0;
+    return { innerPx: inner, vvHeight, kbOverlap: overlap };
+  });
+
+  useEffect(() => {
+    const update = () => {
+      const inner = Math.round(window.innerHeight || 800);
+      const vv = window.visualViewport;
+      const vvHeight = vv ? Math.round(vv.height) : inner;
+      const overlap = vv ? Math.max(0, Math.round(inner - (vv.height + (vv.offsetTop || 0)))) : 0;
+      setVp(prev => (prev.innerPx === inner && prev.vvHeight === vvHeight && prev.kbOverlap === overlap)
+        ? prev
+        : { innerPx: inner, vvHeight, kbOverlap: overlap });
+    };
+    update();
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener('resize', update);
+      vv.addEventListener('scroll', update);
+    }
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
+    return () => {
+      if (vv) {
+        vv.removeEventListener('resize', update);
+        vv.removeEventListener('scroll', update);
+      }
+      window.removeEventListener('resize', update);
+      window.removeEventListener('orientationchange', update);
+    };
+  }, []);
+  return vp;
+}
+
+// Shared bottom sheet for Account Settings confirm flows (E-mail change, Phone
+// number change, and any future confirm sheet). The structural fix lives HERE
+// once — not duplicated per screen. Contract:
+//   - Rendered via createPortal to document.body to break out of all parent
+//     stacking contexts and overflow constraints.
+//   - Encapsulates its own full-screen backdrop with zIndex: 10000 (above
+//     BottomNav's zIndex: 1000).
+//   - Sheet container has zIndex: 10001, pinned at bottom: `${kbOverlap}px`.
+//   - Header — title + close icon, pinned (flexShrink 0).
+//   - Body   — children, scrolls internally (overflowY auto + minHeight 0) so
+//              it can never push the footer out of view.
+//   - Footer — actions pinned OUTSIDE the scroll area at the bottom of the sheet,
+//              padded with env(safe-area-inset-bottom) and lifted above keyboard.
+function AccountBottomSheet({ title, onClose, children, footer }) {
+  const { innerPx, vvHeight, kbOverlap } = useSheetViewport();
+
+  // Lock body scroll and listen for Escape key while sheet is open
+  useEffect(() => {
+    const origOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleKey = (e) => {
+      if (e.key === 'Escape' && onClose) onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.body.style.overflow = origOverflow;
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [onClose]);
+
+  // Max sheet height dynamically caps at visible viewport minus top safe clearance (24px)
+  const maxSheetHeight = Math.max(200, (vvHeight || (innerPx - kbOverlap)) - 24);
+
+  const sheetContent = (
+    <>
+      <style>{`
+        @keyframes acctSheetFadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes acctSheetSlideUp {
+          from { transform: translateY(100%); }
+          to { transform: translateY(0); }
+        }
+      `}</style>
+
+      {/* Backdrop (above BottomNav at zIndex: 1000) */}
+      <div
+        onClick={onClose}
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.5)',
+          zIndex: 10000,
+          animation: 'acctSheetFadeIn 0.2s ease-out',
+        }}
+      />
+
+      {/* Bottom Sheet dialog container */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={e => e.stopPropagation()}
+        className="bg-white shadow-2xl w-full max-w-md"
+        style={{
+          position: 'fixed',
+          bottom: `${kbOverlap}px`,
+          left: 0,
+          right: 0,
+          margin: '0 auto',
+          zIndex: 10001,
+          borderRadius: '20px 20px 0 0',
+          display: 'flex',
+          flexDirection: 'column',
+          maxHeight: `${maxSheetHeight}px`,
+          overflow: 'hidden',
+          animation: 'acctSheetSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+          transition: 'bottom 0.15s ease-out, max-height 0.15s ease-out',
+        }}
+      >
+        {/* Handle bar (pinned) */}
+        <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 10, paddingBottom: 6, flexShrink: 0 }}>
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: C.g200 }} />
+        </div>
+
+        {/* Pinned header (title + close) */}
+        <div
+          className="flex items-center justify-between mb-3"
+          style={{ paddingLeft: 24, paddingRight: 24, flexShrink: 0 }}
+        >
+          <h3 className="text-lg font-black" style={{ color: C.g800, margin: 0 }}>
+            {title}
+          </h3>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            type="button"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              border: 'none',
+              background: C.g100,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <X size={18} color={C.g600} />
+          </button>
+        </div>
+
+        {/* Scrollable body */}
+        <div
+          style={{
+            paddingLeft: 24,
+            paddingRight: 24,
+            paddingBottom: 16,
+            overflowY: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            minHeight: 0,
+            flex: '1 1 auto',
+            overscrollBehavior: 'contain',
+          }}
+        >
+          {children}
+        </div>
+
+        {/* Pinned footer (outside the scroll area, safe-area + keyboard aware) */}
+        <div
+          className="flex gap-3"
+          style={{
+            paddingLeft: 24,
+            paddingRight: 24,
+            paddingTop: 12,
+            flexShrink: 0,
+            paddingBottom: kbOverlap > 0
+              ? '16px'
+              : 'calc(16px + env(safe-area-inset-bottom, 0px))',
+            borderTop: `1px solid ${C.g100}`,
+            backgroundColor: C.white,
+          }}
+        >
+          {footer}
+        </div>
+      </div>
+    </>
+  );
+
+  return typeof document !== 'undefined' ? createPortal(sheetContent, document.body) : null;
+}
+
+function MobileAccountField({ label, value, onSave, readOnly = false, type = 'text', status, onPencil, noPencil = false }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value || '');
   const [saving, setSaving] = useState(false);
@@ -79,13 +470,22 @@ function MobileAccountField({ label, value, onSave, readOnly = false, type = 'te
     }
   };
 
+  // When locked (readOnly) or noPencil, editing is unreachable
+  useEffect(() => { if (readOnly || noPencil) setEditing(false); }, [readOnly, noPencil]);
+
+  const handlePencilClick = () => {
+    if (readOnly || noPencil) return;
+    if (onPencil) { onPencil(); return; }
+    setEditing(true);
+  };
+
   return (
       <div className="py-2">
         <div className="flex items-center gap-1.5 mb-1">
           <p className="text-sm font-normal" style={{ color: C.g500 }}>{label}</p>
           {status}
         </div>
-        {editing ? (
+        {editing && !noPencil ? (
             <div className="flex items-center gap-2">
               <input type={type} value={draft} onChange={e => setDraft(e.target.value)}
                      onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false); }}
@@ -99,8 +499,23 @@ function MobileAccountField({ label, value, onSave, readOnly = false, type = 'te
             </div>
         ) : (
             <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ backgroundColor: '#F1F1F1' }}>
-              <p className="flex-1 min-w-0 truncate text-sm font-bold" style={{ color: C.g800 }}>{value || '—'}</p>
-              {!readOnly && <button type="button" onClick={() => setEditing(true)} aria-label={`Edit ${label}`} className="flex-shrink-0 p-0.5" style={{ color: C.g400 }}><Edit3 size={15} /></button>}
+              <p className="flex-1 min-w-0 truncate text-sm font-bold" style={{ color: C.g800, userSelect: (readOnly || noPencil) ? 'none' : 'auto' }}>{value || '—'}</p>
+              {!noPencil && (
+                readOnly ? (
+                  /* Locked: icon only — no button, no onClick, not focusable (light/faded grey) */
+                  <span role="img" aria-label={`${label} is locked`} className="flex-shrink-0 p-0.5"
+                        style={{ color: C.g400, cursor: 'not-allowed', userSelect: 'none' }}>
+                    <Edit3 size={15} />
+                  </span>
+                ) : (
+                  /* Active/editable: clickable button with darker, visible icon */
+                  <button type="button" onClick={handlePencilClick} aria-label={`Edit ${label}`}
+                          className="flex-shrink-0 p-0.5 hover:opacity-75 transition-opacity"
+                          style={{ color: C.g700, cursor: 'pointer' }}>
+                    <Edit3 size={15} />
+                  </button>
+                )
+              )}
             </div>
         )}
       </div>
@@ -612,15 +1027,19 @@ const TIMEZONE_GROUPS = {
 export default function Settings({ user, setUser }) {
   const navigate = useNavigate();
   const location = useLocation();
+  // Tabs that render content inside Settings. "profile", "devices",
+  // "activity" and "trader-settings" are route entries — clicking them navigates
+  // away instead of switching sub-tabs, so they must never be persisted as the
+  // active tab (a stale value would otherwise render an empty content area).
+
   const [activeTab, setActiveTab] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get('tab');
-    const validTabs = ['account', 'verification', 'security', 'preferences', 'payment', 'notifications'];
-    if (tabParam && validTabs.includes(tabParam)) {
+    if (tabParam && INTERNAL_TABS.includes(tabParam)) {
       return tabParam;
     }
     const savedTab = localStorage.getItem('praqen_active_tab');
-    if (savedTab && validTabs.includes(savedTab)) {
+    if (savedTab && INTERNAL_TABS.includes(savedTab)) {
       return savedTab;
     }
     return 'account';
@@ -628,8 +1047,7 @@ export default function Settings({ user, setUser }) {
 
   // Save tab to URL and localStorage
   useEffect(() => {
-    const validTabs = ['account', 'verification', 'security', 'preferences', 'payment', 'notifications'];
-    if (activeTab && validTabs.includes(activeTab)) {
+    if (activeTab && INTERNAL_TABS.includes(activeTab)) {
       localStorage.setItem('praqen_active_tab', activeTab);
       const params = new URLSearchParams(location.search);
       params.set('tab', activeTab);
@@ -642,8 +1060,7 @@ export default function Settings({ user, setUser }) {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const tabParam = params.get('tab');
-    const validTabs = ['account', 'verification', 'security', 'preferences', 'payment', 'notifications'];
-    if (tabParam && validTabs.includes(tabParam)) {
+    if (tabParam && INTERNAL_TABS.includes(tabParam)) {
       setActiveTab(tabParam);
       localStorage.setItem('praqen_active_tab', tabParam);
     }
@@ -741,6 +1158,28 @@ export default function Settings({ user, setUser }) {
 
   const [hideFullName, setHideFullName] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // ── NoOnes-parity: one-time username lock + email/phone change modals ────────
+  // STATE, not derived: starts from the user record fetched from the backend
+  // (has_changed_username / username_changed_at — never local-only state) and is
+  // flipped to true IMMEDIATELY after a successful username change so the UI locks
+  // without a refresh. The backend independently rejects second attempts with 403.
+  const [usernameLocked, setUsernameLocked] = useState(
+    !!(user?.hasChangedUsername || user?.username_changed || user?.has_changed_username || user?.username_changed_at)
+  );
+  // Keep in sync when the user record is (re)fetched from the backend.
+  useEffect(() => {
+    setUsernameLocked(!!(user?.hasChangedUsername || user?.username_changed || user?.has_changed_username || user?.username_changed_at));
+  }, [user?.hasChangedUsername, user?.username_changed, user?.has_changed_username, user?.username_changed_at]);
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [emailDraft, setEmailDraft] = useState('');
+  const [emailSaving, setEmailSaving] = useState(false);
+  const [phoneModalOpen, setPhoneModalOpen] = useState(false);
+  const [phoneDraft, setPhoneDraft] = useState('');
+  const [phoneCountry, setPhoneCountry] = useState(PHONE_CODES[0]);
+  const [countrySearch, setCountrySearch] = useState('');
+  const [countryListOpen, setCountryListOpen] = useState(false);
+  const [phoneSaving, setPhoneSaving] = useState(false);
 
   // Phone verification flow
   const [phoneStep, setPhoneStep] = useState(() => {
@@ -902,6 +1341,8 @@ export default function Settings({ user, setUser }) {
     setPhoneVerified(!!(user.is_phone_verified || user.phone_verified));
     setKycVerified(!!(user.kyc_verified || user.is_id_verified));
     setTwoFAEnabled(!!user.two_factor_enabled);
+    // One-time username lock — read from the backend user record on load
+    setUsernameLocked(!!(user.hasChangedUsername || user.username_changed || user.has_changed_username || user.username_changed_at));
   }, [user, navigate]);
 
   // On mount, fetch fresh profile + KYC status
@@ -1026,6 +1467,10 @@ export default function Settings({ user, setUser }) {
       const r = await axios.put(`${API_URL}/users/profile`, payload, {
         headers: authH(),
       });
+      const updated = r.data.user || {};
+      // Lock immediately if this save changed the username (one-time lock — the
+      // backend sets has_changed_username in the same update, so no refresh needed).
+      if (accountForm.username !== (user?.username || "")) setUsernameLocked(true);
       const locationUpdate = locationLocked ? {} : { location: accountForm.location };
       if (setUser) setUser({
         ...user,
@@ -1033,6 +1478,7 @@ export default function Settings({ user, setUser }) {
         full_name: accountForm.fullName,
         ...locationUpdate,
         ...(phoneIsLocked ? {} : { phone: accountForm.phone }),
+        ...updated,
       });
       const stored = JSON.parse(localStorage.getItem("user") || "{}");
       localStorage.setItem("user", JSON.stringify({
@@ -1041,6 +1487,7 @@ export default function Settings({ user, setUser }) {
         full_name: accountForm.fullName,
         ...locationUpdate,
         ...(phoneIsLocked ? {} : { phone: accountForm.phone }),
+        ...updated,
       }));
       window.dispatchEvent(new Event("userUpdated"));
       toast.success("Account updated!");
@@ -1064,7 +1511,11 @@ export default function Settings({ user, setUser }) {
     if (!locationLocked) payload.location = next.location;
 
     try {
-      await axios.put(`${API_URL}/users/profile`, payload, { headers: authH() });
+      const r = await axios.put(`${API_URL}/users/profile`, payload, { headers: authH() });
+      const updated = r.data.user || {};
+      // Lock immediately on a successful username change — the backend sets
+      // has_changed_username in the same update, so no refresh is needed.
+      if (field === 'username') setUsernameLocked(true);
       setAccountForm(next);
       const userUpdate = {
         username: next.username,
@@ -1072,14 +1523,73 @@ export default function Settings({ user, setUser }) {
         ...(phoneIsLocked ? {} : { phone: next.phone }),
         ...(locationLocked ? {} : { location: next.location }),
       };
-      if (setUser) setUser(u => ({ ...u, ...userUpdate }));
+      if (setUser) setUser(u => ({ ...u, ...userUpdate, ...updated }));
       const stored = JSON.parse(localStorage.getItem('user') || '{}');
-      localStorage.setItem('user', JSON.stringify({ ...stored, ...userUpdate }));
+      localStorage.setItem('user', JSON.stringify({ ...stored, ...userUpdate, ...updated }));
       window.dispatchEvent(new Event('userUpdated'));
       toast.success(`${field === 'fullName' ? 'Full name' : field[0].toUpperCase() + field.slice(1)} updated!`);
     } catch (e) {
       toast.error(e?.response?.data?.error || 'Failed to update');
       throw e;
+    }
+  };
+
+  // ── NoOnes-parity email change — saves the new email and triggers the shared
+  // 24-hour withdrawal lock (backend sets withdrawal_locked_until = max lock).
+  const handleEmailChange = async () => {
+    const newEmail = (emailDraft || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+      toast.error('Enter a valid email address');
+      return;
+    }
+    setEmailSaving(true);
+    try {
+      const r = await axios.put(`${API_URL}/users/profile`, { email: newEmail, withdrawal_lock: true }, { headers: authH() });
+      const updated = r.data.user || {};
+      setAccountForm(p => ({ ...p, email: newEmail }));
+      if (setUser) setUser(u => ({ ...u, ...updated, email: newEmail }));
+      const stored = JSON.parse(localStorage.getItem('user') || '{}');
+      localStorage.setItem('user', JSON.stringify({ ...stored, ...updated, email: newEmail }));
+      window.dispatchEvent(new Event('userUpdated'));
+      toast.success('Email updated! Withdrawals are disabled for 24 hours.');
+      setEmailModalOpen(false);
+      setEmailDraft('');
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to update email');
+    } finally {
+      setEmailSaving(false);
+    }
+  };
+
+  // ── NoOnes-parity phone change — saves country code + number and triggers the
+  // same shared 24-hour withdrawal lock as the email change.
+  const handlePhoneChange = async () => {
+    const digits = (phoneDraft || '').replace(/[\s\-()]/g, '');
+    if (!digits) {
+      toast.error('Enter your phone number');
+      return;
+    }
+    const fullPhone = `${phoneCountry.code}${digits.replace(/^\+/, '')}`;
+    if (fullPhone.replace(/\D/g, '').length < 8) {
+      toast.error('That doesn\'t look like a full phone number');
+      return;
+    }
+    setPhoneSaving(true);
+    try {
+      const r = await axios.put(`${API_URL}/users/profile`, { phone: fullPhone, withdrawal_lock: true }, { headers: authH() });
+      const updated = r.data.user || {};
+      setAccountForm(p => ({ ...p, phone: fullPhone }));
+      if (setUser) setUser(u => ({ ...u, ...updated, phone: fullPhone }));
+      const stored = JSON.parse(localStorage.getItem('user') || '{}');
+      localStorage.setItem('user', JSON.stringify({ ...stored, ...updated, phone: fullPhone }));
+      window.dispatchEvent(new Event('userUpdated'));
+      toast.success('Phone number updated! Withdrawals are disabled for 24 hours.');
+      setPhoneModalOpen(false);
+      setPhoneDraft('');
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to update phone number');
+    } finally {
+      setPhoneSaving(false);
     }
   };
 
@@ -1525,13 +2035,18 @@ export default function Settings({ user, setUser }) {
     }
   }, [activeTab]);
 
+  // NoOnes-parity settings menu — exact order, no Developer / Connected apps &
+  // websites (excluded by spec), no Preferences / Payment (they exist elsewhere
+  // in the app but must not appear in this list). "Profile" navigates to the
+  // user's profile page instead of opening an account settings sub-tab.
   const TABS = [
-    { id: "account", icon: User, label: "Account" },
+    { id: "profile", icon: User, label: "Profile", route: "/profile" },
     { id: "verification", icon: Shield, label: "Verification" },
     { id: "security", icon: Lock, label: "Security" },
-    { id: "preferences", icon: Globe, label: "Preferences" },
-    { id: "payment", icon: CreditCard, label: "Payment" },
+    { id: "devices", icon: Smartphone, label: "Devices", route: "/devices" },
+    { id: "activity", icon: Clock, label: "Activity log", route: "/activity-log" },
     { id: "notifications", icon: Bell, label: "Notifications" },
+    { id: "trader-settings", icon: CreditCard, label: "Trader settings", route: "/trader-settings" },
   ];
 
   const inputCls = "w-full px-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:border-green-500 transition";
@@ -1567,8 +2082,8 @@ export default function Settings({ user, setUser }) {
 
               {/* Desktop: vertical sidebar */}
               <div className="hidden md:block bg-white rounded-2xl shadow-sm border overflow-hidden" style={{ borderColor: C.g200 }}>
-                {TABS.map(({ id, icon: Icon, label }) => (
-                    <button key={id} onClick={() => setActiveTab(id)}
+                {TABS.map(({ id, icon: Icon, label, route }) => (
+                    <button key={id} onClick={() => (route ? navigate(route) : setActiveTab(id))}
                             className="w-full flex items-center gap-3 px-4 py-3 text-left transition border-b last:border-0 hover:bg-gray-50"
                             style={{
                               borderColor: C.g100,
@@ -1664,12 +2179,17 @@ export default function Settings({ user, setUser }) {
                     {/* Mobile: one compact page flow, without section cards. */}
                     <div className="md:hidden" style={{ backgroundColor: C.white }}>
                       <section className="px-4 pt-3 pb-2">
+                        {/* Name — appears automatically after verification, no edit pencil. */}
                         <MobileAccountField label="Name" value={accountForm.fullName}
-                                            readOnly={kycVerified} onSave={value => saveMobileAccountField('fullName', value)} />
+                                            noPencil={true} readOnly={true}
+                                            status={kycVerified ? <span className="text-xs" style={{ color: C.success }}>✓ Verified</span> : null} />
+                        {/* Username locks permanently after ONE change (persisted server-side). */}
                         <MobileAccountField label="Username" value={accountForm.username}
-                                            readOnly={user?.username_changed} onSave={value => saveMobileAccountField('username', value)} />
-                        <MobileAccountField label="E-mail" value={accountForm.email} readOnly
-                                            status={emailVerified ? <span className="text-xs" style={{ color: C.success }}>✓ Verified</span> : <span className="text-xs" style={{ color: C.warn }}>Unverified</span>} />
+                                            readOnly={usernameLocked} onSave={value => saveMobileAccountField('username', value)}
+                                            status={usernameLocked ? <Lock size={12} style={{ color: C.g400 }} /> : null} />
+                        <MobileAccountField label="E-mail" value={accountForm.email}
+                                            status={emailVerified ? <span className="text-xs" style={{ color: C.success }}>✓ Verified</span> : <span className="text-xs" style={{ color: C.warn }}>Unverified</span>}
+                                            onPencil={() => setEmailModalOpen(true)} />
                         {!emailVerified && emailVerifyStep === 'idle' && (
                             <button type="button" onClick={handleSendEmailCode} disabled={emailCodeLoading} className="mb-2 text-xs font-bold" style={{ color: C.paid }}>
                               {emailCodeLoading ? 'Sending code…' : 'Verify e-mail'}
@@ -1685,10 +2205,9 @@ export default function Settings({ user, setUser }) {
                               </button>
                             </div>
                         )}
-                        <MobileAccountField label="Phone number" value={accountForm.phone}
-                                            type="tel" readOnly={phoneVerified || phoneStep === 'done'}
+                        <MobileAccountField label="Phone number" value={accountForm.phone} type="tel"
                                             status={(phoneVerified || phoneStep === 'done') && <span className="text-xs" style={{ color: C.success }}>✓ Verified</span>}
-                                            onSave={value => saveMobileAccountField('phone', value)} />
+                                            onPencil={() => { setPhoneDraft(''); setCountrySearch(''); setCountryListOpen(false); setPhoneModalOpen(true); }} />
                       </section>
 
                       <section className="px-4 pt-2 pb-5">
@@ -1789,72 +2308,72 @@ export default function Settings({ user, setUser }) {
                         <h2 className="text-[20px] font-semibold mb-0.5" style={{ color: C.g800 }}>Account information</h2>
                         <div style={{ borderBottom: `1px solid ${C.g100}`, marginBottom: 14 }} />
                         <form onSubmit={handleAccountUpdate} className="space-y-2">
-                          {/* Username */}
+                          {/* Name — appears automatically after verification, no edit pencil. */}
                           <div>
                             <label className={`${labelCls} desktop-field-label`} style={{ display: 'flex', alignItems: 'center', gap: 5, color: C.g500, marginBottom: 2 }}>
-                              Username {user?.username_changed && <Lock size={11} style={{ color: C.g400 }} />}
+                              Name {kycVerified && <Lock size={11} style={{ color: C.g400 }} />}
                             </label>
-                            {user?.username_changed ? (
+                            <div className="desktop-field px-4 py-2.5 border rounded-lg text-sm font-medium flex items-center justify-between"
+                                 style={{ borderColor: C.g200, backgroundColor: C.g50, color: accountForm.fullName ? C.g800 : C.g500 }}>
+                              <span>{accountForm.fullName || '—'}</span>
+                              {kycVerified && <Lock size={13} style={{ color: C.g400 }} />}
+                            </div>
+                            <p className="text-xs mt-1" style={{ color: C.g400 }}>Full name appears automatically after verification.</p>
+                          </div>
+
+                          {/* Username — permanently locked after ONE change (persisted flag).
+                              The pencil stays visible but is non-functional: clicking does
+                              nothing and the value is not editable by any means. */}
+                          <div>
+                            <label className={`${labelCls} desktop-field-label`} style={{ display: 'flex', alignItems: 'center', gap: 5, color: C.g500, marginBottom: 2 }}>
+                              Username {usernameLocked && <Lock size={11} style={{ color: C.g400 }} />}
+                            </label>
+                            {usernameLocked ? (
                                 <div className="desktop-field px-4 py-2.5 border rounded-lg text-sm font-medium flex items-center justify-between"
                                      style={{ borderColor: C.g200, backgroundColor: C.g50, color: C.g500 }}>
-                                  <span>{accountForm.username}</span>
-                                  <Lock size={13} style={{ color: C.g400 }} />
+                                  {/* Plain text — NOT an input: not focusable or editable
+                                      by any means (click, tab, etc.) while locked. */}
+                                  <span tabIndex={-1} style={{ outline: 'none', userSelect: 'none' }}>{accountForm.username}</span>
+                                  {/* Pencil remains VISIBLE but light/faded grey and has no onClick while locked. */}
+                                  <span role="img" aria-label="Username is locked"
+                                        className="flex-shrink-0"
+                                        style={{ display: 'flex', alignItems: 'center', cursor: 'not-allowed', userSelect: 'none' }}>
+                                    <Edit3 size={14} style={{ color: C.g400 }} />
+                                  </span>
                                 </div>
                             ) : (
                                 <div className="desktop-field relative">
                                   <input type="text" value={accountForm.username}
                                          onChange={e => setAccountForm({ ...accountForm, username: e.target.value })}
                                          className={inputCls} required style={{ ...inputStyle(), paddingRight: 36 }} />
-                                  <Edit3 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.g400 }} />
+                                  <Edit3 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.g700 }} />
                                 </div>
                             )}
-                            {user?.username_changed ?
+                            {usernameLocked ?
                                 <p className="text-xs mt-1 flex items-center gap-1" style={{ color: C.g400 }}><Lock size={9} />Username is permanently locked.</p> :
                                 <p className="text-xs mt-1 flex items-center gap-1" style={{ color: '#D97706' }}><AlertTriangle size={12} className="inline-block" />You can only change your username once. Choose carefully.</p>
                             }
                           </div>
 
-                          {/* Full Name */}
-                          <div>
-                            <label className={`${labelCls} desktop-field-label`} style={{ display: 'flex', alignItems: 'center', gap: 5, color: C.g500, marginBottom: 2 }}>
-                              Full Name {kycVerified && <Lock size={11} style={{ color: C.g400 }} />}
-                            </label>
-                            {kycVerified ? (
-                                <div className="desktop-field px-4 py-2.5 border rounded-lg text-sm font-medium flex items-center justify-between"
-                                     style={{ borderColor: C.g200, backgroundColor: C.g50, color: C.g500 }}>
-                                  <span>{accountForm.fullName}</span>
-                                  <Lock size={13} style={{ color: C.g400 }} />
-                                </div>
-                            ) : (
-                                <div className="desktop-field relative">
-                                  <input type="text" value={accountForm.fullName}
-                                         onChange={e => setAccountForm({ ...accountForm, fullName: e.target.value })}
-                                         className={inputCls} style={{ ...inputStyle(), paddingRight: 36 }} />
-                                  <Edit3 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.g400 }} />
-                                </div>
-                            )}
-                            {kycVerified ?
-                                <p className="text-xs mt-1 flex items-center gap-1" style={{ color: C.g400 }}><Lock size={9} />Locked after ID verification.</p> :
-                                <p className="text-xs mt-1" style={{ color: C.g500 }}>ℹ Full name cannot be changed after ID verification.</p>
-                            }
-                          </div>
-
-                          {/* Email Address */}
+                          {/* Email Address — pencil opens the NoOnes-style change modal
+                              ("E-mail" title + 24h withdrawal-lock warning). */}
                           <div>
                             <label className={`${labelCls} desktop-field-label`} style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.g500, marginBottom: 2 }}>
-                              Email Address
+                              E-mail
                               {emailVerified ?
-                                  <span className="text-xs font-medium" style={{ color: C.success }}>✓ Verified</span> :
+                                  <span className="text-xs font-medium inline-flex items-center gap-1" style={{ color: C.success }}><CheckCircle size={12} />Verified</span> :
                                   <span className="text-xs font-black px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ backgroundColor: '#FFF7ED', color: C.warn }}><AlertTriangle size={11} className="inline-block" />Unverified</span>}
                             </label>
                             <div className="desktop-field px-4 py-2.5 border rounded-lg text-sm font-medium flex items-center justify-between"
                                  style={{ borderColor: emailVerified ? '#DCFCE7' : '#FDE68A', backgroundColor: C.g50, color: C.g700 }}>
                               <span className="truncate">{maskEmail(accountForm.email)}</span>
-                              {emailVerified ?
-                                  <CheckCircle size={14} style={{ color: C.success, flexShrink: 0 }} /> :
-                                  <AlertCircle size={14} style={{ color: C.warn, flexShrink: 0 }} />}
+                              <button type="button" onClick={() => { setEmailDraft(accountForm.email || ''); setEmailModalOpen(true); }}
+                                      aria-label="Change email" className="flex-shrink-0 hover:opacity-75 transition-opacity"
+                                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                                <Edit3 size={14} style={{ color: C.g700 }} />
+                              </button>
                             </div>
-                            <p className="text-xs mt-1" style={{ color: C.g400 }}>This is the email used to register. It cannot be changed.</p>
+                            <p className="text-xs mt-1" style={{ color: C.g400 }}>Changing your email triggers a 24-hour withdrawal lock.</p>
                             {!emailVerified && (
                                 <div className="mt-2 space-y-2">
                                   {emailVerifyStep === 'idle' && (
@@ -1898,56 +2417,20 @@ export default function Settings({ user, setUser }) {
                                   accountForm.phone ?
                                       <span className="text-xs font-black px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ backgroundColor: '#FFF7ED', color: C.warn }}><AlertTriangle size={11} className="inline-block" />Unverified</span> : null}
                             </label>
-                            {phoneVerified || phoneStep === 'done' ? (
-                                <div className="desktop-field px-4 py-2.5 border rounded-lg text-sm font-medium flex items-center justify-between"
-                                     style={{ borderColor: '#DCFCE7', backgroundColor: C.g50, color: C.g700 }}>
-                                  <span>{accountForm.phone || 'Your number has been verified'}</span>
-                                  <CheckCircle size={14} style={{ color: C.success, flexShrink: 0 }} />
-                                </div>
-                            ) : (
-                                <div className="desktop-field relative">
-                                  <input type="tel" value={accountForm.phone}
-                                         onChange={e => setAccountForm({ ...accountForm, phone: e.target.value })}
-                                         placeholder="+[country code] your number — e.g. +233XXXXXXXXX"
-                                         className={inputCls} style={{ ...inputStyle(), paddingRight: 36 }} />
-                                  <Edit3 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.g400 }} />
-                                </div>
-                            )}
-                            {phoneVerified || phoneStep === 'done' ?
-                                <p className="text-xs mt-1 flex items-center gap-1" style={{ color: C.g400 }}><Lock size={9} />Phone number locked after verification.</p> :
-                                <p className="text-xs mt-1" style={{ color: C.g400 }}>Go to the Verification tab to verify your phone number instantly.</p>}
+                            {/* Pencil opens the NoOnes-style change modal
+                                (searchable country picker + 24h lock warning). */}
+                            <div className="desktop-field px-4 py-2.5 border rounded-lg text-sm font-medium flex items-center justify-between"
+                                 style={{ borderColor: '#DCFCE7', backgroundColor: C.g50, color: C.g700 }}>
+                              <span>{accountForm.phone || '—'}</span>
+                              <button type="button" onClick={() => { setPhoneDraft(''); setCountrySearch(''); setCountryListOpen(false); setPhoneModalOpen(true); }}
+                                      aria-label="Change phone number" className="flex-shrink-0 hover:opacity-75 transition-opacity"
+                                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                                <Edit3 size={14} style={{ color: C.g700 }} />
+                              </button>
+                            </div>
+                            <p className="text-xs mt-1" style={{ color: C.g400 }}>Changing your phone triggers a 24-hour withdrawal lock.</p>
                           </div>
 
-                          {/* Location */}
-                          {(() => {
-                            const locationLocked = kycVerified || !!(user?.is_id_verified || user?.kyc_verified || user?.kyc_status === 'approved');
-                            return (
-                                <div>
-                                  <label className={`${labelCls} desktop-field-label`} style={{ display: 'flex', alignItems: 'center', gap: 5, color: C.g500, marginBottom: 2 }}>
-                                    Location {locationLocked && <Lock size={11} style={{ color: C.g400 }} />}
-                                  </label>
-                                  {locationLocked ? (
-                                      <div className="desktop-field px-4 py-2.5 border rounded-xl text-sm font-medium flex items-center justify-between"
-                                           style={{ borderColor: C.g200, backgroundColor: C.g50, color: C.g500 }}>
-                                        <span>{accountForm.location || '—'}</span>
-                                        <Lock size={13} style={{ color: C.g400 }} />
-                                      </div>
-                                  ) : (
-                                      <div className="desktop-field relative">
-                                        <input type="text" value={accountForm.location}
-                                               onChange={e => setAccountForm({ ...accountForm, location: e.target.value })}
-                                               placeholder="e.g. Accra, Ghana"
-                                               className={inputCls} style={{ ...inputStyle(), paddingRight: 36 }} />
-                                        <Edit3 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.g400 }} />
-                                      </div>
-                                  )}
-                                  {locationLocked ?
-                                      <p className="text-xs mt-1 flex items-center gap-1" style={{ color: C.g400 }}><Lock size={9} />Location locked after ID verification.</p> :
-                                      <p className="text-xs mt-1" style={{ color: C.g500 }}>ℹ Location will be locked once your ID is verified.</p>
-                                  }
-                                </div>
-                            );
-                          })()}
 
                           <button type="submit" disabled={loading}
                                   className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-bold text-sm hover:opacity-90 disabled:opacity-50"
@@ -2964,6 +3447,120 @@ export default function Settings({ user, setUser }) {
           </div>
         </div>
 
+        {/* ── E-mail change modal (NoOnes parity) ─────────────────────────────── */}
+        {emailModalOpen && (
+            <AccountBottomSheet
+                title="E-mail"
+                onClose={() => { setEmailModalOpen(false); setEmailDraft(''); }}
+                footer={
+                  <>
+                    <button onClick={() => { setEmailModalOpen(false); setEmailDraft(''); }}
+                            className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 transition hover:bg-gray-50"
+                            style={{ borderColor: C.g200, color: C.g600 }}>
+                      Cancel
+                    </button>
+                    <button onClick={handleEmailChange} disabled={emailSaving || !emailDraft.trim()}
+                            className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition hover:opacity-90 disabled:opacity-50"
+                            style={{ backgroundColor: C.green }}>
+                      {emailSaving ? 'Saving…' : 'Continue'}
+                    </button>
+                  </>
+                }>
+              <p className="text-sm mb-4" style={{ color: C.g500 }}>Change your email address on PraQen</p>
+              <input type="email" value={emailDraft}
+                     onChange={e => setEmailDraft(e.target.value)}
+                     onKeyDown={e => { if (e.key === 'Enter' && !emailSaving && emailDraft.trim()) handleEmailChange(); }}
+                     placeholder="Enter new email address"
+                     className="w-full px-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:border-green-500 transition"
+                     style={{ borderColor: C.g200, color: C.g800, backgroundColor: C.g50 }} />
+              <div className="mt-4 p-3 rounded-xl text-xs font-semibold leading-relaxed"
+                   style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
+                Changing your email will temporarily disable wallet withdrawals for 24 hours. Are you sure you want to continue?
+              </div>
+            </AccountBottomSheet>
+        )}
+
+        {/* ── Phone number change modal (NoOnes parity) ───────────────────────── */}
+        {phoneModalOpen && (
+            <AccountBottomSheet
+                title="Phone number"
+                onClose={() => { setPhoneModalOpen(false); setCountryListOpen(false); setPhoneDraft(''); }}
+                footer={
+                  <>
+                    <button onClick={() => { setPhoneModalOpen(false); setCountryListOpen(false); setPhoneDraft(''); }}
+                            className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 transition hover:bg-gray-50"
+                            style={{ borderColor: C.g200, color: C.g600 }}>
+                      Cancel
+                    </button>
+                    <button onClick={handlePhoneChange} disabled={phoneSaving || !phoneDraft.trim()}
+                            className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition hover:opacity-90 disabled:opacity-50"
+                            style={{ backgroundColor: C.green }}>
+                      {phoneSaving ? 'Saving…' : 'Continue'}
+                    </button>
+                  </>
+                }>
+              <p className="text-sm mb-4" style={{ color: C.g500 }}>Please set your phone number with country code</p>
+
+              {/* Country code selector + phone input */}
+              <div className="flex items-stretch gap-2">
+                <button type="button" onClick={() => setCountryListOpen(o => !o)}
+                        className="flex items-center gap-1.5 px-3 rounded-lg border text-sm font-bold flex-shrink-0"
+                        style={{ borderColor: C.g200, backgroundColor: C.g50, color: C.g800 }}>
+                  <span className="text-base leading-none">{phoneCountry.flag}</span>
+                  <span>{phoneCountry.code}</span>
+                  <ChevronDown size={14} style={{ color: C.g400 }} />
+                </button>
+                <input type="tel" value={phoneDraft}
+                       onChange={e => setPhoneDraft(e.target.value)}
+                       onKeyDown={e => { if (e.key === 'Enter' && !phoneSaving && phoneDraft.trim()) handlePhoneChange(); }}
+                       placeholder="Enter new phone number"
+                       className="min-w-0 flex-1 px-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:border-green-500 transition"
+                       style={{ borderColor: C.g200, color: C.g800, backgroundColor: C.g50 }} />
+              </div>
+
+              {/* Searchable country list (search bar + scrollable flag/name/dial rows) */}
+              {countryListOpen && (
+                  <div className="mt-2 border rounded-xl overflow-hidden" style={{ borderColor: C.g200 }}>
+                    <div className="p-2 border-b" style={{ borderColor: C.g100, backgroundColor: C.g50 }}>
+                      <input type="text" value={countrySearch}
+                             onChange={e => setCountrySearch(e.target.value)}
+                             placeholder="Search country"
+                             className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                             style={{ border: `1px solid ${C.g200}`, color: C.g800, backgroundColor: C.white }} />
+                    </div>
+                    <div style={{ maxHeight: 220, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                      {PHONE_CODES
+                          .filter(c => {
+                            const q = countrySearch.trim().toLowerCase();
+                            return !q || c.name.toLowerCase().includes(q) || c.code.includes(q);
+                          })
+                          .map(c => (
+                              <button key={`${c.name}-${c.code}`} type="button"
+                                      onClick={() => { setPhoneCountry(c); setCountryListOpen(false); setCountrySearch(''); }}
+                                      className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition hover:bg-gray-50"
+                                      style={{ borderBottom: `1px solid ${C.g100}` }}>
+                                <span className="text-lg leading-none">{c.flag}</span>
+                                <span className="flex-1 min-w-0 truncate text-sm font-semibold" style={{ color: C.g800 }}>{c.name}</span>
+                                <span className="text-sm font-bold" style={{ color: C.g500 }}>{c.code}</span>
+                              </button>
+                          ))}
+                      {PHONE_CODES.filter(c => {
+                        const q = countrySearch.trim().toLowerCase();
+                        return !q || c.name.toLowerCase().includes(q) || c.code.includes(q);
+                      }).length === 0 && (
+                          <p className="px-3 py-4 text-sm text-center" style={{ color: C.g400 }}>No countries found</p>
+                      )}
+                    </div>
+                  </div>
+              )}
+
+              <div className="mt-4 p-3 rounded-xl text-xs font-semibold leading-relaxed"
+                   style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
+                Changing your phone will temporarily disable wallet withdrawals for 24 hours. Are you sure you want to continue?
+              </div>
+            </AccountBottomSheet>
+        )}
+
         {/* Logout Confirm Modal */}
         {logoutConfirm && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
@@ -3050,11 +3647,11 @@ export default function Settings({ user, setUser }) {
             <>
               {/* Backdrop */}
               <div onClick={() => setMobileMenuOpen(false)}
-                   style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 998 }} />
+                   style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 10000 }} />
               {/* Sheet */}
               <div style={{
                 position: 'fixed', bottom: 0, left: 0, right: 0,
-                background: '#fff', zIndex: 999,
+                background: '#fff', zIndex: 10001,
                 borderRadius: '20px 20px 0 0',
                 maxHeight: '85vh', overflowY: 'auto',
                 paddingBottom: 'env(safe-area-inset-bottom, 16px)',
@@ -3080,8 +3677,8 @@ export default function Settings({ user, setUser }) {
                 </div>
                 {/* Tab items */}
                 <div style={{ padding: '0 12px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {TABS.map(({ id, icon: Icon, label }) => (
-                      <button key={id} onClick={() => { setActiveTab(id); setMobileMenuOpen(false); }}
+                  {TABS.map(({ id, icon: Icon, label, route }) => (
+                      <button key={id} onClick={() => { setMobileMenuOpen(false); if (route) { navigate(route); } else { setActiveTab(id); } }}
                               style={{
                                 width: '100%', display: 'flex', alignItems: 'center', gap: 12,
                                 padding: '12px 16px', borderRadius: 12, border: 'none',

@@ -2956,6 +2956,7 @@ export default function WalletPage({ user }) {
   const [selectedTx,       setSelectedTx]       = useState(null);
   const [displayCurrency,  setDisplayCurrency]  = useState(localStorage.getItem('praqen_currency') || 'USD');
   const [userVerif,        setUserVerif]        = useState(null);
+  const [withdrawalLockedUntil, setWithdrawalLockedUntil] = useState(null); // 24h lock after email/phone change
   const [activityFilter,   setActivityFilter]   = useState('All');
   const [filterOpen,       setFilterOpen]       = useState(false);
   const [tradeParties,     setTradeParties]     = useState({});
@@ -3057,6 +3058,7 @@ export default function WalletPage({ user }) {
           phone: !!(profile.is_phone_verified  || profile.phone_verified),
           kyc:   !!(profile.is_id_verified     || profile.kyc_verified),
         });
+        setWithdrawalLockedUntil(profile.withdrawal_locked_until || null);
       })
       .catch(() => {
         const saved = localStorage.getItem('praqen_currency');
@@ -3358,6 +3360,16 @@ export default function WalletPage({ user }) {
     // Receiving is always fine — only outbound movement (send/transfer) is locked for a banned account.
     if (type !== 'receive' && user?.account_status === 'banned') {
       toast.error('Your account is banned — sending and transfers are disabled. Contact support@praqen.com.');
+      return;
+    }
+    // 24-hour withdrawal lock after changing email or phone (NoOnes behavior).
+    // Only external withdrawals are blocked — internal transfers and receiving are not
+    // (matches the backend, which enforces the lock on the on-chain send paths only).
+    if (type === 'send' && withdrawalLockedUntil && new Date(withdrawalLockedUntil) > new Date()) {
+      const remaining = new Date(withdrawalLockedUntil) - Date.now();
+      const hrs = Math.floor(remaining / 3600000);
+      const mins = Math.floor((remaining % 3600000) / 60000);
+      toast.error(`Withdrawals are temporarily disabled for 24 hours after changing your email or phone number. Try again in ${hrs}h ${mins}m.`, { autoClose: 8000 });
       return;
     }
     if (asset === 'USDT' && !usdtData) loadUsdtWallet();
