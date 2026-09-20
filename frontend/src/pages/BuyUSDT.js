@@ -17,7 +17,6 @@ import CountryFlag, { resolveCode } from '../components/CountryFlag';
 import { BadgeChip, BADGE_COLORS } from '../lib/badge';
 import ActiveTradeCard from '../components/ActiveTradeCard';
 import PRQFooter from '../components/PRQFooter';
-import WeeklyStarsSection from '../components/WeeklyStarsSection';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -1392,9 +1391,6 @@ export default function BuyUSDT({user}) {
       )}
 
 
-
-      {/* PRAQEN Weekly Stars — admin-selected recognition */}
-      <WeeklyStarsSection />
 
       {/* ── Inline active trade cards ── */}
       {activeTrades.length > 0 && (
