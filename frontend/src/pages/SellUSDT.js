@@ -16,6 +16,7 @@ import CountryFlag, { resolveCode } from '../components/CountryFlag';
 import { BadgeChip } from '../lib/badge';
 import ActiveTradeCard from '../components/ActiveTradeCard';
 import PRQFooter from '../components/PRQFooter';
+import WeeklyStarsSection from '../components/WeeklyStarsSection';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -835,7 +836,6 @@ export default function SellUSDT({user}) {
   const [showPayment,   setShowPayment]   = useState(false);
   const [showAllCryptoMenu, setShowAllCryptoMenu] = useState(false);
   const [selectedCrypto, setSelectedCrypto] = useState(() => location.state?.selectedCrypto || null);
-  const [showSortMenu, setShowSortMenu] = useState(false);
   const [sortBy,       setSortBy]       = useState('rate_high');
   const [modal,        setModal]        = useState(null);
   const [sellAmt,      setSellAmt]      = useState('');
@@ -849,7 +849,6 @@ export default function SellUSDT({user}) {
   const currencyRef = useRef(null);
   const countryRef  = useRef(null);
   const paymentRef  = useRef(null);
-  const sortRef     = useRef(null);
 
   const usdtPrice = 1;
 
@@ -923,7 +922,6 @@ export default function SellUSDT({user}) {
       if (currencyRef.current && !currencyRef.current.contains(e.target)){setShowCurrency(false);setCurrencySearch('');}
       if (countryRef.current && !countryRef.current.contains(e.target)){setShowCountry(false);setCountrySearch('');}
       if (paymentRef.current && !paymentRef.current.contains(e.target)){setShowPayment(false);setPaymentSearch('');}
-      if (sortRef.current && !sortRef.current.contains(e.target)){setShowSortMenu(false);}
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
@@ -1227,74 +1225,6 @@ export default function SellUSDT({user}) {
 
 
 
-      {/* ══ 4. NOONES PAYMENT METHOD MODAL (WITH FULL PRAQEN PAYMENT OPTIONS) ════════════════════════════════════ */}
-      {showPayment && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex justify-end">
-          <div className="w-full max-w-md bg-white h-full flex flex-col justify-between p-4 overflow-y-auto">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b pb-3" style={{borderColor:C.g200}}>
-                <h3 className="text-lg font-black text-gray-900">Payment methods</h3>
-                <button onClick={() => setShowPayment(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500">
-                  <X size={18} />
-                </button>
-              </div>
-
-              <input
-                type="text"
-                placeholder="Search payment method…"
-                value={paymentSearch}
-                onChange={e => setPaymentSearch(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-gray-100 text-xs font-bold focus:outline-none"
-              />
-
-              <div className="space-y-2">
-                <p className="text-xs font-black text-gray-800">Most popular</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { label: 'All Methods', val: 'all' },
-                    { label: 'MTN Mobile Money', val: 'mtn' },
-                    { label: 'Vodafone Cash', val: 'vodafone' },
-                    { label: 'M-Pesa', val: 'mpesa' },
-                    { label: 'Bank Transfer', val: 'bank transfer' }
-                  ].map((m, i) => (
-                    <button
-                      key={i}
-                      onClick={() => { setSelPayment(m.val); setShowPayment(false); }}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${selPayment === m.val ? 'text-white' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
-                      style={{backgroundColor: selPayment === m.val ? '#D97706' : ''}}>
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-1 overflow-y-auto max-h-[60vh]">
-                {(() => {
-                  const q = paymentSearch.toLowerCase();
-                  let lastCat = null;
-                  return PAYMENT_OPTIONS.filter(p => !q || p.label.toLowerCase().includes(q) || p.value.toLowerCase().includes(q)).map((p, idx) => {
-                    const catHeader = !q && p.cat && p.cat !== lastCat ? (lastCat = p.cat, (
-                      <div key={`h-${p.cat}`} className="px-2 py-1 mt-2 mb-1" style={{backgroundColor:'#F8FAFC'}}>
-                        <span className="text-[10px] font-black uppercase tracking-wider" style={{color:PM_CAT_COLORS[p.cat]||C.g500}}>{p.cat}</span>
-                      </div>
-                    )) : (lastCat = p.cat || lastCat, null);
-                    return [catHeader, (
-                      <button key={p.value} onClick={() => { setSelPayment(p.value); setShowPayment(false); setPaymentSearch(''); }}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 transition"
-                        style={{backgroundColor: selPayment === p.value ? 'rgba(217,119,6,0.06)' : 'transparent', border: selPayment === p.value ? '1px solid #D97706' : '1px solid transparent'}}>
-                        <span className="text-xl flex-shrink-0">{p.icon}</span>
-                        <span className="flex-1 text-left font-bold text-xs" style={{color: selPayment === p.value ? '#D97706' : C.g800}}>{p.label}</span>
-                        {selPayment === p.value && <CheckCircle size={14} style={{color:'#D97706'}}/>}
-                      </button>
-                    )];
-                  });
-                })()}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Country Picker Modal */}
       {showCountry && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center">
@@ -1337,35 +1267,8 @@ export default function SellUSDT({user}) {
         </div>
       )}
 
-      {/* Currency Picker Modal */}
-      {showCurrency && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center">
-          <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b" style={{borderColor:'#E2E8F0'}}>
-              <h3 className="text-base font-black text-gray-900">Select Currency</h3>
-              <button onClick={() => setShowCurrency(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"><X size={16}/></button>
-            </div>
-            <div className="p-3 border-b" style={{borderColor:'#F1F5F9'}}>
-              <input type="text" placeholder="🔍 Search currency…" value={currencySearch} onChange={e=>setCurrencySearch(e.target.value)} autoFocus
-                className="w-full px-3 py-2 rounded-xl border font-semibold focus:outline-none" style={{borderColor:'#E2E8F0',fontSize:'16px'}}/>
-            </div>
-            <div className="overflow-y-auto flex-1">
-              {CURRENCIES.filter(c=>!currencySearch||c.code.toLowerCase().includes(currencySearch.toLowerCase())||c.name.toLowerCase().includes(currencySearch.toLowerCase())).map(c=>(
-                <button key={c.code} onClick={()=>{setSelCurrency(c);setShowCurrency(false);setCurrencySearch('');}}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 border-b transition text-left"
-                  style={{borderColor:'#F8FAFC',backgroundColor:selCurrency.code===c.code?'rgba(217,119,6,0.06)':'transparent'}}>
-                  <span className="text-base font-black text-gray-500 w-8 text-center flex-shrink-0">{c.symbol}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-sm text-gray-900">{c.code}</p>
-                    <p className="text-xs text-gray-400 truncate">{c.name}</p>
-                  </div>
-                  {selCurrency.code===c.code&&<CheckCircle size={16} className="text-amber-600 flex-shrink-0"/>}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* PRAQEN Weekly Stars — admin-selected recognition */}
+      <WeeklyStarsSection />
 
       {/* ── Inline active trade cards ── */}
       {activeTrades.length > 0 && (
@@ -1665,7 +1568,7 @@ export default function SellUSDT({user}) {
                 <div className="flex flex-wrap gap-1.5">
                   {[
                     { label: 'All Methods', val: 'all' },
-                    { label: 'MTN Mobile Money', val: 'mtn' },
+                    { label: 'MTN Mobile Money', val: 'mtn_momo' },
                     { label: 'Vodafone Cash', val: 'vodafone' },
                     { label: 'M-Pesa', val: 'mpesa' },
                     { label: 'Bank Transfer', val: 'bank transfer' }

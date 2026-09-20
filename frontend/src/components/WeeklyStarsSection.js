@@ -31,7 +31,7 @@ const SLOT_ORDER = ['sell_bitcoin_gh', 'buy_bitcoin_ng', 'gift_card', 'sell_bitc
 function InitialsAvatar({ username }) {
   const letter = (username || '?').charAt(0).toUpperCase();
   return (
-    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 font-black text-white text-sm"
+    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 font-black text-white text-xs"
       style={{ background: FEATURED.btnGradient }}>
       {letter}
     </div>

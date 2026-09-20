@@ -50,20 +50,20 @@ export default function PinnedOfferBanner({ slides, dismissKey, intervalMs = AUT
         onMouseLeave={() => setPaused(false)}
       >
         {/* Header stripe */}
-        <div className="flex items-center justify-between gap-2 px-4 py-2.5" style={{ background: ft.ribbon }}>
-          <span className="text-xs sm:text-sm font-black text-white tracking-wide inline-flex items-center gap-1.5">
-            <span className="relative flex w-2 h-2 flex-shrink-0">
+        <div className="flex items-center justify-between gap-2 px-3 py-1.5" style={{ background: ft.ribbon }}>
+          <span className="text-[11px] font-black text-white tracking-wide inline-flex items-center gap-1.5">
+            <span className="relative flex w-1.5 h-1.5 flex-shrink-0">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-60" />
-              <span className="relative inline-flex rounded-full w-2 h-2 bg-white" />
+              <span className="relative inline-flex rounded-full w-1.5 h-1.5 bg-white" />
             </span>
             {title}{count > 1 ? ` · ${safeIndex + 1}/${count}` : ''}
           </span>
           <button onClick={handleDismiss} className="flex-shrink-0 opacity-70 hover:opacity-100" title="Dismiss">
-            <X size={14} color="#fff" />
+            <X size={12} color="#fff" />
           </button>
         </div>
 
-        {/* Sliding track */}
+        {/* Sliding track — same compact single-row footprint as a market offer card */}
         <div className="overflow-hidden" style={{ backgroundColor: '#fff' }}>
           <div
             className="flex"
@@ -72,53 +72,45 @@ export default function PinnedOfferBanner({ slides, dismissKey, intervalMs = AUT
             {slides.map(s => {
               const sft = s.featured;
               return (
-              <div key={s.id} className="w-full flex-shrink-0 px-3.5 py-3 sm:px-4 sm:py-3.5 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
-                {/* Identity — its own full-width row on phones, left column on sm+ */}
-                <div className="flex items-center gap-2.5 min-w-0 sm:flex-1">
-                  {s.avatar}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                      <span className="font-black text-sm truncate" style={{ color: '#1E293B', maxWidth: '55vw' }}>{s.username || 'Trader'}</span>
-                      {s.verified && <BadgeCheck size={13} style={{ color: '#3B82F6', flexShrink: 0 }} />}
-                      <span className="flex-shrink-0">{s.badgeChip}</span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className="inline-flex items-center gap-0.5 font-bold" style={{ color: '#16A34A', fontSize: 11 }}>
-                        <ThumbsUp size={10} strokeWidth={2.5} />{s.positive ?? 0}
-                      </span>
-                      <span className="inline-flex items-center gap-0.5 font-bold" style={{ color: '#EF4444', fontSize: 11 }}>
-                        <ThumbsDown size={10} strokeWidth={2.5} />{s.negative ?? 0}
-                      </span>
-                      <span className="inline-flex items-center gap-1 font-semibold" style={{ color: C.g500, fontSize: 11 }}>
-                        <Repeat2 size={10} strokeWidth={2.5} style={{ color: C.g400 }} />{s.trades ?? 0} trades
-                      </span>
-                    </div>
+              <div key={s.id} className="w-full flex-shrink-0 px-3 py-2 flex items-center gap-2.5">
+                {s.avatar}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="font-black text-xs truncate min-w-0" style={{ color: '#1E293B' }}>{s.username || 'Trader'}</span>
+                    {s.verified && <BadgeCheck size={12} style={{ color: '#3B82F6', flexShrink: 0 }} />}
+                    <span className="flex-shrink-0">{s.badgeChip}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                    <span
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black flex-shrink-0 whitespace-nowrap"
+                      style={{ backgroundColor: `${sft.border}14`, color: sft.labelColor, border: `1px solid ${sft.border}40` }}
+                    >
+                      {sft.TagIcon && <sft.TagIcon size={9} strokeWidth={2.5} />}
+                      {sft.tag}
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 font-bold" style={{ color: '#16A34A', fontSize: 10 }}>
+                      <ThumbsUp size={9} strokeWidth={2.5} />{s.positive ?? 0}
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 font-bold" style={{ color: '#EF4444', fontSize: 10 }}>
+                      <ThumbsDown size={9} strokeWidth={2.5} />{s.negative ?? 0}
+                    </span>
+                    <span className="inline-flex items-center gap-1 font-semibold" style={{ color: C.g500, fontSize: 10 }}>
+                      <Repeat2 size={9} strokeWidth={2.5} style={{ color: C.g400 }} />{s.trades ?? 0}
+                    </span>
                     {s.volumeLabel && (
-                      <div className="mt-0.5 font-black truncate" style={{ color: sft.labelColor, fontSize: 11 }}>
-                        Volume: {s.volumeLabel}
-                      </div>
+                      <span className="font-black truncate" style={{ color: sft.labelColor, fontSize: 10 }}>{s.volumeLabel}</span>
                     )}
                   </div>
                 </div>
 
-                {/* Featured tag — own row on phones so it never squeezes the identity block */}
-                <span
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black flex-shrink-0 whitespace-nowrap w-fit"
-                  style={{ backgroundColor: `${sft.border}14`, color: sft.labelColor, border: `1px solid ${sft.border}40` }}
-                >
-                  {sft.TagIcon && <sft.TagIcon size={11} strokeWidth={2.5} />}
-                  {sft.tag}
-                </span>
-
-                {/* Rate + CTA — spread edge-to-edge on phones (full-width tap target), tight on sm+ */}
-                <div className="flex items-center justify-between gap-2 sm:justify-end sm:flex-shrink-0">
-                  <span className="text-xs font-bold" style={{ color: C.g500 }}>{s.rateLabel}</span>
+                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                  <span className="text-[10px] font-bold hidden sm:inline" style={{ color: C.g500 }}>{s.rateLabel}</span>
                   <button
                     onClick={s.onClick}
-                    className="inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-xs font-black text-white flex-shrink-0"
+                    className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-black text-white flex-shrink-0"
                     style={{ background: sft.btnGradient }}
                   >
-                    {s.actionLabel || 'View Offer'} <ArrowRight size={12} />
+                    {s.actionLabel || 'View'} <ArrowRight size={10} />
                   </button>
                 </div>
               </div>
@@ -129,7 +121,7 @@ export default function PinnedOfferBanner({ slides, dismissKey, intervalMs = AUT
 
         {/* Dots + manual nav — only worth showing when there's more than one slide */}
         {count > 1 && (
-          <div className="flex items-center justify-center gap-3 py-2 border-t" style={{ borderColor: C.g200, backgroundColor: '#F8FAFC' }}>
+          <div className="flex items-center justify-center gap-3 py-1 border-t" style={{ borderColor: C.g200, backgroundColor: '#F8FAFC' }}>
             <button onClick={() => setIndex(i => (i - 1 + count) % count)} className="p-1 rounded-full hover:bg-gray-200 transition">
               <ChevronLeft size={14} style={{ color: C.g500 }} />
             </button>

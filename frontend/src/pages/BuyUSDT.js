@@ -17,6 +17,7 @@ import CountryFlag, { resolveCode } from '../components/CountryFlag';
 import { BadgeChip, BADGE_COLORS } from '../lib/badge';
 import ActiveTradeCard from '../components/ActiveTradeCard';
 import PRQFooter from '../components/PRQFooter';
+import WeeklyStarsSection from '../components/WeeklyStarsSection';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -918,7 +919,6 @@ export default function BuyUSDT({user}) {
   const [showPayment,   setShowPayment]   = useState(false);
   const [showAllCryptoMenu, setShowAllCryptoMenu] = useState(false);
   const [selectedCrypto, setSelectedCrypto] = useState(() => location.state?.selectedCrypto || null);
-  const [showSortMenu, setShowSortMenu] = useState(false);
   const [sortBy,       setSortBy]       = useState('rate_low');
   const [modal,        setModal]        = useState(null);
   const [liked,        setLiked]        = useState(new Set());
@@ -944,7 +944,6 @@ export default function BuyUSDT({user}) {
   const currencyRef = useRef(null);
   const countryRef  = useRef(null);
   const paymentRef  = useRef(null);
-  const sortRef     = useRef(null);
 
   const userBtcBalance = parseFloat(user?.btc_balance || 0);
   const [userUsdtBalance, setUserUsdtBalance] = useState(0);
@@ -1030,7 +1029,6 @@ export default function BuyUSDT({user}) {
       if (currencyRef.current && !currencyRef.current.contains(e.target)) { setShowCurrency(false); setCurrencySearch(''); }
       if (countryRef.current && !countryRef.current.contains(e.target)) { setShowCountry(false); setCountrySearch(''); }
       if (paymentRef.current && !paymentRef.current.contains(e.target)) { setShowPayment(false); setPaymentSearch(''); }
-      if (sortRef.current && !sortRef.current.contains(e.target)) { setShowSortMenu(false); }
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
@@ -1395,6 +1393,9 @@ export default function BuyUSDT({user}) {
 
 
 
+      {/* PRAQEN Weekly Stars — admin-selected recognition */}
+      <WeeklyStarsSection />
+
       {/* ── Inline active trade cards ── */}
       {activeTrades.length > 0 && (
         <div className="px-3 mb-2 max-w-7xl mx-auto w-full">
@@ -1735,6 +1736,61 @@ export default function BuyUSDT({user}) {
         </div>
       )}
 
+      {/* ══ 6. NOONES COUNTRY MODAL ════════════════════════════════════ */}
+      {showCountry && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-2xl max-h-[80vh] flex flex-col p-4 overflow-y-auto">
+            <div className="flex items-center justify-between border-b pb-3 mb-4" style={{borderColor:C.g200}}>
+              <h3 className="text-lg font-black text-gray-900">Country</h3>
+              <button onClick={() => setShowCountry(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition">
+                <X size={18} />
+              </button>
+            </div>
+            <input
+              type="text"
+              placeholder="Search..."
+              value={countrySearch}
+              onChange={e => setCountrySearch(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-gray-100 text-sm font-bold focus:outline-none mb-4"
+            />
+            <div className="space-y-1 flex-1 overflow-y-auto">
+              {(() => {
+                const q = countrySearch.toLowerCase();
+                const filteredC = COUNTRIES.filter(c => !q || c.name.toLowerCase().includes(q));
+                let lastReg = null;
+                return filteredC.map((c, idx) => {
+                  const regHdr = !q && c.region && c.region !== lastReg
+                    ? (lastReg = c.region, (
+                      <div key={`r-${c.region}`} className="px-1 py-1.5 mt-2 first:mt-0">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-gray-400">{c.region}</span>
+                      </div>
+                    ))
+                    : (c.region && (lastReg = c.region), null);
+                  return [regHdr,
+                    <button
+                      key={c.code}
+                      onClick={() => {
+                        setSelCountry(c);
+                        setShowCountry(false);
+                        setCountrySearch('');
+                        if (c.currency) { const matched = CURRENCIES.find(curr => curr.code === c.currency); if (matched) setSelCurrency(matched); }
+                      }}
+                      className={`w-full flex items-center justify-between p-3 rounded-xl text-xs font-bold border-b transition ${selCountry.code === c.code ? 'bg-emerald-50 text-emerald-700' : 'hover:bg-gray-50 text-gray-800'}`}
+                      style={{borderColor:C.g100}}>
+                      <div className="flex items-center gap-3">
+                        <span className="text-base flex-shrink-0">{c.flag}</span>
+                        <span className="text-sm font-black text-gray-800">{c.name}</span>
+                      </div>
+                      {selCountry.code === c.code && <CheckCircle size={16} className="text-emerald-600" />}
+                    </button>
+                  ];
+                });
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ══ 4. NOONES PAYMENT METHOD MODAL (WITH FULL PRAQEN PAYMENT OPTIONS) ════════════════════════════════════ */}
       {showPayment && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
@@ -1760,7 +1816,7 @@ export default function BuyUSDT({user}) {
                 <div className="flex flex-wrap gap-1.5">
                   {[
                     { label: 'All Methods', val: 'all' },
-                    { label: 'MTN Mobile Money', val: 'mtn' },
+                    { label: 'MTN Mobile Money', val: 'mtn_momo' },
                     { label: 'Vodafone Cash', val: 'vodafone' },
                     { label: 'M-Pesa', val: 'mpesa' },
                     { label: 'Bank Transfer', val: 'bank transfer' }
