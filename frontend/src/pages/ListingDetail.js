@@ -352,7 +352,7 @@ const loadAll = useCallback(async (isBackground = false) => {
   // receiver (the buying side) gets the FULL amount.
   //   • visitor buying  → YOU RECEIVE = btcGross (full)
   //   • visitor selling → YOU PAY     = btcGross + fee
-  const previewFeeRate = isGiftCard ? 0.01 : 0.005;
+  const previewFeeRate = isGiftCard ? 0.03 : 0.02;
   const previewFee     = btcGross * previewFeeRate;
   const btcAfterFee    = isVisitorSelling ? (btcGross + previewFee) : btcGross;
 
@@ -415,7 +415,7 @@ const loadAll = useCallback(async (isBackground = false) => {
       }
 
       // Submit the GROSS BTC amount — no fee pre-deduction here. The platform
-      // fee (0.5% Buy/Sell, 1% gift cards) is applied exactly once, at release,
+      // fee (2% Buy/Sell, 3% gift cards) is applied exactly once, at release,
       // by tradeEscrowService.js. Regular Buy/Sell trades get this value
       // re-verified server-side anyway, but gift card trades use it as-is, so
       // deducting a fee here as well used to double-charge gift card trades.
@@ -838,7 +838,7 @@ const loadAll = useCallback(async (isBackground = false) => {
                             fontWeight: 700, fontSize: 12, color: active ? C.forest : C.g600,
                             transition: 'all 0.15s',
                           }}>
-                          <span style={{ fontSize: 16 }}>{rc.flag}</span>
+                          <span style={{ fontSize: 16 }}>{typeof rc.flag === 'string' ? rc.flag : '🌐'}</span>
                           <span>{rc.region}</span>
                           <span style={{ fontWeight: 900, fontSize: 11, color: active ? C.mint : C.g400 }}>{rc.symbol} {rc.currency}</span>
                         </button>

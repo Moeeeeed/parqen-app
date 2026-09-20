@@ -4,6 +4,7 @@
 // ============================================
 
 const axios = require('axios');
+const tronConfig = require('./tronConfig');
 
 // Configuration - REDUCED FREQUENCY
 const MONITOR_INTERVAL = 600000; // 10 minutes (was 5 min)
@@ -12,12 +13,10 @@ const BATCH_DELAY = 2000; // 2 seconds between batches
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 5000; // 5 seconds
 
-// Provider with API key support
-const TRONGRID_API_KEY = process.env.TRONGRID_API_KEY || '';
-const TRONGRID_URL = 'https://api.trongrid.io';
-
-// USDT Contract (TRC20)
-const USDT_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+// Provider & Contract configuration from tronConfig
+const TRONGRID_API_KEY = tronConfig.trongridApiKey;
+const TRONGRID_URL = tronConfig.trongridUrl;
+const USDT_CONTRACT = tronConfig.usdtContract;
 
 // In-memory cache to reduce API calls
 const balanceCache = new Map();

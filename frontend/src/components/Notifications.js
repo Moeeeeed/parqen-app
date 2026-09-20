@@ -1132,6 +1132,19 @@ export default function Notifications({ user }) {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  // ── External "open notifications" requests (e.g. dashboard news card "View more") ──
+  // Any component can dispatch window event 'praqen:open-notifications' to open
+  // this panel, keeping all notification content in one place.
+  useEffect(() => {
+    const onOpenRequest = () => {
+      setShowDrop(true);
+      load();
+    };
+    window.addEventListener('praqen:open-notifications', onOpenRequest);
+    return () => window.removeEventListener('praqen:open-notifications', onOpenRequest);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Track first user interaction (click/tap) so we can play audio later.
   useEffect(() => {
     const resumeAudio = () => {
@@ -1319,6 +1332,25 @@ export default function Notifications({ user }) {
         if (newUnreadForSound.length > 0) {
           playNotifSound();
           newUnreadForSound.forEach(n => soundPlayedIdsRef.current.add(n.id));
+        }
+
+        // ── Live-refresh the cached user object on verification changes ──────────
+        // Login responses and this component's own user prop are otherwise only
+        // corrected on a full reload or a Settings/Profile visit — an admin
+        // approving KYC while the user is already logged in elsewhere (Wallet,
+        // Trade, etc.) used to leave is_id_verified/kyc_status stale in
+        // localStorage indefinitely. createNotification(..., 'kyc', ...) is the
+        // only place that type is used (server.js /api/admin/kyc/:id/approve and
+        // /reject), so this fires on both approval and rejection.
+        if (freshUnread.some(n => n.type === 'kyc')) {
+          axios.get(`${API_URL}/users/profile`, { headers: hdrs(), timeout: 10000 })
+            .then(r => {
+              const fresh = r.data?.user;
+              if (!fresh) return;
+              localStorage.setItem('user', JSON.stringify(fresh));
+              window.dispatchEvent(new Event('userUpdated'));
+            })
+            .catch(() => { /* next 15s poll or a reload will still pick it up */ });
         }
       }
       seenIdsRef.current = new Set(incoming.map(n => n.id));

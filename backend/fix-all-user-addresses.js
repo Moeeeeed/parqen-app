@@ -23,9 +23,13 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
 
+const tronWallet = require('./services/tronWalletService');
+
 async function fixAllUserAddresses() {
-  console.log('\n🔧 PRAQEN Address Migration — Coinbase CDP → HD Wallet');
+  console.log('\n🔧 PRAQEN Address Synchronization — Mainnet HD Wallet');
   console.log('='.repeat(60));
+
+  tronWallet.initialize();
 
   // 1. Load all users
   const { data: users, error } = await supabaseAdmin
@@ -47,53 +51,64 @@ async function fixAllUserAddresses() {
   for (const user of users) {
     try {
       // Derive the correct HD wallet address for this user
-      const correctAddr = hdWallet.generateUserAddress(user.id).address;
+      const correctBtcAddr = hdWallet.generateUserAddress(user.id).address;
+      const correctTronAddr = tronWallet.generateUserAddress(user.id).address;
 
       // Fetch current stored address from user_wallets
       const { data: walletRow } = await supabaseAdmin
         .from('user_wallets')
-        .select('btc_address, balance_btc, last_onchain_btc')
+        .select('btc_address, tron_address, balance_btc, last_onchain_btc')
         .eq('user_id', user.id)
         .maybeSingle();
 
       const storedWalletAddr  = walletRow?.btc_address || null;
+      const storedTronAddr    = walletRow?.tron_address || null;
       const storedUserAddr    = user.bitcoin_wallet_address || null;
 
-      const walletMatch = storedWalletAddr === correctAddr;
-      const userMatch   = storedUserAddr   === correctAddr;
+      const walletMatch = storedWalletAddr === correctBtcAddr;
+      const tronMatch   = storedTronAddr   === correctTronAddr;
+      const userMatch   = storedUserAddr   === correctBtcAddr;
 
-      if (walletMatch && userMatch) {
-        console.log(`✅ OK       ${(user.username || user.id).padEnd(20)} ${correctAddr.slice(0, 20)}…`);
+      if (walletMatch && tronMatch && userMatch) {
+        console.log(`✅ OK       ${(user.username || user.id).padEnd(20)} BTC: ${correctBtcAddr.slice(0, 16)}… Tron: ${correctTronAddr.slice(0, 16)}…`);
         skipped++;
         continue;
       }
 
-      // Address mismatch — this user has an old Coinbase CDP address
-      console.log(`\n⚠️  MISMATCH ${user.username || user.id}`);
-      if (!walletMatch) console.log(`   user_wallets.btc_address: ${storedWalletAddr || 'NULL'}`);
-      if (!userMatch)   console.log(`   users.bitcoin_wallet_address: ${storedUserAddr || 'NULL'}`);
-      console.log(`   Correct HD address: ${correctAddr}`);
+      console.log(`\n⚠️  SYNCING ${user.username || user.id}`);
+      console.log(`   BTC  : ${storedWalletAddr || 'NULL'} → ${correctBtcAddr}`);
+      console.log(`   TRON : ${storedTronAddr || 'NULL'} → ${correctTronAddr}`);
 
-      // Update both tables
-      const [usersResult, walletResult] = await Promise.all([
+      // Update users, user_wallets, and wallets
+      const updates = [
         supabaseAdmin.from('users').update({
-          bitcoin_wallet_address: correctAddr,
+          bitcoin_wallet_address: correctBtcAddr,
           updated_at: new Date().toISOString(),
         }).eq('id', user.id),
 
         supabaseAdmin.from('user_wallets').upsert({
-          user_id:     user.id,
-          btc_address: correctAddr,
-          balance_btc: parseFloat(walletRow?.balance_btc || 0),
-          updated_at:  new Date().toISOString(),
+          user_id:      user.id,
+          btc_address:  correctBtcAddr,
+          tron_address: correctTronAddr,
+          network:      'mainnet',
+          balance_btc:  parseFloat(walletRow?.balance_btc || 0),
+          updated_at:   new Date().toISOString(),
         }, { onConflict: 'user_id' }),
-      ]);
 
-      if (usersResult.error || walletResult.error) {
-        console.error(`   ❌ Update failed:`, usersResult.error?.message || walletResult.error?.message);
+        supabaseAdmin.from('wallets').update({
+          address:    correctBtcAddr,
+          updated_at: new Date().toISOString(),
+        }).eq('user_id', user.id)
+      ];
+
+      const results = await Promise.all(updates);
+      const err = results.find(r => r.error)?.error;
+
+      if (err) {
+        console.error(`   ❌ Update failed:`, err.message);
         failed++;
       } else {
-        console.log(`   ✅ Fixed → ${correctAddr}`);
+        console.log(`   ✅ Synced`);
         fixed++;
       }
 

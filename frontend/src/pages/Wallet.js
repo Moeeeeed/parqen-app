@@ -82,11 +82,12 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
     ? parseFloat((parseFloat(usdAmount || 0) / price).toFixed(8))
     : parseFloat(amount || 0);
 
-  // Flat 1.2% withdrawal fee — mirrors backend calcWithdrawalFee()
+  // Flat 2.2% withdrawal fee, additive (added on top of the send amount) —
+  // mirrors backend calcWithdrawalFee(). Changed from deductive 1.2% on 2026-09-17.
   // Use raw USD input when in USD mode to avoid BTC round-trip floating-point boundary errors
   const calcFeeByUsd = (usd) => {
     if (usd <= 0) return { feeUsd: 0, feeBtc: 0, label: '' };
-    return { feeUsd: usd * 0.012, feeBtc: (usd * 0.012) / price, label: '1.2% fee' };
+    return { feeUsd: usd * 0.022, feeBtc: (usd * 0.022) / price, label: '2.2% fee' };
   };
   const calcFee = (btc) => {
     // Round to nearest cent before tier comparison to avoid floating-point boundary mismatches
@@ -100,9 +101,9 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
   const totalUsd  = total * price;
   const hasEnough = total <= parseFloat(balance || 0);
 
-  // Max button: our fee comes out of the balance, not on top of it — find the largest send
-  // amount whose send+fee still fits what's actually in the wallet, so clicking Max never
-  // trips the insufficient-balance check below.
+  // Max button: additive fee model — the fee is added ON TOP of the send amount, so
+  // find the largest send amount whose send+fee still fits what's actually in the
+  // wallet, so clicking Max never trips the insufficient-balance check below.
   const calcMaxSend = () => {
     const bal = parseFloat(balance || 0);
     if (bal <= 0) return 0;
@@ -570,7 +571,7 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
 }
 
 // ─── Receive Modal ─────────────────────────────────────────────────────────────
-function ReceiveModal({ address, network, onClose, onGenerate, checking, onCheckDeposits }) {
+function ReceiveModal({ address, network, onClose, onGenerate, checking, scanCooldown = 0, onCheckDeposits }) {
   const [copied, setCopied] = useState(false);
 
   const copy = () => {
@@ -578,7 +579,10 @@ function ReceiveModal({ address, network, onClose, onGenerate, checking, onCheck
       .then((ok) => { if (ok) setCopied(true); setTimeout(() => setCopied(false), 3000); });
   };
 
-  const explorerUrl = `https://mempool.space/address/${address}`;
+  const isTestnet = network === 'testnet' || address?.startsWith('tb1') || address?.startsWith('2') || address?.startsWith('m') || address?.startsWith('n');
+  const explorerUrl = isTestnet
+    ? `https://mempool.space/testnet/address/${address}`
+    : `https://mempool.space/address/${address}`;
 
   return (
     <div className="fixed inset-0 z-[1100] flex items-end md:items-center justify-center p-0 md:p-4"
@@ -619,12 +623,12 @@ function ReceiveModal({ address, network, onClose, onGenerate, checking, onCheck
                 {copied ? <><CheckCircle size={15} /> Copied!</> : <><Copy size={15} /> Copy Address</>}
               </button>
 
-              <button onClick={onCheckDeposits} disabled={checking}
-                className="w-full py-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 hover:bg-gray-50 transition"
+              <button onClick={onCheckDeposits} disabled={checking || scanCooldown > 0}
+                className="w-full py-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 hover:bg-gray-50 transition disabled:opacity-50"
                 style={{ borderColor: C.g200, color: C.g600 }}>
                 {checking
                   ? <><RefreshCw size={12} className="animate-spin" /> Checking mempool…</>
-                  : <><Zap size={12} style={{ color: C.gold }} /> Check for New Deposits</>}
+                  : <><Zap size={12} style={{ color: C.gold }} /> {scanCooldown > 0 ? `Scan available in ${scanCooldown}s` : 'Check for New Deposits'}</>}
               </button>
 
               <a href={explorerUrl} target="_blank" rel="noopener noreferrer"
@@ -1662,7 +1666,7 @@ function UsdtWithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoF
 
   // Fee = flat 2% of amount, no flat-dollar floor — mirrors backend calcFee()
   // in POST /api/wallet/usdt/send.
-  const FEE_PERCENT = 0.008;
+  const FEE_PERCENT = 0.018;
   const MIN_SEND    = 5.00;
 
   const calcFee = (amt) => parseFloat((amt * FEE_PERCENT).toFixed(2));
@@ -2776,7 +2780,7 @@ function AssetActionSheet({ asset, balanceLabel, usdLabel, onAction, onClose }) 
 }
 
 // ─── USDT Receive Modal ────────────────────────────────────────────────────────
-function UsdtReceiveModal({ address, onClose, checking, scanCooldown, onCheckDeposits }) {
+function UsdtReceiveModal({ address, onClose, checking, scanCooldown, onCheckDeposits, isTestnet, customExplorerUrl, networkName }) {
   const [copied, setCopied] = useState(false);
 
   const copy = () => {
@@ -2784,7 +2788,7 @@ function UsdtReceiveModal({ address, onClose, checking, scanCooldown, onCheckDep
       .then((ok) => { if (ok) setCopied(true); setTimeout(() => setCopied(false), 3000); });
   };
 
-  const explorerUrl = `https://tronscan.org/#/address/${address}`;
+  const explorerUrl = customExplorerUrl || (isTestnet ? `https://nile.tronscan.org/#/address/${address}` : `https://tronscan.org/#/address/${address}`);
 
   return (
     <div className="fixed inset-0 z-[1100] flex items-end md:items-center justify-center p-0 md:p-4"
@@ -2795,7 +2799,14 @@ function UsdtReceiveModal({ address, onClose, checking, scanCooldown, onCheckDep
             <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#26A17B15' }}>
               <ArrowDownLeft size={15} style={{ color: '#26A17B' }} />
             </div>
-            <h2 className="font-black text-sm" style={{ color: C.g800 }}>Deposit USDT</h2>
+            <div>
+              <h2 className="font-black text-sm" style={{ color: C.g800 }}>Deposit USDT</h2>
+              {isTestnet && (
+                <span className="inline-block text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800">
+                  Nile Testnet
+                </span>
+              )}
+            </div>
           </div>
           <button onClick={onClose} className="w-7 h-7 rounded-xl flex items-center justify-center hover:bg-gray-100">
             <X size={14} style={{ color: C.g500 }} />
@@ -2803,7 +2814,11 @@ function UsdtReceiveModal({ address, onClose, checking, scanCooldown, onCheckDep
         </div>
 
         <div className="p-5 space-y-4">
-          <p className="text-xs text-gray-500">Send USDT (TRC-20) to your Tron address. Credited after network confirmation.</p>
+          <p className="text-xs text-gray-500">
+            {isTestnet
+              ? 'Send Testnet USDT (Nile TRC-20) to your test address. Get free test coins from the Nile faucet.'
+              : 'Send USDT (TRC-20) to your Tron address. Credited after network confirmation.'}
+          </p>
 
           {address ? (
             <div className="flex justify-center p-4 rounded-xl border" style={{ borderColor: C.g200, backgroundColor: '#fff' }}>
@@ -2817,7 +2832,9 @@ function UsdtReceiveModal({ address, onClose, checking, scanCooldown, onCheckDep
           )}
 
           <div>
-            <label className="block text-xs font-bold mb-1.5 text-gray-600">Your Tron (USDT-TRC20) Address</label>
+            <label className="block text-xs font-bold mb-1.5 text-gray-600">
+              {isTestnet ? 'Your Tron Nile (Testnet TRC20) Address' : 'Your Tron (USDT-TRC20) Address'}
+            </label>
             <div className="p-3 rounded-xl border font-mono text-xs break-all"
               style={{ borderColor: C.g200, backgroundColor: C.g50, color: C.g700 }}>
               {address || 'Loading…'}
@@ -2844,14 +2861,16 @@ function UsdtReceiveModal({ address, onClose, checking, scanCooldown, onCheckDep
             <a href={explorerUrl} target="_blank" rel="noopener noreferrer"
               className="w-full py-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 hover:bg-gray-50"
               style={{ borderColor: C.g200, color: C.g600 }}>
-              View on Tronscan Explorer ↗
+              {isTestnet ? 'View on Nile Tronscan Explorer ↗' : 'View on Tronscan Explorer ↗'}
             </a>
           )}
 
-          <div className="flex items-start gap-2 p-3 rounded-xl" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
-            <AlertTriangle size={12} style={{ color: '#d97706', flexShrink: 0, marginTop: 1 }} />
-            <p className="text-xs font-semibold" style={{ color: '#92400e' }}>
-              Only send <strong>USDT TRC-20</strong> to this address. Other coins or networks will be lost permanently.
+          <div className="flex items-start gap-2 p-3 rounded-xl" style={{ backgroundColor: isTestnet ? '#EFF6FF' : '#FFFBEB', border: isTestnet ? '1px solid #BFDBFE' : '1px solid #FDE68A' }}>
+            <AlertTriangle size={12} style={{ color: isTestnet ? '#2563EB' : '#d97706', flexShrink: 0, marginTop: 1 }} />
+            <p className="text-xs font-semibold" style={{ color: isTestnet ? '#1E40AF' : '#92400e' }}>
+              {isTestnet
+                ? <span><strong>Nile Testnet Mode:</strong> Only send test TRC-20 USDT. Do not send real mainnet USDT.</span>
+                : <span>Only send <strong>USDT TRC-20</strong> to this address. Other coins or networks will be lost permanently.</span>}
             </p>
           </div>
         </div>
@@ -2937,6 +2956,7 @@ export default function WalletPage({ user }) {
   const [selectedTx,       setSelectedTx]       = useState(null);
   const [displayCurrency,  setDisplayCurrency]  = useState(localStorage.getItem('praqen_currency') || 'USD');
   const [userVerif,        setUserVerif]        = useState(null);
+  const [withdrawalLockedUntil, setWithdrawalLockedUntil] = useState(null); // 24h lock after email/phone change
   const [activityFilter,   setActivityFilter]   = useState('All');
   const [filterOpen,       setFilterOpen]       = useState(false);
   const [tradeParties,     setTradeParties]     = useState({});
@@ -2957,7 +2977,7 @@ export default function WalletPage({ user }) {
   });
 
   // USDT + Swap state — SWAP_FEE_PERCENT mirrors backend swapService.js
-  const SWAP_FEE_PERCENT = 0.004; // 0.4%
+  const SWAP_FEE_PERCENT = 0.01; // 1%
   const [activeCoin,    setActiveCoin]    = useState('BTC');
   const [usdtData,      setUsdtData]      = useState(null);
   const [swapRate,      setSwapRate]      = useState(null);
@@ -2975,9 +2995,10 @@ export default function WalletPage({ user }) {
   const [swapUsdAmount, setSwapUsdAmount] = useState('');
   const [swapping,      setSwapping]      = useState(false);
   const [swapReceipt,   setSwapReceipt]   = useState(null); // last completed swap — shown in a persistent receipt modal
-  const [checkingUsdt,  setCheckingUsdt]  = useState(false);
-  const [scanCooldown,  setScanCooldown]  = useState(0); // seconds remaining
-  const [loadingUsdt,   setLoadingUsdt]   = useState(false);
+  const [checkingUsdt,    setCheckingUsdt]    = useState(false);
+  const [scanCooldown,    setScanCooldown]    = useState(0); // seconds remaining for USDT
+  const [btcScanCooldown, setBtcScanCooldown] = useState(0); // seconds remaining for BTC
+  const [loadingUsdt,     setLoadingUsdt]     = useState(false);
 
   // Seller security deposit (only relevant to users who've listed gift cards for sale)
   const [depositStatus,   setDepositStatus]   = useState(null);
@@ -3037,6 +3058,7 @@ export default function WalletPage({ user }) {
           phone: !!(profile.is_phone_verified  || profile.phone_verified),
           kyc:   !!(profile.is_id_verified     || profile.kyc_verified),
         });
+        setWithdrawalLockedUntil(profile.withdrawal_locked_until || null);
       })
       .catch(() => {
         const saved = localStorage.getItem('praqen_currency');
@@ -3108,6 +3130,10 @@ export default function WalletPage({ user }) {
         tron_address:        r.data.tron_address,
         balance_usdt:        parseFloat(r.data.balance_usdt        || 0),
         locked_balance_usdt: parseFloat(r.data.locked_balance_usdt || 0),
+        is_testnet:          r.data.is_testnet,
+        network:             r.data.network,
+        explorer_url:        r.data.explorer_url,
+        contract:            r.data.contract,
       });
     } catch {
       // Explicit isActive guard against re-firing under React 18 StrictMode double-invoke,
@@ -3260,13 +3286,22 @@ export default function WalletPage({ user }) {
 
   // ── Check for new deposits ─────────────────────────────────────────────────
   const checkDeposit = async () => {
+    if (btcScanCooldown > 0 || checking) return;
     setChecking(true);
     try {
       const r = await axios.post(`${API_URL}/hd-wallet/check-deposit`, {}, { headers: authH() });
       toast.info(r.data.message || 'Check complete');
       await loadWallet(); // refresh balance after check
+      let secs = 15;
+      setBtcScanCooldown(secs);
+      const tick = setInterval(() => {
+        secs -= 1;
+        setBtcScanCooldown(secs);
+        if (secs <= 0) clearInterval(tick);
+      }, 1000);
     } catch (e) {
-      toast.error('Failed to check deposits');
+      const msg = e.response?.data?.error || 'Failed to check deposits';
+      toast.error(msg);
     } finally { setChecking(false); }
   };
 
@@ -3325,6 +3360,16 @@ export default function WalletPage({ user }) {
     // Receiving is always fine — only outbound movement (send/transfer) is locked for a banned account.
     if (type !== 'receive' && user?.account_status === 'banned') {
       toast.error('Your account is banned — sending and transfers are disabled. Contact support@praqen.com.');
+      return;
+    }
+    // 24-hour withdrawal lock after changing email or phone (NoOnes behavior).
+    // Only external withdrawals are blocked — internal transfers and receiving are not
+    // (matches the backend, which enforces the lock on the on-chain send paths only).
+    if (type === 'send' && withdrawalLockedUntil && new Date(withdrawalLockedUntil) > new Date()) {
+      const remaining = new Date(withdrawalLockedUntil) - Date.now();
+      const hrs = Math.floor(remaining / 3600000);
+      const mins = Math.floor((remaining % 3600000) / 60000);
+      toast.error(`Withdrawals are temporarily disabled for 24 hours after changing your email or phone number. Try again in ${hrs}h ${mins}m.`, { autoClose: 8000 });
       return;
     }
     if (asset === 'USDT' && !usdtData) loadUsdtWallet();
@@ -4116,7 +4161,7 @@ export default function WalletPage({ user }) {
               © {new Date().getFullYear()} PRAQEN. All rights reserved.
             </p>
             <p className="text-xs flex items-center gap-1" style={{ color: 'rgba(255,255,255,0.3)' }}>
-              <Shield size={10} /> Self-Custodial HD Wallet · 0.5% fee on trades
+              <Shield size={10} /> Self-Custodial HD Wallet · 2% fee on trades
             </p>
           </div>
         </div>
@@ -4134,6 +4179,7 @@ export default function WalletPage({ user }) {
           onClose={() => setShowRecv(false)}
           onGenerate={generateAddress}
           checking={checking}
+          scanCooldown={btcScanCooldown}
           onCheckDeposits={checkDeposit}
         />
       )}
@@ -4144,6 +4190,9 @@ export default function WalletPage({ user }) {
           checking={checkingUsdt}
           scanCooldown={scanCooldown}
           onCheckDeposits={checkUsdtDeposit}
+          isTestnet={usdtData?.is_testnet}
+          customExplorerUrl={usdtData?.explorer_url}
+          networkName={usdtData?.network}
         />
       )}
       {assetPicker && (

@@ -76,12 +76,14 @@ async function getLiveBtcPrice() {
     return _btcPriceCache.price; // return last known price rather than hard-coded fallback
 }
 
-// ── Withdrawal fee — flat 1.2% — returns { feeUsd, feeBtc, label } ─────────────
+// ── Withdrawal fee — flat 2.2%, additive (added on top, receiver gets the
+// full requested amount) — returns { feeUsd, feeBtc, label }. Changed from
+// deductive 1.2% on 2026-09-17.
 function calcWithdrawalFee(amountBtc, btcPrice) {
   const amountUsd = Math.round(amountBtc * btcPrice * 100) / 100;
-  const feeUsd = amountUsd * 0.012;
+  const feeUsd = amountUsd * 0.022;
   const feeBtc = parseFloat((feeUsd / btcPrice).toFixed(8));
-  return { feeUsd: parseFloat(feeUsd.toFixed(2)), feeBtc, label: '1.2% fee' };
+  return { feeUsd: parseFloat(feeUsd.toFixed(2)), feeBtc, label: '2.2% fee' };
 }
 
 // ============================================================
@@ -236,13 +238,25 @@ router.get('/wallet', verifyToken, async (req, res) => {
                 .limit(50),
         ]);
 
-        if (walletErr || !walletRow) {
-            console.error(`[Wallet] No wallet row for user ${userId}:`, walletErr?.message);
-            return res.status(404).json({ error: 'Wallet not found for this user' });
+        let activeWallet = walletRow;
+        if (!activeWallet) {
+            console.log(`[Wallet] No wallet row found for user ${userId} — provisioning wallet...`);
+            try {
+                await hdWallet.ensureWalletExists(userId);
+                const { data: newWallet } = await supabaseAdmin
+                    .from('wallets')
+                    .select('balance_btc, locked_balance_btc, balance_usdt, locked_balance_usdt')
+                    .eq('user_id', userId)
+                    .maybeSingle();
+                activeWallet = newWallet || { balance_btc: 0, locked_balance_btc: 0, balance_usdt: 0, locked_balance_usdt: 0 };
+            } catch (wInitErr) {
+                console.warn(`[Wallet] ensureWalletExists fallback:`, wInitErr.message);
+                activeWallet = { balance_btc: 0, locked_balance_btc: 0, balance_usdt: 0, locked_balance_usdt: 0 };
+            }
         }
 
-        const available_btc = parseFloat(walletRow.balance_btc || 0);
-        const locked_btc    = parseFloat(walletRow.locked_balance_btc || 0);
+        const available_btc = parseFloat(activeWallet.balance_btc || 0);
+        const locked_btc    = parseFloat(activeWallet.locked_balance_btc || 0);
         const total_btc     = parseFloat((available_btc + locked_btc).toFixed(8));
         const balance_usd   = parseFloat((total_btc * liveBtcPrice).toFixed(2));
 
@@ -263,8 +277,8 @@ router.get('/wallet', verifyToken, async (req, res) => {
             available_btc,
             locked_btc,
             balance_usd,
-            balance_usdt:        parseFloat(walletRow.balance_usdt || 0),
-            locked_balance_usdt: parseFloat(walletRow.locked_balance_usdt || 0),
+            balance_usdt:        parseFloat(activeWallet?.balance_usdt || 0),
+            locked_balance_usdt: parseFloat(activeWallet?.locked_balance_usdt || 0),
             btc_price:    liveBtcPrice,
             network:      process.env.HD_NETWORK || 'mainnet',
             has_address:  !!address,
@@ -363,6 +377,9 @@ router.get('/balance', verifyToken, async (req, res) => {
   }
 });
 
+// Per-user cooldown map for BTC deposit checks (15 seconds)
+const userBtcScanCooldown = new Map();
+
 // ============================================================
 // POST /api/hd-wallet/check-deposit
 // Manually trigger deposit check for this user
@@ -370,6 +387,14 @@ router.get('/balance', verifyToken, async (req, res) => {
 // ============================================================
 router.post('/check-deposit', verifyToken, async (req, res) => {
   try {
+    const lastScan = userBtcScanCooldown.get(req.userId) || 0;
+    const now = Date.now();
+    if (now - lastScan < 15000) {
+      const remainingSec = Math.ceil((15000 - (now - lastScan)) / 1000);
+      return res.status(429).json({ error: `Please wait ${remainingSec}s before checking again.` });
+    }
+    userBtcScanCooldown.set(req.userId, now);
+
     const result = await depositMonitor.checkAddressNow(req.userId);
 
     // Deposit may have changed balance — re-evaluate offer status (fire and forget)
@@ -586,6 +611,31 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
 
     // ── EXTERNAL SEND — on-chain broadcast ───────────────────────────────────
 
+    // ── Withdrawal lock after email/phone change (NoOnes behavior) ────────────
+    // Internal PRAQEN→PRAQEN transfers are unaffected (they returned above); this
+    // only blocks on-chain withdrawals for 24h after a confirmed contact change.
+    try {
+      const { data: lockRow } = await supabaseAdmin
+        .from('users')
+        .select('withdrawal_locked_until')
+        .eq('id', userId)
+        .single();
+      const lockedUntil = lockRow?.withdrawal_locked_until ? new Date(lockRow.withdrawal_locked_until) : null;
+      if (lockedUntil && lockedUntil > new Date()) {
+        const hrs = Math.ceil((lockedUntil - Date.now()) / 3600000);
+        return res.status(403).json({
+          error: `Withdrawals are temporarily disabled for 24 hours after changing your email or phone number. Try again in about ${hrs} hour(s).`,
+          withdrawalLocked: true,
+          lockedUntil: lockedUntil.toISOString(),
+        });
+      }
+    } catch (lockErr) {
+      // withdrawal_locked_until column may not exist yet (migration not run) — fail open.
+      if (!/does not exist|schema cache/i.test(lockErr.message || '')) {
+        console.warn('[hd-wallet/send] withdrawal lock check failed:', lockErr.message);
+      }
+    }
+
     // ── 2FA: enforce that user has 2FA enabled before sending BTC ──────────
     const { data: sendUser2FA } = await supabaseAdmin
       .from('users')
@@ -635,13 +685,17 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
 
     available = parseFloat(bal?.balance_btc || 0);
 
-    // ── Tiered PRAQEN withdrawal fee ─────────────────────────────────────────
+    // ── Tiered PRAQEN withdrawal fee — additive: the fee is added ON TOP of
+    // the requested amount. The receiver gets the FULL amount requested;
+    // the sender's balance is debited (amount + fee). Changed from
+    // deductive 1.2% -> additive 2.2% on 2026-09-17.
     const liveBtcPrice = await getLiveBtcPrice();
     const feeResult = calcWithdrawalFee(amount, liveBtcPrice);
     platformFee = feeResult.feeBtc;
     platformFeeUsd = feeResult.feeUsd;
     feeLabel = feeResult.label;
-    amountUserReceives = parseFloat((amount - platformFee).toFixed(8));
+    amountUserReceives = amount; // additive — receiver gets the full requested amount, nothing deducted
+    const totalDeduct = parseFloat((amount + platformFee).toFixed(8));
 
     // Bitcoin's dust relay policy rejects any on-chain output below ~546 sats —
     // the network itself will never broadcast one. Nothing upstream of this
@@ -653,21 +707,21 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
     const MIN_ONCHAIN_SEND_SATS = 1000; // safely above the 546-sat dust limit
     if (Math.round(amountUserReceives * 1e8) < MIN_ONCHAIN_SEND_SATS) {
       return res.status(400).json({
-        error: `Withdrawal too small to send on-chain. After the ${feeLabel} fee, ₿${amountUserReceives.toFixed(8)} would be sent — Bitcoin's network minimum is ₿${(MIN_ONCHAIN_SEND_SATS / 1e8).toFixed(8)}. Please withdraw a larger amount.`,
+        error: `Withdrawal too small to send on-chain. ₿${amountUserReceives.toFixed(8)} is below Bitcoin's network minimum of ₿${(MIN_ONCHAIN_SEND_SATS / 1e8).toFixed(8)}. Please withdraw a larger amount.`,
       });
     }
 
-    if (available < amount) {
+    if (available < totalDeduct) {
       return res.status(400).json({
-        error: `Insufficient balance. Available: ₿${available.toFixed(8)}, requested ₿${amount.toFixed(8)} (includes ${feeLabel} = ₿${platformFee.toFixed(8)})`,
+        error: `Insufficient balance. Need ₿${totalDeduct.toFixed(8)} (₿${amount.toFixed(8)} + ${feeLabel} = ₿${platformFee.toFixed(8)}). Available: ₿${available.toFixed(8)}`,
       });
     }
 
     if (amountUserReceives <= 0) {
-      return res.status(400).json({ error: 'Amount too small after fee deduction.' });
+      return res.status(400).json({ error: 'Amount too small.' });
     }
 
-    console.log(`[hdWalletRoutes] On-chain send: ₿${amountUserReceives} (+ ₿${platformFee} ${feeLabel}) from ${userId.slice(0,8)} → ${toAddress}`);
+    console.log(`[hdWalletRoutes] On-chain send: ₿${amountUserReceives} (+ ₿${platformFee} ${feeLabel} added on top) from ${userId.slice(0,8)} → ${toAddress}`);
 
     // ── Deduct BEFORE broadcasting, with an optimistic lock ────────────────────
     // Broadcasting first and deducting only after success (the old order) let two
@@ -675,7 +729,7 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
     // check above, and both broadcast a real on-chain send before either
     // deduction landed — an actual double-spend of hot-wallet funds. Deducting
     // first (and restoring it on any genuine failure below) closes that race.
-    newBalance = parseFloat((available - amount).toFixed(8));
+    newBalance = parseFloat((available - totalDeduct).toFixed(8));
     const { data: deductRows, error: deductErr } = await supabaseAdmin
       .from('wallets')
       .update({ balance_btc: newBalance, updated_at: new Date().toISOString() })
@@ -699,7 +753,7 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
     // withdrawal drifts wallets.balance_btc away from the last escrow/swap-stamped figure
     // and falsely blocks this account's next BTC->USDT swap attempt.
     supabaseAdmin.from('balance_audit').insert({
-      user_id: userId, change_btc: -amount, new_balance: newBalance,
+      user_id: userId, change_btc: -totalDeduct, new_balance: newBalance,
       reason: 'WITHDRAWAL', created_at: new Date().toISOString(),
     }).then(null, e => console.error('[hd-wallet/send] ledger stamp failed:', e.message));
     // Immediately re-check this seller's gift-card listings against their new (lower)

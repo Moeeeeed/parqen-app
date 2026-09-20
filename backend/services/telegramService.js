@@ -17,18 +17,13 @@ const supabaseAdmin = createClient(
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_API = BOT_TOKEN ? `https://api.telegram.org/bot${BOT_TOKEN}` : null;
 
-// ── In-memory linking code store ────────────────────────────────────────────
-// Key: 6-digit code, Value: { userId, expires }
-const linkingCodes = new Map();
+// ── Linking code store ──────────────────────────────────────────────────────
+// Backed by security_action_codes (action='telegram_link') — not an in-memory
+// Map, which loses every pending code on server restart/redeploy between
+// "code generated" and "code sent to bot" (the same class of bug already
+// fixed once in actionCodeService.js / database/security_action_codes.sql).
 const LINK_CODE_EXPIRY = 10 * 60 * 1000; // 10 minutes
-
-// Periodic cleanup of expired codes
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of linkingCodes) {
-    if (v.expires < now) linkingCodes.delete(k);
-  }
-}, 60_000);
+const LINK_ACTION = 'telegram_link';
 
 // ── Rate limiting for Telegram API calls ────────────────────────────────────
 const lastSendTime = new Map(); // chatId -> timestamp
@@ -156,17 +151,25 @@ async function generateLinkingCode(userId) {
 
   // Generate a 6-digit code
   const code = String(Math.floor(100000 + Math.random() * 900000));
-  const expires = Date.now() + LINK_CODE_EXPIRY;
+  const expiresAt = new Date(Date.now() + LINK_CODE_EXPIRY).toISOString();
 
-  // Remove any previous code for this user
-  for (const [k, v] of linkingCodes) {
-    if (v.userId === userId) linkingCodes.delete(k);
+  // Upsert on (user_id, action) — naturally replaces any previous pending code for this user
+  const { error } = await supabaseAdmin.from('security_action_codes').upsert({
+    user_id: userId,
+    action: LINK_ACTION,
+    code,
+    expires_at: expiresAt,
+    created_at: new Date().toISOString(),
+  }, { onConflict: 'user_id,action' });
+
+  if (error) {
+    console.error('[Telegram] Failed to store linking code:', error.message);
+    return { error: 'Failed to generate a linking code. Please try again.' };
   }
 
-  linkingCodes.set(code, { userId, expires });
   console.log(`[Telegram] Linking code ${code} generated for user ${userId.slice(0, 8)}`);
 
-  return { code, expiresAt: new Date(expires).toISOString() };
+  return { code, expiresAt };
 }
 
 // ── Public: verify a linking code sent by the Telegram bot ──────────────────
@@ -175,18 +178,28 @@ async function generateLinkingCode(userId) {
 async function verifyLinkingCode(code, telegramChatId, telegramUsername) {
   const cleaned = String(code).trim();
 
-  const record = linkingCodes.get(cleaned);
+  const { data: record, error: lookupError } = await supabaseAdmin
+    .from('security_action_codes')
+    .select('user_id, expires_at')
+    .eq('action', LINK_ACTION)
+    .eq('code', cleaned)
+    .maybeSingle();
+
+  if (lookupError) {
+    console.error('[Telegram] Linking code lookup failed:', lookupError.message);
+    return { error: 'Could not verify your code right now. Please try again.' };
+  }
   if (!record) {
     return { error: 'Invalid or expired code. Generate a new one from Settings → Notifications.' };
   }
 
-  if (Date.now() > record.expires) {
-    linkingCodes.delete(cleaned);
+  if (Date.now() > Date.parse(record.expires_at)) {
+    await supabaseAdmin.from('security_action_codes').delete().eq('action', LINK_ACTION).eq('code', cleaned);
     return { error: 'This code has expired. Generate a new one from Settings → Notifications.' };
   }
 
-  const { userId } = record;
-  linkingCodes.delete(cleaned);
+  const { user_id: userId } = record;
+  await supabaseAdmin.from('security_action_codes').delete().eq('action', LINK_ACTION).eq('code', cleaned); // single-use
 
   // Save the Telegram chat_id to the user's account
   const { error } = await supabaseAdmin

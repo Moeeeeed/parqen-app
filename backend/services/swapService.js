@@ -14,7 +14,7 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
 
-const SWAP_FEE_RATE     = 0.004; // 0.4% fee
+const SWAP_FEE_RATE     = 0.01; // 1% fee
 const BINANCE_URL       = process.env.BINANCE_API_URL || 'https://api.binance.com/api/v3';
 const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
 
@@ -132,7 +132,13 @@ class SwapService {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (error) throw new Error(`Ledger check failed: ${error.message}`);
+    if (error) {
+      if (error.code === 'PGRST116' || error.message.includes('balance_audit') || error.message.includes('schema cache')) {
+        console.warn('[SwapService] balance_audit table not found in schema — skipping BTC ledger audit check.');
+        return walletBtc;
+      }
+      throw new Error(`Ledger check failed: ${error.message}`);
+    }
     if (!lastAudit) return walletBtc; // no integrity history yet — nothing to check against
 
     const audited = parseFloat(lastAudit.new_balance);
@@ -197,7 +203,13 @@ class SwapService {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (error) throw new Error(`Ledger check failed: ${error.message}`);
+    if (error) {
+      if (error.code === 'PGRST116' || error.message.includes('balance_audit') || error.message.includes('schema cache')) {
+        console.warn('[SwapService] balance_audit table not found in schema — skipping USDT ledger audit check.');
+        return walletUsdt;
+      }
+      throw new Error(`Ledger check failed: ${error.message}`);
+    }
     if (!lastAudit) return walletUsdt; // no USDT integrity history yet — nothing to check against
 
     const audited = parseFloat(lastAudit.new_balance);

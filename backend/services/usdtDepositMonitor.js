@@ -19,6 +19,8 @@ const tronWallet          = require('./tronWalletService');
 const tronHotWallet       = require('./tronHotWallet');
 const emailService        = require('./emailService');            // working transport: Resend → Brevo SMTP (+ email_logs)
 const { isDepositTooOld, MAX_DEPOSIT_AGE_HOURS } = require('./depositAgeGuard'); // containment guard, see depositAgeGuard.js
+const balanceAnomalyMonitor = require('./balanceAnomalyMonitor');
+const tronConfig            = require('./tronConfig');
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -38,7 +40,7 @@ const DUST_THRESHOLD   = 0.01;            // ignore deposits < $0.01 USDT
 
 // ── Email HTML for USDT deposit ───────────────────────────────────────────────
 function depositEmailHtml(username, depositUsdt, newBalance, address) {
-  const explorerUrl = `https://tronscan.org/#/address/${address}`;
+  const explorerUrl = tronConfig.getExplorerAddressUrl(address);
   const year        = new Date().getFullYear();
   return `<!DOCTYPE html>
 <html>
@@ -112,7 +114,8 @@ class USDTDepositMonitor {
     }
     this.isRunning = true;
 
-    console.log(`\n🔍 USDT Deposit Monitor started — MAINNET (Tron)`);
+    console.log(`\n🔍 USDT Deposit Monitor started — ${tronConfig.isTestnet ? 'TESTNET (Nile)' : 'MAINNET (Tron)'}`);
+    console.log(`   Contract: ${tronConfig.usdtContract}`);
     console.log(`   Polling every ${POLL_INTERVAL_MS / 60000} minutes`);
 
     // Run immediately, then on interval
@@ -208,21 +211,31 @@ class USDTDepositMonitor {
       toScan = wallets;
     } else {
       const sinceISO = new Date(Date.now() - HOT_DAYS * 864e5).toISOString();
-      const [{ data: recentDep }, { data: recentDtv }, { data: openFlags }] = await Promise.all([
+      const [{ data: recentDep }, { data: recentDtv }, { data: openFlags }, { data: everTrackedUsdt }] = await Promise.all([
         supabaseAdmin.from('wallet_transactions').select('user_id')
           .eq('type', 'DEPOSIT').eq('currency', 'USDT').gte('created_at', sinceISO),
         supabaseAdmin.from('deposit_tracking_v2').select('user_id')
           .eq('currency', 'USDT').gte('created_at', sinceISO),
         supabaseAdmin.from('reconciliation_flags').select('user_id')
           .eq('currency', 'USDT').eq('status', 'RECONCILIATION_REQUIRED'),
+        // ALL-TIME, no date filter — used only to find users who have NEVER had
+        // a USDT deposit_tracking_v2 row. A first-time depositor has no "hot"
+        // signal from the checks above (nothing recent to be recent about), so
+        // without this they land in the cold pool and can sit unscanned for
+        // hours despite an on-chain deposit already having arrived — exactly
+        // what happened to a real deposit on 2026-09-17. Cost of this query
+        // grows with the table, same tradeoff already accepted elsewhere here.
+        supabaseAdmin.from('deposit_tracking_v2').select('user_id').eq('currency', 'USDT'),
       ]);
       const hotIds = new Set([
         ...(recentDep || []).map(r => r.user_id),
         ...(recentDtv || []).map(r => r.user_id),
         ...(openFlags || []).map(r => r.user_id),
       ]);
-      const hot  = wallets.filter(w => hotIds.has(w.user_id));
-      const cold = wallets.filter(w => !hotIds.has(w.user_id));
+      const everTrackedIds = new Set((everTrackedUsdt || []).map(r => r.user_id));
+      const isFirstTimer = w => !everTrackedIds.has(w.user_id);
+      const hot  = wallets.filter(w => hotIds.has(w.user_id) || isFirstTimer(w));
+      const cold = wallets.filter(w => !hotIds.has(w.user_id) && !isFirstTimer(w));
 
       const shardSize = Math.ceil(cold.length / SHARDS) || cold.length;
       const start = (this._coldCursor % SHARDS) * shardSize;
@@ -257,19 +270,33 @@ class USDTDepositMonitor {
   // outgoing transfers — critical, since a sweep sends USDT OUT of this exact
   // address and must never be mistaken for an incoming deposit.
   async _fetchIncomingTransfers(address) {
-    const headers = { 'Content-Type': 'application/json' };
-    if (process.env.TRONGRID_API_KEY) headers['TRON-PRO-API-KEY'] = process.env.TRONGRID_API_KEY;
-    const resp = await axios.get(`https://api.trongrid.io/v1/accounts/${address}/transactions/trc20`, {
-      headers,
-      params: {
-        contract_address: process.env.TRON_USDT_CONTRACT || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
-        limit: 20,
-        only_confirmed: true,
-        only_to: true,
-      },
+    const params = {
+      limit: 20,
+      only_confirmed: true,
+      only_to: true,
+    };
+    if (!tronConfig.isTestnet) {
+      params.contract_address = tronConfig.usdtContract;
+    }
+    const resp = await axios.get(`${tronConfig.trongridUrl}/v1/accounts/${address}/transactions/trc20`, {
+      headers: tronConfig.getHeaders(),
+      params,
       timeout: 14000,
     });
-    return resp.data?.data || [];
+    const transfers = resp.data?.data || [];
+    if (tronConfig.isTestnet) {
+      const validContracts = new Set([
+        (tronConfig.usdtContract || '').toLowerCase(),
+        'txyzopyrdj2d9xrtbg411xzz3km5vkaebf',
+        'txlaq63xg1nazckpwkhvzw7csemlemeqcdj',
+      ]);
+      return transfers.filter(t => {
+        const cAddr = (t.token_info?.address || '').toLowerCase();
+        const sym = (t.token_info?.symbol || '').toUpperCase();
+        return validContracts.has(cAddr) || sym === 'USDT';
+      });
+    }
+    return transfers;
   }
 
   // ── Check one Tron address for new USDT deposits (transaction-hash tracking) ──
@@ -432,6 +459,16 @@ class USDTDepositMonitor {
       .update({ credited: true, credited_at: new Date().toISOString() })
       .eq('tx_hash', txHash).eq('address', address);
 
+    // ── Real-time balance spike & anomaly check ──────────────────────────────
+    balanceAnomalyMonitor.checkCreditEvent({
+      userId,
+      username,
+      currency: 'USDT',
+      amount: depositUsdt,
+      txHash,
+      newBalance: newUsdt,
+    }).catch(err => console.error('[USDTMonitor] Anomaly monitor error:', err.message));
+
     // ── In-app notification ─────────────────────────────────────────────────
     await supabaseAdmin.from('notifications').insert({
       user_id:    userId,
@@ -458,6 +495,9 @@ class USDTDepositMonitor {
     this.sendDepositEmail(userId, username, depositUsdt, newUsdt, address)
         .catch(err => console.error('[USDTMonitor] Email error:', err.message));
 
+    this.alertOpsOfNewDeposit(username, userId, depositUsdt, 'USDT', newUsdt, address)
+        .catch(err => console.error('[USDTMonitor] Ops alert error:', err.message));
+
     console.log(`✅ [USDTMonitor] Credited $${depositUsdt} USDT to ${username} | New balance: $${newUsdt.toFixed(2)} USDT | TX: ${txHash.slice(0, 16)}…`);
 
     // ── Sweep deposit → hot wallet (non-fatal, fire-and-forget) ─────────────
@@ -467,6 +507,26 @@ class USDTDepositMonitor {
     tronHotWallet.sweepFromUserAddress(userId, address, depositUsdt)
       .then(r => { if (r?.deferred) console.log(`[USDTMonitor] Sweep queued for ${username}: ${r.reason}`); })
       .catch(e => console.error(`[USDTMonitor] Sweep trigger error (non-fatal): ${e.message}`));
+  }
+
+  // ── Ops notification: every new user deposit, BTC or USDT ─────────────────
+  // Requested by CEO — a heads-up email any time any user deposits, separate
+  // from the user's own "deposit received" confirmation email.
+  async alertOpsOfNewDeposit(username, userId, amount, currency, newBalance, address) {
+    try {
+      await emailService.sendEmail({
+        to:      process.env.OPS_ALERT_EMAIL || 'support@praqen.com',
+        subject: `💰 New deposit — ${amount} ${currency} — ${username}`,
+        type:    'ops_new_deposit_alert',
+        html: `<p><strong>A user deposit was just credited.</strong></p>
+               <p>User: ${username} (${userId})<br/>
+               Amount: ${amount} ${currency}<br/>
+               New balance: ${newBalance} ${currency}<br/>
+               Address: ${address}</p>`,
+      });
+    } catch (e) {
+      console.error('[USDTMonitor] alertOpsOfNewDeposit error:', e.message);
+    }
   }
 
   // ── Critical alert: a real on-chain deposit failed to credit the user's balance ──

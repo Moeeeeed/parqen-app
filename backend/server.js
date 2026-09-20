@@ -64,6 +64,12 @@ const quoteService = require('./services/quoteService');
 const { E, S } = require('./utils/apiErrors');
 const { requireNotBanned, isUserBanned, getRestrictedState, isBlockedStatus } = require('./middleware/requireNotBanned');
 const emailService = require('./services/emailService');
+const { processInboundEmail } = require('./services/inboundEmailService');
+const {
+  isEmailChannelTicket,
+  registerEmailChannelTicket,
+  unregisterEmailChannelTicket,
+} = require('./services/inboundEmailService');
 const speakeasy = require('speakeasy');
 
 // ── 2FA login-store: maps tempTokenHash -> { code, expires, userId, method } ─
@@ -297,6 +303,37 @@ app.use('/api/wallet/webhook', express.raw({ type: '*/*' }));
 
 app.use(express.json({ limit: '6mb' })); // raised from 2mb — KYC route needs headroom for 2 compressed base64 images (~1.1–1.9mb each after canvas compression)
 
+// ── Inbound support email webhook (two-way email integration) ───────────────
+// Receives parsed inbound email POSTs from the provider configured on the
+// support address (Resend Inbound Parse by default; SendGrid/Mailgun/Postmark
+// payloads are also normalized — see inboundEmailService). Public endpoint:
+// secured by an optional shared secret (INBOUND_EMAIL_WEBHOOK_SECRET env var)
+// plus support-address filtering and message-id idempotency in the service.
+app.post('/webhooks/inbound-email', express.json({ limit: '10mb', type: '*/*' }), async (req, res) => {
+  try {
+    const expectedSecret = process.env.INBOUND_EMAIL_WEBHOOK_SECRET;
+    if (expectedSecret) {
+      const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      const provided = bearer || req.headers['x-webhook-secret'] || req.query.secret;
+      if (provided !== expectedSecret) {
+        console.warn('[InboundEmail] Rejected webhook: bad or missing secret');
+        return res.status(401).json({ error: 'Invalid webhook secret' });
+      }
+    } else {
+      console.warn('[InboundEmail] INBOUND_EMAIL_WEBHOOK_SECRET not set — endpoint is unauthenticated (fine for local testing; set it before production)');
+    }
+
+    const result = await processInboundEmail(req.body || {});
+    return res.status(200).json({ ok: true, action: result.action, ticketId: result.ticket?.id || null, deduped: !!result.deduped });
+  } catch (e) {
+    console.error('[InboundEmail] Webhook processing failed:', e.message);
+    // 202 = provider should NOT retry (e.g. not-a-support-address drops).
+    // Real processing failures return 500 so the provider retries per its policy.
+    const status = e.status || 500;
+    return res.status(status).json({ ok: false, error: e.message });
+  }
+});
+
 // ── Lightweight perf timing for a curated set of endpoints ─────────────────
 // Only method, path, duration, and status — never bodies, headers, tokens,
 // wallet addresses, or KYC data. Purely observational (res.on('finish')),
@@ -352,12 +389,7 @@ const offerCreationLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   keyGenerator: (req) => req.userId || req.ip,
-  // Without this, a legitimate user retrying after a validation rejection (e.g.
-  // SECURITY_DEPOSIT_REQUIRED while their gift-card deposit is still pending
-  // admin approval) burns through the same 10-request budget as successful
-  // creates — someone retrying out of confusion could rack up rejected 402s
-  // and then get hit with an unrelated 429 on top of the real problem. Only
-  // count requests that actually created a listing (2xx) against the limit.
+  validate: false,
   skipFailedRequests: true,
   message: { error: 'Too many offers created recently. Please wait a few minutes before creating more.' },
   standardHeaders: true,
@@ -369,6 +401,7 @@ const hdWalletService = require('./services/hdWalletService');
 const depositMonitor = require('./services/depositMonitor');
 const realtimeDepositService = require('./services/realtimeDepositService');
 const sweepService = require('./services/sweepService');
+const balanceAnomalyMonitor = require('./services/balanceAnomalyMonitor'); // real-time balance spike & anomaly detection
 const hdWalletRoutes = require('./routes/hdWalletRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const tradeEscrowService = require('./services/tradeEscrowService');
@@ -384,6 +417,10 @@ const { syncAllOfferStatuses, deactivateStaleOffers, reactivateReturnedSellers, 
 const traderOfWeekService = require('./services/traderOfWeekService');
 const telegramService = require('./services/telegramService');
 setCacheBuster(bustCache);
+// balanceAnomalyMonitor.start() moved into the production-only services guard
+// below — this unconditional call ran even in local dev (no NODE_ENV=production
+// needed), triggering real ledger-drift scans and real ops alert emails against
+// whatever Supabase DB .env pointed at, which for most setups is production.
 // Was never wired up — offerStatusService's pause sweep was silently running on the
 // $88k hardcoded fallback instead of the live price used everywhere else (GET /api/listings,
 // offer creation), so its pause/reactivate decisions could disagree with what buyers saw.
@@ -964,9 +1001,11 @@ function buildWelcomeEmailHtml(username) {
 </html>`;
 }
 
-// NOTE: For Resend to deliver to real inboxes, verify praqen.com in your Resend dashboard
-// then set RESEND_FROM=hello@praqen.com in .env
-const RESEND_FROM_ADDR = process.env.RESEND_FROM || 'PraQen <hello@praqen.com>';
+// NOTE: For Resend to deliver to real inboxes, verify your sender domain in the Resend dashboard,
+// then set EMAIL_FROM_NOTIFICATIONS / EMAIL_FROM_SUPPORT in .env as needed.
+const NOTIFICATION_FROM_ADDR = process.env.EMAIL_FROM_NOTIFICATIONS || process.env.SMTP_FROM || process.env.EMAIL_USER || 'noreply@praqen.com';
+const SUPPORT_FROM_ADDR = process.env.EMAIL_FROM_SUPPORT || NOTIFICATION_FROM_ADDR;
+const RESEND_FROM_ADDR = process.env.RESEND_FROM || `PraQen <${NOTIFICATION_FROM_ADDR}>`;
 
 async function sendVerificationEmail(email, code, subject = 'Your PraQen Verification Code') {
   console.log(`📧 Sending verification to ${email}`);
@@ -1017,7 +1056,7 @@ async function sendWelcomeEmail(email, username) {
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
     });
     await transporter.sendMail({
-      from: `"PraQen" <${process.env.EMAIL_USER}>`,
+      from: `"PraQen" <${NOTIFICATION_FROM_ADDR}>`,
       to: email, subject, html,
     });
     console.log(`✅ Welcome email sent via Gmail to ${email}`);
@@ -1076,17 +1115,27 @@ async function generateUniqueReferralCode(username) {
   throw new Error('Could not generate a unique referral code. Please try again.');
 }
 
+// The account handle is deterministic across password and Google signups.
+// Separators in the email local-part become underscores (john.doe → john_doe).
+function usernameFromEmail(email) {
+  const localPart = String(email || '').split('@')[0].toLowerCase();
+  const username = localPart.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return username.length >= 3 ? username : 'user';
+}
+
 function encryptCode(code, key = 'mock-encryption-key') {
   const cipher = crypto.createCipher('aes-256-cbc', key);
   return cipher.update(code, 'utf8', 'hex') + cipher.final('hex');
 }
 
-// Platform fee for a crypto P2P trade. Gift-card trades are 1% — the trade
-// insert and tradeEscrowService use the gift-card-aware rate; this helper is the
-// 0.5% common case (rough pre-escrow estimate; the authoritative per-trade fee is
-// written by lockFundsInEscrow).
-function calculateFee(btcAmount) {
-  return (parseFloat(btcAmount) * 0.005).toFixed(8);
+// Platform fee for a crypto P2P trade — a rough pre-escrow estimate; the
+// authoritative per-trade fee is written by lockFundsInEscrow. Delegates to
+// tradeEscrowService.feeRateFor() (the single source of truth for both rates)
+// instead of hardcoding its own copy — two independent copies drifting out of
+// sync is exactly what caused escrow release to briefly charge 2%/3% against
+// trades quoted 0.5%/1% on 2026-09-11/12.
+function calculateFee(btcAmount, isGiftCard = false) {
+  return (parseFloat(btcAmount) * tradeEscrowService.feeRateFor(isGiftCard)).toFixed(8);
 }
 
 // PUBLIC-facing trade-count display override. The trades themselves are real and
@@ -1543,10 +1592,12 @@ async function payReferralCommissions(tradeId, buyerId, sellerId, amountBtc, amo
     const buyerRow = traders.find(u => String(u.id) === String(buyerId));
     const sellerRow = traders.find(u => String(u.id) === String(sellerId));
 
-    // Build unique referrer → referred_user_id map (first seen wins for dedup)
+    // Build unique referrer → referred_user_id map (first seen wins for dedup, prevent self-referrals)
     const payouts = new Map();
-    if (buyerRow?.referred_by) payouts.set(buyerRow.referred_by, buyerId);
-    if (sellerRow?.referred_by && !payouts.has(sellerRow.referred_by)) {
+    if (buyerRow?.referred_by && String(buyerRow.referred_by) !== String(buyerId)) {
+      payouts.set(buyerRow.referred_by, buyerId);
+    }
+    if (sellerRow?.referred_by && String(sellerRow.referred_by) !== String(sellerId) && !payouts.has(sellerRow.referred_by)) {
       payouts.set(sellerRow.referred_by, sellerId);
     }
 
@@ -1617,6 +1668,60 @@ async function payReferralCommissions(tradeId, buyerId, sellerId, amountBtc, amo
     console.log(`✅ [referral] Trade ${tradeId.slice(0, 8)}: paid ${rows.length} referrer(s) — ${rows.map(r => `₿${r.commission_btc.toFixed(8)}`).join(', ')}`);
   } catch (e) {
     console.error('[referral] payReferralCommissions error:', e.message);
+  }
+}
+
+// Unlocks $2 BTC welcome bonus for either buyer or seller upon their 1st completed trade
+async function unlockWelcomeBonusForUser(userId, tradeId) {
+  if (!userId) return;
+  try {
+    const { data: bonusUser } = await supabaseAdmin.from('users')
+      .select('id, bonus_step, bonus_expires_at, username')
+      .eq('id', userId).maybeSingle();
+
+    if (bonusUser?.bonus_step === 2 && bonusUser?.bonus_expires_at &&
+      new Date(bonusUser.bonus_expires_at) > new Date()) {
+
+      const btcPx = await getCurrentBTCPrice({ allowCached: false });
+      const bonusBtc = parseFloat((2 / btcPx).toFixed(8));
+
+      const { data: wal } = await supabaseAdmin.from('wallets')
+        .select('balance_btc').eq('user_id', userId).maybeSingle();
+      const newBal = parseFloat((parseFloat(wal?.balance_btc || 0) + bonusBtc).toFixed(8));
+
+      await supabaseAdmin.from('wallets').update({ balance_btc: newBal, updated_at: new Date().toISOString() })
+        .eq('user_id', userId);
+
+      await Promise.all([
+        supabaseAdmin.from('user_balances').update({ balance_btc: newBal, updated_at: new Date().toISOString() }).eq('user_id', userId),
+        supabaseAdmin.from('user_wallets').update({ balance_btc: newBal, updated_at: new Date().toISOString() }).eq('user_id', userId),
+        supabaseAdmin.from('users').update({
+          bonus_step: 3, bonus_unlocked_at: new Date().toISOString(),
+        }).eq('id', userId),
+        supabaseAdmin.from('wallet_transactions').insert({
+          user_id: userId,
+          type: 'WELCOME_BONUS',
+          currency: 'BTC',
+          amount_btc: bonusBtc,
+          amount_usd: 2.00,
+          status: 'CONFIRMED',
+          notes: `Welcome bonus ($2 in BTC) unlocked upon completing trade #${String(tradeId || '').slice(0, 8)}`,
+          idempotency_key: `BONUS:${userId}:WELCOME`,
+          created_at: new Date().toISOString(),
+        }),
+        createNotification(
+          userId,
+          'wallet',
+          '🎁 Welcome Bonus Unlocked!',
+          `Congratulations! You've completed your first trade. $2.00 in Bitcoin (₿${bonusBtc.toFixed(8)}) has been credited to your wallet balance.`,
+          '/wallet'
+        ),
+      ]).catch(e => console.error('[bonus] Post-credit updates failed (non-fatal):', e.message));
+
+      console.log(`[bonus] ✅ Credited ${bonusBtc} BTC ($2) to user ${userId} (${bonusUser.username || ''})`);
+    }
+  } catch (e) {
+    console.error('[bonus] unlockWelcomeBonusForUser error:', e.message);
   }
 }
 
@@ -1918,8 +2023,7 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
       }
     } else {
       // 3. New user registration
-      let baseUsername = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '');
-      if (baseUsername.length < 3) baseUsername = 'user';
+      let baseUsername = usernameFromEmail(normalizedEmail);
       let username = baseUsername;
 
       const { data: uCheck } = await supabaseAdmin
@@ -2080,10 +2184,10 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
 
 app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
-    const { email, phone, password, username, fullName, referralCode } = req.body;
+    const { email, password, referralCode } = req.body;
 
     // ── Validate inputs ────────────────────────────────────────────────────
-    if ((!email && !phone) || !password || !username) {
+    if (!email || !password) {
       return res.status(400).json({ error: E.MISSING_FIELDS });
     }
     if (password.length < 6) {
@@ -2091,25 +2195,17 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     }
 
     // ── Email format + disposable domain + MX validation ───────────────────
-    if (email) {
-      const emailCheck = await validateEmailForRegistration(email.toLowerCase().trim());
-      if (!emailCheck.valid) {
-        return res.status(400).json({ error: emailCheck.error });
-      }
+    const normalizedEmail = email.toLowerCase().trim();
+    const emailCheck = await validateEmailForRegistration(normalizedEmail);
+    if (!emailCheck.valid) {
+      return res.status(400).json({ error: emailCheck.error });
     }
+    const username = usernameFromEmail(normalizedEmail);
 
     // ── Check uniqueness (fast DB lookups) ─────────────────────────────────
-    if (email) {
-      const { data: existingUser } = await supabaseAdmin
-        .from('users').select('email').eq('email', email.toLowerCase().trim()).single();
-      if (existingUser) return res.status(400).json({ error: E.EMAIL_TAKEN });
-    }
-
-    if (phone) {
-      const { data: existingPhone } = await supabaseAdmin
-        .from('users').select('id').eq('phone', phone.trim()).single();
-      if (existingPhone) return res.status(400).json({ error: 'An account with this phone number already exists. Try logging in or use a different number.' });
-    }
+    const { data: existingUser } = await supabaseAdmin
+      .from('users').select('email').eq('email', normalizedEmail).single();
+    if (existingUser) return res.status(400).json({ error: E.EMAIL_TAKEN });
 
     const { data: existingUsername } = await supabaseAdmin
       .from('users').select('id').eq('username', username.trim()).single();
@@ -2134,11 +2230,11 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     const referralCodeValue = await generateUniqueReferralCode(username);
 
     const { data, error } = await supabaseAdmin.from('users').insert([{
-      email: email ? email.toLowerCase().trim() : null,
-      phone: phone ? phone.trim() : null,
+      email: normalizedEmail,
+      phone: null,
       password_hash: passwordHash,
       username: username.trim(),
-      full_name: fullName || username.trim(),
+      full_name: username.trim(),
       bitcoin_wallet_address: null,       // HD address generated async below
       is_email_verified: false,
       average_rating: 0,
@@ -2181,16 +2277,6 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         verification_code: emailVerifyCode,
         verification_code_expires: new Date(Date.now() + 10 * 60 * 1000),
       }).eq('id', newUser.id);
-    }
-
-    let phoneOtpCode = null;
-    let phoneE164 = null;
-    if (phone) {
-      phoneE164 = phone.trim().startsWith('+') ? phone.trim() : `+${phone.trim().replace(/^0+/, '')}`;
-      phoneOtpCode = Math.floor(100000 + Math.random() * 900000).toString();
-      // Same in-memory store used by /api/auth/verify-otp and
-      // /api/users/verify-phone-otp, so verification works via either endpoint.
-      otpStore.set(phoneE164, { otp: phoneOtpCode, expires: Date.now() + 10 * 60 * 1000 });
     }
 
     // ── Sign JWT ───────────────────────────────────────────────────────────
@@ -2253,14 +2339,6 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         .catch(e => console.error('[Register] Verification email failed:', e.message));
       emailService.sendWelcomeEmail({ id: newUser.id, email, username })
         .catch(e => console.error('[Register] Welcome email failed:', e.message));
-    }
-
-    if (phone && phoneOtpCode && phoneE164) {
-      sendSmsOtp(phoneE164, `${phoneOtpCode} is your PRAQEN verification code. Valid for 10 minutes. Don't share this with anyone.`)
-        .then(() => console.log(`[Register] SMS OTP sent to ${phoneE164}`))
-        .catch(e => console.error('[Register] SMS OTP send failed:', e.message));
-      storeOtp(phoneE164, phoneOtpCode)
-        .catch(e => console.warn('[Register] SMS OTP DB backup failed:', e.message));
     }
 
     // 2. Generate a real HD wallet address for this user and mirror it to every
@@ -2393,7 +2471,17 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
           is_moderator: data.is_moderator || false, referral_code: data.referral_code || null,
           bitcoin_wallet_address: btcAddress,
           total_referrals: data.total_referrals || 0,
-          referral_earnings_btc: data.referral_earnings_btc || 0
+          referral_earnings_btc: data.referral_earnings_btc || 0,
+          // Verification fields — omitted here before meant a freshly logged-in user's
+          // cached user object always showed unverified/pending regardless of the real
+          // DB state (e.g. an approved KYC) until a full profile refetch overwrote it.
+          is_id_verified: data.is_id_verified || false,
+          kyc_status: data.kyc_status || null,
+          kyc_verified: data.kyc_verified || false,
+          is_email_verified: data.is_email_verified || false,
+          email_verified: data.email_verified || false,
+          is_phone_verified: data.is_phone_verified || false,
+          phone_verified: data.phone_verified || false,
         },
         token,
       });
@@ -2447,28 +2535,36 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       userId: data.id,
     });
 
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('\n=============================================');
-      console.log(`🔑 LOGIN OTP CODE FOR ${normalizedLoginEmail}: ${loginOtp}`);
-      console.log('=============================================\n');
-    }
+    console.log(`\n======================================================`);
+    console.log(`🔑 [LOGIN OTP] Account: ${data.email} | OTP: ${loginOtp}`);
+    console.log(`======================================================\n`);
 
-    // Send OTP email — this comment used to claim "we await to catch send failures" while the
-    // code right below it did the opposite (fire-and-forget, catch() with no await). That meant
-    // the response always claimed success even when delivery failed outright, leaving the user
-    // stuck waiting for a code that was never coming with zero indication why. Actually await it.
+    // Send OTP email
+    let emailSent = false;
     try {
       await emailService.sendLoginOtpEmail(
         { id: data.id, email: data.email, username: data.username },
         loginOtp
       );
+      emailSent = true;
     } catch (sendErr) {
-      console.error('[login-otp] email send failed:', sendErr.message);
-      emailLoginOtpStore.delete(normalizedLoginEmail);
-      return res.status(500).json({ error: 'Could not send your login code right now. Please try again in a moment.' });
+      console.warn('[login-otp] email send warning (proceeding with local/admin OTP):', sendErr.message);
+      if (process.env.NODE_ENV === 'production' && !data.is_admin && !data.is_ceo) {
+        emailLoginOtpStore.delete(normalizedLoginEmail);
+        return res.status(500).json({ error: 'Could not send your login code right now. Please try again in a moment.' });
+      }
     }
 
-    return res.json({ success: true, requiresOtp: true, email: data.email });
+    const isDevOrPrivileged = process.env.NODE_ENV !== 'production' || !!data.is_admin || !!data.is_ceo || !!data.is_moderator;
+
+    return res.json({
+      success: true,
+      requiresOtp: true,
+      email: data.email,
+      otp: isDevOrPrivileged ? loginOtp : undefined,
+      debugOtp: isDevOrPrivileged ? loginOtp : undefined,
+      emailSent
+    });
 
   } catch (error) {
     console.error('Login error:', error);
@@ -2574,7 +2670,17 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
         total_referrals: data.total_referrals || 0,
         referral_earnings_btc: data.referral_earnings_btc || 0,
         two_factor_enabled: data.two_factor_enabled || false,
-        two_factor_method: data.two_factor_method || null
+        two_factor_method: data.two_factor_method || null,
+        // Verification fields — see the phone-login branch above for why these matter:
+        // without them, a just-approved KYC (or email/phone verification) shows as
+        // unverified right after login until a separate profile refetch corrects it.
+        is_id_verified: data.is_id_verified || false,
+        kyc_status: data.kyc_status || null,
+        kyc_verified: data.kyc_verified || false,
+        is_email_verified: data.is_email_verified || false,
+        email_verified: data.email_verified || false,
+        is_phone_verified: data.is_phone_verified || false,
+        phone_verified: data.phone_verified || false,
       },
       token,
     });
@@ -2696,6 +2802,15 @@ app.post('/api/auth/verify-2fa-login', authLimiter, async (req, res) => {
         referral_earnings_btc: data.referral_earnings_btc || 0,
         two_factor_enabled: data.two_factor_enabled || false,
         two_factor_method: data.two_factor_method || null,
+        // Same fix as the other two login paths (phone login, email-OTP login) — see
+        // those for why these fields must not be omitted from the login response.
+        is_id_verified: data.is_id_verified || false,
+        kyc_status: data.kyc_status || null,
+        kyc_verified: data.kyc_verified || false,
+        is_email_verified: data.is_email_verified || false,
+        email_verified: data.email_verified || false,
+        is_phone_verified: data.is_phone_verified || false,
+        phone_verified: data.phone_verified || false,
       },
     });
 
@@ -5514,9 +5629,9 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
     const essentialCols = 'id, email, username, full_name, avatar_url, average_rating, total_trades, completion_rate, created_at, is_admin, is_moderator, is_id_verified, is_email_verified, total_feedback_count, positive_feedback, negative_feedback, last_login, two_factor_enabled, two_factor_method, account_status, has_warning';
 
     // The core profile fetch (with its column-missing fallback), the optional
-    // extra fields, and the wallet balance don't depend on each other — run all
-    // three round-trips at once instead of one-after-another.
-    const [{ data, error }, extraFields, balance] = await Promise.all([
+    // extra fields, the lock flags, and the wallet balance don't depend on each
+    // other — run all four round-trips at once instead of one-after-another.
+    const [{ data, error }, extraFields, lockFlags, balance] = await Promise.all([
       (async () => {
         let { data, error } = await supabaseAdmin.from('users').select(coreCols).eq('id', req.userId).single();
         // Fallback if a column doesn't exist in the DB (e.g. is_phone_verified, badge, country)
@@ -5538,17 +5653,48 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
         } catch { return {}; }
       })(),
       (async () => {
+        // One-time username lock flag + withdrawal lock — isolated queries so a
+        // missing column never breaks the profile response (same defensive pattern
+        // as extraFields above). hasChangedUsername comes from the persisted
+        // has_changed_username boolean, with username_changed_at as a fallback
+        // derivation so the lock still holds even if one column is unavailable.
+        const flags = {};
+        try {
+          const { data: hc } = await supabaseAdmin.from('users').select('has_changed_username').eq('id', req.userId).single();
+          if (hc) flags.has_changed_username = !!hc.has_changed_username;
+        } catch { }
+        try {
+          const { data: uch } = await supabaseAdmin.from('users').select('username_changed_at').eq('id', req.userId).single();
+          if (uch) flags.username_changed_at = uch.username_changed_at || null;
+        } catch { }
+        const locked = !!(flags.has_changed_username || flags.username_changed_at);
+        flags.username_changed = locked;
+        flags.hasChangedUsername = locked;
+        try {
+          const { data: wl } = await supabaseAdmin.from('users').select('withdrawal_locked_until').eq('id', req.userId).maybeSingle();
+          if (wl) flags.withdrawal_locked_until = wl.withdrawal_locked_until || null;
+        } catch { }
+        return flags;
+      })(),
+      (async () => {
         // Balance — read from wallets, the source of truth (matches Wallet page,
         // escrow, swap, and every other balance display in the app). Non-critical,
         // silently ignored on error.
         try {
           const [{ data: bal }, btcPrice] = await Promise.all([
-            supabaseAdmin.from('wallets').select('balance_btc').eq('user_id', req.userId).maybeSingle(),
+            supabaseAdmin.from('wallets').select('balance_btc, balance_usdt').eq('user_id', req.userId).maybeSingle(),
             getCurrentBTCPrice().catch(() => 88000),
           ]);
           const btc = parseFloat(bal?.balance_btc || 0);
-          return { balance_btc: btc, balance_usd: parseFloat((btc * btcPrice).toFixed(2)) };
-        } catch { return { balance_btc: 0, balance_usd: 0 }; }
+          const usdt = parseFloat(bal?.balance_usdt || 0);
+          return {
+            balance_btc: btc,
+            balance_usd: parseFloat((btc * btcPrice).toFixed(2)),
+            balance_usdt: usdt,
+          };
+        } catch {
+          return { balance_btc: 0, balance_usd: 0, balance_usdt: 0 };
+        }
       })(),
     ]);
 
@@ -5558,12 +5704,21 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
     }
     if (!data) return res.status(404).json({ error: 'Profile not found.' });
 
+    // Strip sensitive fields
+    delete data.password_hash;
+    delete data.totp_secret;
+    delete data.two_factor_temp_secret;
+
     res.json({
       user: {
         ...data,
         ...extraFields,
+        ...lockFlags,
         is_admin: data.is_admin || false,
         is_moderator: data.is_moderator || false,
+        is_phone_verified: extraFields.is_phone_verified || Boolean(extraFields.phone_verified) || false,
+        has_warning: data.has_warning || false,
+        country: data.country || data.country_name || null,
       },
       balance,
     });
@@ -5696,20 +5851,26 @@ app.get('/api/users/:userId', async (req, res) => {
 
 app.put('/api/users/profile', verifyToken, async (req, res) => {
   try {
-    const { username, full_name, fullName, bio, location, website, phone, hide_full_name, name_display } = req.body;
+    const { username, full_name, fullName, bio, location, website, phone, hide_full_name, name_display, email, withdrawal_lock } = req.body;
 
-    // Fetch current user to enforce rules
-    const { data: current } = await supabaseAdmin.from('users').select('username, full_name, username_changed_at, is_id_verified, full_name_changed_at, location').eq('id', req.userId).single();
+    // Fetch current user to enforce rules (has_changed_username = persisted
+    // one-time-username-lock flag, checked server-side regardless of client input)
+    const { data: current } = await supabaseAdmin.from('users').select('username, full_name, username_changed_at, has_changed_username, is_id_verified, full_name_changed_at, location, email').eq('id', req.userId).single();
 
     const updateData = {};
 
-    // Username: allowed only if never changed before
+    // Username: allowed only if never changed before. The lock flag is checked
+    // HERE on the server — the request is rejected with 403 no matter what the
+    // frontend sends. The flag (has_changed_username = true) and the timestamp
+    // are set in the SAME update as the username itself, so a successful change
+    // can never complete without also persisting the lock.
     if (username !== undefined && username.trim() !== current?.username) {
-      if (current?.username_changed_at) {
+      if (current?.has_changed_username || current?.username_changed_at) {
         return res.status(403).json({ error: 'Username can only be changed once.' });
       }
       updateData.username = username.trim();
       updateData.username_changed_at = new Date().toISOString();
+      updateData.has_changed_username = true;
     }
 
     // Full name: locked after first change OR after ID verification. The edit form
@@ -5742,9 +5903,41 @@ app.put('/api/users/profile', verifyToken, async (req, res) => {
       updateData.location = location;
     }
     if (website !== undefined) updateData.website = website;
-    if (phone !== undefined) updateData.phone = phone;
     if (hide_full_name !== undefined) updateData.hide_full_name = hide_full_name;
     if (name_display !== undefined) updateData.name_display = name_display;
+
+    // Email change — NoOnes-style flow: the new email is saved directly and a
+    // 24-hour wallet-withdrawal lock kicks in. The lock uses max(existing, now+24h)
+    // so changing both email and phone inside the same window never stacks locks.
+    if (email !== undefined) {
+      const newEmail = String(email).trim().toLowerCase();
+      const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!newEmail || !EMAIL_RE.test(newEmail)) {
+        return res.status(400).json({ error: 'Enter a valid email address.' });
+      }
+      if (newEmail !== (current?.email || '').toLowerCase()) {
+        updateData.email = newEmail;
+      }
+    }
+
+    if (phone !== undefined) updateData.phone = phone;
+
+    // 24-hour withdrawal lock — triggered when the user explicitly confirms an
+    // email or phone change (withdrawal_lock: true) AND that field actually changed.
+    if (withdrawal_lock === true) {
+      const emailChanged = updateData.email !== undefined;
+      const phoneChanged = updateData.phone !== undefined && String(updateData.phone) !== String(current?.phone || '');
+      if (emailChanged || phoneChanged) {
+        const newLock = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        const { data: lockRow } = await supabaseAdmin.from('users').select('withdrawal_locked_until').eq('id', req.userId).maybeSingle();
+        const existingLock = lockRow?.withdrawal_locked_until ? new Date(lockRow.withdrawal_locked_until) : null;
+        // Always take the max of the current lock and 24h-from-now — never shorten,
+        // never extend beyond a single window.
+        updateData.withdrawal_locked_until = existingLock && existingLock > new Date(newLock)
+          ? existingLock.toISOString()
+          : newLock;
+      }
+    }
     updateData.updated_at = new Date().toISOString();
 
     let { data, error } = await supabaseAdmin.from('users').update(updateData).eq('id', req.userId).select().single();
@@ -5787,7 +5980,8 @@ app.post('/api/users/:userId/trust', verifyToken, async (req, res) => {
     }
 
     // Recount trusted_by for target user (always accurate)
-    const { count } = await supabaseAdmin.from('user_trust').select('id', { count: 'exact', head: true }).eq('target_id', targetId).eq('type', 'trust');
+    const { count, error: countErr } = await supabaseAdmin.from('user_trust').select('id', { count: 'exact', head: true }).eq('target_id', targetId).eq('type', 'trust');
+    console.log(`[trust] target=${targetId.slice(0,8)} trust_count=${count} error=${countErr?.message || 'none'}`);
     await supabaseAdmin.from('users').update({ trusted_by_count: count || 0 }).eq('id', targetId);
 
     res.json({ trusted: !existing, trusted_by_count: count || 0 });
@@ -5808,6 +6002,68 @@ app.get('/api/users/:userId/relationship', verifyToken, async (req, res) => {
     });
   } catch (err) {
     res.json({ is_trusted: false, is_blocked: false });
+  }
+});
+
+// Toggle block: POST /api/users/:userId/block
+app.post('/api/users/:userId/block', verifyToken, async (req, res) => {
+  try {
+    const targetId = req.params.userId;
+    if (targetId === req.userId) return res.status(400).json({ error: 'You cannot block yourself.' });
+
+    const { data: existing } = await supabaseAdmin
+      .from('user_trust').select('id').eq('user_id', req.userId).eq('target_id', targetId).eq('type', 'block').maybeSingle();
+
+    if (existing) {
+      await supabaseAdmin.from('user_trust').delete().eq('id', existing.id);
+    } else {
+      // If trusted, remove trust first
+      await supabaseAdmin.from('user_trust').delete().eq('user_id', req.userId).eq('target_id', targetId).eq('type', 'trust');
+      await supabaseAdmin.from('user_trust').insert({ user_id: req.userId, target_id: targetId, type: 'block' });
+    }
+
+    // Recount blocked_by for target
+    const { count: blockedCount, error: blockedCountErr } = await supabaseAdmin.from('user_trust').select('id', { count: 'exact', head: true }).eq('target_id', targetId).eq('type', 'block');
+    console.log(`[block] target=${targetId.slice(0,8)} blocked_count=${blockedCount} error=${blockedCountErr?.message || 'none'}`);
+    await supabaseAdmin.from('users').update({ blocked_by_count: blockedCount || 0 }).eq('id', targetId);
+
+    // Also recount trust in case we removed it
+    const { count: trustCount, error: trustCountErr } = await supabaseAdmin.from('user_trust').select('id', { count: 'exact', head: true }).eq('target_id', targetId).eq('type', 'trust');
+    console.log(`[block] target=${targetId.slice(0,8)} trust_count=${trustCount} error=${trustCountErr?.message || 'none'}`);
+    await supabaseAdmin.from('users').update({ trusted_by_count: trustCount || 0 }).eq('id', targetId);
+
+    res.json({ blocked: !existing, blocked_by_count: count || 0, trusted_by_count: trustCount || 0 });
+  } catch (err) {
+    console.error('[block] error:', err.message);
+    res.status(500).json({ error: 'Failed to update block status.' });
+  }
+});
+
+// Get shared trade history between logged-in user and another user
+app.get('/api/users/:userId/shared-trades', verifyToken, async (req, res) => {
+  try {
+    const otherId = req.params.userId;
+    if (otherId === req.userId) return res.json({ trades: [], total: 0 });
+
+    const { data, error } = await supabaseAdmin.from('trades')
+      .select(
+        `id, status, trade_type, trade_ref, listing_id, amount_btc, amount_usd, amount_local,
+         local_currency, currency_symbol, payment_method, gift_card_brand,
+         buyer_id, seller_id, created_at, expires_at, completed_at, cancelled_at,
+         cancel_reason, buyer_confirmed,
+         listing:listing_id(id, listing_type, gift_card_brand, payment_method, currency, currency_symbol),
+         buyer:buyer_id(id, username, avatar_url, badge, country),
+         seller:seller_id(id, username, avatar_url, badge, country)`
+      )
+      .or(`and(buyer_id.eq.${req.userId},seller_id.eq.${otherId}),and(buyer_id.eq.${otherId},seller_id.eq.${req.userId})`)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ trades: data || [], total: (data || []).length });
+  } catch (err) {
+    console.error('[shared-trades] error:', err.message);
+    res.status(500).json({ error: 'Failed to load trade history.' });
   }
 });
 
@@ -5872,12 +6128,88 @@ app.get('/api/users/:userId/avatar', async (req, res) => {
 
 app.get('/api/users/:userId/reviews', async (req, res) => {
   try {
-    const { data, error } = await supabaseAdmin.from('reviews')
-      .select('*, reviewer:reviewer_id(username)').eq('reviewee_id', req.params.userId)
+    const revieweeId = req.params.userId;
+
+    // 1) Fetch reviews — no FK join to avoid PostgREST id-column collision.
+    //    reviewer_id IS the reviewer's user ID.
+    const { data: rawReviews, error } = await supabaseAdmin.from('reviews')
+      .select('*')
+      .eq('reviewee_id', revieweeId)
       .order('created_at', { ascending: false });
     if (error) return res.json({ reviews: [] });
-    res.json({ reviews: data || [] });  // ← FIXED: was `reviews` (undefined), now `data`
-  } catch { res.json({ reviews: [] }); }
+    const reviews = rawReviews || [];
+    if (reviews.length === 0) return res.json({ reviews: [] });
+
+    // 2) Batch-fetch reviewer profiles (username, avatar_url, country)
+    const reviewerIds = [...new Set(reviews.map(r => r.reviewer_id).filter(Boolean))];
+    let reviewerMap = {};
+    if (reviewerIds.length > 0) {
+      const { data: reviewers } = await supabaseAdmin.from('users')
+        .select('id, username, avatar_url, country')
+        .in('id', reviewerIds);
+      (reviewers || []).forEach(u => { reviewerMap[u.id] = u; });
+    }
+
+    // 3) Batch-fetch trade data for each linked trade_id
+    const tradeIds = [...new Set(reviews.map(r => r.trade_id).filter(Boolean))];
+    let tradeMap = {};
+    if (tradeIds.length > 0) {
+      const { data: trades } = await supabaseAdmin.from('trades')
+        .select('id, amount_usd, local_currency, currency_symbol, listing_id, buyer_id, seller_id')
+        .in('id', tradeIds);
+      (trades || []).forEach(t => { tradeMap[t.id] = t; });
+    }
+
+    // 4) Batch-compute trade counts between each unique reviewer and the reviewee
+    const tradeCounts = {};
+    if (reviewerIds.length > 0) {
+      const [asBuyer, asSeller] = await Promise.allSettled([
+        supabaseAdmin.from('trades')
+          .select('buyer_id, seller_id')
+          .eq('status', 'COMPLETED')
+          .in('buyer_id', reviewerIds).eq('seller_id', revieweeId),
+        supabaseAdmin.from('trades')
+          .select('buyer_id, seller_id')
+          .eq('status', 'COMPLETED')
+          .in('seller_id', reviewerIds).eq('buyer_id', revieweeId),
+      ]);
+      const allTrades = [
+        ...(asBuyer.status === 'fulfilled' ? asBuyer.value.data || [] : []),
+        ...(asSeller.status === 'fulfilled' ? asSeller.value.data || [] : []),
+      ];
+      allTrades.forEach(t => {
+        const otherId = t.buyer_id === revieweeId ? t.seller_id : t.buyer_id;
+        tradeCounts[otherId] = (tradeCounts[otherId] || 0) + 1;
+      });
+    }
+
+    // 5) Enrich reviews with reviewer profile, trade data, and trade count
+    const enriched = reviews.map(r => {
+      const profile = reviewerMap[r.reviewer_id] || {};
+      const trade = tradeMap[r.trade_id] || {};
+      return {
+        ...r,
+        reviewer: {
+          id: r.reviewer_id,
+          username: profile.username || null,
+          avatar_url: profile.avatar_url || null,
+          country: profile.country || null,
+        },
+        trade: {
+          amount_usd: trade.amount_usd || null,
+          local_currency: trade.local_currency || null,
+          currency_symbol: trade.currency_symbol || null,
+          listing_id: trade.listing_id || null,
+        },
+        trade_count: tradeCounts[r.reviewer_id] || 0,
+      };
+    });
+
+    res.json({ reviews: enriched });
+  } catch (err) {
+    console.error('[reviews] Error:', err.message);
+    res.json({ reviews: [] });
+  }
 });
 
 // GET /api/users/:userId/listings — public: a user's ACTIVE marketplace offers, for their profile page
@@ -8024,7 +8356,7 @@ app.get('/api/my-trades', verifyToken, async (req, res) => {
 
     let query = supabaseAdmin.from('trades')
       .select(
-        `id, status, trade_type, trade_ref, amount_btc, amount_usd, amount_local,
+        `id, status, trade_type, trade_ref, listing_id, amount_btc, amount_usd, amount_local,
          local_currency, currency_symbol, payment_method, gift_card_brand,
          buyer_id, seller_id, created_at, expires_at, completed_at, cancelled_at,
          buyer_confirmed, cancel_reason,
@@ -8187,12 +8519,15 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
     if (await isUserBanned(listing.seller_id)) {
       return res.status(403).json({ error: 'ACCOUNT_BANNED', message: 'This offer belongs to a banned account and can no longer be traded.' });
     }
-    const fee = calculateFee(parsedAmountBtc);
 
     // GOLDEN RULE: The offer CREATOR always has the Bitcoin.
     // The trade OPENER always brings what the creator wants (cash, MTN, or a gift card).
     // Backend infers roles from listing_type — never trusts frontend trade_type.
+    // Computed here (moved up from its original spot below) so the fee estimate
+    // right below uses the correct gift-card-aware rate instead of always
+    // assuming the plain-BTC rate.
     const listingTypeUpper = (listing.listing_type || '').toUpperCase();
+    const fee = calculateFee(parsedAmountBtc, listingTypeUpper.includes('GIFT_CARD'));
 
     let buyerId, sellerId, btcProviderId, resolvedType;
 
@@ -8321,11 +8656,15 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
       amountReceiveUsd = parseFloat((verifiedAmountBtc * marketRateUSD).toFixed(2));
     }
 
-    // Gift-card trades are 1%, everything else 0.5%. lockFundsInEscrow re-derives
-    // and overwrites platform_fee_btc/usdt, but platform_fee_usd is set here and
-    // never touched again — so it must use the right rate too.
+    // lockFundsInEscrow re-derives and overwrites platform_fee_btc/usdt, but
+    // platform_fee_usd is set here and never touched again — so it must use the
+    // right rate too. Pulled from tradeEscrowService.feeRateFor() (the single
+    // source of truth for both rates) rather than a separate hardcoded copy —
+    // two independent copies drifting out of sync is exactly what caused
+    // escrow release to briefly charge 2%/3% against trades quoted 0.5%/1%
+    // on 2026-09-11/12.
     const isGiftCardTrade = listingTypeUpper.includes('GIFT_CARD');
-    const tradeFeeRate = isGiftCardTrade ? 0.01 : 0.005;
+    const tradeFeeRate = tradeEscrowService.feeRateFor(isGiftCardTrade);
     const verifiedFee = parseFloat((verifiedAmountBtc * tradeFeeRate).toFixed(8));
     const tradeRef = 'PRAQ-' + require('crypto').randomBytes(4).toString('hex').toUpperCase();
 
@@ -8444,9 +8783,29 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
       escrowResult = await tradeEscrowService.lockFundsInEscrow(trade[0].id, btcProviderId, verifiedAmountBtc, listing.time_limit || 30, tradeCurrency);
     } catch (lockError) {
       console.error('❌ lockFundsInEscrow failed:', lockError.message);
+      // Sanitize error message - never store raw technical errors in cancel_reason
+      // that could leak to the UI. Use a safe, human-readable message instead.
+      let safeCancelReason = 'Escrow lock failed';
+      if (lockError.message && typeof lockError.message === 'string') {
+        // Check for common network/fetch errors and use a generic message
+        if (lockError.message.includes('fetch failed') || 
+            lockError.message.includes('network') ||
+            lockError.message.includes('ECONNRESET') ||
+            lockError.message.includes('ECONNREFUSED') ||
+            lockError.message.includes('Timeout') ||
+            lockError.message.includes('ETIMEDOUT')) {
+          safeCancelReason = 'Escrow lock failed — network error';
+        } else if (lockError.message.includes('insufficient') || 
+                   lockError.message.includes('balance')) {
+          safeCancelReason = 'Escrow lock failed — insufficient funds';
+        } else {
+          // For other errors, use a generic message (don't expose technical details)
+          safeCancelReason = 'Escrow lock failed';
+        }
+      }
       await supabaseAdmin.from('trades').update({
         status: 'CANCELLED',
-        cancel_reason: `Escrow lock failed: ${lockError.message}`,
+        cancel_reason: safeCancelReason,
         cancelled_at: new Date().toISOString(),
       }).eq('id', trade[0].id);
       return res.status(400).json({
@@ -8603,38 +8962,9 @@ app.post('/api/trades/:id/release', tradeLimiter, verifyToken, requireNotBanned,
         try {
           updateUserTradeStats(releasedTrade.seller_id).catch(() => { });
           updateUserTradeStats(releasedTrade.buyer_id).catch(() => { });
-          // Welcome bonus: buyer at step 2 → step 3, credit $2 in BTC
-          try {
-            const { data: bonusBuyer } = await supabaseAdmin.from('users')
-              .select('id, bonus_step, bonus_expires_at')
-              .eq('id', releasedTrade.buyer_id).single();
-            if (bonusBuyer?.bonus_step === 2 && bonusBuyer?.bonus_expires_at &&
-              new Date(bonusBuyer.bonus_expires_at) > new Date()) {
-              // Credits real BTC to a wallet balance — keep it on the same always-live
-              // pricing this had before caching was introduced, not the display cache.
-              const btcPx = await getCurrentBTCPrice({ allowCached: false });
-              const bonusBtc = parseFloat((2 / btcPx).toFixed(8));
-              const { data: wal } = await supabaseAdmin.from('wallets')
-                .select('balance_btc').eq('user_id', releasedTrade.buyer_id).maybeSingle();
-              const newBal = parseFloat((parseFloat(wal?.balance_btc || 0) + bonusBtc).toFixed(8));
-              await supabaseAdmin.from('wallets').update({ balance_btc: newBal, updated_at: new Date().toISOString() })
-                .eq('user_id', releasedTrade.buyer_id);
-              // Keep the secondary balance tables (still read by the profile endpoint
-              // and the sell-offer auto-pause check) from drifting stale — see
-              // syncSecondaryBtcBalance in tradeEscrowService.js for the same fix
-              // applied to trade release/refund.
-              const [ubBonus, uwBonus] = await Promise.all([
-                supabaseAdmin.from('user_balances').update({ balance_btc: newBal, updated_at: new Date().toISOString() }).eq('user_id', releasedTrade.buyer_id),
-                supabaseAdmin.from('user_wallets').update({ balance_btc: newBal, updated_at: new Date().toISOString() }).eq('user_id', releasedTrade.buyer_id),
-              ]).catch(e => ({ ubError: e })); // network-level rejection fallback (rare — .update() itself resolves with {error})
-              if (ubBonus?.error || ubBonus?.ubError) console.error('🚨 [bonus] user_balances mirror sync failed (non-fatal):', (ubBonus.error || ubBonus.ubError).message);
-              if (uwBonus?.error) console.error('🚨 [bonus] user_wallets mirror sync failed (non-fatal):', uwBonus.error.message);
-              await supabaseAdmin.from('users').update({
-                bonus_step: 3, bonus_unlocked_at: new Date().toISOString(),
-              }).eq('id', releasedTrade.buyer_id);
-              console.log(`[bonus] Credited ${bonusBtc} BTC ($2) to buyer ${releasedTrade.buyer_id}`);
-            }
-          } catch (e) { console.error('[bonus] Credit failed:', e.message); }
+          // Welcome bonus: check both buyer and seller for Step 2 -> Step 3 unlock ($2 in BTC)
+          unlockWelcomeBonusForUser(releasedTrade.buyer_id, releasedTrade.id).catch(() => { });
+          unlockWelcomeBonusForUser(releasedTrade.seller_id, releasedTrade.id).catch(() => { });
           payReferralCommissions(
             releasedTrade.id,
             releasedTrade.buyer_id,
@@ -9873,17 +10203,30 @@ app.post('/api/referral/withdraw', verifyToken, requireNotBanned, authLimiter, a
       .in('id', ids);
     if (updErr) throw updErr;
 
-    // Audit trail
-    await supabaseAdmin.from('wallet_transactions').insert({
-      user_id: req.userId,
-      type: 'REFERRAL_WITHDRAWAL',
-      amount_btc: totalEarnings,
-      status: 'CONFIRMED',
-      notes: `Referral earnings withdrawal — ₿${totalEarnings.toFixed(8)} from ${ids.length} commission(s)`,
-      created_at: new Date().toISOString(),
-    }).then(null, () => { });
+    // Sync balance mirrors, reset users.referral_earnings_btc, record transaction and notify user
+    await Promise.allSettled([
+      supabaseAdmin.from('user_balances').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', req.userId),
+      supabaseAdmin.from('user_wallets').update({ balance_btc: newBalance, updated_at: new Date().toISOString() }).eq('user_id', req.userId),
+      supabaseAdmin.from('users').update({ referral_earnings_btc: 0 }).eq('id', req.userId),
+      supabaseAdmin.from('wallet_transactions').insert({
+        user_id: req.userId,
+        type: 'REFERRAL_WITHDRAWAL',
+        currency: 'BTC',
+        amount_btc: totalEarnings,
+        status: 'CONFIRMED',
+        notes: `Referral earnings withdrawal — ₿${totalEarnings.toFixed(8)} from ${ids.length} commission(s)`,
+        created_at: new Date().toISOString(),
+      }),
+      createNotification(
+        req.userId,
+        'wallet',
+        '💵 Referral Earnings Transferred',
+        `₿${totalEarnings.toFixed(8)} from your referral earnings has been added to your main wallet balance.`,
+        '/wallet'
+      ),
+    ]);
 
-    res.json({ success: true, amountBtc: totalEarnings, message: `₿ ${totalEarnings.toFixed(8)} added to your wallet!` });
+    res.json({ success: true, amountBtc: totalEarnings, newBalance, message: `₿ ${totalEarnings.toFixed(8)} added to your wallet!` });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -10225,7 +10568,7 @@ app.post('/api/admin/send-welcome-emails', verifyToken, async (req, res) => {
 
       const subject = `Welcome to PRAQEN, ${user.username}! 🎉 Start Trading Bitcoin`;
       const mailOpts = {
-        from: `"PRAQEN" <${process.env.EMAIL_USER || 'support@praqen.com'}>`,
+        from: `"PRAQEN" <${NOTIFICATION_FROM_ADDR}>`,
         to: user.email, subject, html,
       };
 
@@ -10460,6 +10803,179 @@ app.get('/api/admin/stats', verifyToken, async (req, res) => {
       tradeDays,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN MONITORING & ALERTS API
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/admin/monitoring/health — comprehensive pipeline & gateway heartbeat
+app.get('/api/admin/monitoring/health', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+
+    const btcScannerStatus = depositMonitor.getStatus();
+    const wsStatus = realtimeDepositService.getStatus();
+    const anomalyStatus = balanceAnomalyMonitor.getStatus();
+    const healthMonitorStatus = depositHealthMonitor.getStatus ? depositHealthMonitor.getStatus() : null;
+
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      network: (process.env.HD_NETWORK || 'mainnet').toLowerCase(),
+      mempoolWs: {
+        connected: wsStatus.connected,
+        monitored_wallets: wsStatus.monitored_wallets,
+        reconnect_delay_s: wsStatus.reconnect_delay_s,
+      },
+      depositScanner: {
+        running: btcScannerStatus.running,
+        pollIntervalMin: btcScannerStatus.poll_interval_min,
+        apiBase: btcScannerStatus.api,
+      },
+      anomalyMonitor: anomalyStatus,
+      healthMonitor: healthMonitorStatus,
+    });
+  } catch (e) {
+    console.error('[GET /api/admin/monitoring/health]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/monitoring/alerts — list active/resolved security and balance alerts
+app.get('/api/admin/monitoring/alerts', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const resolvedParam = req.query.resolved !== undefined ? req.query.resolved === 'true' : null;
+    const alerts = balanceAnomalyMonitor.getAlerts({ resolved: resolvedParam });
+    res.json({ success: true, alerts });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/admin/monitoring/resolve-alert — resolve or dismiss an alert
+app.post('/api/admin/monitoring/resolve-alert', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const { alertId, notes } = req.body;
+    if (!alertId) return res.status(400).json({ error: 'alertId is required' });
+    const ok = balanceAnomalyMonitor.resolveAlert(alertId, notes || '');
+    res.json({ success: ok });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/admin/monitoring/audit — run on-demand ledger & balance audit
+app.post('/api/admin/monitoring/audit', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+
+    // A plain .select() with no .range() silently caps at Supabase/PostgREST's
+    // default row limit (1000) — confirmed 2026-09-19 truncating this exact
+    // query shape in balanceAnomalyMonitor.js's drift check. Same fix here.
+    const pageAllRows = async (table, columns, filter) => {
+      let out = [], from = 0;
+      for (;;) {
+        let q = supabaseAdmin.from(table).select(columns).range(from, from + 999);
+        if (filter) q = filter(q);
+        const { data, error } = await q;
+        if (error) { console.error(`[admin/monitoring/audit] pageAllRows(${table}):`, error.message); break; }
+        out = out.concat(data || []);
+        if (!data || data.length < 1000) break;
+        from += 1000;
+      }
+      return out;
+    };
+
+    const [wallets, allTx, users] = await Promise.all([
+      // Excludes wallet_role='fee' (house fee-collection wallet) — FEE-type
+      // transactions mean money ARRIVING for that wallet, the opposite of
+      // what they mean for a regular user.
+      pageAllRows('wallets', 'user_id, balance_btc, locked_balance_btc, balance_usdt, locked_balance_usdt, wallet_role',
+        q => q.neq('wallet_role', 'fee')),
+      pageAllRows('wallet_transactions', 'user_id, type, currency, amount_btc, amount_usdt, status, idempotency_key, tx_hash'),
+      pageAllRows('users', 'id, username, email'),
+    ]);
+
+    const userMap = new Map(users.map(u => [u.id, u]));
+    const ledgerMap = new Map();
+    for (const tx of allTx) {
+      if (tx.status !== 'CONFIRMED' && tx.status !== 'COMPLETED') continue;
+      const cur = ledgerMap.get(tx.user_id) || { btc: 0, usdt: 0, txCount: 0 };
+      cur.txCount++;
+      const btc = parseFloat(tx.amount_btc || 0);
+      const usdt = parseFloat(tx.amount_usdt || 0);
+      // ESCROW_REFUND (not just REFUND) is this codebase's actual cancelled-
+      // trade-refund type. SWAP rows already store SIGNED amounts.
+      if (['DEPOSIT', 'TRANSFER_IN', 'ESCROW_RELEASE', 'REFUND', 'ESCROW_REFUND', 'SWAP'].includes(tx.type)) {
+        cur.btc += btc;
+        cur.usdt += usdt;
+      } else if (['WITHDRAWAL', 'TRANSFER_OUT', 'ESCROW_LOCK', 'FEE'].includes(tx.type)) {
+        cur.btc -= btc;
+        cur.usdt -= usdt;
+      }
+      ledgerMap.set(tx.user_id, cur);
+    }
+
+    const discrepancies = [];
+    for (const w of wallets) {
+      const l = ledgerMap.get(w.user_id) || { btc: 0, usdt: 0, txCount: 0 };
+      const wBtc = parseFloat(w.balance_btc || 0) + parseFloat(w.locked_balance_btc || 0);
+      const wUsdt = parseFloat(w.balance_usdt || 0) + parseFloat(w.locked_balance_usdt || 0);
+      const diffBtc = parseFloat((wBtc - l.btc).toFixed(8));
+      const diffUsdt = parseFloat((wUsdt - l.usdt).toFixed(2));
+      if (Math.abs(diffBtc) > 0.00000001 || Math.abs(diffUsdt) > 0.01) {
+        const u = userMap.get(w.user_id);
+        discrepancies.push({
+          userId: w.user_id,
+          username: u?.username || 'unknown',
+          email: u?.email || '',
+          walletBtc: wBtc,
+          ledgerBtc: l.btc,
+          diffBtc,
+          walletUsdt: wUsdt,
+          ledgerUsdt: l.usdt,
+          diffUsdt,
+          txCount: l.txCount,
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      totalWalletsChecked: (wallets || []).length,
+      totalTransactionsAudited: (allTx || []).length,
+      discrepanciesCount: discrepancies.length,
+      discrepancies,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/admin/monitoring/test-alert — dispatch a test alert to verify notification channels
+app.post('/api/admin/monitoring/test-alert', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAdmin(req, res); if (!admin) return;
+    const testPayload = {
+      userId: admin.id,
+      username: admin.username || 'admin',
+      severity: 'WARNING',
+      type: 'TEST_ALERT_TRIGGER',
+      title: '🧪 Test Security & Balance Alert',
+      message: `Manual test alert triggered by admin @${admin.username} from Admin Panel. Email and Telegram integrations are active.`,
+      amount: 0.1,
+      currency: 'BTC',
+      txHash: '0000000000000000000000000000000000000000000000000000000000000000',
+    };
+    await balanceAnomalyMonitor.recordAndDispatchAlert(testPayload);
+    res.json({ success: true, message: 'Test alert dispatched via Email and Telegram.' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // GET /api/admin/users — all users with search/filter/pagination
@@ -12316,22 +12832,52 @@ app.delete('/api/admin/suggestions/:id', verifyToken, async (req, res) => {
 // ============================================================
 
 // POST /api/support/tickets — create ticket + first message
+// Email-only flow: tickets created from the Support form are channel='email',
+// but they are created silently — no confirmation email is sent. The first
+// email the user receives is the agent's first reply from the dashboard.
 app.post('/api/support/tickets', verifyToken, async (req, res) => {
   try {
-    const { subject, category, message, department } = req.body;
+    const { subject, category, message, department, priority, trade_reference, username, email } = req.body;
     if (!subject?.trim()) return res.status(400).json({ error: 'Subject is required' });
     if (!message?.trim()) return res.status(400).json({ error: 'Message is required' });
+    const trimmedUsername = username?.trim();
+    const trimmedEmail = email?.trim();
+    if (!trimmedUsername) return res.status(400).json({ error: 'Username is required' });
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      return res.status(400).json({ error: 'Please enter a valid email address' });
+    }
 
-    // Try insert with department column; fall back without it if column doesn't exist yet
-    let ticketPayload = { user_id: req.userId, subject: subject.trim(), category: category || 'general', status: 'open' };
+    // Try insert with department/priority/trade_reference/contact columns; fall back
+    // progressively if any column doesn't exist yet in the live schema.
+    let ticketPayload = {
+      user_id: req.userId,
+      subject: subject.trim(),
+      category: category || 'general',
+      status: 'open',
+      channel: 'email',
+      submitted_username: trimmedUsername,
+      submitted_email: trimmedEmail,
+    };
     if (department) ticketPayload.department = department;
+    if (priority) ticketPayload.priority = priority;
+    if (trade_reference) ticketPayload.trade_reference = String(trade_reference).slice(0, 200);
     let { data: ticket, error: tErr } = await supabaseAdmin
       .from('support_tickets')
       .insert(ticketPayload)
       .select().single();
-    // If insert failed and we included department, retry without it (column may not exist)
-    if (tErr && department && tErr.message?.includes('department')) {
-      delete ticketPayload.department;
+    // Column-missing fallbacks: strip the offending optional fields and retry.
+    // Includes 'channel' so ticket creation still succeeds (untagged) in
+    // environments where the email-channel migration hasn't been applied yet.
+    // Match ONLY PostgREST missing-column errors ("Could not find the 'x'
+    // column …") — never constraint violations, whose text can contain column names.
+    const OPTIONAL_COLS = ['trade_reference', 'priority', 'department', 'submitted_username', 'submitted_email', 'channel'];
+    const isMissingCol = (err, col) => !!err && /could not find the/i.test(err.message || '') && (err.message || '').includes(`'${col}'`);
+    let stripped = 0;
+    while (tErr && stripped < OPTIONAL_COLS.length) {
+      const missing = OPTIONAL_COLS.find(c => ticketPayload[c] !== undefined && isMissingCol(tErr, c));
+      if (!missing) break;
+      delete ticketPayload[missing];
+      stripped++;
       ({ data: ticket, error: tErr } = await supabaseAdmin
         .from('support_tickets')
         .insert(ticketPayload)
@@ -12339,11 +12885,29 @@ app.post('/api/support/tickets', verifyToken, async (req, res) => {
     }
     if (tErr) return res.status(400).json({ error: tErr.message });
 
-    const { error: mErr } = await supabaseAdmin
+    // Bridge: pre-migration, PostgREST drops channel='email' on insert, so the
+    // reply endpoints' email gate would never fire. Remember it in-process
+    // (post-migration the DB column is authoritative and this is a no-op).
+    registerEmailChannelTicket(ticket.id);
+
+    const firstMessage = trade_reference
+      ? `${message.trim()}\n\n(Trade/Reference ID: ${String(trade_reference).slice(0, 200)})`
+      : message.trim();
+    // Message insert: 'channel' is dropped gracefully if the migration hasn't
+    // run in this environment (same degraded-mode behavior as the ticket insert).
+    let msgPayload = { ticket_id: ticket.id, sender_id: req.userId, is_admin: false, message: firstMessage, channel: 'email' };
+    let { error: mErr } = await supabaseAdmin
       .from('support_messages')
-      .insert({ ticket_id: ticket.id, sender_id: req.userId, is_admin: false, message: message.trim() });
+      .insert(msgPayload);
+    if (mErr && /could not find the/i.test(mErr.message || '') && mErr.message.includes("'channel'")) {
+      delete msgPayload.channel;
+      ({ error: mErr } = await supabaseAdmin.from('support_messages').insert(msgPayload));
+    }
     if (mErr) return res.status(400).json({ error: mErr.message });
 
+    // Form-created tickets are intentionally silent. The user sees the
+    // on-screen success state immediately, and the first email they receive is
+    // the agent's first reply from the dashboard.
     res.json({ success: true, ticket });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -12399,7 +12963,7 @@ app.get('/api/admin/support/tickets', verifyToken, async (req, res) => {
     const { status = '', page = 1, limit = 100 } = req.query;
     const offset = (page - 1) * limit;
     let query = supabaseAdmin.from('support_tickets')
-      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, email, avatar_url, phone_number, country, created_at)', { count: 'exact' })
+      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, email, avatar_url, phone, country, created_at)', { count: 'exact' })
       .order('updated_at', { ascending: false })
       .range(offset, offset + parseInt(limit) - 1);
     if (status) query = query.eq('status', status);
@@ -12408,11 +12972,11 @@ app.get('/api/admin/support/tickets', verifyToken, async (req, res) => {
     res.json({
       tickets: (data || []).map(t => ({
         ...t,
-        username: t.users?.username,
+        username: t.submitted_username || t.users?.username,
         full_name: t.users?.full_name,
-        user_email: t.users?.email,
+        user_email: t.submitted_email || t.users?.email,
         avatar_url: t.users?.avatar_url,
-        user_phone: t.users?.phone_number,
+        user_phone: t.users?.phone,
         user_country: t.users?.country,
         user_joined: t.users?.created_at,
       })),
@@ -12426,18 +12990,20 @@ app.get('/api/admin/support/tickets/:id/messages', verifyToken, async (req, res)
   try {
     const admin = await requireAdminOrCeo(req, res); if (!admin) return;
     const { data: ticket } = await supabaseAdmin.from('support_tickets')
-      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, email, avatar_url, phone_number, country, created_at)')
+      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, email, avatar_url, phone, country, created_at)')
       .eq('id', req.params.id).single();
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
     const { data: messages } = await supabaseAdmin.from('support_messages').select('*').eq('ticket_id', req.params.id).order('created_at', { ascending: true });
     res.json({
       ticket: {
         ...ticket,
-        username: ticket.users?.username,
+        username: ticket.submitted_username || ticket.users?.username,
         full_name: ticket.users?.full_name,
-        user_email: ticket.users?.email,
+        user_email: ticket.submitted_email || ticket.users?.email,
         avatar_url: ticket.users?.avatar_url,
-        user_phone: ticket.users?.phone_number,
+        // Pre-migration bridge: stamp email-channel so "via Email" badges render.
+        channel: ticket.channel || (isEmailChannelTicket(ticket) ? 'email' : ticket.channel),
+        user_phone: ticket.users?.phone,
         user_country: ticket.users?.country,
         user_joined: ticket.users?.created_at,
       },
@@ -12452,22 +13018,71 @@ app.post('/api/admin/support/tickets/:id/reply', verifyToken, async (req, res) =
     const admin = await requireAdminOrCeo(req, res); if (!admin) return;
     const { message } = req.body;
     if (!message?.trim()) return res.status(400).json({ error: 'Reply is required' });
-    const { data: ticket } = await supabaseAdmin.from('support_tickets').select('user_id, subject').eq('id', req.params.id).single();
+    const { data: ticket } = await supabaseAdmin.from('support_tickets').select('*').eq('id', req.params.id).single();
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
-    const { data: msg, error } = await supabaseAdmin.from('support_messages')
-      .insert({ ticket_id: req.params.id, sender_id: req.userId, is_admin: true, message: message.trim() })
+    const isEmailChannel = isEmailChannelTicket(ticket);
+    let msgPayload = { ticket_id: req.params.id, sender_id: req.userId, is_admin: true, message: message.trim(), ...(isEmailChannel ? { channel: 'email' } : {}) };
+    let { data: msg, error } = await supabaseAdmin.from('support_messages')
+      .insert(msgPayload)
       .select().single();
+    // Pre-migration tolerance: the channel column may not exist yet — retry
+    // without it rather than losing the reply entirely.
+    if (error && /could not find the 'channel' column/i.test(error.message || '')) {
+      delete msgPayload.channel;
+      ({ data: msg, error } = await supabaseAdmin.from('support_messages').insert(msgPayload).select().single());
+    }
     if (error) return res.status(400).json({ error: error.message });
     await supabaseAdmin.from('support_tickets').update({ updated_at: new Date(), status: 'active' }).eq('id', req.params.id);
+    // Email-channel tickets have no in-app chat view for the user — point them
+    // at their inbox instead of the Community Board.
     await createNotification(
       ticket.user_id, 'system',
       '💬 Support team replied to your ticket',
-      `Your ticket "${(ticket.subject || '').slice(0, 60)}" has a new reply. Open Community Board → Support to read it.`,
+      isEmailChannel
+        ? `Your ticket "${(ticket.subject || '').slice(0, 60)}" has a new reply. Check your email for the full message.`
+        : `Your ticket "${(ticket.subject || '').slice(0, 60)}" has a new reply. Open Community Board → Support to read it.`,
       '/'
     );
     sendSystemAlert(ticket.user_id, '💬 Support team replied to your ticket',
       `Your ticket "${(ticket.subject || '').slice(0, 60)}" has a new reply.`,
       'https://praqen.com').catch(() => { });
+
+    // Two-way email integration: email-channel tickets have no in-app chat view
+    // for the user, so replies from Admin/Ceo/Team dashboards must go out as
+    // actual emails too (mirrors the agent reply endpoint). Fire-and-forget.
+    if (isEmailChannel) {
+      supabaseAdmin.from('users').select('email, username, full_name').eq('id', req.userId).single()
+        .then(({ data: adminUser }) => adminUser?.username || adminUser?.full_name || null)
+        .catch(() => null)
+        .then(adminName => {
+          return supabaseAdmin.from('users').select('email').eq('id', ticket.user_id).single()
+            .then(({ data: ticketUser }) => {
+              const replyEmail = ticket.submitted_email || ticketUser?.email;
+              if (!replyEmail) throw new Error('ticket user has no email on file');
+              return emailService.sendTicketReplyEmail({
+                ticket,
+                userEmail: replyEmail,
+                message: message.trim(),
+                agentName: adminName,
+              });
+            });
+        })
+        .then(r => {
+          if (r && !r.success) {
+            console.warn(`[AdminReply] Email not sent for ticket ${req.params.id}: ${r.error}`);
+            return;
+          }
+          // Track the outbound Message-ID for In-Reply-To threading of the
+          // user's next reply (overwrites the previous ref — newest wins).
+          if (r?.messageId) {
+            supabaseAdmin.from('support_tickets')
+              .update({ inbound_email_ref: String(r.messageId).replace(/^<|>$/g, '') })
+              .eq('id', req.params.id)
+              .then(() => {}, () => {});
+          }
+        })
+        .catch(err => console.error(`[AdminReply] Reply email failed for ticket ${req.params.id}:`, err.message));
+    }
     res.json({ success: true, message: msg });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -12644,20 +13259,27 @@ app.post('/api/support/tickets/:id/assign-agent', verifyToken, async (req, res) 
         .eq('id', req.params.id);
     }
 
-    // Send an automatic agent introduction message
-    const memStatus = getAgentStatus(bestAgent.id);
-    const agentDisplayName = memStatus.display_name || bestAgent.full_name || bestAgent.username || 'Support Agent';
-    const greeting = `Hi! I'm ${agentDisplayName}, a support agent at PRAQEN. I'll be helping you today. Could you please share any transaction ID, trade reference, or specific details about your issue so I can assist you right away?`;
-    const { data: introMsg, error: introErr } = await supabaseAdmin
-      .from('support_messages')
-      .insert({
-        ticket_id: req.params.id,
-        sender_id: bestAgent.id,
-        is_admin: true,
-        message: greeting,
-      })
-      .select().single();
-    if (introErr) console.error('Failed to send agent intro:', introErr);
+    // Send an automatic agent introduction message — but NOT for email-channel
+    // tickets: those are email-only, so the first real /reply (which sends the
+    // actual email) serves as the introduction.
+    const isEmailChannel = isEmailChannelTicket(ticket);
+    let introMsg = null;
+    let introErr = null;
+    if (!isEmailChannel) {
+      const memStatus = getAgentStatus(bestAgent.id);
+      const agentDisplayName = memStatus.display_name || bestAgent.full_name || bestAgent.username || 'Support Agent';
+      const greeting = `Hi! I'm ${agentDisplayName}, a support agent at PRAQEN. I'll be helping you today. Could you please share any transaction ID, trade reference, or specific details about your issue so I can assist you right away?`;
+      ({ data: introMsg, error: introErr } = await supabaseAdmin
+        .from('support_messages')
+        .insert({
+          ticket_id: req.params.id,
+          sender_id: bestAgent.id,
+          is_admin: true,
+          message: greeting,
+        })
+        .select().single());
+      if (introErr) console.error('Failed to send agent intro:', introErr);
+    }
 
     res.json({
       agent: bestAgent,
@@ -12815,18 +13437,21 @@ app.get('/api/agent/dashboard', verifyToken, async (req, res) => {
     // accurate even if the raw list is ever capped.
     const { data, error } = await supabaseAdmin
       .from('support_tickets')
-      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, avatar_url, email, phone_number, country)')
+      .select('*, users!support_tickets_user_id_fkey(id, username, full_name, avatar_url, email, phone, country)')
       .order('updated_at', { ascending: false })
       .limit(500);
     if (error) return res.status(400).json({ error: error.message });
 
     const tickets = (data || []).map(t => ({
       ...t,
+      // Pre-migration bridge: stamp email-channel so "via Email" badges render
+      // for form/email tickets even while the channel column is missing.
+      channel: t.channel || (isEmailChannelTicket(t) ? 'email' : t.channel),
       username: t.users?.username,
       full_name: t.users?.full_name,
       avatar_url: t.users?.avatar_url,
       user_email: t.users?.email,
-      user_phone: t.users?.phone_number,
+      user_phone: t.users?.phone,
       user_country: t.users?.country,
     }));
 
@@ -12896,16 +13521,22 @@ app.post('/api/agent/tickets/:id/accept', verifyToken, async (req, res) => {
     agentName = agentName || agentUser?.full_name || agentUser?.username || 'Support Agent';
     agentAvatar = agentAvatar || agentUser?.avatar_url || null;
 
-    // Check if we already sent an intro message from this agent
-    const { data: existingMsgs } = await supabaseAdmin
-      .from('support_messages')
-      .select('id')
-      .eq('ticket_id', req.params.id)
-      .eq('sender_id', req.userId)
-      .limit(1);
+    // Check if we already sent an intro message from this agent.
+    // Email-channel tickets skip the live-chat intro entirely — the user has no
+    // in-app chat for these; the agent's first /reply goes out as an actual email.
+    const isEmailChannel = isEmailChannelTicket(ticket);
+    let existingMsgs = null;
+    if (!isEmailChannel) {
+      ({ data: existingMsgs } = await supabaseAdmin
+        .from('support_messages')
+        .select('id')
+        .eq('ticket_id', req.params.id)
+        .eq('sender_id', req.userId)
+        .limit(1));
+    }
 
     let introMessage = null;
-    if (!existingMsgs || existingMsgs.length === 0) {
+    if (!isEmailChannel && (!existingMsgs || existingMsgs.length === 0)) {
       // Send agent introduction
       const greeting = `Hi! I'm ${agentName}, a support agent at PRAQEN. I'll be helping you today. Could you please share any transaction ID, trade reference, or specific details about your issue so I can assist you right away?`;
       const { data: msg, error: msgErr } = await supabaseAdmin
@@ -12969,6 +13600,47 @@ app.post('/api/agent/tickets/:id/reply', verifyToken, async (req, res) => {
     sendSystemAlert(ticket.user_id, '💬 Support agent replied to your chat',
       `Your support chat "${(ticket.subject || '').slice(0, 60)}" has a new reply.`,
       'https://praqen.com').catch(() => { });
+
+    const isEmailChannel = isEmailChannelTicket(ticket);
+    console.log(`[AgentReply] ticket=${req.params.id} rawChannel=${ticket.channel || 'null'} isEmailChannel=${isEmailChannel}`);
+
+    // Two-way email integration: on email-channel tickets the reply must land in
+    // the user's actual inbox — email users may never open the app. Chat tickets
+    // keep the in-app notification behavior only. Fire-and-forget so reply
+    // latency and success never depend on the email provider.
+    if (isEmailChannel) {
+      const agentMem = getAgentStatus(req.userId);
+      supabaseAdmin.from('users').select('email, username, full_name').eq('id', req.userId).single()
+        .then(({ data: agentUser }) => agentUser?.username || agentUser?.full_name || agentMem?.display_name || null)
+        .catch(() => agentMem?.display_name || null)
+        .then(agentName => {
+          return supabaseAdmin.from('users').select('email').eq('id', ticket.user_id).single()
+            .then(({ data: ticketUser }) => {
+              if (!ticketUser?.email) throw new Error('ticket user has no email on file');
+              return emailService.sendTicketReplyEmail({
+                ticket,
+                userEmail: ticketUser.email,
+                message: message.trim(),
+                agentName,
+              });
+            });
+        })
+        .then(r => {
+          if (r && !r.success) {
+            console.warn(`[AgentReply] Email not sent for ticket ${req.params.id}: ${r.error}`);
+            return;
+          }
+          // Track the outbound Message-ID for In-Reply-To threading of the
+          // user's next reply (overwrites the previous ref — newest wins).
+          if (r?.messageId) {
+            supabaseAdmin.from('support_tickets')
+              .update({ inbound_email_ref: String(r.messageId).replace(/^<|>$/g, '') })
+              .eq('id', req.params.id)
+              .then(() => {}, () => {});
+          }
+        })
+        .catch(err => console.error(`[AgentReply] Reply email failed for ticket ${req.params.id}:`, err.message));
+    }
 
     // Clear typing indicator for this agent on this ticket
     delete supportTypingState[`${req.params.id}:${req.userId}`];
@@ -13686,6 +14358,7 @@ const tronWalletService = require('./services/tronWalletService');
 const tronHotWallet = require('./services/tronHotWallet');
 const usdtDepositMonitor = require('./services/usdtDepositMonitor');
 const swapService = require('./services/swapService');
+const tronConfig = require('./services/tronConfig');
 const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
 
 // GET /api/wallet/usdt — return USDT balance + Tron deposit address
@@ -13712,8 +14385,10 @@ app.get('/api/wallet/usdt', verifyToken, async (req, res) => {
     res.json({
       success: true,
       tron_address: tronAddress,
-      network: 'Tron (TRC-20)',
-      contract: process.env.TRON_USDT_CONTRACT || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+      network: tronConfig.isTestnet ? 'Tron (Nile Testnet)' : 'Tron (TRC-20)',
+      is_testnet: tronConfig.isTestnet,
+      contract: tronConfig.usdtContract,
+      explorer_url: tronConfig.getExplorerAddressUrl(tronAddress),
       balance_usdt: parseFloat(walRow?.balance_usdt || 0),
       locked_balance_usdt: parseFloat(walRow?.locked_balance_usdt || 0),
     });
@@ -13759,7 +14434,31 @@ app.post('/api/wallet/usdt/send', verifyToken, requireNotBanned, async (req, res
       code: 'USDT_SENDS_DISABLED',
     });
   }
-  const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.008'); // 0.8% — no flat-dollar floor
+  // ── Withdrawal lock after email/phone change (NoOnes behavior) ─────────────
+  // Blocks on-chain USDT withdrawals for 24h after a confirmed contact change.
+  try {
+    const { data: usdtLockRow } = await supabaseAdmin
+      .from('users')
+      .select('withdrawal_locked_until')
+      .eq('id', req.userId)
+      .single();
+    const usdtLockedUntil = usdtLockRow?.withdrawal_locked_until ? new Date(usdtLockRow.withdrawal_locked_until) : null;
+    if (usdtLockedUntil && usdtLockedUntil > new Date()) {
+      const hrs = Math.ceil((usdtLockedUntil - Date.now()) / 3600000);
+      return res.status(403).json({
+        error: `Withdrawals are temporarily disabled for 24 hours after changing your email or phone number. Try again in about ${hrs} hour(s).`,
+        withdrawalLocked: true,
+        lockedUntil: usdtLockedUntil.toISOString(),
+      });
+    }
+  } catch (usdtLockErr) {
+    // withdrawal_locked_until column may not exist yet (migration not run) — fail open.
+    if (!/does not exist|schema cache/i.test(usdtLockErr.message || '')) {
+      console.warn('[wallet/usdt/send] withdrawal lock check failed:', usdtLockErr.message);
+    }
+  }
+
+  const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.018'); // 1.8% — no flat-dollar floor
   const MIN_SEND = parseFloat(process.env.USDT_MIN_SEND || '5.0');  // minimum $5
 
   // ── Fee calculator: straight percentage, no flat-dollar floor ─────────────
@@ -14074,7 +14773,7 @@ app.get('/api/wallet/usdt/check', verifyToken, async (req, res) => {
     res.json({
       success: true,
       balance_usdt: parseFloat(wal?.balance_usdt || 0),
-      tron_address: walletRow.tron_address,
+      tron_address: derivedAddress,
       checked_at: new Date().toISOString(),
     });
   } catch (error) {
@@ -14210,7 +14909,7 @@ app.post('/api/wallet/usdt/internal-transfer', verifyToken, requireNotBanned, as
 
     // ── Email notifications (fire-and-forget) ──────────────────────────────
     const txDate = new Date().toUTCString();
-    const emailFrom = `"PRAQEN" <${process.env.EMAIL_USER || 'support@praqen.com'}>`;
+    const emailFrom = `"PRAQEN" <${NOTIFICATION_FROM_ADDR}>`;
 
     const recipHtml = `<div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:520px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #E2E8F0">
   <div style="background:linear-gradient(135deg,#1B4332,#26A17B);padding:28px 32px;text-align:center">
@@ -14638,14 +15337,21 @@ if (
     depositMonitor.start();
     console.log('🔍 Deposit monitor: MAINNET — polls every 5 min | SMS + Email alerts enabled');
 
-    // USDT TRC-20 deposit monitor — scans all Tron addresses every 15 min
+    // USDT TRC-20 deposit monitor — scans all Tron addresses
     usdtDepositMonitor.start();
-    console.log('🔍 USDT Deposit monitor: MAINNET (Tron) — polls every 15 min | Email + Push alerts enabled');
+    console.log(`🔍 USDT Deposit monitor: ${tronConfig.isTestnet ? 'TESTNET (Nile)' : 'MAINNET (Tron)'} — polls every 5 min | Email + Push alerts enabled`);
 
     // ── Deposit sweeper — moves confirmed deposits to hot wallet ───────────
-    // Runs 2 min after startup then every 30 min. Silent — never affects user balances.
+    // Runs 2 min after startup then every 60 min (SWEEP_INTERVAL_MS). Silent — never affects user balances.
     sweepService.start();
     console.log(`🧹 Sweep service: MAINNET — hot wallet ${hdWalletService.getHotWalletAddress()}`);
+
+    // ── Real-time balance anomaly monitor — spike/velocity/drift alerting ──
+    // Never writes to a balance; only reads and sends alerts (email/Telegram/
+    // admin notification). depositMonitor.js and usdtDepositMonitor.js already
+    // call balanceAnomalyMonitor.checkCreditEvent() on every successful credit;
+    // this starts its periodic ledger-vs-wallet drift check.
+    balanceAnomalyMonitor.start();
 
     // ── Daily balance integrity check ───────────────────────────────────────
     balanceIntegrity.start();

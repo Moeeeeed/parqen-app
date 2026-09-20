@@ -56,13 +56,19 @@ const parseEndpoints = () => {
     .map((s) => (s || '').trim().replace(/\/+$/, '')) // strip trailing slash(es)
     .filter(Boolean);
 
-  const list = cleaned.length
-    ? cleaned
+  const isTestnet = (process.env.HD_NETWORK || '').toLowerCase() === 'testnet';
+  const defaultEndpoints = isTestnet
+    ? [
+        'https://blockstream.info/testnet/api',
+        'https://mempool.space/testnet/api',
+      ]
     : [
-        'https://mempool.space/api',
         'https://blockstream.info/api',
         'https://mempool.emzy.de/api',
+        'https://mempool.space/api',
       ];
+
+  const list = cleaned.length ? cleaned : defaultEndpoints;
 
   return [...new Set(list)]; // de-dupe, keep order
 };
@@ -76,7 +82,10 @@ const NO_BC_HANDLER = Symbol('no-blockcypher-handler');
 class BlockCypherAdapter {
   constructor(token) {
     this.token = token || process.env.BLOCKCYPHER_TOKEN || '';
-    this.baseUrl = 'https://api.blockcypher.com/v1/btc/main';
+    const isTestnet = (process.env.HD_NETWORK || '').toLowerCase() === 'testnet';
+    this.baseUrl = isTestnet
+      ? 'https://api.blockcypher.com/v1/btc/test3'
+      : 'https://api.blockcypher.com/v1/btc/main';
   }
 
   _auth(sep) {

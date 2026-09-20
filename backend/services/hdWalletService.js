@@ -83,18 +83,27 @@ class HDWalletService {
     }
 
     // Defaults to mainnet; set HD_NETWORK=testnet in .env for local/dev use
-    this.network      = process.env.HD_NETWORK === 'testnet'
+    const isTestnet   = process.env.HD_NETWORK === 'testnet';
+    this.network      = isTestnet
       ? bitcoin.networks.testnet
       : bitcoin.networks.bitcoin;
-    this.apiBase      = 'https://mempool.space/api';
-    this.apiFallbacks = ['https://blockstream.info/api', 'https://mempool.emzy.de/api'];
+    this.apiBase      = isTestnet
+      ? 'https://mempool.space/testnet/api'
+      : 'https://mempool.space/api';
+    this.apiFallbacks = isTestnet
+      ? ['https://blockstream.info/testnet/api']
+      : ['https://blockstream.info/api', 'https://mempool.emzy.de/api'];
 
     const seed = bip39.mnemonicToSeedSync(mnemonic);
     this.masterPrivateKey = seed.slice(0, 32);
 
     this.initialized = true;
-    console.log('✅ HD Wallet initialized — MAINNET');
+    console.log(`✅ HD Wallet initialized — ${isTestnet ? 'TESTNET' : 'MAINNET'}`);
     console.log(`📡 API: ${this.apiBase}`);
+  }
+
+  getNetwork() {
+    return process.env.HD_NETWORK === 'testnet' ? 'testnet' : 'mainnet';
   }
 
   // ── Derive private key for any identifier ─────────────────────────────────
@@ -114,7 +123,7 @@ class HDWalletService {
     const privateKey = this.getPrivateKey(identifier);
     const keyPair    = ECPair.fromPrivateKey(privateKey, { network: this.network });
 
-    // Native SegWit (bc1q) — lowest fees, most modern — MAINNET ONLY
+    // Native SegWit (bc1q on mainnet, tb1q on testnet)
     const payment = bitcoin.payments.p2wpkh({
       pubkey:  keyPair.publicKey,
       network: this.network,
@@ -123,7 +132,7 @@ class HDWalletService {
     return {
       address:    payment.address,
       identifier: identifier,
-      network:    'mainnet',
+      network:    this.getNetwork(),
       format:     'Native SegWit (P2WPKH)',
       createdAt:  new Date().toISOString(),
     };

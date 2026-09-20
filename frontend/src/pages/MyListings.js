@@ -407,14 +407,6 @@ function OfferCard({ listing, onEdit, onDelete, onToggle, walletBtc }) {
 
       {/* ── Metrics: 2×2 grid ── */}
       <div className="grid grid-cols-2 gap-px" style={{backgroundColor:C.g100}}>
-        <div className="bg-white px-3 py-2.5">
-          <p className="text-xs font-bold uppercase" style={{color:C.g400,letterSpacing:'0.04em'}}>Margin</p>
-          <p className="font-black text-sm mt-0.5" style={{color:marginColor}}>{marginDisplay}</p>
-        </div>
-        <div className="bg-white px-3 py-2.5 min-w-0 overflow-hidden">
-          <p className="text-xs font-bold uppercase" style={{color:C.g400,letterSpacing:'0.04em'}}>Range</p>
-          <p className="font-black text-sm mt-0.5 truncate" style={{color:C.forest}}>{rangeDisplay} {cur}</p>
-        </div>
         <div className="bg-white px-3 py-2.5 min-w-0 overflow-hidden">
           <p className="text-xs font-bold uppercase" style={{color:C.g400,letterSpacing:'0.04em'}}>Payment</p>
           <p className="font-black text-sm mt-0.5 truncate" style={{color:C.paid}}>{listing.payment_method||'—'}</p>
@@ -957,7 +949,7 @@ export default function MyListings({ user }) {
               © {new Date().getFullYear()} PRAQEN. All rights reserved.
             </p>
             <p className="text-xs flex items-center gap-1" style={{color:'rgba(255,255,255,0.3)'}}>
-              <Shield size={10}/> Escrow Protected · 0.5% fee on completion only
+              <Shield size={10}/> Escrow Protected · 2% fee on completion only
             </p>
           </div>
         </div>

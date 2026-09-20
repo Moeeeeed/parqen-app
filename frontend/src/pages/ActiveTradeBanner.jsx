@@ -63,7 +63,7 @@ function TradeCard({ trade, user, onClose, onExpire }) {
   const st        = getStatus(trade.status);
   const cp        = isBuyer ? (trade.seller||{}) : (trade.buyer||{});
   const cpName    = cp.username||(isBuyer?trade.seller_name:trade.buyer_name)||'—';
-  const cpFlag    = flag(cp.country_code||trade.listing?.country_code||'');
+  const cpFlag    = flag(cp.country||trade.listing?.country||'');
   const isGift    = isGiftTrade(trade);
   const typeColor = tradeColor(isGift, isBuyer);
   const typeLabel = isGift ? '🎁 GIFT CARD' : isBuyer ? '🛒 BUYING BTC' : '💰 SELLING BTC';
@@ -289,7 +289,7 @@ export default function ActiveTradeBanner({ user, currentPage }) {
           <div className="flex items-center gap-1.5">
             <Shield size={12} style={{ color: C.green }}/>
             <p className="text-xs font-semibold" style={{ color: C.g500 }}>
-              Escrow-protected · 0.5% fee on completion only
+              Escrow-protected · 2% fee on completion only
             </p>
           </div>
           <button onClick={() => setShowModal(false)}

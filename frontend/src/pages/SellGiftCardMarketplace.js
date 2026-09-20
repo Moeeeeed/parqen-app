@@ -140,27 +140,10 @@ function BuyerOfferCard({ offer, onSelect, user, liveBtcUsd }) {
               </div>
             </div>
           </div>
-          {margin !== 0 && (
-            <div className={`text-xs font-bold px-2 py-1 rounded-full ${margin > 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-              {margin > 0 ? `+${margin}%` : `${margin}%`}
-            </div>
-          )}
         </div>
-        
+
         {/* Offer Details */}
-        <div className="grid grid-cols-3 gap-3 py-3 border-t border-b border-gray-100">
-          <div className="text-center">
-            <p className="text-xs text-gray-500">Rate</p>
-            <p className="text-sm font-bold" style={{ color: PRAQEN.primary }}>
-              1 BTC ≈ ${formatNumber(btcRate)}
-            </p>
-          </div>
-          <div className="text-center">
-            <p className="text-xs text-gray-500">Limits</p>
-            <p className="text-sm font-semibold">
-              ${minAmount} - ${maxAmount}
-            </p>
-          </div>
+        <div className="flex items-center justify-center py-3 border-t border-b border-gray-100">
           <div className="text-center">
             <p className="text-xs text-gray-500">Payment</p>
             <div className="flex items-center justify-center gap-1">
@@ -585,7 +568,7 @@ export default function SellGiftCardMarketplace({ user }) {
                 <div className="px-3 py-2.5 bg-white flex items-start gap-2">
                   <Percent size={13} style={{ color: PRAQEN.primary, marginTop: 2, flexShrink: 0 }} />
                   <p className="text-xs leading-relaxed" style={{ color: PRAQEN.gray[600] }}>
-                    <strong style={{ color: PRAQEN.gray[800] }}>Platform fee: 1%</strong> ({(parseFloat(tradeAmount || 0) / modalRate * 0.01).toFixed(8)} BTC) — added on top and paid by the BTC buyer. It never comes out of what you receive above. No other fee applies to this trade.
+                    <strong style={{ color: PRAQEN.gray[800] }}>Platform fee: 3%</strong> ({(parseFloat(tradeAmount || 0) / modalRate * 0.03).toFixed(8)} BTC) — added on top and paid by the BTC buyer. It never comes out of what you receive above. No other fee applies to this trade.
                   </p>
                 </div>
               </div>
