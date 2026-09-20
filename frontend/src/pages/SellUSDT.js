@@ -300,7 +300,7 @@ function OfferCard({listing, usdtPriceUSD, btcPriceUSD, onViewBuyer, onSell, lik
 
   const pos   = parseInt(u.positive_feedback||0);
   const neg   = parseInt(u.negative_feedback||0);
-  const pmLabel = listing.payment_method || 'Payment';
+  const pmLabel = (listing.payment_method === 'mtmmomo' || listing.payment_method === 'mtn_momo') ? 'MTN Mobile Money' : (listing.payment_method || 'Payment');
 
   return (
     <div className="rounded-2xl overflow-hidden transition-all w-full" style={{border:`1px solid ${C.g200}`, background:'#fff'}}>
