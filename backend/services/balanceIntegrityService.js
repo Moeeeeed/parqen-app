@@ -97,6 +97,27 @@ async function runIntegrityCheck() {
             `wallets=${trueBtc.toFixed(8)} user_balances=${secondaryBtc.toFixed(8)} diff=${diff.toFixed(8)} — flagging for reconciliation`
           );
 
+          // Skip if this user already has an unresolved MIRROR_DRIFT flag —
+          // without this, every restart re-runs the "once at startup" check
+          // (this job is meant to run once every 24h, but the backend process
+          // restarts far more often than that) and blindly inserts another
+          // duplicate row for the same still-unresolved drift. Confirmed
+          // 2026-09-19/20: this grew the table from a few genuine findings to
+          // 1,800+ rows, burying real signal (donbillion1's and jabyru_113's
+          // genuine cases sat unnoticed under the noise). Same de-dup pattern
+          // already used correctly in depositReconciliationService.js's
+          // raiseFlag().
+          const { data: existingFlag } = await supabaseAdmin
+            .from('reconciliation_flags')
+            .select('id')
+            .eq('user_id', userId).eq('reason', 'MIRROR_DRIFT').eq('status', 'RECONCILIATION_REQUIRED')
+            .maybeSingle();
+
+          if (existingFlag) {
+            flagged++; // still a real, current mismatch — just don't re-insert it
+            continue;
+          }
+
           // Flag for a human to investigate. Do NOT touch either balance — see the
           // file header comment for why "detect and auto-correct" is exactly the
           // pattern this tool used to have and no longer does.
