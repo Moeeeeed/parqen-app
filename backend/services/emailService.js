@@ -1431,6 +1431,33 @@ async function sendBroadcastToAllUsers(subject, htmlBody, broadcastType = 'broad
   return { sent, failed, total: targets.length };
 }
 
+function newChatMessageHtml(recipientName, senderName, tradeId, messagePreview) {
+  const headline = 'You Have a New Message';
+  const detail = `<strong>${senderName}</strong> has sent you a message regarding your trade. Reply as soon as possible to keep the trade moving smoothly.`;
+  return base(headline, `
+    <h2 style="color:#10b981;font-size:20px;margin:0 0 8px;">${headline}</h2>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${recipientName}</strong>! ${detail}</p>
+    ${infoBox(`
+      <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Trade Ref</td>
+          <td style="padding:7px 0;text-align:right;"><span style="background:#10b981;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;">#${(tradeId||'').toString().slice(0,8).toUpperCase()}</span></td></tr>
+      <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Message</td>
+          <td style="padding:7px 0;color:#1B4332;font-size:13px;text-align:right;"><em>"${messagePreview}"</em></td></tr>
+    `)}
+    ${ctaButton('Reply to Message →', `https://praqen.com/trade/${tradeId}`)}
+  `);
+}
+
+async function sendNewChatMessageEmail(recipientUser, senderName, tradeId, messagePreview) {
+  return sendEmail({
+    userId:   recipientUser.id,
+    to:       recipientUser.email,
+    subject:  `New Message from ${senderName} (Trade #${(tradeId||'').toString().slice(0,8).toUpperCase()})`,
+    html:     newChatMessageHtml(recipientUser.username || 'Trader', senderName, tradeId, messagePreview),
+    type:     'new_message',
+    metadata: { trade_id: tradeId },
+  });
+}
+
 module.exports = {
   sendEmail,
   sendTicketCreatedEmail,
@@ -1456,4 +1483,5 @@ module.exports = {
   sendBroadcastToAllUsers,
   sendEidBonusEmail,
   sendUsdtAnnouncementEmail,
+  sendNewChatMessageEmail,
 };
