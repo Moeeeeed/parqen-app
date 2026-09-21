@@ -1432,16 +1432,26 @@ async function sendBroadcastToAllUsers(subject, htmlBody, broadcastType = 'broad
 }
 
 function newChatMessageHtml(recipientName, senderName, tradeId, messagePreview) {
+  // Escape user-controlled content (username, chat message text) before
+  // interpolating into HTML — same pattern already used for ticket-reply
+  // message previews elsewhere in this file. Without this, a trade
+  // counterparty could embed a link or markup in their chat message and have
+  // it render live inside this official PRAQEN notification email.
+  const esc = (s) => String(s || '').replace(/</g, '&lt;');
+  const safeRecipientName = esc(recipientName);
+  const safeSenderName    = esc(senderName);
+  const safePreview       = esc(messagePreview);
+
   const headline = 'You Have a New Message';
-  const detail = `<strong>${senderName}</strong> has sent you a message regarding your trade. Reply as soon as possible to keep the trade moving smoothly.`;
+  const detail = `<strong>${safeSenderName}</strong> has sent you a message regarding your trade. Reply as soon as possible to keep the trade moving smoothly.`;
   return base(headline, `
     <h2 style="color:#10b981;font-size:20px;margin:0 0 8px;">${headline}</h2>
-    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${recipientName}</strong>! ${detail}</p>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${safeRecipientName}</strong>! ${detail}</p>
     ${infoBox(`
       <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Trade Ref</td>
           <td style="padding:7px 0;text-align:right;"><span style="background:#10b981;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;">#${(tradeId||'').toString().slice(0,8).toUpperCase()}</span></td></tr>
       <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Message</td>
-          <td style="padding:7px 0;color:#1B4332;font-size:13px;text-align:right;"><em>"${messagePreview}"</em></td></tr>
+          <td style="padding:7px 0;color:#1B4332;font-size:13px;text-align:right;"><em>"${safePreview}"</em></td></tr>
     `)}
     ${ctaButton('Reply to Message →', `https://praqen.com/trade/${tradeId}`)}
   `);
