@@ -8962,28 +8962,26 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
         error: `Could not lock ${tradeCurrency} in escrow. The seller may have insufficient funds. Please try a different offer.`
       });
     }
+    // Fetch users before response to ensure email data is ready
+    const [buyerEmailRes, sellerEmailRes] = await Promise.allSettled([
+      supabaseAdmin.from('users').select('id, email, username').eq('id', buyerId).single(),
+      supabaseAdmin.from('users').select('id, email, username').eq('id', sellerId).single(),
+    ]);
+    const buyerEmailUser = buyerEmailRes.value?.data;
+    const sellerEmailUser = sellerEmailRes.value?.data;
+
     // Invalidate marketplace cache so seller's reduced BTC balance shows immediately
     bustCache();
     // Respond immediately — escrow is locked, trade is live. Do NOT block on emails.
     res.json({ success: true, trade: trade[0], escrowAddress: escrowResult.escrowAddress, fee });
 
-    // Send emails in the background — never block the response
-    setImmediate(async () => {
-      try {
-        const [buyerEmailRes, sellerEmailRes] = await Promise.allSettled([
-          supabaseAdmin.from('users').select('id, email, username').eq('id', buyerId).single(),
-          supabaseAdmin.from('users').select('id, email, username').eq('id', sellerId).single(),
-        ]);
-        const buyerEmailUser = buyerEmailRes.value?.data;
-        const sellerEmailUser = sellerEmailRes.value?.data;
-        if (buyerEmailUser?.email)
-          emailService.sendTradeOpenedEmail(buyerEmailUser, trade[0], 'buyer').catch(e => console.error('[TradeOpen] buyer email:', e.message));
-        if (sellerEmailUser?.email)
-          emailService.sendTradeOpenedEmail(sellerEmailUser, trade[0], 'seller').catch(e => console.error('[TradeOpen] seller email:', e.message));
-      } catch (emailErr) {
-        console.error('[Trade Open] Email failed:', emailErr.message);
-      }
-    });
+    // Send emails in the background as detached promises (without setImmediate which can be frozen on some environments)
+    if (buyerEmailUser?.email) {
+      emailService.sendTradeOpenedEmail(buyerEmailUser, trade[0], 'buyer').catch(e => console.error('[TradeOpen] buyer email:', e.message));
+    }
+    if (sellerEmailUser?.email) {
+      emailService.sendTradeOpenedEmail(sellerEmailUser, trade[0], 'seller').catch(e => console.error('[TradeOpen] seller email:', e.message));
+    }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -9332,6 +9330,20 @@ app.post('/api/messages', verifyToken, async (req, res) => {
             sendSystemAlert(recipientId, `💬 New Message in Trade #${tradeRef}`,
               `${senderName}: ${preview}`,
               `https://praqen.com/trade/${tradeId}`).catch(() => { });
+            
+            // Check if this is the FIRST message sent by this user in this trade, to send an email alert
+            const { count: msgCount } = await supabaseAdmin.from('messages')
+              .select('id', { count: 'exact', head: true })
+              .eq('trade_id', tradeId)
+              .eq('sender_id', req.userId);
+            
+            if (msgCount === 1) { // 1 because the message was just inserted
+              const { data: recipientData } = await supabaseAdmin.from('users').select('id, email, username').eq('id', recipientId).single();
+              if (recipientData?.email) {
+                emailService.sendNewChatMessageEmail(recipientData, senderName, tradeId, preview)
+                  .catch(e => console.error('[Message email] Failed:', e.message));
+              }
+            }
           }
         } catch (e) {
           console.error('[Message notification] Failed:', e.message);
