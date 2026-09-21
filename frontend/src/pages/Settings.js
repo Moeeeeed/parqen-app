@@ -1,6 +1,6 @@
 // src/pages/Settings.js - COMPLETE CLEAN FILE
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
@@ -15,11 +15,11 @@ import {
   Shield, Globe, Save, Eye, EyeOff, CheckCircle,
   AlertCircle, Smartphone, LogOut, ChevronRight,
   Camera, BadgeCheck, Clock, Upload, RefreshCw,
-  FileText, DollarSign, Languages, MapPin, X,
+  FileText, DollarSign, Languages, MapPin, X, Check,
   ToggleLeft, ToggleRight,
-  Ban, WifiOff, MessageCircle, Car, Plane, Zap,
+  Ban, WifiOff, MessageCircle, Car, Plane,
   AlertTriangle, Circle, Send, Unlink, Link,
-  Edit3, ChevronDown, Menu
+  Edit3, ChevronDown, Menu, Search
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -232,9 +232,12 @@ const PHONE_CODES = [
   { flag: '🇻🇪', code: '+58', name: 'Venezuela' },
   { flag: '🇻🇳', code: '+84', name: 'Vietnam' },
   { flag: '🇾🇪', code: '+967', name: 'Yemen' },
-  { flag: '🇿🇲', code: '+260', name: 'Zambia' },
-  { flag: '🇿🇼', code: '+263', name: 'Zimbabwe' },
-];
+  { flag: '🇿🇲', code: '+260', name: 'Zambia' },];
+
+// Countries for the ID verification "Country" picker sheet — derived from the
+// PHONE_CODES table (already a full alphabetical ISO list with flags) so this
+// picker and the phone country-code picker can never drift apart.
+const KYC_PICKER_COUNTRIES = PHONE_CODES.map(c => ({ flag: c.flag, name: c.name }));
 
 const INTERNAL_TABS = ['account', 'verification', 'security', 'notifications'];
 
@@ -327,8 +330,12 @@ function AccountBottomSheet({ title, onClose, children, footer }) {
     };
   }, [onClose]);
 
-  // Max sheet height dynamically caps at visible viewport minus top safe clearance (24px)
-  const maxSheetHeight = Math.max(200, (vvHeight || (innerPx - kbOverlap)) - 24);
+  // Max sheet height dynamically caps at visible viewport minus top safe
+  // clearance (40px). Tall sheets (e.g. the 2-step ID verification) stop 40px
+  // short of the viewport top, leaving a visible strip of the page above them;
+  // short sheets (Country/ID pickers, checklists) are content-sized and never
+  // reach the cap, so their position is unchanged.
+  const maxSheetHeight = Math.max(200, (vvHeight || (innerPx - kbOverlap)) - 40);
 
   const sheetContent = (
     <>
@@ -428,23 +435,27 @@ function AccountBottomSheet({ title, onClose, children, footer }) {
           {children}
         </div>
 
-        {/* Pinned footer (outside the scroll area, safe-area + keyboard aware) */}
-        <div
-          className="flex gap-3"
-          style={{
-            paddingLeft: 24,
-            paddingRight: 24,
-            paddingTop: 12,
-            flexShrink: 0,
-            paddingBottom: kbOverlap > 0
-              ? '16px'
-              : 'calc(16px + env(safe-area-inset-bottom, 0px))',
-            borderTop: `1px solid ${C.g100}`,
-            backgroundColor: C.white,
-          }}
-        >
-          {footer}
-        </div>
+        {/* Pinned footer (outside the scroll area, safe-area + keyboard aware).
+            Rendered only when a footer is provided — checklist/info sheets
+            (e.g. the Verification tab's "What you can do") have no actions. */}
+        {footer !== undefined && (
+          <div
+            className="flex gap-3"
+            style={{
+              paddingLeft: 24,
+              paddingRight: 24,
+              paddingTop: 12,
+              flexShrink: 0,
+              paddingBottom: kbOverlap > 0
+                ? '16px'
+                : 'calc(16px + env(safe-area-inset-bottom, 0px))',
+              borderTop: `1px solid ${C.g100}`,
+              backgroundColor: C.white,
+            }}
+          >
+            {footer}
+          </div>
+        )}
       </div>
     </>
   );
@@ -522,23 +533,439 @@ function MobileAccountField({ label, value, onSave, readOnly = false, type = 'te
   );
 }
 
-// ─── Verification Step ────────────────────────────────────────────────────────
-function VerifStep({ n, title, desc, done, active, badge }) {
+// ─── Verification tab (NoOnes parity) — shared card pieces ─────────────────────────────────────────────────────────
+// Grey status pill shown on every level card: "✓ Verified" once the level is
+// complete, "Not Verified" otherwise. Light grey with dark text on both the
+// light-mint cards and the dark-green current-level card, matching the
+// NoOnes reference (check icon + label, rounded pill).
+function VerifStatusPill({ verified }) {
   return (
-      <div className={`flex items-start gap-4 p-4 rounded-xl border transition ${done ? 'bg-green-50 border-green-200' : active ? 'border-blue-200 bg-blue-50' : 'bg-gray-50 border-gray-100'}`}>
-        <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${done ? 'bg-green-500 text-white' : active ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
-          {done ? <CheckCircle size={18} /> : n}
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black flex-shrink-0"
+            style={{ backgroundColor: C.g100, color: C.g700, cursor: 'default' }}>
+        {verified ? <Check size={11} strokeWidth={3.5} /> : <Circle size={9} fill={C.g400} strokeWidth={0} />}
+        {verified ? 'Verified' : 'Not Verified'}
+      </span>
+  );
+}
+
+// "What you can do" checklist — small green square checkbox with a white
+// checkmark, followed by the label. Horizontal wrap inside desktop cards;
+// vertical with comfortable row spacing inside the mobile bottom sheet.
+function VerifChecklist({ items, vertical = false, light = false }) {
+  if (!items || items.length === 0) return null;
+  return (
+      <div className={vertical ? 'flex flex-col gap-3.5' : 'flex items-center gap-x-5 gap-y-2 flex-wrap'}>
+        {items.map((item) => (
+            <div key={item} className={`flex items-center min-w-0 ${vertical ? 'gap-2.5' : 'gap-2'}`}>
+              <span className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0"
+                    style={{ backgroundColor: C.success }}>
+                <Check size={10} strokeWidth={3.5} color="#fff" />
+              </span>
+              <span className={`font-bold ${vertical ? 'text-sm' : 'text-xs'}`} style={{ color: light ? 'rgba(255,255,255,0.92)' : C.g700 }}>{item}</span>
+            </div>
+        ))}
+      </div>
+  );
+}
+
+// Countries available in the ID verification "Your details" step. The app's
+// P2P markets are Ghana-focused, so Ghana is the default market; other West
+// African markets kept selectable. Ghana first — it's the placeholder default.
+// Countries for the ID verification "Country" field come from
+// KYC_PICKER_COUNTRIES (top of file) — rendered as a nested searchable
+// bottom-sheet picker inside the ID verification modal.
+
+// "Open camera" capture — invokes the device camera directly via
+// capture="environment" (rear camera for ID shots) or capture="user"
+// (front camera for the selfie), so users cannot pick a pre-existing
+// gallery image. Accepts the same image constraints as the rest of the app.
+//
+// Device notes: with capture present, Chrome/Safari Android/iOS launch the
+// camera app straight away and offer NO gallery option (the chooser-with-
+// camera-option behavior happens only when capture is absent). Desktop
+// browsers ignore capture and show a file dialog — expected fallback.
+// The attribute is rendered unconditionally (empty string coerces to the
+// default "environment") so it can never be stripped from the DOM.
+function LiveCapture({ label, capture = 'environment', captured, onCapture, onClear }) {
+  const fileInputRef = useRef(null);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const captureAttr = capture || 'environment';
+
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const [cameraDevices, setCameraDevices] = useState([]);
+  const [activeDeviceIndex, setActiveDeviceIndex] = useState(0);
+
+  // Stop camera tracks cleanly
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setIsStreaming(false);
+    setCameraLoading(false);
+  };
+
+  // Clean up stream on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
+
+  // Attach the stream to the <video> element once it actually mounts.
+  // The video only renders after cameraLoading clears, so the ref is still
+  // null at the moment getUserMedia resolves in startCamera — assigning
+  // srcObject there was a silent no-op, leaving a source-less (black) video
+  // and producing solid-black captured JPEGs. Re-run whenever the streaming
+  // UI (re)mounts the video element.
+  useEffect(() => {
+    if (isStreaming && !cameraLoading && streamRef.current && videoRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [isStreaming, cameraLoading]);
+
+  const isMobile = typeof navigator !== 'undefined' && /Mobile|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+
+  const startCamera = async () => {
+    // If mobile or getUserMedia is unsupported, fall back to native input
+    if (isMobile || !navigator?.mediaDevices?.getUserMedia) {
+      fileInputRef.current?.click();
+      return;
+    }
+
+    setCameraLoading(true);
+    setIsStreaming(true);
+
+    try {
+      const preferredFacing = capture === 'user' ? 'user' : 'environment';
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: preferredFacing, width: { ideal: 1280 }, height: { ideal: 720 } }
+        });
+      } catch (e1) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 } }
+          });
+        } catch (e2) {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        }
+      }
+
+      streamRef.current = stream;
+
+      // Query video input devices
+      let videoInputs = [];
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        videoInputs = devices.filter(d => d.kind === 'videoinput');
+        setCameraDevices(videoInputs);
+        const track = stream.getVideoTracks()[0];
+        const activeId = track?.getSettings()?.deviceId;
+        const idx = videoInputs.findIndex(d => d.deviceId === activeId);
+        setActiveDeviceIndex(idx !== -1 ? idx : 0);
+      } catch {
+        // Enumerate fallback
+      }
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(() => {});
+      }
+      setCameraLoading(false);
+    } catch (err) {
+      console.error('Webcam start error:', err);
+      stopCamera();
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        toast.error('Webcam access denied. Please allow camera permissions in your browser or select a file.');
+      } else if (err.name === 'NotFoundError') {
+        toast.error('No webcam found on this device.');
+      } else {
+        toast.error('Could not start camera. You can select a photo file instead.');
+      }
+      // Trigger file dialog fallback
+      fileInputRef.current?.click();
+    }
+  };
+
+  const handleFlipCamera = async () => {
+    try {
+      let videoInputs = [];
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        videoInputs = devices.filter(d => d.kind === 'videoinput');
+        setCameraDevices(videoInputs);
+      } catch {
+        videoInputs = cameraDevices;
+      }
+
+      // If only one camera exists (or none), stay on the same camera:
+      // no error, no broken state, just no visible change
+      if (videoInputs.length <= 1) {
+        return;
+      }
+
+      const nextIndex = (activeDeviceIndex + 1) % videoInputs.length;
+      const targetDevice = videoInputs[nextIndex];
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+      }
+
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          deviceId: { exact: targetDevice.deviceId },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      });
+
+      streamRef.current = newStream;
+      setActiveDeviceIndex(nextIndex);
+      if (videoRef.current) {
+        videoRef.current.srcObject = newStream;
+        videoRef.current.play().catch(() => {});
+      }
+    } catch (err) {
+      console.warn('Flip camera fallback:', err);
+      try {
+        const recoverStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        streamRef.current = recoverStream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = recoverStream;
+          videoRef.current.play().catch(() => {});
+        }
+      } catch {}
+    }
+  };
+
+  const handleTakePhoto = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    // Guard: a video with no rendered frames (still starting, or the stream
+    // never attached) draws as a solid black JPEG — the "black thumbnail" bug.
+    // Refuse instead of encoding a blank image.
+    if (!video.videoWidth || !video.videoHeight) {
+      toast.error('Camera is still starting — try again in a moment.');
+      return;
+    }
+    const width = video.videoWidth;
+    const height = video.videoHeight;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, width, height);
+
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        toast.error('Failed to capture photo. Please try again.');
+        return;
+      }
+      const safeLabel = label.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      const file = new File([blob], `${safeLabel}_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      stopCamera();
+      onCapture(file);
+    }, 'image/jpeg', 0.92);
+  };
+
+  return (
+      <div>
+        <input ref={fileInputRef} type="file" accept="image/*" capture={captureAttr}
+               className="hidden"
+               onChange={e => { const f = e.target.files[0] || null; if (f) onCapture(f); e.target.value = ''; }} />
+
+        {captured ? (
+            <div className="flex items-center gap-3">
+              <img src={captured.preview} alt={label} className="w-16 h-16 rounded-xl object-cover flex-shrink-0" style={{ border: `2px solid ${C.success}` }} />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-black" style={{ color: C.success }}>✓ {label} captured</p>
+                <p className="text-xs" style={{ color: C.g400 }}>Max 10MB · JPG or PNG · live camera capture</p>
+              </div>
+              <button type="button" onClick={onClear}
+                      className="text-xs font-bold hover:opacity-70" style={{ color: '#EF4444' }}>
+                Retake
+              </button>
+            </div>
+        ) : isStreaming ? (
+            <div className="relative w-full rounded-2xl overflow-hidden bg-black flex flex-col items-center border border-gray-800">
+              {/* Video Preview */}
+              <div className="relative w-full flex items-center justify-center bg-black min-h-[220px] max-h-[340px] overflow-hidden">
+                {cameraLoading ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-white/70">
+                      <RefreshCw size={24} className="animate-spin mb-2" />
+                      <p className="text-xs font-semibold">Starting camera…</p>
+                    </div>
+                ) : (
+                    <>
+                      <video
+                          ref={videoRef}
+                          autoPlay
+                          playsInline
+                          muted
+                          className="w-full h-auto max-h-[340px] object-contain"
+                      />
+                      {/* Framing guideline overlay */}
+                      <div className="absolute inset-3 pointer-events-none border border-white/30 rounded-xl flex items-end justify-center pb-2">
+                        <span className="text-[10px] font-bold text-white/80 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-sm shadow">
+                          {capture === 'user' ? 'Align your face & ID inside the frame' : 'Align all four corners of ID inside the frame'}
+                        </span>
+                      </div>
+                    </>
+                )}
+              </div>
+
+              {/* Action Bar */}
+              <div className="w-full bg-gray-950 px-3 py-2.5 flex items-center justify-between gap-2 border-t border-gray-800">
+                <button
+                    type="button"
+                    onClick={handleFlipCamera}
+                    disabled={cameraLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-gray-200 transition hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-50"
+                    title="Flip camera"
+                >
+                  <RefreshCw size={13} />
+                  <span>Flip camera</span>
+                </button>
+
+                <button
+                    type="button"
+                    onClick={handleTakePhoto}
+                    disabled={cameraLoading}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black shadow-md transition hover:opacity-90 active:scale-95 disabled:opacity-50"
+                    style={{ backgroundColor: C.green, color: '#FFFFFF' }}
+                >
+                  <Camera size={15} />
+                  <span>Take photo</span>
+                </button>
+
+                <button
+                    type="button"
+                    onClick={stopCamera}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-gray-400 transition hover:bg-white/10 hover:text-white"
+                >
+                  <X size={13} />
+                  <span>Cancel</span>
+                </button>
+              </div>
+            </div>
+        ) : (
+            <button type="button" onClick={startCamera}
+                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold cursor-pointer transition hover:opacity-80"
+                    style={{ color: C.g800, backgroundColor: C.g50, border: `1px solid ${C.g200}` }}>
+              <Camera size={14} style={{ color: C.green }} />
+              Open camera
+            </button>
+        )}
+      </div>
+  );
+}
+
+// EXAMPLE block for a document section: "EXAMPLE" label above a real reference
+// image showing how the capture should be framed. Images live in frontend/public/
+// (CRA copies public/ into the build root verbatim, so absolute paths work in
+// dev and production — same mechanism as favicon.ico/logo192.png in index.html).
+const DOC_EXAMPLE_IMG = {
+  front: '/government_id_front.jpg',
+  selfie: '/selfie_holding_id.jpg',
+  back: '/government_id_back.jpg',
+};
+const DOC_EXAMPLE_ALT = {
+  front: 'Example: front of government ID',
+  selfie: 'Example: selfie holding your ID',
+  back: 'Example: back of government ID',
+};
+
+function DocExample({ kind }) {
+  return (
+      <div className="mb-3 flex flex-col items-center">
+        <p className="text-[10px] font-black tracking-widest mb-1.5" style={{ color: C.g400 }}>EXAMPLE</p>
+        <div className="w-full max-w-[220px] rounded-xl overflow-hidden" style={{ border: `1px solid ${C.g200}`, backgroundColor: C.white }}>
+          <img src={DOC_EXAMPLE_IMG[kind] || DOC_EXAMPLE_IMG.front}
+               alt={DOC_EXAMPLE_ALT[kind] || DOC_EXAMPLE_ALT.front}
+               className="w-full h-auto object-contain" />
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className={`font-bold text-sm ${done ? 'text-green-800' : active ? 'text-blue-800' : 'text-gray-600'}`}>{title}</p>
-            {badge && <span className={`text-xs font-black px-2 py-0.5 rounded-full ${done ? 'bg-green-200 text-green-800' : 'bg-gray-200 text-gray-600'}`}>{badge}</span>}
-          </div>
-          <p className={`text-xs mt-0.5 ${done ? 'text-green-600' : active ? 'text-blue-600' : 'text-gray-400'}`}>{desc}</p>
-        </div>
-        {done ? <CheckCircle size={16} className="text-green-500 flex-shrink-0 mt-0.5" /> :
-            active ? <span className="text-xs font-bold text-blue-600 flex-shrink-0 mt-0.5">Required →</span> :
-                <Clock size={16} className="text-gray-300 flex-shrink-0 mt-0.5" />}
+      </div>
+  );
+}
+
+// DESKTOP searchable inline dropdown for the "Country" field in ID verification
+// Step 1 — anchored directly below the field (no modal, no bottom sheet).
+// Shares the SAME data source (KYC_PICKER_COUNTRIES) and the SAME
+// case-insensitive name-filter predicate as the mobile bottom-sheet picker —
+// only the container differs. Closes on selection, outside click, or Escape.
+function SearchableCountrySelect({ value, onChange, triggerStyle }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const rootRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  // Identical filter logic to the mobile Country bottom sheet.
+  const q = query.trim().toLowerCase();
+  const results = KYC_PICKER_COUNTRIES.filter(c => !q || c.name.toLowerCase().includes(q));
+
+  return (
+      <div ref={rootRef} className="relative">
+        <button type="button" onClick={() => { setQuery(''); setOpen(o => !o); }}
+                className="w-full flex items-center justify-between px-3 py-2 border-2 rounded-xl text-sm font-semibold focus:outline-none"
+                style={triggerStyle}>
+          <span style={{ color: value ? C.g800 : C.g400 }}>{value || 'Select country'}</span>
+          <ChevronDown size={16} style={{ color: C.g400, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+        </button>
+        {open && (
+            <div className="absolute left-0 right-0 mt-1 z-30 bg-white rounded-xl shadow-lg overflow-hidden"
+                 style={{ border: `1px solid ${C.g200}` }}>
+              {/* Search row — same magnifying-glass icon + "Search" placeholder
+                  as the mobile picker. */}
+              <div className="relative px-2 pt-2 pb-2" style={{ borderBottom: `1px solid ${C.g100}` }}>
+                <Search size={15} className="absolute left-5 top-1/2 -translate-y-1/2" style={{ color: C.g400 }} />
+                <input type="text" value={query} autoFocus
+                       onChange={e => setQuery(e.target.value)}
+                       placeholder="Search"
+                       className="w-full pl-9 pr-3 py-2 rounded-lg text-sm focus:outline-none"
+                       style={{ border: `1px solid ${C.g200}`, color: C.g800, backgroundColor: C.white }} />
+              </div>
+              {/* Scrollable alphabetically-sorted list (KYC_PICKER_COUNTRIES order). */}
+              <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+                {results.map(c => (
+                    <button key={c.name} type="button"
+                            onClick={() => { onChange(c.name); setOpen(false); }}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition hover:bg-gray-50"
+                            style={{ borderBottom: `1px solid ${C.g100}` }}>
+                      <span className="text-lg leading-none">{c.flag}</span>
+                      <span className="flex-1 min-w-0 truncate text-sm font-semibold" style={{ color: C.g800 }}>{c.name}</span>
+                      {value === c.name && <Check size={14} style={{ color: C.green, flexShrink: 0 }} />}
+                    </button>
+                ))}
+                {results.length === 0 && (
+                    <p className="px-3 py-4 text-sm text-center" style={{ color: C.g400 }}>No countries found</p>
+                )}
+              </div>
+            </div>
+        )}
       </div>
   );
 }
@@ -1181,12 +1608,16 @@ export default function Settings({ user, setUser }) {
   const [countryListOpen, setCountryListOpen] = useState(false);
   const [phoneSaving, setPhoneSaving] = useState(false);
 
-  // Phone verification flow
+  // Phone verification flow — Verification tab (currently dormant: no level
+  // card renders it; kept pending a placement decision). SMS and WhatsApp
+  // only: the old "send phone code to email" variant (which rendered an email
+  // input under a "Phone Number" heading) was removed as part of the
+  // NoOnes-parity rebuild.
   const [phoneStep, setPhoneStep] = useState(() => {
     if (user?.is_phone_verified || user?.phone_verified) return "done";
     return "idle";
   });
-  const [phoneOtpMethod, setPhoneOtpMethod] = useState(user?.email ? "email" : "sms");
+  const [phoneOtpMethod, setPhoneOtpMethod] = useState("sms");
   const [phoneOtpCode, setPhoneOtpCode] = useState("");
 
   // Avatar upload
@@ -1256,10 +1687,12 @@ export default function Settings({ user, setUser }) {
   const [emailCode, setEmailCode] = useState("");
   const [emailCodeLoading, setEmailCodeLoading] = useState(false);
 
-  // KYC upload
-  const [kycIdType, setKycIdType] = useState("");
-  const [kycFiles, setKycFiles] = useState({ front: null, back: null });
-  const [kycStep, setKycStep] = useState("select");
+  // KYC upload — 2-step ID verification modal, opened ONLY by the Level 2
+  // "Verify" button (the card chevron shows the "What you can do" checklist).
+  const [idVerifyOpen, setIdVerifyOpen] = useState(false);
+  const [idVerifyStep, setIdVerifyStep] = useState("details");
+  const [idForm, setIdForm] = useState({ fullName: "", dob: "", country: "", city: "", postalCode: "", address: "", idType: "", docNumber: "" });
+  const [idDocs, setIdDocs] = useState({ front: null, selfie: null, back: null });
   const [kycLoading, setKycLoading] = useState(false);
   const [kycSubmitted, setKycSubmitted] = useState(() => {
     const kyc = JSON.parse(localStorage.getItem("praqen_kyc") || "{}");
@@ -1284,12 +1717,12 @@ export default function Settings({ user, setUser }) {
   });
   const [kycRejectedReason, setKycRejectedReason] = useState(user?.kyc_rejection_reason || null);
 
+  // ID document types for the ID verification picker sheet — SINGLE config.
+  // To add a type later (team lead: more coming), append one entry here — the
+  // picker sheet and field render from this array, nothing else.
   const KYC_ID_TYPES = [
-    { value: "ghana_card", label: <span className="inline-flex items-center gap-1.5"><FileText size={13} className="inline-block" />Ghana Card</span> },
-    { value: "drivers_license", label: <span className="inline-flex items-center gap-1.5"><Car size={13} className="inline-block" />Driver's Licence</span> },
-    { value: "passport", label: <span className="inline-flex items-center gap-1.5"><Plane size={13} className="inline-block" />Passport</span> },
-    { value: "id_card", label: <span className="inline-flex items-center gap-1.5"><CreditCard size={13} className="inline-block" />ID Card</span> },
-    { value: "order_id", label: <span className="inline-flex items-center gap-1.5"><FileText size={13} className="inline-block" />Order ID Under Your Name</span> },
+    { value: "passport", label: "Passport" },
+    { value: "id_card", label: "ID card" },
   ];
 
   const [emailResendCount, setEmailResendCount] = useState(() => parseInt(localStorage.getItem("prq_email_resend") || "0"));
@@ -1297,13 +1730,56 @@ export default function Settings({ user, setUser }) {
 
   const [emailVerified, setEmailVerified] = useState(!!(user?.is_email_verified || user?.email_verified));
   const [phoneVerified, setPhoneVerified] = useState(!!(user?.is_phone_verified || user?.phone_verified));
+  // NoOnes-parity level flags — Level 3 (proof of address) comes from a
+  // dedicated backend boolean (migration
+  // 2026-09-20_verification_levels_noones_parity.sql). The profile endpoint
+  // reads it defensively, so it defaults to false when the column doesn't
+  // exist yet instead of breaking the page. (identity_basics_verified stays a
+  // backend-internal sub-flag set automatically alongside KYC submission —
+  // it is no longer a separate UI level.)
+  const [addressVerified, setAddressVerified] = useState(!!user?.address_verified);
   const [kycVerified, setKycVerified] = useState(() => {
     if (user?.kyc_verified || user?.is_id_verified) return true;
     const ls = JSON.parse(localStorage.getItem("user") || "{}");
     return ls.kyc_status === "approved" || user?.kyc_status === "approved";
   });
   const [verificationSyncing, setVerificationSyncing] = useState(true);
-  const verLevel = kycVerified ? 3 : phoneVerified ? 2 : emailVerified ? 1 : 0;
+  // Verification tab UI state — per-card accordion expansion (desktop) and the
+  // currently-open "What you can do" bottom sheet (mobile). Purely UI state:
+  // every Verified flag comes from the profile already fetched for the page.
+  const [expandedLevels, setExpandedLevels] = useState({});
+  const [verifSheetLevel, setVerifSheetLevel] = useState(null);
+  // Separate mobile sheet for the unlocked level's verification FLOW (e.g. the
+  // Level 1 email code/OTP) — the "What you can do" sheet is checklist-only.
+  const [verifFlowLevel, setVerifFlowLevel] = useState(null);
+  const toggleLevel = (n) => setExpandedLevels(prev => ({ ...prev, [n]: !prev[n] }));
+  // Open the Level 2 (ID verification) 2-step modal — triggered ONLY by the
+  // "Verify" button, never by the card chevron. Prefills the legal name from
+  // the profile; resets to step 1 each time it opens.
+  // Nested country-picker sheet state — opens ON TOP of Step 1 (its own portal
+  // + backdrop stack above the details sheet); closing or selecting returns to
+  // Step 1 with every other field untouched.
+  const [idCountryOpen, setIdCountryOpen] = useState(false);
+  const [idCountrySearch, setIdCountrySearch] = useState('');
+  // Nested ID-document picker sheet — same component/pattern as the country one.
+  const [idTypeOpen, setIdTypeOpen] = useState(false);
+  // Desktop check — matches the cards' md: breakpoint (768px). On desktop the
+  // Level 2 "Verify" flow renders INLINE inside the card; on mobile it mounts
+  // as the shared bottom sheet. Live-updates when the window crosses 768px.
+  const idVerifyDesktop = useSyncExternalStore(
+    (cb) => { const mq = window.matchMedia('(min-width: 768px)'); mq.addEventListener('change', cb); return () => mq.removeEventListener('change', cb); },
+    () => window.matchMedia('(min-width: 768px)').matches,
+    () => false
+  );
+  const openIdVerify = () => {
+    setIdForm(f => ({ ...f, fullName: f.fullName || user?.full_name || accountForm?.fullName || '' }));
+    setIdVerifyStep('details');
+    setIdCountryOpen(false);
+    setIdCountrySearch('');
+    setIdTypeOpen(false);
+    setIdVerifyOpen(true);
+  };
+
 
   const [twoFAEnabled, setTwoFAEnabled] = useState(!!user?.two_factor_enabled);
   const [twoFAStep, setTwoFAStep] = useState('idle'); // idle | otp
@@ -1339,6 +1815,7 @@ export default function Settings({ user, setUser }) {
     }
     setEmailVerified(!!(user.is_email_verified || user.email_verified));
     setPhoneVerified(!!(user.is_phone_verified || user.phone_verified));
+    setAddressVerified(!!user.address_verified);
     setKycVerified(!!(user.kyc_verified || user.is_id_verified));
     setTwoFAEnabled(!!user.two_factor_enabled);
     // One-time username lock — read from the backend user record on load
@@ -1366,6 +1843,7 @@ export default function Settings({ user, setUser }) {
             const phoneOk = !!(fresh.is_phone_verified || fresh.phone_verified);
             setEmailVerified(emailOk);
             setPhoneVerified(phoneOk);
+            setAddressVerified(!!fresh.address_verified);
             setTwoFAEnabled(!!fresh.two_factor_enabled);
             if (emailOk) {
               localStorage.removeItem("prq_email_resend");
@@ -1431,6 +1909,7 @@ export default function Settings({ user, setUser }) {
                 if (!fresh?.id) return;
                 setEmailVerified(!!(fresh.is_email_verified || fresh.email_verified));
                 setPhoneVerified(!!(fresh.is_phone_verified || fresh.phone_verified));
+                setAddressVerified(!!fresh.address_verified);
                 setKycVerified(!!(fresh.kyc_verified || fresh.is_id_verified));
                 if (fresh.phone) setAccountForm(prev => ({ ...prev, phone: fresh.phone }));
                 if (fresh.kyc_status) {
@@ -1898,8 +2377,13 @@ export default function Settings({ user, setUser }) {
     window.dispatchEvent(new Event("userUpdated"));
   };
 
-  const compressImage = (file, maxPx = 1400, quality = 0.82) =>
+  const compressImage = (fileInput, maxPx = 1400, quality = 0.82) =>
       new Promise((resolve, reject) => {
+        const file = fileInput instanceof Blob ? fileInput : (fileInput?.file || fileInput);
+        if (!file || !(file instanceof Blob)) {
+          reject(new Error("Invalid file object"));
+          return;
+        }
         const url = URL.createObjectURL(file);
         const img = new Image();
         img.onload = () => {
@@ -1920,31 +2404,47 @@ export default function Settings({ user, setUser }) {
         img.src = url;
       });
 
-  const handleKycSubmit = async () => {
-    if (!kycFiles.front || !kycFiles.back || !kycIdType) {
-      toast.error("Please upload both the front and back of your ID card");
+  const handleIdVerifySubmit = async () => {
+    if (!idDocs.front || !idDocs.selfie || !idForm.idType) {
+      toast.error("Capture your ID front and a selfie holding your ID before submitting");
       return;
     }
+    const fullName = (idForm.fullName || '').trim().replace(/\s+/g, ' ');
+    if (!fullName) { toast.error("Please enter your full legal name"); return; }
+    if (!idForm.dob) { toast.error("Please enter your date of birth"); return; }
     setKycLoading(true);
-    setKycStep("processing");
     try {
-      const [idImage, idImageBack] = await Promise.all([
-        compressImage(kycFiles.front),
-        compressImage(kycFiles.back),
+      const [idImage, selfieImage, idImageBack] = await Promise.all([
+        compressImage(idDocs.front),
+        compressImage(idDocs.selfie),
+        idDocs.back ? compressImage(idDocs.back) : Promise.resolve(null),
       ]);
-      await axios.post(`${API_URL}/kyc/upload`, { idImage, idImageBack, idType: kycIdType }, { headers: authH() });
+      await axios.post(`${API_URL}/kyc/upload`, {
+        idImage, selfieImage, idImageBack: idImageBack || undefined,
+        idType: idForm.idType, fullName, dateOfBirth: idForm.dob,
+        documentNumber: idForm.docNumber, country: idForm.country, city: idForm.city,
+        postalCode: idForm.postalCode, address: idForm.address,
+      }, { headers: authH() });
       toast.success("Documents received! We'll review within 24 hours.");
       const submittedAt = new Date().toISOString();
       setKycSubmitted(true);
       setKycStatus("pending");
-      setKycSubmittedType(kycIdType);
+      setKycSubmittedType(idForm.idType);
       setKycSubmittedAt(submittedAt);
-      setKycStep("done");
-      localStorage.setItem("praqen_kyc", JSON.stringify({ status: "pending", id_type: kycIdType, submitted_at: submittedAt }));
+      localStorage.setItem("praqen_kyc", JSON.stringify({ status: "pending", id_type: idForm.idType, submitted_at: submittedAt }));
+      // Identity details confirmed in the same submission — persist locally too.
+      setAccountForm(p => ({ ...p, fullName }));
+      if (setUser) setUser(u => ({ ...u, full_name: fullName, identity_basics_verified: true }));
+      const userStored = JSON.parse(localStorage.getItem("user") || "{}");
+      localStorage.setItem("user", JSON.stringify({ ...userStored, full_name: fullName, identity_basics_verified: true }));
+      window.dispatchEvent(new Event("userUpdated"));
+      // Back in the Verification tab, Level 2 now shows "Pending review" —
+      // it only becomes "✓ Verified" after backend/admin approval.
+      setIdVerifyOpen(false);
+      setIdDocs({ front: null, selfie: null, back: null });
     } catch (e) {
       const msg = e?.response?.data?.error || (e?.response?.status === 413 ? "Images are too large. Please use smaller photos and try again." : null) || "Failed to submit KYC. Please check your connection and try again.";
       toast.error(msg);
-      setKycStep("ready");
     } finally {
       setKycLoading(false);
     }
@@ -2523,464 +3023,650 @@ export default function Settings({ user, setUser }) {
                   </>
               )}
 
-              {/* ── VERIFICATION ────────────────────────────────────── */}
+              {/* ── VERIFICATION (NoOnes parity — stacked level cards) ── */}
               {activeTab === 'verification' && (
-                  <div className="space-y-4 max-w-2xl">
+                  <div className="space-y-4">
                     {verificationSyncing && (
                         <div className="bg-white rounded-2xl border p-10 flex items-center justify-center gap-3" style={{ borderColor: C.g200 }}>
                           <RefreshCw size={18} className="animate-spin" style={{ color: C.green }} />
                           <span className="text-sm font-bold" style={{ color: C.g500 }}>Loading verification status…</span>
                         </div>
                     )}
-                    {!verificationSyncing && <>
-                      <div className="rounded-2xl p-5 border"
-                           style={{ background: verLevel === 3 ? `linear-gradient(135deg,${C.success},${C.mint})` : `linear-gradient(135deg,${C.forest},${C.green})`, borderColor: 'transparent' }}>
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}>
-                            <Shield size={24} className="text-white" />
-                          </div>
-                          <div>
-                            <p className="text-white font-black text-lg">Verification Level {verLevel}/3</p>
-                            <p className="text-white/70 text-xs">
-                              {verLevel === 3 ? <><CheckCircle size={13} className="inline-block mr-1" />Fully verified — maximum trade limits</> :
-                                  verLevel === 2 ? <><Zap size={13} className="inline-block mr-1" />KYC required for higher limits</> :
-                                      verLevel === 1 ? <><AlertTriangle size={13} className="inline-block mr-1" />Add phone to unlock more features</> :
-                                          <><Circle size={10} fill="#EF4444" strokeWidth={0} className="inline-block mr-1" />Start verification to begin trading</>}
-                            </p>
-                          </div>
-                          <div className="ml-auto text-right">
-                            <p className="text-white/70 text-xs mb-1">Trade limit</p>
-                            <p className="text-white font-black text-sm">
-                              {verLevel >= 3 ? 'Unlimited' : verLevel >= 2 ? '$2,000' : verLevel >= 1 ? '$500' : '$100'}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="w-full h-2 rounded-full bg-white/20">
-                          <div className="h-2 rounded-full transition-all" style={{ width: `${(verLevel / 3) * 100}%`, backgroundColor: C.gold }} />
-                        </div>
-                      </div>
+                    {!verificationSyncing && (() => {
+                      const underReview = !emailVerified && emailResendCount >= 3;
+                      const kycPending = (kycSubmitted || kycStatus === 'pending') && !kycVerified;
+                      const kycRejected = kycStatus === 'rejected' && !kycVerified;
+                      // Highest fully-completed level, computed STRICTLY in sequence:
+                      // level N+1 only counts when level N is complete, so out-of-order
+                      // flags can never unlock a level early. Three levels, numbered 1–3:
+                      // 1 Email, 2 ID verification (includes name + DOB),
+                      // 3 Proof of address.
+                      let completedIdx = -1;
+                      if (emailVerified) completedIdx = 1;
+                      if (completedIdx === 1 && kycVerified) completedIdx = 2;
+                      if (completedIdx === 2 && addressVerified) completedIdx = 3;
+                      // nextLevel = the currently unlocked, actionable step. The dark-green
+                      // "Your current level" highlight marks it; once everything is done it
+                      // rests on the final level.
+                      const nextLevel = completedIdx + 1;
+                      const highlightLevel = Math.min(nextLevel, 3);
+                      const levelState = (n) => (n <= completedIdx ? 'verified' : n === nextLevel ? 'unlocked' : 'locked');
 
-                      <div className="space-y-3">
-                        {(() => {
-                          const underReview = !emailVerified && emailResendCount >= 3;
-                          return (
-                              <div className={`p-4 rounded-xl border transition ${emailVerified ? 'bg-green-50 border-green-200' : underReview ? 'bg-amber-50 border-amber-200' : 'border-blue-200 bg-blue-50'}`}>
-                                <div className="flex items-start gap-4">
-                                  <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${emailVerified ? 'bg-green-500 text-white' : underReview ? 'bg-amber-400 text-white' : 'bg-blue-500 text-white'}`}>
-                                    {emailVerified ? <CheckCircle size={18} /> : underReview ? <Clock size={18} /> : 1}
+                      const LEVELS = [
+                        {
+                          n: 1,
+                          title: 'Email verification',
+                          subtitle: 'Activate your account by verifying your email',
+                          verified: emailVerified,
+                          checklist: ['Verify identity', 'Browse P2P marketplace', 'Browse gift card store'],
+                        },
+                        {
+                          n: 2,
+                          title: 'ID verification',
+                          subtitle: 'Confirm your name and date of birth, then verify your ID to raise your limits and trade with more confidence and trust',
+                          verified: kycVerified,
+                          checklist: ['Unlimited lifetime trading and send-out limits', 'No daily limits', '100000 USD per trade limit'],
+                        },
+                        {
+                          n: 3,
+                          title: 'Proof of address verification',
+                          subtitle: 'Available upon request after ID verification',
+                          verified: addressVerified,
+                          checklist: null,
+                        },
+                      ];
+
+                      // ── Level 1 detail — email send-code / OTP flow (existing handlers).
+                      const renderEmailFlow = (light) => (
+                          <div className="space-y-2">
+                            {underReview ? (
+                                <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#FDE68A' }}>
+                                  <div className="px-4 py-2.5 flex items-center gap-2" style={{ backgroundColor: '#FEF3C7', borderBottom: '1px solid #FDE68A' }}>
+                                    <Mail size={13} style={{ color: '#D97706', flexShrink: 0 }} />
+                                    <p className="text-xs font-black" style={{ color: '#92400E' }}>Email is Under Manual Review</p>
                                   </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <p className={`font-bold text-sm ${emailVerified ? 'text-green-800' : underReview ? 'text-amber-800' : 'text-blue-800'}`}>Email Verification</p>
-                                      <span className={`text-xs font-black px-2 py-0.5 rounded-full ${emailVerified ? 'bg-green-200 text-green-800' : underReview ? 'bg-amber-200 text-amber-800' : 'bg-blue-200 text-blue-800'}`}>
-                                  {emailVerified ? '✓ Verified' : underReview ? <><Clock size={11} className="inline-block mr-1" />Under Review</> : 'Basic'}
-                                </span>
-                                    </div>
-                                    <p className={`text-xs mt-0.5 ${emailVerified ? 'text-green-600' : underReview ? 'text-amber-700' : 'text-blue-600'}`}>
-                                      {emailVerified ? `${maskEmail(accountForm.email)} is verified ✓` : underReview ? 'Being reviewed by our team' : 'Verify your email address to start trading'}
+                                  <div className="px-4 py-3 space-y-2" style={{ backgroundColor: '#FFFBEB' }}>
+                                    <p className="text-xs leading-relaxed" style={{ color: '#78350F' }}>
+                                      We tried to send a code to <strong>{maskEmail(accountForm.email)}</strong> but couldn't confirm delivery.
+                                      Our team will manually verify your email and notify you within <strong>24 hours</strong>.
                                     </p>
-
-                                    {underReview && (
-                                        <div className="mt-3 rounded-xl border overflow-hidden" style={{ borderColor: '#FDE68A' }}>
-                                          <div className="px-4 py-2.5 flex items-center gap-2" style={{ backgroundColor: '#FEF3C7', borderBottom: '1px solid #FDE68A' }}>
-                                            <Mail size={13} style={{ color: '#D97706', flexShrink: 0 }} />
-                                            <p className="text-xs font-black" style={{ color: '#92400E' }}>Email is Under Manual Review</p>
-                                          </div>
-                                          <div className="px-4 py-3 space-y-2" style={{ backgroundColor: '#FFFBEB' }}>
-                                            <p className="text-xs leading-relaxed" style={{ color: '#78350F' }}>
-                                              We tried to send a code to <strong>{maskEmail(accountForm.email)}</strong> but couldn't confirm delivery.
-                                              Our team will manually verify your email and notify you within <strong>24 hours</strong>.
-                                            </p>
-                                            <p className="text-xs" style={{ color: '#92400E' }}>You'll receive an update once your email is approved or rejected.</p>
-                                            <a href="mailto:hello@praqen.com"
-                                               className="inline-flex items-center gap-1.5 text-xs font-black mt-1"
-                                               style={{ color: '#D97706' }}>
-                                              <Mail size={11} /> hello@praqen.com
-                                            </a>
-                                          </div>
-                                        </div>
-                                    )}
-
-                                    {!emailVerified && !underReview && (
-                                        <div className="mt-3 space-y-2">
-                                          {emailVerifyStep === 'idle' && (
-                                              <button onClick={handleSendEmailCode} disabled={emailCodeLoading}
-                                                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-xs font-black disabled:opacity-60"
-                                                      style={{ backgroundColor: C.paid }}>
-                                                <Mail size={13} />
-                                                {emailCodeLoading ? 'Sending…' : 'Send Verification Code →'}
-                                              </button>
-                                          )}
-                                          {(emailVerifyStep === 'otp' || emailVerifyStep === 'verifying') && (
-                                              <>
-                                                <p className="text-xs" style={{ color: '#1e40af' }}>Code sent! Check your inbox and spam folder:</p>
-                                                <div className="flex gap-2 flex-wrap items-center">
-                                                  <input type="text" inputMode="numeric" maxLength={6}
-                                                         placeholder="000000" value={emailCode}
-                                                         onChange={e => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                                         className="px-3 py-2 border-2 rounded-xl text-sm font-black focus:outline-none w-36"
-                                                         style={{ borderColor: '#3b82f6', letterSpacing: '0.2em', color: C.g800 }} />
-                                                  <button onClick={handleVerifyEmailCode}
-                                                          disabled={emailVerifyStep === 'verifying' || emailCode.length < 6}
-                                                          className="px-4 py-2 rounded-xl text-white text-xs font-black disabled:opacity-50"
-                                                          style={{ backgroundColor: C.success }}>
-                                                    {emailVerifyStep === 'verifying' ? 'Verifying…' : '✓ Verify'}
-                                                  </button>
-                                                  <button onClick={() => { setEmailVerifyStep('idle'); setEmailCode(''); }}
-                                                          className="text-xs underline text-gray-400">Resend</button>
-                                                </div>
-                                              </>
-                                          )}
-                                        </div>
-                                    )}
+                                    <p className="text-xs" style={{ color: '#92400E' }}>You'll receive an update once your email is approved or rejected.</p>
+                                    <a href="mailto:hello@praqen.com"
+                                       className="inline-flex items-center gap-1.5 text-xs font-black mt-1"
+                                       style={{ color: '#D97706' }}>
+                                      <Mail size={11} /> hello@praqen.com
+                                    </a>
                                   </div>
-                                  {emailVerified ?
-                                      <CheckCircle size={16} className="text-green-500 flex-shrink-0 mt-0.5" /> :
-                                      underReview ? <Clock size={16} style={{ color: '#D97706', flexShrink: 0, marginTop: 2 }} /> :
-                                          <span className="text-xs font-bold text-blue-600 flex-shrink-0 mt-0.5">Required →</span>}
                                 </div>
-                              </div>
-                          );
-                        })()}
-
-                        {(() => {
-                          const done = phoneVerified || phoneStep === 'done';
-                          // Phone-only accounts (no email on file) have no email step to clear
-                          // first, so let them straight into phone verification too — otherwise
-                          // this card would be permanently locked for them.
-                          const canVerifyPhone = emailVerified || !accountForm.email;
-                          return (
-                              <div className={`p-4 rounded-xl border transition ${done ? 'bg-green-50 border-green-200' : canVerifyPhone ? 'border-blue-200 bg-blue-50' : 'bg-gray-50 border-gray-100'}`}>
-                                <div className="flex items-start gap-4">
-                                  <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${done ? 'bg-green-500 text-white' : canVerifyPhone ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
-                                    {done ? <CheckCircle size={18} /> : 2}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <p className={`font-bold text-sm ${done ? 'text-green-800' : canVerifyPhone ? 'text-blue-800' : 'text-gray-600'}`}>Phone Number</p>
-                                      <span className={`text-xs font-black px-2 py-0.5 rounded-full ${done ? 'bg-green-200 text-green-800' : 'bg-gray-200 text-gray-600'}`}>
-                                  {done ? '✓ Verified' : 'Not Verified'}
-                                </span>
-                                    </div>
-                                    <p className={`text-xs mt-0.5 ${done ? 'text-green-600' : canVerifyPhone ? 'text-blue-600' : 'text-gray-400'}`}>
-                                      {done ? accountForm.phone ? `${accountForm.phone} — verified ✓` : 'Phone verified — you can now trade up to $2,000 ✓' :
-                                          'Add your phone number to unlock the $2,000 trade limit'}
-                                    </p>
-
-                                    {!done && canVerifyPhone && (
-                                        <div className="mt-3 space-y-2">
-                                          {phoneStep === 'idle' && (
-                                              <>
-                                                {phoneOtpMethod === 'email' ? (
-                                                    <input type="email" inputMode="email" placeholder="you@example.com"
-                                                           value={accountForm.email || ''}
-                                                           onChange={e => setAccountForm({ ...accountForm, email: e.target.value })}
-                                                           className="w-full px-3 py-2 border-2 rounded-xl text-sm focus:outline-none"
-                                                           style={{ borderColor: accountForm.email ? C.green : C.g200, color: C.g800, backgroundColor: 'white' }} />
-                                                ) : (
-                                                    <input type="tel" inputMode="tel" placeholder="+233241234567" value={accountForm.phone || ''}
-                                                           onChange={e => setAccountForm({ ...accountForm, phone: e.target.value.replace(/[^\d+]/g, '') })}
-                                                           className="w-full px-3 py-2 border-2 rounded-xl text-sm focus:outline-none"
-                                                           style={{ borderColor: accountForm.phone ? C.green : C.g200, color: C.g800, backgroundColor: 'white' }} />
-                                                )}
-                                                <p className="text-xs" style={{ color: C.g400 }}>
-                                                  {phoneOtpMethod === 'email'
-                                                      ? <>Example: <span className="font-bold" style={{ color: C.g800 }}>you@example.com</span> — we'll send your 6-digit code there.</>
-                                                      : <>Example: <span className="font-bold" style={{ color: C.g800 }}>+233241234567</span> — country code (+233 for Ghana) followed by your 9-digit number, no spaces or leading 0.</>}
-                                                </p>
-                                                <p className="text-xs font-bold" style={{ color: '#1e40af' }}>How would you like to receive your code?</p>
-                                                <div className="flex gap-2">
-                                                  {accountForm.email && (
-                                                      <button onClick={() => setPhoneOtpMethod('email')}
-                                                              className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border-2 text-xs font-black transition ${phoneOtpMethod === 'email' ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-gray-200 bg-white text-gray-500'}`}>
-                                                        <Mail size={12} /> Email
-                                                      </button>
-                                                  )}
-                                                  <button onClick={() => setPhoneOtpMethod('sms')}
-                                                          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border-2 text-xs font-black transition ${phoneOtpMethod === 'sms' ? 'border-orange-500 bg-orange-50 text-orange-800' : 'border-gray-200 bg-white text-gray-500'}`}>
-                                                    <Smartphone size={12} /> SMS
-                                                  </button>
-                                                  <button onClick={() => setPhoneOtpMethod('whatsapp')}
-                                                          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border-2 text-xs font-black transition ${phoneOtpMethod === 'whatsapp' ? 'border-green-500 bg-green-50 text-green-800' : 'border-gray-200 bg-white text-gray-500'}`}>
-                                                    <MessageCircle size={12} /> WhatsApp
-                                                  </button>
-                                                </div>
-                                                <button onClick={handleSendPhoneOtp}
-                                                        disabled={phoneOtpMethod === 'email' ? !accountForm.email : !accountForm.phone}
-                                                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-xs font-black disabled:opacity-60"
-                                                        style={{ backgroundColor: C.paid }}>
-                                                  {phoneOtpMethod === 'email' ? <Mail size={13} /> : <Smartphone size={13} />} Send Verification Code →
-                                                </button>
-                                              </>
-                                          )}
-
-                                          {phoneStep === 'sending' && (
-                                              <div className="flex items-center gap-2 text-xs font-bold" style={{ color: '#1e40af' }}>
-                                                <RefreshCw size={13} className="animate-spin" /> Sending your code…
-                                              </div>
-                                          )}
-
-                                          {(phoneStep === 'otp' || phoneStep === 'verifying') && (
-                                              <>
-                                                <p className="text-xs" style={{ color: '#1e40af' }}>
-                                                  {phoneOtpMethod === 'email' ? 'Code sent to your email — check inbox and spam folder:' :
-                                                      phoneOtpMethod === 'sms' ? `Code sent via SMS to ${accountForm.phone}:` :
-                                                          `Code sent via WhatsApp to ${accountForm.phone}:`}
-                                                </p>
-                                                <div className="flex gap-2 flex-wrap items-center">
-                                                  <input type="text" inputMode="numeric" maxLength={6}
-                                                         placeholder="000000" value={phoneOtpCode}
-                                                         onChange={e => setPhoneOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                                         className="px-3 py-2 border-2 rounded-xl text-sm font-black focus:outline-none w-36"
-                                                         style={{ borderColor: '#3b82f6', letterSpacing: '0.2em', color: C.g800 }} autoFocus />
-                                                  <button onClick={handleVerifyPhoneOtp}
-                                                          disabled={phoneStep === 'verifying' || phoneOtpCode.length < 6}
-                                                          className="px-4 py-2 rounded-xl text-white text-xs font-black disabled:opacity-50"
-                                                          style={{ backgroundColor: C.success }}>
-                                                    {phoneStep === 'verifying' ? 'Verifying…' : '✓ Verify'}
-                                                  </button>
-                                                  <button onClick={() => { setPhoneStep('idle'); setPhoneOtpCode(''); }}
-                                                          className="text-xs underline text-gray-400">Resend</button>
-                                                </div>
-                                              </>
-                                          )}
+                            ) : (
+                                <>
+                                  {emailVerifyStep === 'idle' && (
+                                      <button onClick={handleSendEmailCode} disabled={emailCodeLoading}
+                                              className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-xs font-black disabled:opacity-60"
+                                              style={{ backgroundColor: C.paid }}>
+                                        <Mail size={13} />
+                                        {emailCodeLoading ? 'Sending…' : 'Send Verification Code →'}
+                                      </button>
+                                  )}
+                                  {(emailVerifyStep === 'otp' || emailVerifyStep === 'verifying') && (
+                                      <>
+                                        <p className="text-xs font-bold" style={{ color: light ? 'rgba(255,255,255,0.9)' : '#1e40af' }}>Code sent! Check your inbox and spam folder:</p>
+                                        <div className="flex gap-2 flex-wrap items-center">
+                                          <input type="text" inputMode="numeric" maxLength={6}
+                                                 placeholder="000000" value={emailCode}
+                                                 onChange={e => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                                 className="px-3 py-2 border-2 rounded-xl text-sm font-black focus:outline-none w-36"
+                                                 style={{ borderColor: light ? 'rgba(255,255,255,0.5)' : '#3b82f6', letterSpacing: '0.2em', color: C.g800, backgroundColor: 'white' }} />
+                                          <button onClick={handleVerifyEmailCode}
+                                                  disabled={emailVerifyStep === 'verifying' || emailCode.length < 6}
+                                                  className="px-4 py-2 rounded-xl text-white text-xs font-black disabled:opacity-50"
+                                                  style={{ backgroundColor: C.success }}>
+                                            {emailVerifyStep === 'verifying' ? 'Verifying…' : '✓ Verify'}
+                                          </button>
+                                          <button onClick={() => { setEmailVerifyStep('idle'); setEmailCode(''); }}
+                                                  className="text-xs underline"
+                                                  style={{ color: light ? 'rgba(255,255,255,0.6)' : '#94a3b8' }}>Resend</button>
                                         </div>
-                                    )}
+                                      </>
+                                  )}
+                                </>
+                            )}
+                          </div>
+                      );
 
-                                    {!done && !emailVerified && (
-                                        <p className="text-xs mt-2 font-bold" style={{ color: '#94a3b8' }}>Complete email verification first (Step 1).</p>
-                                    )}
-                                  </div>
-                                  {done ? <CheckCircle size={16} className="text-green-500 flex-shrink-0 mt-0.5" /> :
-                                      emailVerified ? null : <Clock size={16} className="text-gray-300 flex-shrink-0 mt-0.5" />}
+                      // ── Level 2 (ID verification) — 2-step modal, opened ONLY by the
+                      // "Verify" button. The card chevron shows ONLY the "What you can do"
+                      // checklist (Zeinudeen: "The dropdown only shows 'What you can do'"),
+                      // so this card renders NO inline form anymore.
+                      const dobMaxDate = new Date(Date.now() - 18 * 365.25 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+                      const dobAgeOk = (() => {
+                        if (!idForm.dob) return false;
+                        const d = new Date(`${idForm.dob}T00:00:00`);
+                        if (Number.isNaN(d.getTime())) return false;
+                        const now = new Date();
+                        let age = now.getFullYear() - d.getFullYear();
+                        const m = now.getMonth() - d.getMonth();
+                        if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
+                        return age >= 18;
+                      })();
+                      const detailsValid = idForm.fullName.trim().length >= 2 && dobAgeOk
+                          && idForm.country && idForm.city.trim() && idForm.postalCode.trim()
+                          && idForm.address.trim() && idForm.idType && idForm.docNumber.trim();
+                      const stillNeeded = [
+                        !idDocs.front && 'Government ID — front',
+                        !idDocs.selfie && 'Selfie holding your ID',
+                      ].filter(Boolean);
+
+                      // Camera constraints — same limits as the rest of the app
+                      // (Max 10MB · JPG or PNG), enforced before preview.
+                      const handleDocCapture = (slot, file) => {
+                        if (file.size > 10 * 1024 * 1024) { toast.error('Photo is too large. Max 10MB · JPG or PNG'); return; }
+                        if (!/^image\/(jpeg|png)$/.test(file.type)) { toast.error('Only JPG or PNG photos are accepted'); return; }
+                        const preview = URL.createObjectURL(file);
+                        setIdDocs(prev => {
+                          if (prev[slot]) URL.revokeObjectURL(prev[slot].preview);
+                          return { ...prev, [slot]: { file, preview } };
+                        });
+                      };
+                      const handleDocClear = (slot) => {
+                        setIdDocs(prev => {
+                          if (prev[slot]) URL.revokeObjectURL(prev[slot].preview);
+                          return { ...prev, [slot]: null };
+                        });
+                      };
+
+                      const idFieldLabel = (text) => (
+                          <label className="text-xs font-black block mb-1.5" style={{ color: C.g600 }}>{text}</label>
+                      );
+                      const idInputStyle = (filled) => ({
+                        borderColor: filled ? C.success : C.g200,
+                        color: C.g800,
+                        backgroundColor: 'white',
+                      });
+
+                      const renderDocSection = (slot, title, desc, { optional = false, capture = 'environment' } = {}) => (
+                          <div className="rounded-xl border p-4" style={{ borderColor: idDocs[slot] ? C.success : C.g200 }}>
+                            <div className="flex items-start gap-2 mb-1">
+                              <p className="text-xs font-black flex-1" style={{ color: C.g800 }}>{title}</p>
+                              {optional && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0" style={{ backgroundColor: C.g100, color: C.g500 }}>OPTIONAL</span>}
+                            </div>
+                            <p className="text-xs mb-3" style={{ color: C.g500 }}>{desc}</p>
+                            <DocExample kind={slot} />
+                            {/* One capture component for both platforms — LiveCapture
+                                uses the native capture="user"/"environment" file input
+                                on mobile (camera app opens directly, no gallery) and
+                                getUserMedia webcam preview with Take photo / Flip camera
+                                on desktop. Same onCapture path either way. */}
+                            <LiveCapture
+                                label={title}
+                                capture={capture}
+                                captured={idDocs[slot]}
+                                onCapture={f => handleDocCapture(slot, f)}
+                                onClear={() => handleDocClear(slot)}
+                            />
+                          </div>
+                      );
+
+                      // The 2-step ID verification flow — ONE shared step body + footer,
+                      // two containers: mobile → shared AccountBottomSheet (sticky header,
+                      // scrollable body, safe-area footer); desktop → rendered INLINE
+                      // inside the Level 2 card by renderLevelCard (no overlay). Step 1
+                      // "Your details" validates locally and holds data in component
+                      // state; ONE submission happens at the end of step 2 via the
+                      // existing /kyc/upload endpoint.
+                      const idVerifyFooter = () => (
+                          <div className="flex gap-3">
+                            {idVerifyStep === 'details' ? (
+                                <>
+                                  <button onClick={() => setIdVerifyOpen(false)} disabled={kycLoading}
+                                          className="flex-1 px-4 py-2.5 rounded-xl text-xs font-black whitespace-nowrap"
+                                          style={{ backgroundColor: C.g100, color: C.g600 }}>
+                                    Cancel
+                                  </button>
+                                  <button onClick={() => setIdVerifyStep('docs')} disabled={!detailsValid || kycLoading}
+                                          className="flex-1 px-4 py-2.5 rounded-xl text-xs font-black whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                                          style={{ backgroundColor: C.green, color: '#fff' }}>
+                                    Continue to documents
+                                  </button>
+                                </>
+                            ) : (
+                                <>
+                                  <button onClick={() => setIdVerifyStep('details')} disabled={kycLoading}
+                                          className="flex-1 px-4 py-2.5 rounded-xl text-xs font-black whitespace-nowrap"
+                                          style={{ backgroundColor: C.g100, color: C.g600 }}>
+                                    Back
+                                  </button>
+                                  <button onClick={handleIdVerifySubmit} disabled={kycLoading || stillNeeded.length > 0}
+                                          className="flex-1 px-4 py-2.5 rounded-xl text-xs font-black whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                                          style={{ backgroundColor: C.green, color: '#fff' }}>
+                                    {kycLoading ? 'Submitting…' : 'Submit for review'}
+                                  </button>
+                                </>
+                            )}
+                          </div>
+                      );
+
+                      const renderIdVerifyFlowBody = ({ withFooter = true } = {}) => (
+                          <>
+                            {/* Step-1 heading row — visible on desktop inline mode only
+                                (mobile gets the step title in the sheet header instead) */}
+                            {idVerifyStep === 'details' && (
+                                <div className="hidden md:flex items-center gap-2 mb-3">
+                                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0" style={{ backgroundColor: C.green, color: '#fff' }}>1</span>
+                                  <p className="text-xs font-black" style={{ color: C.g800 }}>Your details</p>
+                                  <span className="ml-auto text-[10px] font-black" style={{ color: C.g400 }}>Step 1 of 2</span>
                                 </div>
-                              </div>
-                          );
-                        })()}
-
-                        {(() => {
-                          const kycPending = (kycSubmitted || kycStatus === 'pending') && !kycVerified;
-                          const kycRejected = kycStatus === 'rejected' && !kycVerified;
-                          const displayType = kycSubmittedType || kycIdType;
-                          const typeLabel = KYC_ID_TYPES.find(t => t.value === displayType)?.label || 'Government ID';
-                          const submittedAgo = kycSubmittedAt ? (() => {
-                            const s = (Date.now() - new Date(kycSubmittedAt)) / 1000;
-                            if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-                            if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-                            return `${Math.floor(s / 86400)}d ago`;
-                          })() : null;
-                          return (
-                              <div className={`p-4 rounded-xl border transition ${kycVerified ? 'bg-green-50 border-green-200' : kycRejected ? 'bg-red-50 border-red-200' : kycPending ? 'bg-amber-50 border-amber-200' : phoneVerified ? 'border-blue-200 bg-blue-50' : 'bg-gray-50 border-gray-100'}`}>
-                                <div className="flex items-start gap-4">
-                                  <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${kycVerified ? 'bg-green-500 text-white' : kycRejected ? 'bg-red-500 text-white' : kycPending ? 'bg-amber-400 text-white' : phoneVerified ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
-                                    {kycVerified ? <CheckCircle size={18} /> : kycPending ? <Clock size={18} /> : kycRejected ? '✕' : 3}
+                            )}
+                            {idVerifyStep === 'details' ? (
+                                <div className="space-y-2.5 pb-2">
+                                  <p className="text-xs leading-relaxed" style={{ color: C.g500 }}>
+                                    We ask for this because we hold funds on your behalf. Your documents are encrypted, seen only by our review team, and deleted once the review is done.
+                                  </p>
+                                  <div>
+                                    {idFieldLabel('Full legal name')}
+                                    <input type="text" value={idForm.fullName} placeholder="Enter your full legal name"
+                                           onChange={e => setIdForm(f => ({ ...f, fullName: e.target.value }))}
+                                           className="w-full px-3 py-2 border-2 rounded-xl text-sm font-semibold focus:outline-none"
+                                           style={idInputStyle(idForm.fullName.trim().length >= 2)} />
                                   </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <p className={`font-bold text-sm ${kycVerified ? 'text-green-800' : kycRejected ? 'text-red-800' : kycPending ? 'text-amber-800' : phoneVerified ? 'text-blue-800' : 'text-gray-600'}`}>Identity (KYC)</p>
-                                      <span className={`text-xs font-black px-2 py-0.5 rounded-full ${kycVerified ? 'bg-green-200 text-green-800' : kycRejected ? 'bg-red-200 text-red-800' : kycPending ? 'bg-amber-200 text-amber-800' : 'bg-gray-200 text-gray-600'}`}>
-                                  {kycVerified ? '✓ Verified' : kycRejected ? '✗ Rejected' : kycPending ? <><Clock size={11} className="inline-block mr-1" />Under Review</> : 'Advanced'}
-                                </span>
-                                    </div>
-                                    <p className={`text-xs mt-0.5 ${kycVerified ? 'text-green-600' : kycRejected ? 'text-red-600' : kycPending ? 'text-amber-700' : phoneVerified ? 'text-blue-600' : 'text-gray-400'}`}>
-                                      {kycVerified ? 'Identity verified — unlimited trading unlocked ✓' :
-                                          kycRejected ? 'Your documents were not accepted — please re-submit' :
-                                              kycPending ? 'Documents received and under review by our team' :
-                                                  'Upload your government ID (front + back) for unlimited trading'}
+                                  <div>
+                                    {idFieldLabel('Date of birth')}
+                                    <input type="date" value={idForm.dob} max={dobMaxDate}
+                                           onChange={e => setIdForm(f => ({ ...f, dob: e.target.value }))}
+                                           className="w-full px-3 py-2 border-2 rounded-xl text-sm font-semibold focus:outline-none"
+                                           style={idInputStyle(!!idForm.dob)} />
+                                    <p className="text-xs mt-1 font-bold" style={{ color: idForm.dob && !dobAgeOk ? '#DC2626' : C.g400 }}>
+                                      You must be at least 18.
                                     </p>
-
-                                    {kycPending && (
-                                        <div className="mt-3 rounded-xl border overflow-hidden" style={{ borderColor: '#FDE68A' }}>
-                                          <div className="px-4 py-2.5 flex items-center gap-2" style={{ backgroundColor: '#FEF3C7', borderBottom: '1px solid #FDE68A' }}>
-                                            <Clock size={13} style={{ color: '#D97706', flexShrink: 0 }} />
-                                            <p className="text-xs font-black" style={{ color: '#92400E' }}>Documents Under Review</p>
-                                            <span className="ml-auto text-xs font-black px-2 py-0.5 rounded-full animate-pulse inline-flex items-center gap-1" style={{ backgroundColor: '#FCD34D', color: '#78350F' }}><Clock size={10} className="inline-block" />Pending</span>
-                                          </div>
-                                          <div className="px-4 py-3 space-y-2" style={{ backgroundColor: '#FFFBEB' }}>
-                                            {displayType && (
-                                                <div className="flex items-center gap-2">
-                                                  <CheckCircle size={12} style={{ color: '#D97706', flexShrink: 0 }} />
-                                                  <span className="text-xs font-semibold" style={{ color: '#92400E' }}>Document: {typeLabel}</span>
-                                                </div>
-                                            )}
-                                            <div className="flex items-center gap-2">
-                                              <CheckCircle size={12} style={{ color: '#D97706', flexShrink: 0 }} />
-                                              <span className="text-xs font-semibold" style={{ color: '#92400E' }}>ID front uploaded ✓</span>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                              <CheckCircle size={12} style={{ color: '#D97706', flexShrink: 0 }} />
-                                              <span className="text-xs font-semibold" style={{ color: '#92400E' }}>ID back uploaded ✓</span>
-                                            </div>
-                                            {submittedAgo && (
-                                                <div className="flex items-center gap-2">
-                                                  <Clock size={12} style={{ color: '#D97706', flexShrink: 0 }} />
-                                                  <span className="text-xs font-semibold" style={{ color: '#92400E' }}>Submitted {submittedAgo}</span>
-                                                </div>
-                                            )}
-                                            <p className="text-xs leading-relaxed pt-1" style={{ color: '#78350F' }}>
-                                              Our team reviews documents within <strong>24 hours</strong>. You will receive an in-app notification when approved or if we need more information.
-                                            </p>
-                                            <a href="mailto:hello@praqen.com" className="inline-flex items-center gap-1.5 text-xs font-black" style={{ color: '#D97706' }}>
-                                              <Mail size={11} /> hello@praqen.com
-                                            </a>
-                                          </div>
-                                        </div>
+                                  </div>
+                                  <div>
+                                    {idFieldLabel('Country')}
+                                    {/* Responsive picker, mirroring the flow's container
+                                        split: desktop (≥ md) → SearchableCountrySelect,
+                                        an inline dropdown anchored below the field with
+                                        the same search + flag-list pattern and filter
+                                        logic as the mobile sheet (shared data source
+                                        KYC_PICKER_COUNTRIES); mobile (< md) → tappable
+                                        field opening the nested searchable bottom sheet. */}
+                                    {idVerifyDesktop ? (
+                                        <SearchableCountrySelect
+                                            value={idForm.country}
+                                            onChange={name => setIdForm(f => ({ ...f, country: name }))}
+                                            triggerStyle={idInputStyle(!!idForm.country)} />
+                                    ) : (
+                                        <button type="button" onClick={() => { setIdCountrySearch(''); setIdCountryOpen(true); }}
+                                                className="w-full flex items-center justify-between px-3 py-2 border-2 rounded-xl text-sm font-semibold focus:outline-none"
+                                                style={idInputStyle(!!idForm.country)}>
+                                          <span style={{ color: idForm.country ? C.g800 : C.g400 }}>{idForm.country || 'Select country'}</span>
+                                          <ChevronDown size={16} style={{ color: C.g400 }} />
+                                        </button>
                                     )}
-
-                                    {kycRejected && (
-                                        <div className="mt-3 rounded-xl border overflow-hidden" style={{ borderColor: '#FCA5A5' }}>
-                                          <div className="px-4 py-2.5 flex items-center gap-2" style={{ backgroundColor: '#FEF2F2', borderBottom: '1px solid #FCA5A5' }}>
-                                            <X size={14} style={{ color: '#991B1B' }} />
-                                            <p className="text-xs font-black" style={{ color: '#991B1B' }}>KYC Not Approved</p>
-                                            <span className="ml-auto text-xs font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: '#FCA5A5', color: '#7F1D1D' }}>Rejected</span>
-                                          </div>
-                                          <div className="px-4 py-3 space-y-2" style={{ backgroundColor: '#FFF5F5' }}>
-                                            {kycRejectedReason && (
-                                                <p className="text-xs font-semibold leading-relaxed" style={{ color: '#991B1B' }}>Reason: {kycRejectedReason}</p>
-                                            )}
-                                            <p className="text-xs leading-relaxed" style={{ color: '#7F1D1D' }}>Please re-submit your documents with clearer, well-lit photos. Make sure all text on the ID is readable.</p>
-                                            <button onClick={() => { setKycStatus(null); setKycSubmitted(false); setKycStep('select'); setKycFiles({ front: null, back: null }); setKycIdType(''); localStorage.removeItem('praqen_kyc'); }}
-                                                    className="w-full mt-1 py-2 rounded-xl text-xs font-black" style={{ backgroundColor: '#EF4444', color: '#fff' }}>
-                                              Re-submit KYC Documents
-                                            </button>
-                                          </div>
+                                  </div>
+                                  {/* Nested country picker — MOBILE ONLY (opens ON TOP of
+                                      the Step 1 sheet, own portal + backdrop stack above
+                                      it; X or selecting a country returns here with every
+                                      field untouched). Same search + flag-list pattern as
+                                      the phone code picker. Desktop uses the <select> above. */}
+                                  {idCountryOpen && !idVerifyDesktop && (
+                                      <AccountBottomSheet title="Country" onClose={() => setIdCountryOpen(false)}>
+                                        <div className="relative mb-2">
+                                          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: C.g400 }} />
+                                          <input type="text" value={idCountrySearch} autoFocus
+                                                 onChange={e => setIdCountrySearch(e.target.value)}
+                                                 placeholder="Search"
+                                                 className="w-full pl-9 pr-3 py-2 rounded-lg text-sm focus:outline-none"
+                                                 style={{ border: `1px solid ${C.g200}`, color: C.g800, backgroundColor: C.white }} />
                                         </div>
-                                    )}
-
-                                    {!kycVerified && !kycPending && kycStatus !== 'approved' && phoneVerified && (
-                                        <div className="mt-4 space-y-4">
-                                          <div className={`rounded-xl border-2 p-4 transition ${kycIdType ? 'border-green-300 bg-green-50' : 'border-dashed border-gray-200 bg-gray-50'}`}>
-                                            <div className="flex items-center gap-2 mb-2">
-                                              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 ${kycIdType ? 'bg-green-500 text-white' : 'bg-blue-500 text-white'}`}>
-                                                {kycIdType ? '✓' : '1'}
-                                              </div>
-                                              <p className="text-xs font-black text-gray-700">Select your ID type</p>
-                                            </div>
-                                            <select value={kycIdType} onChange={e => { setKycIdType(e.target.value); if (e.target.value) setKycStep('upload_id'); setKycFiles({ front: null, back: null }); }}
-                                                    className="w-full px-3 py-2.5 border-2 rounded-xl text-sm font-semibold focus:outline-none transition"
-                                                    style={{ borderColor: kycIdType ? C.success : C.g200, color: C.g800, backgroundColor: 'white' }}>
-                                              <option value="">— Choose a document type —</option>
-                                              {KYC_ID_TYPES.map(({ value, label }) => (
-                                                  <option key={value} value={value}>{label}</option>
+                                        <div style={{ maxHeight: 280, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                                          {KYC_PICKER_COUNTRIES
+                                              .filter(c => !idCountrySearch.trim() || c.name.toLowerCase().includes(idCountrySearch.trim().toLowerCase()))
+                                              .map(c => (
+                                                  <button key={c.name} type="button"
+                                                          onClick={() => { setIdForm(f => ({ ...f, country: c.name })); setIdCountryOpen(false); }}
+                                                          className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition hover:bg-gray-50"
+                                                          style={{ borderBottom: `1px solid ${C.g100}` }}>
+                                                    <span className="text-lg leading-none">{c.flag}</span>
+                                                    <span className="flex-1 min-w-0 truncate text-sm font-semibold" style={{ color: C.g800 }}>{c.name}</span>
+                                                    {idForm.country === c.name && <Check size={14} style={{ color: C.green, flexShrink: 0 }} />}
+                                                  </button>
                                               ))}
-                                            </select>
-                                          </div>
-
-                                          {kycIdType && (
-                                              <div className={`rounded-xl border-2 p-4 transition ${kycFiles.front ? 'border-green-300 bg-green-50' : 'border-dashed border-blue-200 bg-blue-50'}`}>
-                                                <div className="flex items-center gap-2 mb-2">
-                                                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 ${kycFiles.front ? 'bg-green-500 text-white' : 'bg-blue-500 text-white'}`}>
-                                                    {kycFiles.front ? '✓' : '2'}
-                                                  </div>
-                                                  <div>
-                                                    <p className="text-xs font-black text-gray-700">Front of {KYC_ID_TYPES.find(t => t.value === kycIdType)?.label}</p>
-                                                    <p className="text-xs text-gray-400">Clear photo showing your name, photo and ID number</p>
-                                                  </div>
-                                                </div>
-                                                <div className="mb-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
-                                                  <CheckCircle size={12} className="inline-block mr-1" />Make sure the <strong>entire card is visible</strong>, all text is readable, and there is <strong>no glare or blur</strong>
-                                                </div>
-                                                <label className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed cursor-pointer hover:border-blue-400 transition bg-white"
-                                                       style={{ borderColor: kycFiles.front ? C.success : '#93C5FD' }}>
-                                                  <Upload size={18} style={{ color: kycFiles.front ? C.success : '#3B82F6', flexShrink: 0 }} />
-                                                  <div className="flex-1 min-w-0">
-                                                    <p className="text-xs font-bold" style={{ color: kycFiles.front ? C.success : '#1D4ED8' }}>
-                                                      {kycFiles.front ? `✓ ${kycFiles.front.name}` : 'Tap to upload FRONT of ID'}
-                                                    </p>
-                                                    {!kycFiles.front && <p className="text-xs text-gray-400">Max 10MB · JPG or PNG</p>}
-                                                  </div>
-                                                  {kycFiles.front && (
-                                                      <button type="button" onClick={e => { e.preventDefault(); setKycFiles(f => ({ ...f, front: null })); }}
-                                                              className="text-xs text-red-400 font-bold hover:text-red-600">Remove</button>
-                                                  )}
-                                                  <input type="file" accept="image/*" className="hidden"
-                                                         onChange={e => { const f = e.target.files[0] || null; setKycFiles(prev => ({ ...prev, front: f })); if (f) setKycStep('upload_back'); }} />
-                                                </label>
-                                              </div>
-                                          )}
-
-                                          {kycIdType && kycFiles.front && (
-                                              <div className={`rounded-xl border-2 p-4 transition ${kycFiles.back ? 'border-green-300 bg-green-50' : 'border-dashed border-orange-200 bg-orange-50'}`}>
-                                                <div className="flex items-center gap-2 mb-2">
-                                                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 ${kycFiles.back ? 'bg-green-500 text-white' : 'bg-orange-500 text-white'}`}>
-                                                    {kycFiles.back ? '✓' : '3'}
-                                                  </div>
-                                                  <div>
-                                                    <p className="text-xs font-black text-gray-700">Back of {KYC_ID_TYPES.find(t => t.value === kycIdType)?.label}</p>
-                                                    <p className="text-xs text-gray-400">Clear photo of the reverse side of your ID</p>
-                                                  </div>
-                                                </div>
-                                                <div className="mb-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#FFF7ED', color: '#C2410C', border: '1px solid #FED7AA' }}>
-                                                  <CheckCircle size={12} className="inline-block mr-1" />Flip your ID and photograph the <strong>back side</strong> — all details must be <strong>clear and unobstructed</strong>
-                                                </div>
-                                                <label className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed cursor-pointer hover:border-orange-400 transition bg-white"
-                                                       style={{ borderColor: kycFiles.back ? C.success : '#FDBA74' }}>
-                                                  <Upload size={18} style={{ color: kycFiles.back ? C.success : '#EA580C', flexShrink: 0 }} />
-                                                  <div className="flex-1 min-w-0">
-                                                    <p className="text-xs font-bold" style={{ color: kycFiles.back ? C.success : '#9A3412' }}>
-                                                      {kycFiles.back ? `✓ ${kycFiles.back.name}` : 'Tap to upload BACK of ID'}
-                                                    </p>
-                                                    {!kycFiles.back && <p className="text-xs text-gray-400">Max 10MB · JPG or PNG</p>}
-                                                  </div>
-                                                  {kycFiles.back && (
-                                                      <button type="button" onClick={e => { e.preventDefault(); setKycFiles(f => ({ ...f, back: null })); }}
-                                                              className="text-xs text-red-400 font-bold hover:text-red-600">Remove</button>
-                                                  )}
-                                                  <input type="file" accept="image/*" className="hidden"
-                                                         onChange={e => { const f = e.target.files[0] || null; setKycFiles(prev => ({ ...prev, back: f })); if (f) setKycStep('ready'); }} />
-                                                </label>
-                                              </div>
-                                          )}
-
-                                          {kycStep === 'processing' && (
-                                              <div className="rounded-xl border-2 border-blue-200 bg-blue-50 p-5 text-center">
-                                                <RefreshCw size={28} className="animate-spin mx-auto mb-2 text-blue-500" />
-                                                <p className="text-sm font-black text-blue-800">Processing your documents…</p>
-                                                <p className="text-xs text-blue-600 mt-1">Securely uploading and encrypting your files</p>
-                                              </div>
-                                          )}
-
-                                          {kycIdType && kycFiles.front && kycFiles.back && kycStep !== 'processing' && (
-                                              <div className="rounded-xl border-2 border-green-200 bg-green-50 p-4">
-                                                <div className="flex items-center gap-2 mb-3">
-                                                  <CheckCircle size={16} className="text-green-600 flex-shrink-0" />
-                                                  <p className="text-xs font-black text-green-800">All documents uploaded — ready to submit</p>
-                                                </div>
-                                                <div className="space-y-1 mb-4">
-                                                  <div className="flex items-center gap-2 text-xs text-green-700">
-                                                    <CheckCircle size={11} className="text-green-500 flex-shrink-0" />
-                                                    <span>{KYC_ID_TYPES.find(t => t.value === kycIdType)?.label} selected</span>
-                                                  </div>
-                                                  <div className="flex items-center gap-2 text-xs text-green-700">
-                                                    <CheckCircle size={11} className="text-green-500 flex-shrink-0" />
-                                                    <span>ID front: {kycFiles.front.name}</span>
-                                                  </div>
-                                                  <div className="flex items-center gap-2 text-xs text-green-700">
-                                                    <CheckCircle size={11} className="text-green-500 flex-shrink-0" />
-                                                    <span>ID back: {kycFiles.back.name}</span>
-                                                  </div>
-                                                </div>
-                                                <button onClick={handleKycSubmit} disabled={kycLoading}
-                                                        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-white text-sm font-black disabled:opacity-50 transition hover:opacity-90"
-                                                        style={{ backgroundColor: C.green }}>
-                                                  <Shield size={15} />
-                                                  Submit for Review — Secure &amp; Encrypted
-                                                </button>
-                                                <p className="text-xs text-gray-400 text-center mt-2">We typically review within 24 hours</p>
-                                              </div>
+                                          {KYC_PICKER_COUNTRIES.filter(c => !idCountrySearch.trim() || c.name.toLowerCase().includes(idCountrySearch.trim().toLowerCase())).length === 0 && (
+                                              <p className="px-3 py-4 text-sm text-center" style={{ color: C.g400 }}>No countries found</p>
                                           )}
                                         </div>
+                                      </AccountBottomSheet>
+                                  )}
+                                  <div>
+                                    {idFieldLabel('City')}
+                                    <input type="text" value={idForm.city} placeholder="Enter city"
+                                           onChange={e => setIdForm(f => ({ ...f, city: e.target.value }))}
+                                           className="w-full px-3 py-2 border-2 rounded-xl text-sm font-semibold focus:outline-none"
+                                           style={idInputStyle(idForm.city.trim().length > 0)} />
+                                  </div>
+                                  <div>
+                                    {idFieldLabel('Postal code')}
+                                    <input type="text" value={idForm.postalCode} placeholder="Enter postal code"
+                                           onChange={e => setIdForm(f => ({ ...f, postalCode: e.target.value }))}
+                                           className="w-full px-3 py-2 border-2 rounded-xl text-sm font-semibold focus:outline-none"
+                                           style={idInputStyle(idForm.postalCode.trim().length > 0)} />
+                                  </div>
+                                  <div>
+                                    {idFieldLabel('Address')}
+                                    <input type="text" value={idForm.address} placeholder="Enter address"
+                                           onChange={e => setIdForm(f => ({ ...f, address: e.target.value }))}
+                                           className="w-full px-3 py-2 border-2 rounded-xl text-sm font-semibold focus:outline-none"
+                                           style={idInputStyle(idForm.address.trim().length > 0)} />
+                                  </div>
+                                  <div>
+                                    {idFieldLabel('ID document')}
+                                    {/* Responsive picker — desktop (≥ md): native <select>
+                                        (inline dropdown, no modal); mobile (< md): tappable
+                                        field opening the nested bottom-sheet picker. Shared
+                                        data source: KYC_ID_TYPES. */}
+                                    {idVerifyDesktop ? (
+                                        <select value={idForm.idType}
+                                                onChange={e => setIdForm(f => ({ ...f, idType: e.target.value }))}
+                                                className="w-full px-3 py-2 border-2 rounded-xl text-sm font-semibold focus:outline-none"
+                                                style={idInputStyle(!!idForm.idType)}>
+                                          <option value="" disabled>Select document type</option>
+                                          {KYC_ID_TYPES.map(t => (
+                                              <option key={t.value} value={t.value}>{t.label}</option>
+                                          ))}
+                                        </select>
+                                    ) : (
+                                        <button type="button" onClick={() => setIdTypeOpen(true)}
+                                                className="w-full flex items-center justify-between px-3 py-2 border-2 rounded-xl text-sm font-semibold focus:outline-none"
+                                                style={idInputStyle(!!idForm.idType)}>
+                                          <span style={{ color: idForm.idType ? C.g800 : C.g400 }}>
+                                            {KYC_ID_TYPES.find(t => t.value === idForm.idType)?.label || 'Select document type'}
+                                          </span>
+                                          <ChevronDown size={16} style={{ color: C.g400 }} />
+                                        </button>
                                     )}
                                   </div>
-                                  {kycVerified ? <CheckCircle size={16} className="text-green-500 flex-shrink-0 mt-0.5" /> :
-                                      kycPending ? <Clock size={16} style={{ color: '#D97706', flexShrink: 0, marginTop: 2 }} /> :
-                                          phoneVerified ? null : <Clock size={16} className="text-gray-300 flex-shrink-0 mt-0.5" />}
+                                  {/* Nested ID-document picker — MOBILE ONLY, same shared
+                                      bottom-sheet pattern as the Country picker (portal-stacked
+                                      on top of Step 1; search omitted for a 2-item list).
+                                      Desktop uses the <select> above. */}
+                                  {idTypeOpen && !idVerifyDesktop && (
+                                      <AccountBottomSheet title="ID document" onClose={() => setIdTypeOpen(false)}>
+                                        <div style={{ maxHeight: 280, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                                          {KYC_ID_TYPES.map(t => (
+                                              <button key={t.value} type="button"
+                                                      onClick={() => { setIdForm(f => ({ ...f, idType: t.value })); setIdTypeOpen(false); }}
+                                                      className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition hover:bg-gray-50"
+                                                      style={{ borderBottom: `1px solid ${C.g100}` }}>
+                                                <span className="flex-1 min-w-0 truncate text-sm font-semibold" style={{ color: C.g800 }}>{t.label}</span>
+                                                {idForm.idType === t.value && <Check size={14} style={{ color: C.green, flexShrink: 0 }} />}
+                                              </button>
+                                          ))}
+                                        </div>
+                                      </AccountBottomSheet>
+                                  )}
+                                  <div>
+                                    {idFieldLabel('Document number')}
+                                    <input type="text" value={idForm.docNumber} placeholder="Enter document number"
+                                           onChange={e => setIdForm(f => ({ ...f, docNumber: e.target.value }))}
+                                           className="w-full px-3 py-2 border-2 rounded-xl text-sm font-semibold focus:outline-none"
+                                           style={idInputStyle(idForm.docNumber.trim().length > 0)} />
+                                  </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-2.5 pb-2">
+                                  {/* Step-2 heading row — desktop inline mode only */}
+                                  <div className="hidden md:flex items-center gap-2">
+                                    <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0" style={{ backgroundColor: C.green, color: '#fff' }}>2</span>
+                                    <p className="text-xs font-black" style={{ color: C.g800 }}>Your documents</p>
+                                    <span className="ml-auto text-[10px] font-black" style={{ color: C.g400 }}>Step 2 of 2</span>
+                                  </div>
+                                  <p className="text-xs leading-relaxed font-bold" style={{ color: C.g600 }}>
+                                    Upload each document below. ID and selfie must be taken live from your camera.
+                                  </p>
+                                  <p className="text-xs leading-relaxed" style={{ color: C.g400 }}>
+                                    Complete your verification data — required documents must be uploaded before review.
+                                  </p>
+                                  {renderDocSection('front', 'Government ID — front', 'Passport photo page, national ID or driving licence. All four corners visible.')}
+                                  {renderDocSection('selfie', 'Selfie holding your ID', 'Your face and the ID in the same photo, both readable.', { capture: 'user' })}
+                                  {renderDocSection('back', 'Government ID — back', 'Only if your ID has a back — passports do not.', { optional: true })}
+                                  {stillNeeded.length > 0 ? (
+                                      <p className="text-xs font-bold px-3 py-2.5 rounded-xl" style={{ backgroundColor: '#FFFBEB', color: '#92400E' }}>
+                                        Still needed: {stillNeeded.join(', ')}.
+                                      </p>
+                                  ) : (
+                                      <p className="text-xs font-black px-3 py-2.5 rounded-xl flex items-center gap-2" style={{ backgroundColor: C.mist, color: C.green }}>
+                                        <CheckCircle size={13} className="flex-shrink-0" /> All required documents captured — ready to submit.
+                                      </p>
+                                  )}
+                                </div>
+                            )}
+                            {withFooter && (
+                                <div className="mt-4">
+                                  {idVerifyFooter()}
+                                </div>
+                            )}
+                          </>
+                      );
+
+                      // ── Shared detail body — used by the desktop expanded area AND the
+                      // mobile "What you can do" bottom sheet. The verification flow renders
+                      // ONLY on the unlocked card; verified and locked cards expand to the
+                      // "What you can do" checklist only, so a locked level never exposes
+                      // another level's form.
+                      const renderLevelDetail = (lvl, { vertical = false, light = false, state = 'locked' } = {}) => {
+                        const flow =
+                            state !== 'unlocked' ? null :
+                                lvl.n === 1 ? renderEmailFlow(light) :
+                                    lvl.n === 2 ? null :
+                                        lvl.n === 3 ? (
+                                            <p className="text-xs leading-relaxed" style={{ color: light ? 'rgba(255,255,255,0.75)' : C.g600 }}>
+                                              Proof of address verification unlocks after your ID is verified — contact support to request it once Level 2 is complete.
+                                            </p>
+                                        ) : null;
+                        return (
+                            <>
+                              {flow}
+                              {lvl.checklist && (
+                                  <div className={flow ? 'mt-4 pt-4' : ''} style={flow ? { borderTop: `1px solid ${light ? 'rgba(255,255,255,0.18)' : C.g200}` } : null}>
+                                    <p className="text-xs font-black mb-2.5" style={{ color: light ? 'rgba(255,255,255,0.85)' : C.g600 }}>What you can do:</p>
+                                    <VerifChecklist items={lvl.checklist} vertical={vertical} light={light} />
+                                  </div>
+                              )}
+                            </>
+                        );
+                      };
+
+                      // ── One level card — three states (NoOnes progression model):
+                      //   verified → grey non-clickable "✓ Verified" pill, muted card
+                      //   unlocked → white clickable "Verify" button + dark-green
+                      //              "Your current level" highlight
+                      //   locked   → greyed-out disabled "Verify" button, muted card
+                      // The chevron expands details in every state (the checklist is
+                      // always available; the verification flow renders only when
+                      // unlocked, so a locked level never shows another level's form).
+                      const renderLevelCard = (lvl) => {
+                        const state = levelState(lvl.n);
+                        const isHighlight = lvl.n === highlightLevel;
+                        const expanded = !!expandedLevels[lvl.n];
+                        const isL1 = lvl.n === 2; // the ID verification card (levels now number 1–3)
+                        const titleColor = isHighlight ? '#FFFFFF' : C.forest;
+                        const subColor = isHighlight ? 'rgba(255,255,255,0.72)' : C.g600;
+                        // "Verify" is the ONLY trigger for the verification process —
+                        // for Level 2 it opens the 2-step modal (never inline, never via
+                        // the chevron). Locked levels render it disabled, no onClick.
+                        const verifyBtn = (mobile) => (
+                            <button type="button"
+                                    onClick={mobile
+                                        ? (e) => { e.stopPropagation(); if (state === 'unlocked') { if (isL1) openIdVerify(); else setVerifFlowLevel(lvl.n); } }
+                                        : (state === 'unlocked' ? (isL1 ? openIdVerify : () => toggleLevel(lvl.n)) : undefined)}
+                                    disabled={state !== 'unlocked'}
+                                    aria-disabled={state !== 'unlocked'}
+                                    aria-label={isL1 && kycPending
+                                        ? 'ID verification pending review'
+                                        : `Verify Level ${lvl.n}${state === 'locked' ? ' — locked until the previous level is complete' : ''}`}
+                                    className={`flex-shrink-0 px-4 py-1.5 rounded-lg text-xs font-black transition ${state === 'locked' ? 'cursor-not-allowed' : 'cursor-pointer hover:opacity-90'}`}
+                                    style={state === 'unlocked'
+                                        ? { backgroundColor: C.white, color: C.g800, border: 'none' }
+                                        : { backgroundColor: C.white, color: C.g400, border: `1px solid ${C.g200}`, opacity: 0.6 }}>
+                              Verify
+                            </button>
+                        );
+                        // Status control shown top-right of each card: verified pill,
+                        // pending/rejected review pills (Level 2), or the Verify button.
+                        const statusControl = (mobile) => {
+                          if (state === 'verified') return <VerifStatusPill verified />;
+                          if (isL1 && kycPending) return (
+                              <span className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black animate-pulse"
+                                    style={{ backgroundColor: '#FEF3C7', color: '#92400E', cursor: 'default' }}>
+                                <Clock size={12} /> Pending review
+                              </span>
+                          );
+                          if (isL1 && kycRejected) return (
+                              <span className="flex-shrink-0 inline-flex items-center gap-2">
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black"
+                                      style={{ backgroundColor: '#FEE2E2', color: '#991B1B', cursor: 'default' }}>
+                                  <X size={12} /> Rejected
+                                </span>
+                                {verifyBtn(mobile)}
+                              </span>
+                          );
+                          return verifyBtn(mobile);
+                        };
+                        return (
+                            <div key={lvl.n} className="rounded-2xl overflow-hidden" style={{ backgroundColor: isHighlight ? C.forest : '#E7F5EE' }}>
+                              {/* Mobile card: title + › row, subtitle below, status control below that.
+                                  Tapping the card opens its "What you can do" sheet (checklist only —
+                                  the Level 2 flow opens via its Verify button, as a 2-step modal). */}
+                              <div className="md:hidden cursor-pointer" role="button" tabIndex={0}
+                                   onClick={() => setVerifSheetLevel(lvl.n)}
+                                   onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setVerifSheetLevel(lvl.n); }}>
+                                <div className="flex items-center gap-3 px-4 pt-4">
+                                  <p className="flex-1 min-w-0 font-black text-sm" style={{ color: titleColor }}>
+                                    Level {lvl.n} <span style={{ opacity: 0.5, fontWeight: 700 }}>|</span> {lvl.title}
+                                  </p>
+                                  <span className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
+                                        style={{ backgroundColor: isHighlight ? 'rgba(255,255,255,0.14)' : C.white, border: isHighlight ? 'none' : `1px solid ${C.g200}`, color: isHighlight ? '#fff' : C.g500 }}>
+                                    <ChevronRight size={15} />
+                                  </span>
+                                </div>
+                                <p className="px-4 pt-1.5 text-xs leading-relaxed" style={{ color: subColor }}>{lvl.subtitle}</p>
+                                {isL1 && kycRejected && (
+                                    <p className="px-4 pt-1.5 text-xs font-bold" style={{ color: '#B91C1C' }}>
+                                      Previous submission was rejected{kycRejectedReason ? ` — ${kycRejectedReason}` : ''}. Tap Verify to re-submit.
+                                    </p>
+                                )}
+                                <div className="px-4 pt-2.5 pb-4">
+                                  {statusControl(true)}
                                 </div>
                               </div>
-                          );
-                        })()}
-                      </div>
-                    </>}
+
+                              {/* Desktop card: title row with status control + chevron on the right, subtitle under the title */}
+                              <div className="hidden md:block px-5 pt-5" style={{ paddingBottom: expanded ? 0 : 20 }}>
+                                <div className="flex items-start gap-3">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <p className="font-black text-sm" style={{ color: titleColor }}>
+                                        Level {lvl.n} <span style={{ opacity: 0.5, fontWeight: 700 }}>|</span> {lvl.title}
+                                      </p>
+                                      {isHighlight && (
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: C.gold, color: C.forest }}>
+                                            Your current level
+                                          </span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs mt-1 leading-relaxed" style={{ color: subColor }}>{lvl.subtitle}</p>
+                                    {isL1 && kycRejected && (
+                                        <p className="text-xs mt-1 font-bold" style={{ color: '#B91C1C' }}>
+                                          Previous submission was rejected{kycRejectedReason ? ` — ${kycRejectedReason}` : ''}. Click Verify to re-submit.
+                                        </p>
+                                    )}
+                                  </div>
+                                  {statusControl(false)}
+                                  <button type="button" onClick={() => toggleLevel(lvl.n)} aria-expanded={expanded}
+                                          aria-label={`${expanded ? 'Collapse' : 'Expand'} Level ${lvl.n} details`}
+                                          className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:opacity-80"
+                                          style={{ backgroundColor: isHighlight ? 'rgba(255,255,255,0.14)' : C.white, border: isHighlight ? 'none' : `1px solid ${C.g200}`, color: isHighlight ? '#fff' : C.g500 }}>
+                                    <ChevronDown size={15} style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                                  </button>
+                                </div>
+                                {expanded && (
+                                    <div className="pt-4 pb-5">
+                                      {renderLevelDetail(lvl, { light: isHighlight, state })}
+                                    </div>
+                                )}
+                                {/* Level 2 desktop: "Verify" expands the 2-step flow INLINE
+                                    inside the card (no overlay) — same shared step body as
+                                    the mobile sheet, different container only. The body was
+                                    designed as a light panel (mobile sheet is white), so it
+                                    renders inside its own white inner card nested in the
+                                    dark-green Level 2 card — dark text/labels stay readable
+                                    and both breakpoints share one visual language. */}
+                                {isL1 && state === 'unlocked' && idVerifyOpen && (
+                                    <div className="pt-4 pb-5">
+                                      <div className="bg-white rounded-2xl p-5" style={{ border: `1px solid ${C.g200}` }}>
+                                        {renderIdVerifyFlowBody()}
+                                      </div>
+                                    </div>
+                                )}
+                              </div>
+                            </div>
+                        );
+                      };
+
+                      return (
+                          <>
+                            <div className="space-y-3">
+                              {LEVELS.map(renderLevelCard)}
+                            </div>
+
+                            {/* ── Mobile "What you can do" bottom sheet — checklist ONLY.
+                                No level title/subtitle/duplicate label here: that info
+                                lives on the card behind the sheet (NoOnes reference).
+                                Reuses the shared AccountBottomSheet (sticky header +
+                                close, scrollable body, safe-area padding). ── */}
+                            {verifSheetLevel !== null && (() => {
+                              const sheetLvl = LEVELS.find(l => l.n === verifSheetLevel) || LEVELS[0];
+                              return (
+                                  <AccountBottomSheet title="What you can do" onClose={() => setVerifSheetLevel(null)}>
+                                    <div className="pt-1 pb-3">
+                                      {sheetLvl.checklist
+                                          ? <VerifChecklist items={sheetLvl.checklist} vertical />
+                                          : <p className="text-sm" style={{ color: C.g500 }}>No checklist for this level.</p>}
+                                    </div>
+                                  </AccountBottomSheet>
+                              );
+                            })()}
+
+                            {/* ── Mobile verification FLOW sheet (unlocked non-ID-verification
+                                levels — i.e. the Level 1 email code/OTP) — opened ONLY
+                                by the card's Verify button, never by the checklist. ── */}
+                            {verifFlowLevel !== null && (() => {
+                              const flowLvl = LEVELS.find(l => l.n === verifFlowLevel) || LEVELS[0];
+                              return (
+                                  <AccountBottomSheet
+                                      title={flowLvl.n === 1 ? 'Verify your email' : `Verify Level ${flowLvl.n}`}
+                                      onClose={() => setVerifFlowLevel(null)}>
+                                    <div className="pt-1 pb-3">
+                                      {flowLvl.n === 1 ? renderEmailFlow(false) : null}
+                                    </div>
+                                  </AccountBottomSheet>
+                              );
+                            })()}
+
+                            {/* ── Level 2 ID verification flow — MOBILE container only
+                                (shared bottom sheet). On desktop the SAME flow body renders
+                                INLINE inside the Level 2 card (see renderLevelCard) —
+                                opened ONLY by the card's Verify button either way. ── */}
+                            {idVerifyOpen && !idVerifyDesktop && (
+                                <AccountBottomSheet
+                                    title={`ID verification — step ${idVerifyStep === 'details' ? '1' : '2'} of 2: ${idVerifyStep === 'details' ? 'your details' : 'your documents'}`}
+                                    onClose={() => setIdVerifyOpen(false)}
+                                    footer={idVerifyFooter()}>
+                                  {renderIdVerifyFlowBody({ withFooter: false })}
+                                </AccountBottomSheet>
+                            )}
+                          </>
+                      );
+                    })()}
                   </div>
               )}
 

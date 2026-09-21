@@ -5208,12 +5208,40 @@ const withUploadTimeout = (p, ms, label) => Promise.race([
   new Promise(resolve => setTimeout(() => resolve({ data: null, error: { message: `${label} upload timed out after ${ms}ms` } }), ms)),
 ]);
 
-// POST /api/kyc/upload — receive base64 ID front + back, store in Supabase Storage, set status pending
+// POST /api/kyc/upload — receive base64 ID front + OPTIONAL back + live-captured
+// selfie from the 2-step ID verification modal, store in Supabase Storage, set
+// status pending. Back is optional (passports have no reverse side).
 app.post('/api/kyc/upload', express.json({ limit: '25mb' }), verifyToken, async (req, res) => {
   try {
-    const { idImage, idImageBack, idType = 'national_id' } = req.body;
-    if (!idImage) return res.status(400).json({ error: 'Front of ID card is required' });
-    if (!idImageBack) return res.status(400).json({ error: 'Back of ID card is required — please upload both front and back' });
+    const { idImage, idImageBack, selfieImage, idType = 'national_id' } = req.body;
+    if (!idImage) return res.status(400).json({ error: 'Photo of the front of your ID is required' });
+    if (!selfieImage) return res.status(400).json({ error: 'A selfie holding your ID is required' });
+    // idImageBack is intentionally optional — passports have no back side.
+
+    // Identity basics (name + DOB) are confirmed as part of the SAME submission —
+    // the former standalone "Identity basics" level was merged into ID
+    // verification. identity_basics_verified is set here as an internal sub-flag
+    // (kept for backward compatibility with the backfill migration).
+    const fullName = String(req.body?.fullName || '').trim().replace(/\s+/g, ' ');
+    const dobRaw = String(req.body?.dateOfBirth || '').trim();
+    if (!fullName || fullName.length < 2 || fullName.length > 255) {
+      return res.status(400).json({ error: 'Please enter your full name (as on your ID)' });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dobRaw)) {
+      return res.status(400).json({ error: 'Date of birth is required' });
+    }
+    const dobDate = new Date(`${dobRaw}T00:00:00Z`);
+    if (Number.isNaN(dobDate.getTime()) || dobDate > new Date() || dobDate.getUTCFullYear() < 1900) {
+      return res.status(400).json({ error: "That date of birth doesn't look valid" });
+    }
+
+    // Optional "Your details" fields from the 2-step modal (trimmed + length-capped)
+    const optStr = (v, max) => { const s = String(v || '').trim(); return s ? s.slice(0, max) : null; };
+    const documentNumber = optStr(req.body?.documentNumber, 100);
+    const country = optStr(req.body?.country, 100);
+    const city = optStr(req.body?.city, 100);
+    const postalCode = optStr(req.body?.postalCode, 20);
+    const address = optStr(req.body?.address, 500);
 
     const userId = req.userId;
     const timestamp = Date.now();
@@ -5223,6 +5251,7 @@ app.post('/api/kyc/upload', express.json({ limit: '25mb' }), verifyToken, async 
 
     let idUrl = null;
     let idBackUrl = null;
+    let selfieUrl = null;
 
     // Try Supabase Storage upload (bucket: kyc-documents) — see withUploadTimeout() above
     // for why this can only fail-fast on the response, not actually cancel the upload.
@@ -5249,30 +5278,74 @@ app.post('/api/kyc/upload', express.json({ limit: '25mb' }), verifyToken, async 
         const { data: { publicUrl } } = supabaseAdmin.storage.from('kyc-documents').getPublicUrl(`${userId}/id_back_${timestamp}.jpg`);
         idBackUrl = publicUrl;
       }
+
+      const { error: selfieErr } = await withUploadTimeout(
+        supabaseAdmin.storage
+          .from('kyc-documents')
+          .upload(`${userId}/selfie_${timestamp}.jpg`, toBuffer(selfieImage), { contentType: 'image/jpeg', upsert: true }),
+        25000, 'Selfie'
+      );
+      if (!selfieErr) {
+        const { data: { publicUrl } } = supabaseAdmin.storage.from('kyc-documents').getPublicUrl(`${userId}/selfie_${timestamp}.jpg`);
+        selfieUrl = publicUrl;
+      }
     } catch (storageErr) {
       console.warn('[kyc/upload] Storage upload failed (bucket may not exist):', storageErr.message);
     }
 
     // Always mark user as pending regardless of storage success
-    // DB columns: id_front_url, id_back_url, id_type, selfie_url
+    // DB columns: id_front_url, id_back_url, selfie_url, id_type + the
+    // "Your details" fields (full_name, date_of_birth, country, city,
+    // postal_code, address, id_document_number)
     const { error: dbErr } = await supabaseAdmin.from('users').update({
       kyc_status: 'pending',
       id_type: idType,
+      full_name: fullName,
+      date_of_birth: dobRaw,
+      identity_basics_verified: true,
       kyc_submitted_at: new Date().toISOString(),
       id_front_url: idUrl,
       id_back_url: idBackUrl,
-      selfie_url: null,
+      selfie_url: selfieUrl,
+      country,
+      city,
+      postal_code: postalCode,
+      address,
+      id_document_number: documentNumber,
       updated_at: new Date().toISOString(),
     }).eq('id', userId);
     if (dbErr) {
       console.error('[kyc/upload] DB update failed:', dbErr.message);
-      const { error: minErr } = await supabaseAdmin.from('users').update({
+      if (dbErr.code === '42703' || /does not exist/i.test(dbErr.message || '')) {
+        console.error('[kyc/upload] Missing column — run database/2026-09-20_verification_levels_noones_parity.sql (date_of_birth / identity_basics_verified)');
+      }
+      // Retry with only the known-good KYC columns — the "Your details" columns
+      // may not exist if database/2026-09-20_verification_levels_noones_parity.sql
+      // hasn't been applied yet.
+      const { error: coreErr } = await supabaseAdmin.from('users').update({
         kyc_status: 'pending',
+        id_type: idType,
+        full_name: fullName,
+        date_of_birth: dobRaw,
+        identity_basics_verified: true,
+        kyc_submitted_at: new Date().toISOString(),
+        id_front_url: idUrl,
+        id_back_url: idBackUrl,
+        selfie_url: selfieUrl,
         updated_at: new Date().toISOString(),
       }).eq('id', userId);
-      if (minErr) {
-        console.error('[kyc/upload] Minimal DB update also failed:', minErr.message);
-        return res.status(500).json({ error: 'Database not ready. Please contact support.' });
+      if (coreErr) {
+        console.warn('[kyc/upload] Core KYC update also failed, falling back to minimal:', coreErr.message);
+        const { error: minErr } = await supabaseAdmin.from('users').update({
+          kyc_status: 'pending',
+          updated_at: new Date().toISOString(),
+        }).eq('id', userId);
+        if (minErr) {
+          console.error('[kyc/upload] Minimal DB update also failed:', minErr.message);
+          return res.status(500).json({ error: 'Database not ready. Please contact support.' });
+        }
+      } else {
+        console.warn('[kyc/upload] Detail columns missing (postal_code/address/id_document_number?) — run database/2026-09-20_verification_levels_noones_parity.sql');
       }
     }
 
@@ -5322,6 +5395,48 @@ app.get('/api/kyc/status', verifyToken, async (req, res) => {
       is_id_verified: data?.is_id_verified || false,
     });
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/users/identity-basics — Level 1 (Identity basics) verification:
+// the user confirms their full name and date of birth; on success the
+// identity_basics_verified flag is set, which unlocks Level 2 (ID
+// verification) in the Verification tab's sequential progression.
+app.post('/api/users/identity-basics', verifyToken, async (req, res) => {
+  try {
+    const fullName = String(req.body?.fullName || '').trim().replace(/\s+/g, ' ');
+    const dobRaw = String(req.body?.dateOfBirth || '').trim();
+
+    if (!fullName) return res.status(400).json({ error: 'Please enter your full name.' });
+    if (fullName.length < 2 || fullName.length > 255) return res.status(400).json({ error: 'Please enter a valid full name.' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dobRaw)) return res.status(400).json({ error: 'Please enter your date of birth.' });
+
+    const dob = new Date(`${dobRaw}T00:00:00Z`);
+    if (Number.isNaN(dob.getTime())) return res.status(400).json({ error: "That date of birth doesn't look valid." });
+    if (dob > new Date()) return res.status(400).json({ error: 'Date of birth cannot be in the future.' });
+    if (dob.getUTCFullYear() < 1900) return res.status(400).json({ error: 'Please enter a realistic date of birth.' });
+
+    const { data, error } = await supabaseAdmin.from('users')
+      .update({ full_name: fullName, date_of_birth: dobRaw, identity_basics_verified: true })
+      .eq('id', req.userId)
+      .select('id, full_name, date_of_birth, identity_basics_verified')
+      .single();
+
+    if (error) {
+      // Explicit failure when the migration hasn't been run — never a silent
+      // partial write (silent-column-drop lesson).
+      if (error.code === '42703' || /does not exist/i.test(error.message || '')) {
+        console.error('[POST /api/users/identity-basics] Missing column — run database/2026-09-20_verification_levels_noones_parity.sql');
+        return res.status(500).json({ error: 'Verification columns are missing in the database. Please run the 2026-09-20 verification levels migration first.' });
+      }
+      console.error('[POST /api/users/identity-basics] DB error:', error.message);
+      return res.status(500).json({ error: 'Could not save your details. Please try again.' });
+    }
+
+    res.json({ success: true, user: data });
+  } catch (e) {
+    console.error('[POST /api/users/identity-basics] Unexpected error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -5631,7 +5746,7 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
     // The core profile fetch (with its column-missing fallback), the optional
     // extra fields, the lock flags, and the wallet balance don't depend on each
     // other — run all four round-trips at once instead of one-after-another.
-    const [{ data, error }, extraFields, lockFlags, balance] = await Promise.all([
+    const [{ data, error }, extraFields, lockFlags, levelFlags, balance] = await Promise.all([
       (async () => {
         let { data, error } = await supabaseAdmin.from('users').select(coreCols).eq('id', req.userId).single();
         // Fallback if a column doesn't exist in the DB (e.g. is_phone_verified, badge, country)
@@ -5644,13 +5759,25 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
         return { data, error };
       })(),
       (async () => {
-        // Optional columns — isolated so a missing column never breaks the response
-        try {
-          const { data: extra } = await supabaseAdmin.from('users')
-            .select('email_verified, is_phone_verified, phone_verified, kyc_verified, kyc_status, id_type, kyc_submitted_at, id_front_url, id_back_url, selfie_url, kyc_rejection_reason, username_changed, preferred_currency, preferred_language, timezone, hide_full_name, name_display, city, country_name, last_seen_location, referral_code, total_referrals, referral_earnings_btc, p2p_migrated_platform, p2p_migrated_username, p2p_migrated_feedback, p2p_migration_approved_at')
+        // Optional columns — isolated so a missing column never breaks the response.
+        // Column names MUST match real DB columns: kyc_verified / phone_verified /
+        // email_verified / username_changed are API-alias names, NOT physical
+        // columns (they caused a silent 42703 → whole payload degrading to {}).
+        // Real columns: is_email_verified, is_id_verified (base schema), the KYC
+        // columns (admin_columns.sql), prefs (added directly to the live DB).
+        const extraCols = 'is_email_verified, is_phone_verified, is_id_verified, kyc_status, id_type, kyc_submitted_at, id_front_url, id_back_url, selfie_url, kyc_rejection_reason, has_changed_username, preferred_currency, preferred_language, timezone, hide_full_name, name_display, city, country_name, last_seen_location, referral_code, total_referrals, referral_earnings_btc, p2p_migrated_platform, p2p_migrated_username, p2p_migrated_feedback, p2p_migration_approved_at';
+        let { data: extra, error: extraErr } = await supabaseAdmin.from('users')
+          .select(extraCols)
+          .eq('id', req.userId).single();
+        if (extraErr && (extraErr.code === '42703' || (extraErr.message && extraErr.message.includes('does not exist')))) {
+          console.warn('[GET /api/users/profile] extraFields column missing — retrying with essentials:', extraErr.message);
+          const fallback = await supabaseAdmin.from('users')
+            .select('is_email_verified, is_phone_verified, is_id_verified, kyc_status, id_type, kyc_submitted_at, id_front_url, id_back_url, selfie_url, kyc_rejection_reason, hide_full_name, name_display, city, country_name, last_seen_location')
             .eq('id', req.userId).single();
-          return extra || {};
-        } catch { return {}; }
+          extra = fallback.data || {};
+          extraErr = null;
+        }
+        return extra || {};
       })(),
       (async () => {
         // One-time username lock flag + withdrawal lock — isolated queries so a
@@ -5675,6 +5802,28 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
           if (wl) flags.withdrawal_locked_until = wl.withdrawal_locked_until || null;
         } catch { }
         return flags;
+      })(),
+      (async () => {
+        // Verification-level flags (Level 1 identity basics + Level 3 proof of
+        // address). Queried in ISOLATED per-flag try/catch blocks — same
+        // defensive pattern as lockFlags above — so a missing column (migration
+        // 2026-09-20_verification_levels_noones_parity.sql not yet run) degrades
+        // to `false` instead of dropping the whole extraFields payload (the
+        // silent-column-drop lesson).
+        const levelFlags = {};
+        try {
+          const { data: ib } = await supabaseAdmin.from('users').select('identity_basics_verified').eq('id', req.userId).single();
+          if (ib) levelFlags.identity_basics_verified = !!ib.identity_basics_verified;
+        } catch { }
+        try {
+          const { data: av } = await supabaseAdmin.from('users').select('address_verified').eq('id', req.userId).single();
+          if (av) levelFlags.address_verified = !!av.address_verified;
+        } catch { }
+        try {
+          const { data: dobRow } = await supabaseAdmin.from('users').select('date_of_birth').eq('id', req.userId).single();
+          if (dobRow) levelFlags.date_of_birth = dobRow.date_of_birth || null;
+        } catch { }
+        return levelFlags;
       })(),
       (async () => {
         // Balance — read from wallets, the source of truth (matches Wallet page,
@@ -5714,6 +5863,7 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
         ...data,
         ...extraFields,
         ...lockFlags,
+        ...levelFlags,
         is_admin: data.is_admin || false,
         is_moderator: data.is_moderator || false,
         is_phone_verified: extraFields.is_phone_verified || Boolean(extraFields.phone_verified) || false,
