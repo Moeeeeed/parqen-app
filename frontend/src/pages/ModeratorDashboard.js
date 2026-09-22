@@ -98,7 +98,7 @@ function ModeratorLogin({ onLogin, user }) {
 
   const storedUser  = JSON.parse(localStorage.getItem('user') || 'null');
   const hasSession  = !!localStorage.getItem('token') && !!storedUser;
-  const isAuthorized = user?.is_moderator || user?.is_admin;
+  const isAuthorized = user?.is_moderator || user?.is_moderator_scoped || user?.is_admin;
 
   useEffect(() => {
     if (isAuthorized) {
@@ -129,7 +129,7 @@ function ModeratorLogin({ onLogin, user }) {
   }
 
   const finishLogin = (token, u) => {
-    if (!u?.is_moderator && !u?.is_admin) { setError('Access denied. Moderator privileges required.'); return; }
+    if (!u?.is_moderator && !u?.is_moderator_scoped && !u?.is_admin) { setError('Access denied. Moderator privileges required.'); return; }
     localStorage.setItem('token', token); localStorage.setItem('user', JSON.stringify(u)); localStorage.setItem('mod_token', token);
     axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     // Sync the app-level `user` state immediately so the Oath screen (and the
@@ -1273,10 +1273,10 @@ export default function ModeratorDashboard({ user }) {
     // `mod_token` alone is just a marker written by client-side JS — it proves nothing on
     // its own. Only trust it once `user` (populated from the server's own /profile response)
     // confirms real is_admin/is_moderator, so editing localStorage can't fake this gate.
-    if (t && (user?.is_moderator || user?.is_admin)) { setLoggedIn(true); setModName(user?.username || 'PRAQEN Moderator'); }
+    if (t && (user?.is_moderator || user?.is_moderator_scoped || user?.is_admin)) { setLoggedIn(true); setModName(user?.username || 'PRAQEN Moderator'); }
   }, [user]);
   useEffect(() => {
-    if ((user?.is_moderator || user?.is_admin) && !loggedIn) {
+    if ((user?.is_moderator || user?.is_moderator_scoped || user?.is_admin) && !loggedIn) {
       const tok = localStorage.getItem('token');
       if (tok) { localStorage.setItem('mod_token', tok); setLoggedIn(true); setModName(user.username||'PRAQEN Moderator'); }
     }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import SEO from '../components/SEO';
+import PRQFooter from '../components/PRQFooter';
 import {
   ArrowRight, Shield, Zap, Globe, Bitcoin, Gift,
   ChevronDown, Lock, TrendingUp, TrendingDown, Users,
@@ -8,8 +9,10 @@ import {
   MessageCircle, Award, Flame, Play, CheckCircle,
   Smartphone, Building2, CreditCard, Mail,
   Copy, UserPlus, Share2, Search, ArrowLeftRight, Link2,
+  DollarSign,
 } from 'lucide-react';
 import { copyToClipboard } from '../utils/clipboard';
+import { useRates } from '../contexts/RatesContext';
 /* ─── palette ─────────────────────────────────────────────────────────── */
 const C = {
   forest: '#1B4332', green: '#2D6A4F', mint: '#40916C', sage: '#52B788',
@@ -89,15 +92,20 @@ function Label({ children }) {
 ════════════════════════════════════════════════════════════════════════ */
 export default function LandingPage({ user }) {
   const navigate = useNavigate();
+  const { btcUsd } = useRates();
   const [faq, setFaq] = useState(null);
-  const [btc, setBtc] = useState(808425);
+  const [btc, setBtc] = useState(68000); // fallback until live price loads
   const [up, setUp] = useState(true);
   const [copied, setCopied] = useState(false);
 
-  /* simulated live price */
+  /* real live BTC/USD price, with a gentle live-tick jitter for the pulsing feel */
+  useEffect(() => {
+    if (btcUsd > 0) setBtc(Math.round(btcUsd));
+  }, [btcUsd]);
+
   useEffect(() => {
     const iv = setInterval(() => {
-      setBtc(p => { const d = (Math.random() - .47) * 900; setUp(d >= 0); return Math.round(p + d); });
+      setBtc(p => { const d = (Math.random() - .47) * (p * 0.0006); setUp(d >= 0); return Math.round(p + d); });
     }, 3000);
     return () => clearInterval(iv);
   }, []);
@@ -161,20 +169,21 @@ export default function LandingPage({ user }) {
               <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold mb-6 ${heroOn ? 'anim-up' : ''}`}
                 style={{ opacity: heroOn ? 1 : 0, background: 'rgba(244,164,34,.15)', border: '1px solid rgba(244,164,34,.35)', color: C.gold }}>
                 <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: C.online }} />
+                Live P2P Exchange · 180+ Countries
               </div>
 
               {/* headline */}
               <h1 className={`text-[1.6rem] sm:text-5xl lg:text-6xl font-black leading-[1.1] mb-4 text-white ${heroOn ? 'anim-up' : ''}`}
                 style={{ opacity: heroOn ? 1 : 0, fontFamily: "'Syne',sans-serif", animationDelay: '.1s' }}>
-                Buy Bitcoin in Ghana <br />
-                <span className="grad-text">Instantly with Mobile Money</span><br />
+                Trade Bitcoin &amp; USDT <br />
+                <span className="grad-text">Instantly, Anywhere in the World</span><br />
               </h1>
 
               {/* sub */}
               <p className={`text-sm md:text-base mb-7 leading-relaxed max-w-lg ${heroOn ? 'anim-up' : ''}`}
                 style={{ opacity: heroOn ? 1 : 0, color: 'rgba(255,255,255,.62)', animationDelay: '.18s' }}>
-                Trade Bitcoin &amp; USDT directly with verified peers using WeChat Pay, M-Pesa, SEPA, UPI, Bank Transfer
-                and 100+ local payment methods across 180+ countries. Every trade is escrow-protected.
+                Trade Bitcoin &amp; USDT directly with verified peers using WeChat Pay, M-Pesa, MTN MoMo, SEPA, UPI, Bank Transfer
+                and 400+ local payment methods across 180+ countries. Every trade is escrow-protected.
               </p>
 
               {/* CTAs */}
@@ -250,7 +259,7 @@ export default function LandingPage({ user }) {
                           <Bitcoin size={18} style={{ color: C.gold }} />
                         </div>
                         <div>
-                          <p className="text-xs font-black" style={{ color: C.g500 }}>BTC / GHS</p>
+                          <p className="text-xs font-black" style={{ color: C.g500 }}>BTC / USD</p>
                           <p className="text-xs" style={{ color: C.g400 }}>Live Market Rate</p>
                         </div>
                       </div>
@@ -260,7 +269,7 @@ export default function LandingPage({ user }) {
                       </span>
                     </div>
                     <p className="text-3xl font-black" style={{ color: C.forest }}>
-                      ₵{btc.toLocaleString()}
+                      ${btc.toLocaleString()}
                     </p>
                   </div>
 
@@ -268,9 +277,9 @@ export default function LandingPage({ user }) {
                   <div className="p-4 space-y-2">
                     <p className="text-xs font-black mb-2 flex items-center gap-1" style={{ color: C.g400 }}><Flame size={11} /> Top Active Sellers</p>
                     {[
-                      { n: 'Samuel K.', MIcon: Smartphone, m: 'MTN MoMo', r: '₵810k', badge: 'Legend', bc: '#7C3AED', t: '1.2k' },
-                      { n: 'Amina T.', MIcon: Building2, m: 'Bank Transfer', r: '₵808k', badge: 'Expert', bc: '#0EA5E9', t: '348' },
-                      { n: 'Kofi B.', MIcon: Smartphone, m: 'Vodafone', r: '₵805k', badge: 'Pro', bc: C.success, t: '87' },
+                      { n: 'Wei L.', MIcon: Smartphone, m: 'Alipay', r: '$68.1k', badge: 'Legend', bc: '#7C3AED', t: '1.2k' },
+                      { n: 'Lars B.', MIcon: Building2, m: 'SEPA Transfer', r: '$67.9k', badge: 'Expert', bc: '#0EA5E9', t: '348' },
+                      { n: 'Priya R.', MIcon: Smartphone, m: 'UPI', r: '$67.8k', badge: 'Pro', bc: C.success, t: '87' },
                     ].map(({ n, MIcon, m, r, badge, bc, t }) => (
                       <div key={n} className="flex items-center justify-between p-2.5 rounded-xl hover:bg-gray-50 transition cursor-pointer"
                         style={{ background: C.g50 }}>
@@ -325,6 +334,9 @@ export default function LandingPage({ user }) {
           <div className="max-w-5xl mx-auto px-4 py-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { v: '180+', l: 'Countries' },
+              { v: '400+', l: 'Payment Methods' },
+              { v: '8 min', l: 'Avg. Trade Time' },
+              { v: '99.8%', l: 'Dispute Resolution' },
             ].map(({ v, l }) => (
               <div key={l} className="text-center">
                 <p className="text-xl md:text-3xl font-black grad-text mb-0.5">{v}</p>
@@ -355,6 +367,11 @@ export default function LandingPage({ user }) {
             <span className="text-xs font-medium" style={{ opacity: .6 }}>Get paid fast</span>
           </button>
         </div>
+        <Link to="/buy-usdt"
+          className="flex items-center justify-center gap-2 py-3.5 rounded-2xl font-bold text-sm w-full mb-3"
+          style={{ background: 'rgba(59,130,246,.2)', color: '#93C5FD', border: '1px solid rgba(59,130,246,.35)' }}>
+          <DollarSign size={16} /> Trade USDT — Stable &amp; Fast
+        </Link>
         <Link to="/gift-cards"
           className="flex items-center justify-center gap-2 py-3.5 rounded-2xl font-bold text-sm w-full"
           style={{ background: 'rgba(139,92,246,.2)', color: '#C4B5FD', border: '1px solid rgba(139,92,246,.35)' }}>
@@ -371,26 +388,32 @@ export default function LandingPage({ user }) {
             <Label>Our Products</Label>
             <h2 className="text-2xl md:text-4xl font-black mb-3"
               style={{ fontFamily: "'Syne',sans-serif", color: C.forest }}>
-              Three Powerful Ways to Trade
+              Four Powerful Ways to Trade
             </h2>
             <p className="text-base max-w-xl mx-auto" style={{ color: C.g500 }}>
               One platform. Everything you need to buy, sell and convert crypto — fast, safe and on your terms.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-4 md:gap-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
             {[
               {
                 icon: Bitcoin, title: 'Buy Bitcoin', color: C.gold,
                 desc: 'Access thousands of verified P2P offers. Choose your payment method, rate and trade in minutes.',
                 link: '/buy-bitcoin', label: 'Browse Sellers',
-                highlights: ['Live escrow protection', 'Best market rates', '50+ payment methods', 'Verified sellers only'],
+                highlights: ['Live escrow protection', 'Best market rates', '400+ payment methods', 'Verified sellers only'],
               },
               {
                 icon: TrendingUp, title: 'Sell Bitcoin', color: C.green, featured: true,
                 desc: 'Convert your Bitcoin to cash instantly. Get paid directly to your mobile wallet or bank account.',
                 link: '/sell-bitcoin', label: 'Start Selling',
                 highlights: ['Instant payment release', 'No withdrawal limits', 'Set your own rate', 'Zero chargebacks'],
+              },
+              {
+                icon: DollarSign, title: 'Buy & Sell USDT', color: C.paid,
+                desc: 'Trade Tether (USDT) with verified peers at the best rates — dollar-pegged, stable and fast to settle.',
+                link: '/buy-usdt', label: 'Trade USDT',
+                highlights: ['Stable, USD-pegged value', 'Live escrow protection', 'Fast settlement', 'Verified traders only'],
               },
               {
                 icon: Gift, title: 'Gift Card Trading', color: C.purple,
@@ -400,17 +423,27 @@ export default function LandingPage({ user }) {
               },
             ].map(({ icon: Icon, title, color, desc, link, label, highlights, featured }, i) => (
               <Link key={title} to={link}
-                className={`card-up bg-white rounded-3xl p-5 md:p-7 border block group relative overflow-hidden ${productsOn ? 'anim-up' : ''}`}
-                style={{ opacity: productsOn ? 1 : 0, borderColor: featured ? color : C.g200, borderWidth: featured ? 2 : 1, animationDelay: `${i * .1}s` }}>
+                className={`card-up bg-white rounded-3xl p-5 md:p-7 border block group relative overflow-hidden transition-all duration-300 ease-out hover:-translate-y-2 hover:shadow-[0_24px_50px_-16px_var(--accentGlow)] active:scale-[0.97] active:translate-y-0 active:duration-100 cursor-pointer ${productsOn ? 'anim-up' : ''}`}
+                style={{
+                  opacity: productsOn ? 1 : 0,
+                  borderColor: featured ? color : C.g200,
+                  borderWidth: featured ? 2 : 1,
+                  animationDelay: `${i * .1}s`,
+                  '--accent': color,
+                  '--accentGlow': `${color}45`,
+                }}>
+                {/* top accent bar — appears in full color on hover */}
+                <div className="absolute top-0 left-0 right-0 h-1 opacity-60 group-hover:opacity-100 transition-opacity duration-300"
+                  style={{ background: `linear-gradient(90deg, ${color}, ${color}99)` }} />
                 {featured && (
                   <div className="absolute top-5 right-5 px-2.5 py-1 rounded-full text-xs font-black"
                     style={{ background: `${color}15`, color }}>Most Popular</div>
                 )}
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5"
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3"
                   style={{ background: `${color}15` }}>
                   <Icon size={26} style={{ color }} />
                 </div>
-                <h3 className="font-black text-xl mb-2" style={{ color: C.forest }}>{title}</h3>
+                <h3 className="font-black text-xl mb-2 transition-colors duration-300 group-hover:text-[color:var(--accent)]" style={{ color: C.forest }}>{title}</h3>
                 <p className="text-sm leading-relaxed mb-5" style={{ color: C.g500 }}>{desc}</p>
                 <div className="space-y-2 mb-5">
                   {highlights.map(h => (
@@ -422,7 +455,7 @@ export default function LandingPage({ user }) {
                 <div className="flex items-center gap-1 font-black text-sm pt-3 border-t"
                   style={{ borderColor: C.g100, color }}>
                   {label}
-                  <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                  <ChevronRight size={14} className="group-hover:translate-x-1.5 transition-transform duration-300" />
                 </div>
               </Link>
             ))}
@@ -439,15 +472,15 @@ export default function LandingPage({ user }) {
             <Label>Simple Process</Label>
             <h2 className="text-2xl md:text-4xl font-black"
               style={{ fontFamily: "'Syne',sans-serif", color: C.forest }}>
-              Trade Bitcoin in 4 Easy Steps
+              Trade Bitcoin &amp; USDT in 4 Easy Steps
             </h2>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 relative">
             {[
               { n: '01', icon: UserPlus, title: 'Create Account', desc: 'Sign up free in 30 seconds. Email verified. No bank account needed to get started.' },
               { n: '02', icon: Search, title: 'Browse Offers', desc: 'Filter by payment method, country, currency and rate. Thousands of verified sellers live.' },
-              { n: '03', icon: Lock, title: 'Escrow Locks BTC', desc: "The seller's Bitcoin is automatically secured in escrow before you make any payment." },
-              { n: '04', icon: CheckCircle, title: 'Pay & Receive', desc: 'Send your payment and confirm — Bitcoin lands in your wallet instantly. Trade complete!' },
+              { n: '03', icon: Lock, title: 'Escrow Locks Funds', desc: "The seller's Bitcoin or USDT is automatically secured in escrow before you make any payment." },
+              { n: '04', icon: CheckCircle, title: 'Pay & Receive', desc: 'Send your payment and confirm — your crypto lands in your wallet instantly. Trade complete!' },
             ].map(({ n, icon, title, desc }, i) => (
               <div key={n} className={`relative text-center ${howOn ? 'anim-up' : ''}`}
                 style={{ opacity: howOn ? 1 : 0, animationDelay: `${i * .1}s` }}>
@@ -490,17 +523,27 @@ export default function LandingPage({ user }) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
             {[
-              { icon: Shield, title: 'Smart Escrow Protection', desc: 'Bitcoin locks automatically the moment a trade starts. Released only when both parties confirm. Zero fraud possible.', color: C.green },
-              { icon: Globe, title: '100+ Payment Methods', desc: 'WeChat Pay, Alipay, M-Pesa, MTN MoMo, SEPA, UPI, PayPal, Revolut, Bank Transfer and more — local and global, all in one place.', color: C.paid },
+              { icon: Shield, title: 'Smart Escrow Protection', desc: 'Bitcoin or USDT locks automatically the moment a trade starts. Released only when both parties confirm. Zero fraud possible.', color: C.forest },
+              { icon: Globe, title: '400+ Payment Methods', desc: 'WeChat Pay, Alipay, M-Pesa, MTN MoMo, SEPA, UPI, PayPal, Revolut, Bank Transfer and more — local and global, all in one place.', color: C.mint },
               { icon: Zap, title: 'Trades Under 15 Minutes', desc: 'No intermediaries. No complicated requirements. Match with a trader and complete your transaction in minutes.', color: C.gold },
-              { icon: MessageCircle, title: 'Fast Dispute Resolution', desc: 'Our neutral team reviews both sides and resolves every dispute within 24 hours. Your funds stay safe throughout.', color: C.success },
-              { icon: HeadphonesIcon, title: '24/7 Human Support', desc: 'Real people. Real solutions. Our global team is always online via in-app chat, WhatsApp and Discord — any time.', color: C.purple },
-              { icon: Lock, title: 'Zero Hidden Fees', desc: 'Flat 2% fee on completed trades only (3% on gift-card trades). No listing fees, no withdrawal fees, no monthly plans. Pay only when you win.', color: C.danger },
+              { icon: MessageCircle, title: 'Fast Dispute Resolution', desc: 'Our neutral team reviews both sides and resolves every dispute within 24 hours. Your funds stay safe throughout.', color: C.sage },
+              { icon: HeadphonesIcon, title: '24/7 Human Support', desc: 'Real people. Real solutions. Our global team is always online via in-app chat, WhatsApp and Discord — any time.', color: C.amber },
+              { icon: Lock, title: 'Zero Hidden Fees', desc: 'Flat fee on completed trades only. No listing fees, no withdrawal fees, no monthly plans. Pay only when you win.', color: C.green },
             ].map(({ icon: Icon, title, desc, color }, i) => (
               <div key={title}
-                className={`card-up bg-white rounded-2xl p-6 border ${featOn ? 'anim-up' : ''}`}
-                style={{ opacity: featOn ? 1 : 0, borderColor: C.g100, animationDelay: `${i * .07}s` }}>
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4"
+                className={`card-up rounded-2xl p-6 border group relative overflow-hidden transition-all duration-300 ease-out hover:-translate-y-1.5 hover:shadow-[0_20px_45px_-16px_var(--accentGlow)] hover:border-[color:var(--accent)] ${featOn ? 'anim-up' : ''}`}
+                style={{
+                  opacity: featOn ? 1 : 0,
+                  borderColor: C.g100,
+                  animationDelay: `${i * .07}s`,
+                  background: `linear-gradient(160deg, #fff 55%, ${color}0d 100%)`,
+                  '--accent': color,
+                  '--accentGlow': `${color}40`,
+                }}>
+                {/* top accent bar */}
+                <div className="absolute top-0 left-0 right-0 h-[3px] opacity-50 group-hover:opacity-100 transition-opacity duration-300"
+                  style={{ background: color }} />
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4 transition-transform duration-300 group-hover:scale-110"
                   style={{ background: `${color}15` }}>
                   <Icon size={22} style={{ color }} />
                 </div>
@@ -527,7 +570,7 @@ export default function LandingPage({ user }) {
                 How Our Escrow Keeps<br />Your Money Safe
               </h2>
               <p className="text-sm leading-relaxed mb-6" style={{ color: C.g500 }}>
-                Every PRAQEN trade is protected by our escrow system. Bitcoin is locked the moment a trade starts.
+                Every PRAQEN trade is protected by our escrow system. Bitcoin or USDT is locked the moment a trade starts.
                 No seller can run away with your money. No buyer can claim they paid without proof.
                 You're always 100% protected.
               </p>
@@ -604,7 +647,7 @@ style={{background:`${color}12`}}>{React.createElement(icon, {size:15, style:{co
               Trade With Your Local Currency &amp; Method
             </h2>
             <p className="text-sm" style={{ color: C.g500 }}>
-              Over 100 payment methods across Africa, Asia, Europe and the Americas.
+              Over 400 payment methods across Africa, Asia, Europe and the Americas.
             </p>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
@@ -657,25 +700,38 @@ style={{background:`${color}12`}}>{React.createElement(icon, {size:15, style:{co
               { flag: '🇬🇭', name: 'Ghana' }, { flag: '🇰🇪', name: 'Kenya' },
               { flag: '🇿🇦', name: 'S. Africa' }, { flag: '🇸🇳', name: 'Senegal' },
             ].map(({ flag, name }) => (
-              <div key={name} className="card-up bg-white rounded-2xl p-3 border text-center"
-                style={{ borderColor: C.g200 }}>
-                <div className="text-2xl mb-1">{flag}</div>
+              <div key={name}
+                className="card-up bg-white rounded-2xl p-3 border text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-lg cursor-default"
+                style={{ borderColor: C.g200 }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = C.mint}
+                onMouseLeave={e => e.currentTarget.style.borderColor = C.g200}>
+                <div className="text-2xl mb-1 transition-transform duration-300 hover:scale-125">{flag}</div>
                 <p className="text-xs font-bold" style={{ color: C.forest }}>{name}</p>
               </div>
             ))}
+            {/* closing tile — makes clear the 12 above are a sample, not the full list */}
+            <div className="card-up rounded-2xl p-3 border text-center flex flex-col items-center justify-center transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
+              style={{ background: `linear-gradient(150deg, ${C.forest}, ${C.green})`, borderColor: C.forest }}>
+              <Globe size={20} style={{ color: C.gold }} className="mb-1" />
+              <p className="text-xs font-black text-white leading-tight">+168 More</p>
+            </div>
           </div>
 
           {/* platform stats row */}
           <div className={`grid grid-cols-2 md:grid-cols-4 gap-5 ${countriesOn ? 'anim-up' : ''}`}
             style={{ opacity: countriesOn ? 1 : 0, animationDelay: '.2s' }}>
             {[
-              {icon:Globe,        v:'180+',  l:'Countries'},
-{icon:Shield,        v:'99.8%', l:'Dispute Resolution'},
-{icon:Zap,           v:'8 min', l:'Average Trade Time'},
-            ].map(({ icon: Icon, v, l }) => (
-              <div key={l} className="rounded-2xl p-5 text-center border"
-                style={{ background: C.mist, borderColor: `${C.mint}30` }}>
-                <div className="flex justify-center mb-2"><Icon size={24} style={{ color: C.gold }} /></div>
+              { icon: Globe,      v: '180+',  l: 'Countries',           color: C.forest },
+              { icon: CreditCard, v: '400+',  l: 'Payment Methods',     color: C.mint },
+              { icon: Shield,     v: '99.8%', l: 'Dispute Resolution',  color: C.gold },
+              { icon: Zap,        v: '8 min', l: 'Average Trade Time',  color: C.sage },
+            ].map(({ icon: Icon, v, l, color }) => (
+              <div key={l}
+                className="rounded-2xl p-5 text-center border transition-all duration-300 hover:-translate-y-1.5"
+                style={{ background: C.mist, borderColor: `${color}30`, '--accentGlow': `${color}35`, boxShadow: 'none' }}
+                onMouseEnter={e => e.currentTarget.style.boxShadow = `0 20px 40px -16px var(--accentGlow)`}
+                onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}>
+                <div className="flex justify-center mb-2"><Icon size={24} style={{ color }} /></div>
                 <p className="text-2xl font-black mb-0.5" style={{ color: C.forest }}>{v}</p>
                 <p className="text-xs" style={{ color: C.g500 }}>{l}</p>
               </div>
@@ -699,24 +755,36 @@ style={{background:`${color}12`}}>{React.createElement(icon, {size:15, style:{co
               Join millions of traders who trust PRAQEN every day.
             </p>
           </div>
-          <div className="grid md:grid-cols-3 gap-4 md:gap-5">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
             {[
               {
-                name: 'Wei L.', loc: 'Shanghai, China', flag: '🇨🇳', color: C.paid, av: 'W', badge: 'Power Trader', trades: '78 trades',
-                text: '"通过PRAQEN交易比特币非常安全方便！微信支付和支付宝都支持，整个流程透明清晰。托管系统让我完全放心，强烈推荐给每一位交易者！" (Excellent — WePay & Alipay work perfectly!)'
+                name: 'Wei L.', loc: 'Shanghai, China', flag: '🇨🇳', color: C.gold, av: 'W', badge: 'Power Trader', trades: '78 trades',
+                text: '"通过PRAQEN交易比特币非常安全方便！微信支付和支付宝都支持，整个流程透明清晰。托管系统让我完全放心，强烈推荐给每一位交易者！" (Excellent — WeChat Pay & Alipay work perfectly!)'
               },
               {
                 name: 'Lars B.', loc: 'Berlin, Germany', flag: '🇩🇪', color: C.green, av: 'L', badge: 'Verified', trades: '41 trades',
                 text: '"PRAQEN ist die beste P2P-Plattform, die ich je genutzt habe. SEPA-Überweisungen funktionieren reibungslos, der Escrow-Schutz gibt mir totale Sicherheit. Perfekt für europäische Händler!"'
               },
               {
-                name: 'James M.', loc: 'Nairobi, Kenya', flag: '🇰🇪', color: C.purple, av: 'J', badge: 'Top Seller', trades: '94 trades',
+                name: 'Carlos M.', loc: 'Miami, USA', flag: '🇺🇸', color: C.mint, av: 'C', badge: 'Fast Trader', trades: '62 trades',
+                text: '"Cash App and Zelle both settle in minutes. Rates beat every centralized exchange I\'ve tried, and support actually replies. PRAQEN is my go-to for USDT now."'
+              },
+              {
+                name: 'James M.', loc: 'Nairobi, Kenya', flag: '🇰🇪', color: C.forest, av: 'J', badge: 'Top Seller', trades: '94 trades',
                 text: '"Best Bitcoin rates around. M-Pesa integration is flawless — I receive payment within 5 minutes every time. The escrow never fails. Already referred 20+ people to PRAQEN!"'
               },
             ].map(({ name, loc, flag, color, av, badge, trades, text }, i) => (
               <div key={name}
-                className={`card-up bg-white rounded-2xl p-6 border ${testimonialsOn ? 'anim-up' : ''}`}
-                style={{ opacity: testimonialsOn ? 1 : 0, borderColor: C.g200, animationDelay: `${i * .1}s` }}>
+                className={`card-up rounded-2xl p-6 border group relative overflow-hidden transition-all duration-300 ease-out hover:-translate-y-1.5 hover:shadow-[0_20px_45px_-16px_var(--accentGlow)] ${testimonialsOn ? 'anim-up' : ''}`}
+                style={{
+                  opacity: testimonialsOn ? 1 : 0,
+                  borderColor: C.g200,
+                  animationDelay: `${i * .1}s`,
+                  background: `linear-gradient(160deg, #fff 55%, ${color}0d 100%)`,
+                  '--accentGlow': `${color}40`,
+                }}>
+                <div className="absolute top-0 left-0 right-0 h-[3px] opacity-50 group-hover:opacity-100 transition-opacity duration-300"
+                  style={{ background: color }} />
                 <div className="flex gap-0.5 mb-4">
                   {[0, 1, 2, 3, 4].map(s => (
                     <svg key={s} width="14" height="14" viewBox="0 0 24 24" fill={C.gold}>
@@ -726,7 +794,7 @@ style={{background:`${color}12`}}>{React.createElement(icon, {size:15, style:{co
                 </div>
                 <p className="text-sm leading-relaxed mb-5" style={{ color: C.g700 }}>{text}</p>
                 <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-xl flex items-center justify-center font-black text-white flex-shrink-0 text-base"
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center font-black text-white flex-shrink-0 text-base transition-transform duration-300 group-hover:scale-110"
                     style={{ background: color }}>{av}</div>
                   <div className="flex-1 min-w-0">
                     <p className="font-black text-sm" style={{ color: C.forest }}>{name} {flag}</p>
@@ -1042,73 +1110,7 @@ style={{background:`${color}12`}}>{React.createElement(icon, {size:15, style:{co
       {/* ══════════════════════════════════════════════════
           11. FOOTER
       ══════════════════════════════════════════════════ */}
-      <footer style={{ background: C.forest }}>
-        <div className="max-w-3xl mx-auto px-4 py-10 text-center">
-
-          {/* brand */}
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <span className="text-2xl font-black" style={{ fontFamily: "'Syne',sans-serif" }}>
-              <span className="text-white">PRA</span><span style={{ color: C.gold }}>QEN</span>
-            </span>
-            <span className="text-xs font-black px-1.5 py-0.5 rounded-full"
-              style={{ background: '#EF4444', color: '#fff' }}>BETA</span>
-          </div>
-          <p className="text-xs mb-5" style={{ color: 'rgba(255,255,255,.45)' }}>
-            The world's most trusted P2P Bitcoin &amp; USDT platform · Escrow-protected
-          </p>
-
-          {/* key links */}
-          <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 mb-6">
-            {[
-              { l: 'Buy Bitcoin', t: '/buy-bitcoin' },
-              { l: 'Sell Bitcoin', t: '/sell-bitcoin' },
-              { l: 'Gift Cards', t: '/gift-cards' },
-              { l: 'Blog', t: '/blog' },
-              { l: 'Privacy', t: '/privacy' },
-              { l: 'Terms', t: '/terms' },
-              { l: 'My Wallet', t: '/wallet' },
-              { l: 'Dashboard', t: '/dashboard' },
-              { l: 'Register', t: '/register' },
-            ].map(({ l, t }) => (
-              <Link key={l} to={t}
-                className="text-xs font-bold hover:text-white transition"
-                style={{ color: 'rgba(255,255,255,.5)' }}>{l}</Link>
-            ))}
-          </div>
-
-          {/* social icons */}
-          <div className="flex justify-center gap-2.5 mb-6 flex-wrap">
-            {[
-              { label: 'TikTok', href: 'https://www.tiktok.com/@praqen', bg: 'rgba(0,0,0,0.55)', color: '#ffffff', d: 'M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z' },
-              { label: 'Instagram', href: 'https://www.instagram.com/praqen?igsh=MTRkZWg2amp5YnJlYQ%3D%3D&utm_source=qr', bg: 'rgba(228,64,95,.3)', color: '#E4405F', d: 'M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z' },
-              { label: 'X (Twitter)', href: 'https://x.com/praqenapp?s=21', bg: 'rgba(255,255,255,.12)', color: '#ffffff', d: 'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z' },
-              { label: 'Telegram', href: 'https://t.me/+8IvE6OW1G-M5NjBk', bg: 'rgba(38,165,228,.35)', color: '#26A5E4', d: 'M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71l-4.14-3.05-2 1.93c-.23.23-.42.42-.83.42z' },
-              { label: 'Discord', href: 'https://discord.gg/V6zCZxfdy', bg: 'rgba(88,101,242,.35)', color: '#5865F2', d: 'M20.317 4.37a19.791 19.791 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.057 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128 10.2 10.2 0 00.372-.292.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 01.078.01c.12.098.246.198.373.292a.077.077 0 01-.006.127 12.299 12.299 0 01-1.873.892.077.077 0 00-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.839 19.839 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z' },
-              { label: 'LinkedIn', href: 'https://www.linkedin.com/in/pra-qen-045373402/', bg: 'rgba(10,102,194,.35)', color: '#0A66C2', d: 'M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z' },
-            ].map(({ label, href, bg, color, d }) => (
-              <a key={label} href={href} target="_blank" rel="noopener noreferrer" title={label}
-                className="w-9 h-9 rounded-xl flex items-center justify-center hover:scale-110 transition-transform"
-                style={{ background: bg }}>
-                <svg viewBox="0 0 24 24" width="17" height="17" fill={color} aria-hidden="true">
-                  <path d={d} />
-                </svg>
-              </a>
-            ))}
-          </div>
-
-          {/* support + copyright */}
-          <div className="border-t pt-5" style={{ borderColor: 'rgba(255,255,255,.08)' }}>
-            <a href="mailto:hello@praqen.com"
-              className="inline-flex items-center gap-1.5 text-xs font-bold hover:text-white transition mb-3"
-              style={{ color: C.gold }}>
-              <Mail size={12} /> hello@praqen.com · 24/7 support
-            </a>
-            <p className="text-xs" style={{ color: 'rgba(255,255,255,.25)' }}>
-              © {new Date().getFullYear()} PRAQEN · All rights reserved · Not financial advice
-            </p>
-          </div>
-        </div>
-      </footer>
+      <PRQFooter />
     </div>
   );
 }

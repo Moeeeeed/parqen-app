@@ -2468,7 +2468,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
           id: data.id, email: data.email, username: data.username, full_name: data.full_name,
           average_rating: data.average_rating || 0, total_trades: data.total_trades || 0,
           avatar_url: data.avatar_url || null, is_admin: data.is_admin || false,
-          is_moderator: data.is_moderator || false, referral_code: data.referral_code || null,
+          is_moderator: data.is_moderator || false, is_moderator_scoped: data.is_moderator_scoped || false, referral_code: data.referral_code || null,
           bitcoin_wallet_address: btcAddress,
           total_referrals: data.total_referrals || 0,
           referral_earnings_btc: data.referral_earnings_btc || 0,
@@ -2664,7 +2664,7 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
         id: data.id, email: data.email, username: data.username, full_name: data.full_name,
         average_rating: data.average_rating || 0, total_trades: data.total_trades || 0,
         avatar_url: data.avatar_url || null, is_admin: data.is_admin || false,
-        is_moderator: data.is_moderator || false, is_ceo: data.is_ceo || false, is_agent: data.is_agent || false,
+        is_moderator: data.is_moderator || false, is_moderator_scoped: data.is_moderator_scoped || false, is_ceo: data.is_ceo || false, is_agent: data.is_agent || false,
         referral_code: data.referral_code || null,
         bitcoin_wallet_address: btcAddress,
         total_referrals: data.total_referrals || 0,
@@ -2795,7 +2795,7 @@ app.post('/api/auth/verify-2fa-login', authLimiter, async (req, res) => {
         id: data.id, email: data.email, username: data.username, full_name: data.full_name,
         average_rating: data.average_rating || 0, total_trades: data.total_trades || 0,
         avatar_url: data.avatar_url || null, is_admin: data.is_admin || false,
-        is_moderator: data.is_moderator || false, is_ceo: data.is_ceo || false, is_agent: data.is_agent || false,
+        is_moderator: data.is_moderator || false, is_moderator_scoped: data.is_moderator_scoped || false, is_ceo: data.is_ceo || false, is_agent: data.is_agent || false,
         referral_code: data.referral_code || null,
         bitcoin_wallet_address: btcAddress,
         total_referrals: data.total_referrals || 0,
@@ -5740,8 +5740,8 @@ app.get('/api/bonus/status', verifyToken, async (req, res) => {
 app.get('/api/users/profile', verifyToken, async (req, res) => {
   try {
     // Core columns — confirmed to exist in every PRAQEN DB schema
-    const coreCols = 'id, email, username, full_name, bio, location, website, phone, avatar_url, average_rating, total_trades, completion_rate, created_at, is_admin, is_moderator, is_id_verified, is_email_verified, is_phone_verified, total_feedback_count, positive_feedback, negative_feedback, last_login, last_seen_at, badge, country, two_factor_enabled, two_factor_method, account_status, has_warning';
-    const essentialCols = 'id, email, username, full_name, avatar_url, average_rating, total_trades, completion_rate, created_at, is_admin, is_moderator, is_id_verified, is_email_verified, total_feedback_count, positive_feedback, negative_feedback, last_login, two_factor_enabled, two_factor_method, account_status, has_warning';
+    const coreCols = 'id, email, username, full_name, bio, location, website, phone, avatar_url, average_rating, total_trades, completion_rate, created_at, is_admin, is_moderator, is_moderator_scoped, is_id_verified, is_email_verified, is_phone_verified, total_feedback_count, positive_feedback, negative_feedback, last_login, last_seen_at, badge, country, two_factor_enabled, two_factor_method, account_status, has_warning';
+    const essentialCols = 'id, email, username, full_name, avatar_url, average_rating, total_trades, completion_rate, created_at, is_admin, is_moderator, is_moderator_scoped, is_id_verified, is_email_verified, total_feedback_count, positive_feedback, negative_feedback, last_login, two_factor_enabled, two_factor_method, account_status, has_warning';
 
     // The core profile fetch (with its column-missing fallback), the optional
     // extra fields, the lock flags, and the wallet balance don't depend on each
@@ -5866,6 +5866,7 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
         ...levelFlags,
         is_admin: data.is_admin || false,
         is_moderator: data.is_moderator || false,
+        is_moderator_scoped: data.is_moderator_scoped || false,
         is_phone_verified: extraFields.is_phone_verified || Boolean(extraFields.phone_verified) || false,
         has_warning: data.has_warning || false,
         country: data.country || data.country_name || null,
@@ -9286,8 +9287,8 @@ app.post('/api/messages', verifyToken, async (req, res) => {
     if (tradeError || !trade) return res.status(404).json({ error: 'Trade not found' });
     const isParticipant = trade.buyer_id === req.userId || trade.seller_id === req.userId;
     const recipientId = trade.buyer_id === req.userId ? trade.seller_id : trade.buyer_id;
-    const { data: userData } = await supabaseAdmin.from('users').select('is_moderator, is_admin, is_ceo, username').eq('id', req.userId).single();
-    const senderRole = (userData?.is_moderator || userData?.is_admin || userData?.is_ceo) ? 'moderator' : 'user';
+    const { data: userData } = await supabaseAdmin.from('users').select('is_moderator, is_moderator_scoped, is_admin, is_ceo, username').eq('id', req.userId).single();
+    const senderRole = (userData?.is_moderator || userData?.is_moderator_scoped || userData?.is_admin || userData?.is_ceo) ? 'moderator' : 'user';
     // isSystem: only trusted if the sender is a participant in this trade
     const useSystem = isSystem && isParticipant;
     const { data, error } = await supabaseAdmin.from('messages').insert([{
@@ -9510,8 +9511,8 @@ app.post('/api/trades/:id/dispute', tradeLimiter, verifyToken, requireNotBanned,
 
 app.post('/api/trades/:id/moderator-join', verifyToken, requireNotBanned, async (req, res) => {
   try {
-    const { data: userData } = await supabaseAdmin.from('users').select('is_moderator, is_admin, is_ceo, username').eq('id', req.userId).single();
-    if (!userData?.is_moderator && !userData?.is_admin && !userData?.is_ceo) return res.status(403).json({ error: 'Moderators only' });
+    const { data: userData } = await supabaseAdmin.from('users').select('is_moderator, is_moderator_scoped, is_admin, is_ceo, username').eq('id', req.userId).single();
+    if (!userData?.is_moderator && !userData?.is_moderator_scoped && !userData?.is_admin && !userData?.is_ceo) return res.status(403).json({ error: 'Moderators only' });
     const { data: trade } = await supabaseAdmin.from('trades').select('status, id, buyer_id, seller_id').eq('id', req.params.id).single();
     if (!trade) return res.status(404).json({ error: 'Trade not found' });
     await supabaseAdmin.from('messages').insert([{ trade_id: req.params.id, sender_id: req.userId, recipient_id: null, message_text: `👨‍⚖️ Moderator has joined and is reviewing this dispute.`, message_type: 'SYSTEM', sender_role: 'moderator', created_at: new Date() }]);
@@ -9542,8 +9543,8 @@ app.get('/api/team/oath-status', verifyToken, async (req, res) => {
 
 app.post('/api/team/oath/sign', verifyToken, async (req, res) => {
   try {
-    const { data: userData } = await supabaseAdmin.from('users').select('is_admin, is_moderator').eq('id', req.userId).single();
-    if (!userData?.is_admin && !userData?.is_moderator) return res.status(403).json({ error: 'Moderators only' });
+    const { data: userData } = await supabaseAdmin.from('users').select('is_admin, is_moderator, is_moderator_scoped').eq('id', req.userId).single();
+    if (!userData?.is_admin && !userData?.is_moderator && !userData?.is_moderator_scoped) return res.status(403).json({ error: 'Moderators only' });
 
     const full_name = (req.body.full_name || '').trim();
     const email = (req.body.email || '').trim().toLowerCase();
@@ -9568,8 +9569,8 @@ app.post('/api/team/oath/sign', verifyToken, async (req, res) => {
 
 app.get('/api/team/moderators', verifyToken, async (req, res) => {
   try {
-    const { data: userData } = await supabaseAdmin.from('users').select('is_admin, is_moderator').eq('id', req.userId).single();
-    if (!userData?.is_admin && !userData?.is_moderator) return res.status(403).json({ error: 'Team access required' });
+    const { data: userData } = await supabaseAdmin.from('users').select('is_admin, is_moderator, is_moderator_scoped').eq('id', req.userId).single();
+    if (!userData?.is_admin && !userData?.is_moderator && !userData?.is_moderator_scoped) return res.status(403).json({ error: 'Team access required' });
     const mods = await getModeratorsFull();
     res.json({ moderators: mods.map(m => ({ id: m.id, username: m.username, full_name: m.full_name, email: m.email, is_admin: m.is_admin })) });
   } catch (error) { res.status(500).json({ error: error.message }); }
@@ -9619,8 +9620,8 @@ app.get('/api/admin/team-activity', verifyToken, async (req, res) => {
 // this is reputation-sensitive info that should only inform the review panel.
 app.get('/api/admin/users/:userId/dispute-history', verifyToken, async (req, res) => {
   try {
-    const { data: userData } = await supabaseAdmin.from('users').select('is_admin, is_moderator, email').eq('id', req.userId).single();
-    const isAdmin = userData?.is_admin || userData?.is_moderator || userData?.email === ADMIN_EMAIL;
+    const { data: userData } = await supabaseAdmin.from('users').select('is_admin, is_moderator, is_moderator_scoped, email').eq('id', req.userId).single();
+    const isAdmin = userData?.is_admin || userData?.is_moderator || userData?.is_moderator_scoped || userData?.email === ADMIN_EMAIL;
     if (!isAdmin) return res.status(403).json({ error: 'Access denied' });
 
     const targetId = req.params.userId;
@@ -9676,8 +9677,8 @@ async function attachVoteState(trade, requesterId, isFullAdmin) {
 
 app.get('/api/admin/disputes', verifyToken, async (req, res) => {
   try {
-    const { data: userData } = await supabaseAdmin.from('users').select('is_moderator, is_admin, email').eq('id', req.userId).single();
-    const isAdmin = userData?.is_admin || userData?.is_moderator || userData?.email === ADMIN_EMAIL;
+    const { data: userData } = await supabaseAdmin.from('users').select('is_moderator, is_moderator_scoped, is_admin, email').eq('id', req.userId).single();
+    const isAdmin = userData?.is_admin || userData?.is_moderator || userData?.is_moderator_scoped || userData?.email === ADMIN_EMAIL;
     if (!isAdmin) return res.status(403).json({ error: 'Access denied' });
     const isFullAdmin = !!(userData?.is_admin || userData?.email === ADMIN_EMAIL);
 
@@ -9744,8 +9745,8 @@ app.get('/api/admin/disputes', verifyToken, async (req, res) => {
 
 app.get('/api/admin/disputes/:id', verifyToken, async (req, res) => {
   try {
-    const { data: userData } = await supabaseAdmin.from('users').select('is_moderator, is_admin, email').eq('id', req.userId).single();
-    const isAdmin = userData?.is_admin || userData?.is_moderator || userData?.email === ADMIN_EMAIL;
+    const { data: userData } = await supabaseAdmin.from('users').select('is_moderator, is_moderator_scoped, is_admin, email').eq('id', req.userId).single();
+    const isAdmin = userData?.is_admin || userData?.is_moderator || userData?.is_moderator_scoped || userData?.email === ADMIN_EMAIL;
     if (!isAdmin) return res.status(403).json({ error: 'Access denied' });
     const isFullAdmin = !!(userData?.is_admin || userData?.email === ADMIN_EMAIL);
 
@@ -9773,8 +9774,8 @@ app.post('/api/admin/disputes/:id/resolve', verifyToken, async (req, res) => {
   try {
     const { resolution, notes } = req.body;
     if (!['BUYER_WINS', 'SELLER_WINS', 'CANCEL'].includes(resolution)) return res.status(400).json({ error: 'Invalid resolution' });
-    const { data: userData } = await supabaseAdmin.from('users').select('is_admin, is_moderator, username, email').eq('id', req.userId).single();
-    const isAdmin = userData?.is_admin || userData?.is_moderator || userData?.email === ADMIN_EMAIL;
+    const { data: userData } = await supabaseAdmin.from('users').select('is_admin, is_moderator, is_moderator_scoped, username, email').eq('id', req.userId).single();
+    const isAdmin = userData?.is_admin || userData?.is_moderator || userData?.is_moderator_scoped || userData?.email === ADMIN_EMAIL;
     if (!isAdmin) return res.status(403).json({ error: 'Access denied' });
     if (!(await hasSignedOath(req.userId))) return res.status(403).json({ error: 'Sign the Moderator Oath of Trust before you can vote — visit /moderator.' });
 
@@ -9916,8 +9917,8 @@ app.post('/api/admin/disputes/:id/override', verifyToken, async (req, res) => {
 // ── Internal team discussion on a dispute (separate from the buyer/seller trade chat) ──
 app.get('/api/admin/disputes/:id/comments', verifyToken, async (req, res) => {
   try {
-    const { data: userData } = await supabaseAdmin.from('users').select('is_moderator, is_admin, email').eq('id', req.userId).single();
-    const isAdmin = userData?.is_admin || userData?.is_moderator || userData?.email === ADMIN_EMAIL;
+    const { data: userData } = await supabaseAdmin.from('users').select('is_moderator, is_moderator_scoped, is_admin, email').eq('id', req.userId).single();
+    const isAdmin = userData?.is_admin || userData?.is_moderator || userData?.is_moderator_scoped || userData?.email === ADMIN_EMAIL;
     if (!isAdmin) return res.status(403).json({ error: 'Access denied' });
     const { data, error } = await supabaseAdmin.from('dispute_comments')
       .select('id, trade_id, parent_id, message, is_admin_override, created_at, author:author_id(username, full_name, email)')
@@ -9931,8 +9932,8 @@ app.post('/api/admin/disputes/:id/comments', verifyToken, async (req, res) => {
   try {
     const { message, parent_id } = req.body;
     if (!message || !message.trim()) return res.status(400).json({ error: 'Comment cannot be empty' });
-    const { data: userData } = await supabaseAdmin.from('users').select('is_moderator, is_admin, email, full_name, username').eq('id', req.userId).single();
-    const isAdmin = userData?.is_admin || userData?.is_moderator || userData?.email === ADMIN_EMAIL;
+    const { data: userData } = await supabaseAdmin.from('users').select('is_moderator, is_moderator_scoped, is_admin, email, full_name, username').eq('id', req.userId).single();
+    const isAdmin = userData?.is_admin || userData?.is_moderator || userData?.is_moderator_scoped || userData?.email === ADMIN_EMAIL;
     if (!isAdmin) return res.status(403).json({ error: 'Access denied' });
     if (!(await hasSignedOath(req.userId))) return res.status(403).json({ error: 'Sign the Moderator Oath of Trust first — visit /moderator.' });
 
@@ -10809,8 +10810,14 @@ app.post('/api/admin/send-welcome-emails', verifyToken, async (req, res) => {
 // link — since is_admin also defaults to false on that new row, only the email-match
 // fallback would even be granting them anything.
 async function requireAdmin(req, res) {
-  const { data: u } = await supabaseAdmin.from('users').select('is_admin, is_moderator, email, is_email_verified').eq('id', req.userId).single();
-  const ok = u?.is_admin || u?.is_moderator || (u?.email === ADMIN_EMAIL && u?.is_email_verified);
+  // Deliberately real is_admin only — NOT is_moderator. This gates the sensitive
+  // /api/admin/* data surface (full user list, user detail/trades/activity/risk,
+  // platform stats, monitoring/alerts, toggle-agent). A moderator navigating
+  // straight to /admin must not be able to pull any of this just by having the
+  // Team Portal's is_moderator flag — that's a real access-control bypass, not
+  // a shared surface like /team is meant to be.
+  const { data: u } = await supabaseAdmin.from('users').select('is_admin, email, is_email_verified').eq('id', req.userId).single();
+  const ok = u?.is_admin || (u?.email === ADMIN_EMAIL && u?.is_email_verified);
   if (!ok) { res.status(403).json({ error: 'Admin access required' }); return null; }
   return u;
 }
