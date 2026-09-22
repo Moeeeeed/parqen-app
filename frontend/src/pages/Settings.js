@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
+import { QRCodeSVG } from 'qrcode.react';
 import PRQFooter from '../components/PRQFooter';
 import {
   requestNotificationPermission,
@@ -15,9 +16,7 @@ import {
   User, Lock, Mail, Phone, CreditCard, Bell,
   Shield, Globe, Save, Eye, EyeOff, CheckCircle,
   AlertCircle, Smartphone, LogOut, ChevronRight,
-  Camera, BadgeCheck, Clock, Upload, RefreshCw,
-  FileText, DollarSign, Languages, MapPin, X, Check,
-  ToggleLeft, ToggleRight,
+  Camera, BadgeCheck, Clock, Upload, RefreshCw,  FileText, DollarSign, Languages, MapPin, X, Check, Copy, ToggleLeft, ToggleRight,
   Ban, WifiOff, MessageCircle, Car, Plane,
   AlertTriangle, Circle, Send, Unlink, Link,
   Edit3, ChevronDown, Menu, Search
@@ -314,8 +313,19 @@ function useSheetViewport() {
 //              it can never push the footer out of view.
 //   - Footer — actions pinned OUTSIDE the scroll area at the bottom of the sheet,
 //              padded with env(safe-area-inset-bottom) and lifted above keyboard.
-function AccountBottomSheet({ title, onClose, children, footer }) {
+function AccountBottomSheet({ title, onClose, children, footer, centerOnDesktop = false }) {
   const { innerPx, vvHeight, kbOverlap } = useSheetViewport();
+
+  // Desktop/centered mode (≥1024px): the Security-tab modals render as a
+  // standard centered dialog instead of a bottom-anchored sheet. Mobile keeps
+  // the sheet behavior exactly as before. Same useSyncExternalStore pattern as
+  // idVerifyDesktop above — SSR-safe initializer, live breakpoint updates.
+  const isDesktop = useSyncExternalStore(
+    (cb) => { const mq = window.matchMedia('(min-width: 1024px)'); mq.addEventListener('change', cb); return () => mq.removeEventListener('change', cb); },
+    () => window.matchMedia('(min-width: 1024px)').matches,
+    () => false
+  );
+  const centered = centerOnDesktop && isDesktop;
 
   // Lock body scroll and listen for Escape key while sheet is open
   useEffect(() => {
@@ -364,14 +374,28 @@ function AccountBottomSheet({ title, onClose, children, footer }) {
         }}
       />
 
-      {/* Bottom Sheet dialog container */}
+      {/* Bottom Sheet / centered dialog container */}
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
         onClick={e => e.stopPropagation()}
         className="bg-white shadow-2xl w-full max-w-md"
-        style={{
+        style={centered ? {
+          // Desktop: standard centered modal — no bottom anchor, no drag handle,
+          // rounded on all corners, fade-in instead of slide-up.
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 10001,
+          borderRadius: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          maxHeight: `${maxSheetHeight}px`,
+          overflow: 'hidden',
+          animation: 'acctSheetFadeIn 0.2s ease-out',
+        } : {
           position: 'fixed',
           bottom: `${kbOverlap}px`,
           left: 0,
@@ -387,15 +411,19 @@ function AccountBottomSheet({ title, onClose, children, footer }) {
           transition: 'bottom 0.15s ease-out, max-height 0.15s ease-out',
         }}
       >
-        {/* Handle bar (pinned) */}
+        {/* Handle bar (pinned) — bottom-sheet affordance only, never on desktop */}
+        {!centered && (
         <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 10, paddingBottom: 6, flexShrink: 0 }}>
           <div style={{ width: 36, height: 4, borderRadius: 2, background: C.g200 }} />
         </div>
+        )}
 
-        {/* Pinned header (title + close) */}
+        {/* Pinned header (title + close). paddingTop gives every modal
+            (Security sheets and any other consumer) consistent breathing
+            room between the modal's top edge and the title/X row (Issue 5). */}
         <div
           className="flex items-center justify-between mb-3"
-          style={{ paddingLeft: 24, paddingRight: 24, flexShrink: 0 }}
+          style={{ paddingLeft: 24, paddingRight: 24, paddingTop: 20, flexShrink: 0 }}
         >
           <h3 className="text-lg font-black" style={{ color: C.g800, margin: 0 }}>
             {title}
@@ -447,9 +475,12 @@ function AccountBottomSheet({ title, onClose, children, footer }) {
               paddingRight: 24,
               paddingTop: 12,
               flexShrink: 0,
-              paddingBottom: kbOverlap > 0
+              // Desktop has no safe-area inset / keyboard lift — plain padding
+              paddingBottom: centered
                 ? '16px'
-                : 'calc(16px + env(safe-area-inset-bottom, 0px))',
+                : kbOverlap > 0
+                  ? '16px'
+                  : 'calc(16px + env(safe-area-inset-bottom, 0px))',
               borderTop: `1px solid ${C.g100}`,
               backgroundColor: C.white,
             }}
@@ -1795,6 +1826,327 @@ export default function Settings({ user, setUser }) {
   const [nameDisplaySaving, setNameDisplaySaving] = useState(false);
   const [nameDisplaySaved, setNameDisplaySaved] = useState(false);
 
+  // ── Security tab state (NoOnes parity redesign) ───────────────────────────
+  // 2FA data comes from GET /api/users/security (method + per-event prefs);
+  // local user object is kept in sync for the login flow's requires2FA step.
+  const [twoFAMethod, setTwoFAMethod] = useState('none'); // 'none' | 'totp' | 'email'
+  const [twoFAEvents, setTwoFAEvents] = useState({ login: true, sending_crypto: true, releasing_crypto: true });
+  const [secSheet, setSecSheet] = useState(null);
+  // secSheet: 'password' | '2fa-events' | '2fa-code' | '2fa-conflict' | 'close-account'
+  const [sec2FAPurpose, setSec2FAPurpose] = useState('confirm'); // 'confirm' | 'totp-setup' | 'events'
+  const [secPendingMethod, setSecPendingMethod] = useState(null); // method being enabled when conflict fires
+  const [secConflictFrom, setSecConflictFrom] = useState(null); // method that is currently active
+  const [secTotpSetup, setSecTotpSetup] = useState(null); // { secret, otpauth_url }
+  const [secConfirmCode, setSecConfirmCode] = useState(['', '', '', '', '', '']);
+  const [secConfirmError, setSecConfirmError] = useState('');
+  const [secConfirmBusy, setSecConfirmBusy] = useState(false);
+  const [secEventDraft, setSecEventDraft] = useState(null); // event prefs draft while confirming
+  const [secEventBusy, setSecEventBusy] = useState(false);
+  const [secResendBusy, setSecResendBusy] = useState(false);
+  const [secResendFailed, setSecResendFailed] = useState(false);
+  const [secCopiedField, setSecCopiedField] = useState(null); // 'secret' | 'uri' — brief copy feedback
+  const secCopyTimerRef = useRef(null);
+  const TWO_FA_EVENT_KEYS = ['login', 'sending_crypto', 'releasing_crypto'];
+  const [secWalletBalance, setSecWalletBalance] = useState(null); // USD balance for Close Account sheet
+  const [secWalletLoading, setSecWalletLoading] = useState(false);
+  const [secClosing, setSecClosing] = useState(false);
+  const secCodeRefs = useRef([]);
+
+  // Sync local 2FA state from the user object / fresh profile fetches
+  useEffect(() => {
+    setTwoFAEnabled(!!user?.two_factor_enabled);
+    setTwoFAMethod(user?.two_factor_enabled ? (user.two_factor_method || 'email') : 'none');
+  }, [user?.two_factor_enabled, user?.two_factor_method]);
+
+  // Load per-event 2FA preferences when the Security tab opens
+  useEffect(() => {
+    if (activeTab !== 'security') return;
+    const tk = localStorage.getItem('token');
+    if (!tk) return;
+    axios.get(`${API_URL}/users/security`, { headers: authH() })
+      .then(({ data }) => {
+        setTwoFAEnabled(!!data.two_factor_enabled);
+        setTwoFAMethod(data.two_factor_method || 'none');
+        if (data.two_fa_events) setTwoFAEvents(data.two_fa_events);
+      })
+      .catch(() => { /* fall back to user-object state */ });
+  }, [activeTab]);
+
+  const METHOD_LABELS = { totp: 'Google Authenticator or Authy', email: 'Email' };
+
+  const syncTwoFAUser = (enabled, method) => {
+    if (setUser) setUser((u) => ({ ...u, two_factor_enabled: enabled, two_factor_method: method || null }));
+    const stored = JSON.parse(localStorage.getItem('user') || '{}');
+    localStorage.setItem('user', JSON.stringify({ ...stored, two_factor_enabled: enabled, two_factor_method: method || null }));
+    window.dispatchEvent(new Event('userUpdated'));
+  };
+
+  const closeSecSheet = () => {
+    setSecSheet(null);
+    setSecConfirmCode(['', '', '', '', '', '']);
+    setSecConfirmError('');
+    setSecTotpSetup(null);
+    setSecEventDraft(null);
+    setSecWalletBalance(null);
+    setSecResendFailed(false);
+    setSecCopiedField(null);
+    clearTimeout(secCopyTimerRef.current);
+  };
+
+  // Shared code-entry confirm — dispatches on what the user is confirming.
+  const handleSecConfirm = async () => {
+    const code = secConfirmCode.join('');
+    if (code.length !== 6 || secConfirmBusy) return;
+    setSecConfirmBusy(true);
+    setSecConfirmError('');
+    try {
+      if (sec2FAPurpose === 'totp-setup') {
+        await axios.post(`${API_URL}/users/2fa/totp/confirm`, { code }, { headers: authH() });
+        setTwoFAEnabled(true);
+        setTwoFAMethod('totp');
+        syncTwoFAUser(true, 'totp');
+        toast.success('Authenticator app 2FA enabled!');
+        closeSecSheet();
+        return;
+      }
+      if (sec2FAPurpose === 'events') {
+        const draft = secEventDraft || {};
+        await axios.patch(`${API_URL}/users/security`,
+          { events: draft, actionCode: code },
+          { headers: authH() });
+        setTwoFAEvents(e => ({ ...e, ...draft }));
+        // Return to the event list so the confirmed toggle change is visible;
+        // the staged draft is dropped — only code-confirmed changes ever apply.
+        setSecEventDraft(null);
+        setSecConfirmCode(['', '', '', '', '', '']);
+        setSecConfirmError('');
+        setSecSheet('2fa-events');
+        toast.success('2FA event settings updated');
+        return;
+      }
+      // 'confirm' — confirm a settings change with the current method
+      toast.success('Confirmed');
+      closeSecSheet();
+    } catch (e) {
+      setSecConfirmError(e?.response?.data?.error || 'Invalid or expired code. Please try again.');
+    } finally {
+      setSecConfirmBusy(false);
+    }
+  };
+
+  // Cancel from the code-entry sheet: for the event-settings flow, go back to
+  // the event list with the staged change dropped — the toggle reverts, since
+  // it was never applied. Every other purpose just closes the sheets.
+  const cancelSecConfirm = () => {
+    if (sec2FAPurpose === 'events') {
+      setSecEventDraft(null);
+      setSecConfirmCode(['', '', '', '', '', '']);
+      setSecConfirmError('');
+      setSecSheet('2fa-events');
+      return;
+    }
+    closeSecSheet();
+  };
+
+  // Resend the email action code from the 2fa-code sheet — shared by every
+  // purpose that uses the email channel (enable-2FA confirm, event-prefs
+  // confirm). Failure surfaces as a toast AND an inline dismissible banner
+  // with a Try again action, so the user isn't left with only a transient toast.
+  const handleSecResendCode = async () => {
+    if (secResendBusy) return;
+    setSecResendBusy(true);
+    setSecResendFailed(false);
+    try {
+      await axios.post(`${API_URL}/auth/send-action-code`, { action: 'enable_2fa' }, { headers: authH() });
+      toast.success(`Security code sent to ${user?.email}!`);
+    } catch (e) {
+      setSecResendFailed(true);
+      toast.error(e?.response?.data?.error || 'Failed to send security code');
+    } finally {
+      setSecResendBusy(false);
+    }
+  };
+
+  // Copy a TOTP setup value (secret key or otpauth:// URI) to the clipboard
+  // with brief "Copied!" feedback. Falls back to the legacy execCommand
+  // path when the async Clipboard API is unavailable (older browsers /
+  // permission issues); surfaces a toast if both fail.
+  const handleSecCopy = async (text, field) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setSecCopiedField(field);
+      clearTimeout(secCopyTimerRef.current);
+      secCopyTimerRef.current = setTimeout(() => setSecCopiedField(null), 1800);
+    } catch (e) {
+      toast.error('Copy failed — please select the text and copy it manually.');
+    }
+  };
+
+  // "Enable" on the Google Authenticator option — generate secret + QR first.
+  const startTotpSetup = async () => {
+    if (twoFAEnabled && twoFAMethod !== 'totp') {
+      setSecPendingMethod('totp');
+      setSecConflictFrom(twoFAMethod);
+      setSecSheet('2fa-conflict');
+      return;
+    }
+    setSec2FAPurpose('totp-setup');
+    setSecTotpSetup(null);
+    setSecSheet('2fa-code');
+    try {
+      const { data } = await axios.post(`${API_URL}/users/2fa/totp/setup`, {}, { headers: authH() });
+      setSecTotpSetup({ secret: data.secret, otpauth_url: data.otpauth_url });
+    } catch (e) {
+      const d = e?.response?.data || {};
+      if (d.conflict) {
+        setSecPendingMethod('totp');
+        setSecConflictFrom(d.active_method || twoFAMethod);
+        setSecSheet('2fa-conflict');
+      } else {
+        toast.error(d.error || 'Failed to start authenticator setup');
+        closeSecSheet();
+      }
+    }
+  };
+
+  // "Enable" on the Email option — send an action code, then confirm via sheet.
+  const startEmailSetup = async () => {
+    if (twoFAEnabled && twoFAMethod !== 'email') {
+      setSecPendingMethod('email');
+      setSecConflictFrom(twoFAMethod);
+      setSecSheet('2fa-conflict');
+      return;
+    }
+    if (!emailVerified) {
+      toast.error('Verify your email address first — see the Verification tab.');
+      return;
+    }
+    setSec2FAPurpose('confirm');
+    setSecSheet('2fa-code');
+    try {
+      await axios.post(`${API_URL}/auth/send-action-code`, { action: 'enable_2fa' }, { headers: authH() });
+      toast.success(`Security code sent to ${user?.email}!`);
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to send security code');
+      closeSecSheet();
+    }
+  };
+
+  // Both "Manage" buttons open the event-settings sheet; the Disable 2FA row
+  // inside it (or the conflict sheet's "Manage 2FA") is the explicit way off a
+  // method — mutual exclusivity means you must deactivate before switching.
+  const startTotpManage = () => {
+    setSec2FAPurpose('confirm');
+    setSecSheet('2fa-events');
+  };
+
+  const startEmailManage = () => {
+    setSec2FAPurpose('confirm');
+    setSecSheet('2fa-events');
+  };
+
+  // Confirm disable of the active 2FA method (password check enforced server-side)
+  const handleSecDisable2FA = async () => {
+    if (!twoFADisablePw) {
+      toast.error('Enter your current password to disable 2FA');
+      return;
+    }
+    setTwoFADisabling(true);
+    try {
+      await axios.patch(`${API_URL}/users/toggle-2fa`,
+        { two_factor_enabled: false, password: twoFADisablePw },
+        { headers: authH() });
+      setTwoFAEnabled(false);
+      setTwoFAMethod('none');
+      setShowDisable2FA(false);
+      setTwoFADisablePw('');
+      syncTwoFAUser(false, null);
+      toast.success('Two-factor authentication disabled');
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to disable 2FA');
+    } finally {
+      setTwoFADisabling(false);
+    }
+  };
+
+  // Save event-toggle changes — requires a fresh code from the active method.
+  // The payload is staged only: the toggle does NOT move (visually or in state)
+  // until the code entered in the 2fa-code sheet is verified by the server.
+  const saveSecEvents = async (nextEvents) => {
+    if (!twoFAEnabled || !twoFAMethod) {
+      toast.error('Enable 2FA first before choosing which events require a code.');
+      return;
+    }
+    // Nothing actually changed (e.g. footer "Continue" with no edits) — don't
+    // make the user confirm a no-op with a fresh code.
+    const cur = twoFAEvents;
+    if (TWO_FA_EVENT_KEYS.every(k => !!cur[k] === !!nextEvents[k])) {
+      setSecEventDraft(null);
+      setSecSheet('2fa-events');
+      toast.info('No changes to save');
+      return;
+    }
+    setSecEventDraft(nextEvents);
+    setSec2FAPurpose('events');
+    setSecConfirmCode(['', '', '', '', '', '']);
+    setSecConfirmError('');
+    if (twoFAMethod === 'email') {
+      // A fresh email action code is needed for the PATCH — send it up-front
+      try {
+        setSecSheet('2fa-code');
+        await axios.post(`${API_URL}/auth/send-action-code`, { action: 'enable_2fa' }, { headers: authH() });
+        toast.success(`Security code sent to ${user?.email}!`);
+      } catch (e) {
+        toast.error(e?.response?.data?.error || 'Failed to send security code');
+        // Stay in the event list with the change unstaged (toggle never moved).
+        setSecEventDraft(null);
+        setSecSheet('2fa-events');
+      }
+    } else {
+      setSecSheet('2fa-code');
+    }
+  };
+
+  // Close account — check wallet balance, warn, then request confirmation email
+  const openCloseAccount = async () => {
+    setSecSheet('close-account');
+    setSecWalletLoading(true);
+    try {
+      const { data } = await axios.get(`${API_URL}/wallet`, { headers: authH() });
+      setSecWalletBalance(parseFloat(data?.wallet?.balance_usd ?? 0));
+    } catch {
+      setSecWalletBalance(0);
+    } finally {
+      setSecWalletLoading(false);
+    }
+  };
+
+  const handleSecCloseAccount = async () => {
+    if (secClosing) return;
+    setSecClosing(true);
+    try {
+      await axios.post(`${API_URL}/users/close-account`, {}, { headers: authH() });
+      toast.success('Confirmation link sent to your email. Open it to submit your closure request.');
+      closeSecSheet();
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to submit close-account request');
+    } finally {
+      setSecClosing(false);
+    }
+  };
+
   useEffect(() => {
     if (!user) {
       navigate("/login");
@@ -2550,6 +2902,19 @@ export default function Settings({ user, setUser }) {
     { id: "trader-settings", icon: CreditCard, label: "Trader settings", route: "/trader-settings" },
   ];
 
+  // Desktop (≥1024px) media query — drives the NoOnes-style desktop redesign
+  // of the Security tab (pill sidebar nav, horizontal settings rows, compact
+  // outlined pill buttons). Mobile/tablet layouts are untouched.
+  const isDesktop = useSyncExternalStore(
+    (cb) => {
+      const mq = window.matchMedia('(min-width: 1024px)');
+      mq.addEventListener('change', cb);
+      return () => mq.removeEventListener('change', cb);
+    },
+    () => window.matchMedia('(min-width: 1024px)').matches,
+    () => false
+  );
+
   const inputCls = "w-full px-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:border-green-500 transition";
   const inputStyle = () => ({
     borderColor: C.g200,
@@ -2557,6 +2922,61 @@ export default function Settings({ user, setUser }) {
     backgroundColor: C.g50,
   });
   const labelCls = "block text-xs font-semibold mb-1.5";
+
+  // ── Security tab — shared pieces (NoOnes parity) ────────────────────────────
+  // Gold "Activated" badge shown next to the ACTIVE 2FA method's title.
+  const SecActivatedBadge = () => (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-black flex-shrink-0"
+          style={{ backgroundColor: '#FEF3C7', color: '#B45309' }}>
+      Activated
+    </span>
+  );
+
+  // Small toggle switch used by the 2FA event settings sheet (green when on).
+  const SecToggle = ({ on, onClick, disabled, ariaLabel }) => (
+    <button type="button" role="switch" aria-checked={on} aria-label={ariaLabel || 'Toggle'} onClick={onClick} disabled={disabled}
+            className="relative flex-shrink-0 transition-colors duration-200 rounded-full"
+            style={{ width: 40, height: 22, backgroundColor: on ? C.success : '#CBD5E1', opacity: disabled ? 0.6 : 1 }}>
+      <span className="absolute top-0.5 rounded-full bg-white shadow transition-all duration-200"
+            style={{ width: 18, height: 18, left: on ? 20 : 2 }} />
+    </button>
+  );
+
+  // 6 individual single-digit boxes with auto-advance and paste support.
+  const SecCodeInputs = ({ values, onChange, refs }) => {
+    const focusIdx = (i) => refs.current[i]?.focus();
+    const setDigit = (i, ch) => {
+      const digits = ch.replace(/\D/g, '');
+      if (!digits) return;
+      const next = [...values];
+      let cursor = i;
+      for (const d of digits) {
+        if (cursor > 5) break;
+        next[cursor] = d;
+        cursor += 1;
+      }
+      onChange(next);
+      focusIdx(Math.min(cursor, 5));
+    };
+    return (
+      <div className="flex gap-2" style={{ direction: 'ltr' }}>
+        {values.map((v, i) => (
+          <input key={i} ref={el => { refs.current[i] = el; }}
+                 value={v}
+                 inputMode="numeric" autoComplete="one-time-code" maxLength={6}
+                 onChange={e => setDigit(i, e.target.value)}
+                 onKeyDown={e => { if (e.key === 'Backspace' && !values[i] && i > 0) focusIdx(i - 1); }}
+                 onFocus={e => e.target.select()}
+                 className="flex-1 min-w-0 aspect-square text-center text-xl font-black rounded-lg outline-none transition"
+                 style={{
+                   border: `2px solid ${v ? C.green : C.g200}`,
+                   color: C.g800,
+                   backgroundColor: C.g50,
+                 }} />
+        ))}
+      </div>
+    );
+  };
 
   return (
       <div className="min-h-screen flex flex-col md:overflow-x-hidden" style={{ backgroundColor: C.mist, fontFamily: "'DM Sans',sans-serif" }}>
@@ -2581,21 +3001,41 @@ export default function Settings({ user, setUser }) {
           <div className="flex flex-col md:flex-row gap-4 md:gap-6">            {/* Sidebar tabs — horizontal pill bar removed on mobile (hamburger menu replaces it) */}
             <div className="md:w-52 flex-shrink-0">
 
-              {/* Desktop: vertical sidebar */}
-              <div className="hidden md:block bg-white rounded-2xl shadow-sm border overflow-hidden" style={{ borderColor: C.g200 }}>
-                {TABS.map(({ id, icon: Icon, label, route }) => (
-                    <button key={id} onClick={() => (route ? navigate(route) : setActiveTab(id))}
-                            className="w-full flex items-center gap-3 px-4 py-3 text-left transition border-b last:border-0 hover:bg-gray-50"
-                            style={{
-                              borderColor: C.g100,
-                              backgroundColor: activeTab === id ? `${C.green}10` : 'transparent',
-                              borderLeft: activeTab === id ? `3px solid ${C.green}` : '3px solid transparent'
-                            }}>
-                      <Icon size={16} style={{ color: activeTab === id ? C.green : C.g400 }} />
-                      <span className="text-sm font-bold" style={{ color: activeTab === id ? C.green : C.g600 }}>{label}</span>
-                    </button>
-                ))}
-              </div>
+              {/* Desktop: vertical sidebar. ≥1024px: NoOnes-style pill nav —
+                  each item its own rounded card; the active item is a solid
+                  green pill with white text/icon; inactive items are light
+                  gray with a subtle darken on hover. 768–1023px keeps the
+                  previous white-card list; mobile uses the hamburger menu. */}
+              {isDesktop ? (
+                  <div className="hidden md:flex flex-col gap-1.5">
+                    {TABS.map(({ id, icon: Icon, label, route }) => (
+                        <button key={id} onClick={() => (route ? navigate(route) : setActiveTab(id))}
+                                className={`w-full flex items-center gap-3 px-4 py-3 text-left rounded-[10px] transition-all duration-150 ${activeTab === id ? '' : 'hover:brightness-95'}`}
+                                style={{
+                                  backgroundColor: activeTab === id ? C.green : C.g50,
+                                  boxShadow: activeTab === id ? '0 1px 2px rgba(15, 23, 42, 0.10)' : 'none',
+                                }}>
+                          <Icon size={16} style={{ color: activeTab === id ? '#FFFFFF' : C.g400 }} />
+                          <span className="text-sm font-bold" style={{ color: activeTab === id ? '#FFFFFF' : C.g700 }}>{label}</span>
+                        </button>
+                    ))}
+                  </div>
+              ) : (
+                  <div className="hidden md:block bg-white rounded-2xl shadow-sm border overflow-hidden" style={{ borderColor: C.g200 }}>
+                    {TABS.map(({ id, icon: Icon, label, route }) => (
+                        <button key={id} onClick={() => (route ? navigate(route) : setActiveTab(id))}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-left transition border-b last:border-0 hover:bg-gray-50"
+                                style={{
+                                  borderColor: C.g100,
+                                  backgroundColor: activeTab === id ? `${C.green}10` : 'transparent',
+                                  borderLeft: activeTab === id ? `3px solid ${C.green}` : '3px solid transparent'
+                                }}>
+                          <Icon size={16} style={{ color: activeTab === id ? C.green : C.g400 }} />
+                          <span className="text-sm font-bold" style={{ color: activeTab === id ? C.green : C.g600 }}>{label}</span>
+                        </button>
+                    ))}
+                  </div>
+              )}
             </div>
 
             {/* Main content */}
@@ -3671,11 +4111,187 @@ export default function Settings({ user, setUser }) {
                   </div>
               )}
 
-              {/* ── SECURITY ────────────────────────────────────────── */}
+              {/* ── SECURITY (NoOnes parity redesign) ───────────────────────────────── */}
               {activeTab === 'security' && (
                   <div className="space-y-5">
+
+                    {/* Security section. Mobile: one white wrapper card with the
+                        shared "Security" heading (NoOnes mobile parity). Desktop
+                        ≥1024px: NoOnes desktop layout — separate light-gray
+                        rounded cards with page-background gaps between them; the
+                        shared heading is hidden because each card carries its own
+                        title. */}
+                    <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6 lg:bg-transparent lg:rounded-none lg:border-0 lg:shadow-none lg:p-0">
+                      <h2 className="text-base font-black mb-1 lg:hidden" style={{ color: C.g800 }}>Security</h2>
+                      <p className="text-xs mb-4 lg:hidden" style={{ color: C.g500 }}>Keep your account secure</p>
+
+                      {/* Card 1 — "Change password". Mobile: sub-section inside
+                          the wrapper; desktop ≥1024px: its own light-gray card. */}
+                      <div className="lg:bg-[#F1F5F9] lg:rounded-xl lg:p-6 lg:mb-5">
+                        <div className="lg:flex lg:items-center lg:justify-between lg:gap-6">
+                          <div className="lg:min-w-0">
+                            <h3 className="text-base font-black mb-1 lg:text-lg lg:font-bold" style={{ color: C.g800 }}>{isDesktop ? 'Change password' : 'Password'}</h3>
+                            <p className="text-xs mb-4 lg:mb-0 lg:text-sm" style={{ color: C.g500 }}>This action will log you out of all currently active sessions</p>
+                          </div>
+                          <button onClick={() => { setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' }); setPasswordSuccess(false); setSecSheet('password'); }}
+                                  className={isDesktop
+                                    ? 'px-5 py-2.5 rounded-lg border text-sm font-medium transition-colors hover:bg-[#F8FAFC] flex-shrink-0'
+                                    : 'w-full py-2.5 rounded-xl text-white text-sm font-bold transition hover:opacity-90'}
+                                  style={isDesktop
+                                    ? { borderColor: C.g200, color: C.g700, backgroundColor: '#FFFFFF' }
+                                    : { backgroundColor: C.green }}>
+                            Change
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Internal divider — mobile wrapper only; desktop splits
+                          into separate cards with page-background gaps instead */}
+                      <div className="border-t my-5 lg:hidden" style={{ borderColor: C.g200 }} />
+
+                      {/* Card 2 — 2FA settings (both method rows live in this one
+                          card, separated by a divider, on mobile AND desktop) */}
+                      <div className="lg:bg-[#F1F5F9] lg:rounded-xl lg:p-6">
+                        <h3 className="text-base font-black mb-1 lg:text-lg lg:font-bold" style={{ color: C.g800 }}>2FA settings</h3>
+                        <p className="text-xs mb-4 lg:text-sm" style={{ color: C.g500 }}>Set up 2FA to make your account more secure</p>
+                        <div className="border-t pt-4 lg:border-t-0 lg:pt-0" style={{ borderColor: C.g200 }}>
+
+                          {/* Option A — Google Authenticator or Authy.
+                              Mobile: button full-width BELOW title + description.
+                              Desktop ≥1024px: horizontal row — title (+ Activated
+                              badge) and description left, compact outlined
+                              rounded-rect button (Manage/Enable) right, centered. */}
+                          <div className="lg:flex lg:items-center lg:justify-between lg:gap-6">
+                            <div className="lg:min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="text-sm font-bold" style={{ color: C.g800 }}>Google Authenticator or Authy (recommended)</p>
+                                {twoFAEnabled && twoFAMethod === 'totp' && <SecActivatedBadge />}
+                              </div>
+                              <p className="text-xs mt-1" style={{ color: C.g500 }}>The app generates a temporary passcode that's valid for a limited time</p>
+                            </div>
+                            {twoFAEnabled && twoFAMethod === 'totp' ? (
+                              <button onClick={startTotpManage}
+                                      className={isDesktop
+                                        ? 'px-5 py-2.5 rounded-lg border text-sm font-medium transition-colors hover:bg-[#F8FAFC] flex-shrink-0'
+                                        : 'w-full mt-3 py-2.5 rounded-xl text-white text-sm font-bold transition hover:opacity-90'}
+                                      style={isDesktop
+                                        ? { borderColor: C.g200, color: C.g700, backgroundColor: '#FFFFFF' }
+                                        : { backgroundColor: C.green }}>
+                                Manage
+                              </button>
+                            ) : (
+                              <button onClick={startTotpSetup} disabled={twoFASending}
+                                      className={isDesktop
+                                        ? 'px-5 py-2.5 rounded-lg border text-sm font-medium transition-colors hover:bg-[#F8FAFC] flex-shrink-0 disabled:opacity-50'
+                                        : 'w-full mt-3 py-2.5 rounded-xl text-white text-sm font-bold transition hover:opacity-90 disabled:opacity-50'}
+                                      style={isDesktop
+                                        ? { borderColor: C.g200, color: C.g700, backgroundColor: '#FFFFFF' }
+                                        : { backgroundColor: C.green }}>
+                                {twoFASending ? 'Sending…' : 'Enable'}
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="border-t my-4" style={{ borderColor: C.g200 }} />
+
+                          {/* Option B — Email. Same responsive row pattern as
+                              Option A: stacked on mobile, horizontal row with a
+                              compact outlined pill on desktop. */}
+                          <div className="lg:flex lg:items-center lg:justify-between lg:gap-6">
+                            <div className="lg:min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="text-sm font-bold" style={{ color: C.g800 }}>Email</p>
+                                {twoFAEnabled && twoFAMethod === 'email' && <SecActivatedBadge />}
+                              </div>
+                              <p className="text-xs mt-1" style={{ color: C.g500 }}>Receive temporary passcodes by email, valid for a limited time</p>
+                            </div>
+                            {twoFAEnabled && twoFAMethod === 'email' ? (
+                              <button onClick={startEmailManage}
+                                      className={isDesktop
+                                        ? 'px-5 py-2.5 rounded-lg border text-sm font-medium transition-colors hover:bg-[#F8FAFC] flex-shrink-0'
+                                        : 'w-full mt-3 py-2.5 rounded-xl text-white text-sm font-bold transition hover:opacity-90'}
+                                      style={isDesktop
+                                        ? { borderColor: C.g200, color: C.g700, backgroundColor: '#FFFFFF' }
+                                        : { backgroundColor: C.green }}>
+                                Manage
+                              </button>
+                            ) : (
+                              <button onClick={startEmailSetup} disabled={twoFASending || !emailVerified}
+                                      className={isDesktop
+                                        ? 'px-5 py-2.5 rounded-lg border text-sm font-medium transition-colors hover:bg-[#F8FAFC] flex-shrink-0 disabled:opacity-50'
+                                        : 'w-full mt-3 py-2.5 rounded-xl text-white text-sm font-bold transition hover:opacity-90 disabled:opacity-50'}
+                                      style={isDesktop
+                                        ? { borderColor: C.g200, color: C.g700, backgroundColor: '#FFFFFF' }
+                                        : { backgroundColor: C.green }}>
+                                {twoFASending ? 'Sending…' : 'Enable'}
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Disable flow for the ACTIVE method (password-confirmed) */}
+                          {showDisable2FA && (
+                            <div className="mt-4 p-3 rounded-xl border" style={{ borderColor: C.g100, backgroundColor: C.g50 }}>
+                              <label className={labelCls}>Current password</label>
+                              <input type="password" value={twoFADisablePw}
+                                     onChange={e => setTwoFADisablePw(e.target.value)}
+                                     placeholder="Enter your password to confirm"
+                                     className={inputCls} style={inputStyle(twoFADisablePw)} />
+                              <div className="flex gap-2 mt-2">
+                                <button onClick={() => { setShowDisable2FA(false); setTwoFADisablePw(''); }}
+                                        className="flex-1 py-2 rounded-lg border font-semibold text-xs transition hover:bg-gray-50"
+                                        style={{ borderColor: C.g200, color: C.g600 }}>
+                                  Cancel
+                                </button>
+                                <button onClick={handleSecDisable2FA} disabled={twoFADisabling || !twoFADisablePw}
+                                        className="flex-1 py-2 rounded-lg text-white font-bold text-xs transition hover:opacity-90 disabled:opacity-50"
+                                        style={{ backgroundColor: C.danger }}>
+                                  {twoFADisabling ? 'Disabling…' : 'Disable 2FA'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Card 3 — Close account. Light-gray card on desktop. */}
+                    <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6 lg:bg-[#F1F5F9] lg:rounded-xl lg:border-0 lg:shadow-none" style={{ borderColor: C.g200 }}>
+                      <div className="lg:flex lg:items-center lg:justify-between lg:gap-6">
+                        <div className="lg:min-w-0">
+                          <h2 className="text-base font-black mb-1 lg:text-lg lg:font-bold" style={{ color: C.g800 }}>Close account</h2>
+                          <p className="text-xs mb-4 lg:mb-0 lg:text-sm lg:leading-relaxed" style={{ color: C.g500 }}>
+                            Closing your account will delete all your information on PraQen, including past trades, transactions, and more. Once you submit the request, you'll receive a confirmation link via email, and a moderator will process your request
+                          </p>
+                        </div>
+                        {/* Desktop action button (mobile keeps its position below) */}
+                        {isDesktop && (
+                          <button onClick={openCloseAccount}
+                                  className="px-5 py-2.5 rounded-lg text-white text-sm font-medium transition hover:opacity-90 flex-shrink-0"
+                                  style={{ backgroundColor: C.danger }}>
+                            Close
+                          </button>
+                        )}
+                      </div>
+                      <div className="border-t pt-4" style={{ borderColor: C.g200 }}>
+                        <p className="text-sm font-bold" style={{ color: C.g800 }}>Account</p>
+                        <p className="text-xs mt-0.5 mb-3" style={{ color: C.g500 }}>Closing your account is permanent and cannot be undone</p>
+                        {!isDesktop && (
+                          <button onClick={openCloseAccount}
+                                  className="w-full py-2.5 rounded-xl text-white font-bold text-sm transition hover:opacity-90"
+                                  style={{ backgroundColor: C.danger }}>
+                            Close
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                  </div>
+              )}
+
+              {/* DEPRECATED legacy Account Security info card — replaced by the NoOnes-parity cards above */}
+              {false && activeTab === 'security' && (<div>
                     <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: C.g200 }}>
-                      <h2 className="text-lg font-black mb-4" style={{ color: C.forest }}>Account Security</h2>
+                      <h2 className="text-lg font-black mb-4" style={{ color: C.forest }}>Account Security (legacy)</h2>
                       <div className="space-y-2">
                         <div className="flex items-center gap-3 p-2.5 md:p-3 rounded-xl" style={{ backgroundColor: C.g50 }}>
                           <Globe size={16} style={{ color: C.forest, flexShrink: 0 }} />
@@ -3752,7 +4368,7 @@ export default function Settings({ user, setUser }) {
                     </div>
 
                     <div className="bg-white rounded-2xl shadow-sm border p-6" style={{ borderColor: C.g200 }}>
-                      <h2 className="text-lg font-black mb-5" style={{ color: C.forest }}>Change Password</h2>
+                      <h2 className="text-lg font-black mb-5" style={{ color: C.forest }}>Change Password (legacy)</h2>
                       {passwordSuccess && (
                           <div className="mb-5 flex items-center gap-2.5 p-3 rounded-xl border" style={{ backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }}>
                             <CheckCircle size={18} style={{ color: C.success, flexShrink: 0 }} />
@@ -3842,7 +4458,8 @@ export default function Settings({ user, setUser }) {
                       </form>
                     </div>
 
-                    <div className="bg-white rounded-2xl shadow-sm border p-6" style={{ borderColor: C.g200 }}>
+                    {/* DEPRECATED legacy security block — replaced by the NoOnes-parity cards + bottom sheets above */}
+                    {false && (<div className="bg-white rounded-2xl shadow-sm border p-6" style={{ borderColor: C.g200 }}>
                       <h2 className="text-lg font-black mb-4" style={{ color: C.forest }}>Account Actions</h2>
                       <div className="space-y-3">
                         <div className="rounded-xl border p-3" style={{ borderColor: C.g100 }}>
@@ -3950,12 +4567,330 @@ export default function Settings({ user, setUser }) {
                             {loggingOut ? <><RefreshCw size={13} className="animate-spin" /> Logging out…</> : <><LogOut size={13} /> Log Out</>}
                           </button>
                         </div>
-                      </div>
-                    </div>
-                  </div>
-              )}
+                      </div>                     </div>
+                     )}
+                   </div>
+               )}
 
-              {/* ── PREFERENCES ─────────────────────────────────────── */}
+               {/* ── SECURITY bottom sheets (NoOnes parity) ───────────────────────── */}
+
+               {/* 1. Change password */}
+               {secSheet === 'password' && (
+                   <AccountBottomSheet
+                       title="Change password"
+                       onClose={closeSecSheet}
+                       centerOnDesktop
+                       footer={
+                         <>
+                           <button onClick={closeSecSheet}
+                                   className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 transition hover:bg-gray-50"
+                                   style={{ borderColor: C.g200, color: C.g600 }}>
+                             Cancel
+                           </button>
+                           <button onClick={(e) => handlePasswordChange(e)} disabled={loading}
+                                   className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition hover:opacity-90 disabled:opacity-50"
+                                   style={{ backgroundColor: C.green }}>
+                             {loading ? 'Updating…' : 'Continue'}
+                           </button>
+                         </>
+                       }>
+                     <div className="flex items-start gap-2.5 p-3 rounded-xl mb-4" style={{ backgroundColor: '#ECFDF5' }}>
+                       <Shield size={16} style={{ color: C.success, flexShrink: 0, marginTop: 1 }} />
+                       <p className="text-xs font-semibold" style={{ color: '#065F46' }}>Changing your password will log you out of all active sessions</p>
+                     </div>
+                     {[
+                       { key: 'currentPassword', label: 'Current password', show: showPw.current, toggle: () => setShowPw({ ...showPw, current: !showPw.current }) },
+                       { key: 'newPassword', label: 'New password', show: showPw.new, toggle: () => setShowPw({ ...showPw, new: !showPw.new }) },
+                       { key: 'confirmPassword', label: 'Confirm password', show: showPw.confirm, toggle: () => setShowPw({ ...showPw, confirm: !showPw.confirm }) },
+                     ].map(({ key, label, show, toggle }) => (
+                         <div key={key} className="mb-3">
+                           <label className={labelCls}>{label}</label>
+                           <div className="relative">
+                             <input type={show ? 'text' : 'password'} value={passwordForm[key]}
+                                    onChange={e => setPasswordForm({ ...passwordForm, [key]: e.target.value })}
+                                    className={`${inputCls} pr-10 ${passwordErrors[key] ? 'border-red-400' : ''}`}
+                                    style={passwordErrors[key] ? { borderColor: C.danger, color: C.g800 } : inputStyle(passwordForm[key])}
+                                    required />
+                             <button type="button" onClick={toggle} className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 transition">
+                               {show ? <EyeOff size={16} /> : <Eye size={16} />}
+                             </button>
+                           </div>
+                           {passwordErrors[key] && (
+                               <p className="flex items-center gap-1 text-xs font-bold mt-1" style={{ color: C.danger }}>
+                                 <AlertCircle size={11} />
+                                 {passwordErrors[key]}
+                               </p>
+                           )}
+                         </div>
+                     ))}
+                   </AccountBottomSheet>
+               )}
+
+               {/* 2. 2FA event settings — toggle list */}
+               {secSheet === '2fa-events' && (
+                   <AccountBottomSheet
+                       title="2FA event settings"
+                       onClose={closeSecSheet}
+                       centerOnDesktop
+                       footer={
+                         <>
+                           <button onClick={closeSecSheet}
+                                   className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 transition hover:bg-gray-50"
+                                   style={{ borderColor: C.g200, color: C.g600 }}>
+                             Cancel
+                           </button>
+                           <button onClick={() => saveSecEvents({ ...twoFAEvents, ...(secEventDraft || {}) })} disabled={secEventBusy}
+                                   className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition hover:opacity-90 disabled:opacity-50"
+                                   style={{ backgroundColor: C.green }}>
+                             Continue
+                           </button>
+                         </>
+                       }>
+                     <p className="text-sm mb-4" style={{ color: C.g500 }}>Choose which account events require a 2FA code</p>
+                     {[{ key: 'login', label: 'Log in' },
+                       { key: 'sending_crypto', label: 'Sending cryptocurrency' },
+                       { key: 'releasing_crypto', label: 'Releasing cryptocurrency' }].map(({ key, label }) => (
+                         <div key={key} className="flex items-center justify-between py-3.5 border-b last:border-b-0" style={{ borderColor: C.g100 }}>
+                           <p className="text-sm font-bold" style={{ color: C.g800 }}>{label}</p>
+                           <SecToggle
+                               on={!!twoFAEvents[key]}
+                               disabled={secEventBusy}
+                               ariaLabel={`${label} 2FA requirement`}
+                               onClick={() => {
+                                 // Two-step confirm (NoOnes parity): stage the change
+                                 // WITHOUT flipping the switch, then require a fresh
+                                 // code from the active method. The toggle only moves
+                                 // after the code verifies; cancel/wrong code = revert.
+                                 const cur = secEventDraft || twoFAEvents;
+                                 saveSecEvents({ ...cur, [key]: !cur[key] });
+                               }} />
+                         </div>
+                     ))}
+                     {/* Deactivate the active method — required before the other method can be enabled */}
+                     {!showDisable2FA && (
+                       <button type="button" onClick={() => { setShowDisable2FA(true); closeSecSheet(); }}
+                               className="mt-4 text-xs font-bold px-3 py-2 rounded-lg transition hover:bg-red-50"
+                               style={{ color: C.danger }}>
+                         Disable 2FA
+                       </button>
+                     )}
+                   </AccountBottomSheet>
+               )}
+
+               {/* 3. Two-factor authentication code entry (6-digit + Paste) */}
+               {secSheet === '2fa-code' && (
+                   <AccountBottomSheet
+                       title="Two-factor authentication"
+                       onClose={cancelSecConfirm}
+                       centerOnDesktop
+                       footer={
+                         <>
+                           <button onClick={cancelSecConfirm}
+                                   className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 transition hover:bg-gray-50"
+                                   style={{ borderColor: C.g200, color: C.g600 }}>
+                             Cancel
+                           </button>
+                           <button onClick={handleSecConfirm}
+                                   disabled={secConfirmCode.join('').length !== 6 || secConfirmBusy}
+                                   className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition hover:opacity-90 disabled:opacity-50"
+                                   style={{ backgroundColor: C.green }}>
+                             {secConfirmBusy ? 'Verifying…' : 'Continue'}
+                           </button>
+                         </>
+                       }>
+                     <p className="text-sm mb-4" style={{ color: C.g500 }}>
+                       {twoFAMethod === 'email'
+                         ? `Please enter the 2FA code sent to your email${user?.email ? ` (${user.email})` : ''} to confirm`
+                         : 'Please enter the 2FA code from your authenticator app to confirm'}
+                     </p>
+                     <label className={labelCls}>Enter verification code</label>
+                     <SecCodeInputs values={secConfirmCode} onChange={(v) => { setSecConfirmCode(v); setSecConfirmError(''); }} refs={secCodeRefs} />
+                     <div className="flex items-center justify-between mt-3">
+                       <button type="button"
+                               onClick={async () => {
+                                 try {
+                                   const text = await navigator.clipboard.readText();
+                                   const digits = (text || '').replace(/\D/g, '').slice(0, 6);
+                                   if (digits.length === 6) {
+                                     setSecConfirmCode(digits.split(''));
+                                     setSecConfirmError('');
+                                   } else {
+                                     toast.error('Clipboard does not contain a 6-digit code');
+                                   }
+                                 } catch {
+                                   toast.error('Could not read the clipboard. Paste manually instead.');
+                                 }
+                               }}
+                               className="text-xs font-bold underline"
+                               style={{ color: C.green }}>
+                         Paste
+                       </button>
+                       {twoFAMethod === 'email' && (
+                         <button type="button"
+                                 onClick={handleSecResendCode}
+                                 disabled={secResendBusy}
+                                 className="text-xs font-bold underline disabled:opacity-50"
+                                 style={{ color: C.green }}>
+                           {secResendBusy ? 'Sending…' : 'Resend code'}
+                         </button>
+                       )}
+                     </div>
+                     {secConfirmError && (
+                       <p className="flex items-center gap-1 text-xs font-bold mt-3" style={{ color: C.danger }}>
+                         <AlertCircle size={12} /> {secConfirmError}
+                       </p>
+                     )}
+                     {/* Code-delivery failure banner: dismissible + retryable
+                         (Issue 3) — shown only after an actual send failure. */}
+                     {secResendFailed && (
+                       <div className="flex items-center justify-between gap-2 mt-3 p-3 rounded-xl border" style={{ borderColor: C.danger, backgroundColor: 'rgba(220,38,38,0.06)' }}>
+                         <p className="flex items-center gap-1 text-xs font-bold" style={{ color: C.danger }}>
+                           <AlertCircle size={12} /> We couldn't send your code. Check your connection and try again.
+                         </p>
+                         <div className="flex items-center gap-2 flex-shrink-0">
+                           <button type="button" onClick={handleSecResendCode} disabled={secResendBusy}
+                                   className="text-xs font-bold underline disabled:opacity-50" style={{ color: C.danger }}>
+                             Try again
+                           </button>
+                           <button type="button" onClick={() => setSecResendFailed(false)} aria-label="Dismiss error"
+                                   className="text-xs font-bold" style={{ color: C.g500 }}>
+                             <X size={14} />
+                           </button>
+                         </div>
+                       </div>
+                     )}
+                     {/* TOTP setup step: scannable QR code (primary) with the
+                         manual key as a collapsed fallback. The QR re-renders
+                         automatically whenever the secret is regenerated
+                         (cancel + reopen setup), since it's driven by state. */}
+                     {sec2FAPurpose === 'totp-setup' && secTotpSetup && (
+                       <div className="mt-4 p-3 rounded-xl flex flex-col items-center" style={{ backgroundColor: C.g50 }}>
+                         <p className="text-xs font-bold mb-3 text-center" style={{ color: C.g700 }}>Scan with Google Authenticator or Authy</p>
+                         {secTotpSetup.otpauth_url ? (
+                           <div className="bg-white p-3 rounded-xl" style={{ border: `1px solid ${C.g200}` }}>
+                             <QRCodeSVG value={secTotpSetup.otpauth_url} size={180} level="M" marginSize={2} />
+                           </div>
+                         ) : null}
+                         <details className="w-full mt-3">
+                           <summary className="text-xs font-bold cursor-pointer text-center" style={{ color: C.green }}>
+                             Can't scan? Enter this code manually
+                           </summary>
+                           <div className="mt-2">
+                             <div className="flex items-start justify-between gap-2">
+                               <p className="text-xs font-mono break-all min-w-0 flex-1" style={{ color: C.g500 }}>{secTotpSetup.secret}</p>
+                               <button type="button"
+                                       onClick={() => handleSecCopy(secTotpSetup.secret, 'secret')}
+                                       aria-label="Copy secret key"
+                                       className="flex-shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md border transition-colors"
+                                       style={{
+                                         borderColor: C.g200,
+                                         color: secCopiedField === 'secret' ? C.success : C.g600,
+                                         backgroundColor: secCopiedField === 'secret' ? '#ECFDF5' : 'transparent',
+                                       }}>
+                                 {secCopiedField === 'secret' ? <Check size={11} /> : <Copy size={11} />}
+                                 {secCopiedField === 'secret' ? 'Copied!' : 'Copy'}
+                               </button>
+                             </div>
+                             <div className="flex items-start justify-between gap-2 mt-2">
+                               <p className="text-[10px] font-mono break-all min-w-0 flex-1" style={{ color: C.g400 }}>{secTotpSetup.otpauth_url}</p>
+                               <button type="button"
+                                       onClick={() => handleSecCopy(secTotpSetup.otpauth_url, 'uri')}
+                                       aria-label="Copy setup URI"
+                                       className="flex-shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md border transition-colors"
+                                       style={{
+                                         borderColor: C.g200,
+                                         color: secCopiedField === 'uri' ? C.success : C.g600,
+                                         backgroundColor: secCopiedField === 'uri' ? '#ECFDF5' : 'transparent',
+                                       }}>
+                                 {secCopiedField === 'uri' ? <Check size={11} /> : <Copy size={11} />}
+                                 {secCopiedField === 'uri' ? 'Copied!' : 'Copy'}
+                               </button>
+                             </div>
+                           </div>
+                         </details>
+                       </div>
+                     )}
+                   </AccountBottomSheet>
+               )}
+
+               {/* 4. Action required — method conflict (mutual exclusivity) */}
+               {secSheet === '2fa-conflict' && (
+                   <AccountBottomSheet
+                       title="Action required"
+                       onClose={closeSecSheet}
+                       centerOnDesktop
+                       footer={
+                         <>
+                           <button onClick={closeSecSheet}
+                                   className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 transition hover:bg-gray-50"
+                                   style={{ borderColor: C.g200, color: C.g600 }}>
+                             Cancel
+                           </button>
+                           <button onClick={() => {
+                             // Route to manage/disable the currently active method
+                             setShowDisable2FA(true);
+                             setSecSheet(null);
+                             setSecConfirmCode(['', '', '', '', '', '']);
+                             setSecConfirmError('');
+                           }}
+                                   className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition hover:opacity-90"
+                                   style={{ backgroundColor: C.green }}>
+                             Manage 2FA
+                           </button>
+                         </>
+                       }>
+                     <p className="text-sm leading-relaxed" style={{ color: C.g700 }}>
+                       {(METHOD_LABELS[secPendingMethod] || 'That method')}-based 2FA cannot be enabled while {(METHOD_LABELS[secConflictFrom] || 'another method')} is active. Please disable it first
+                     </p>
+                   </AccountBottomSheet>
+               )}
+
+               {/* 5. Close account — wallet balance warning + email confirmation request */}
+               {secSheet === 'close-account' && (
+                   <AccountBottomSheet
+                       title="Close account"
+                       onClose={closeSecSheet}
+                       centerOnDesktop
+                       footer={
+                         <>
+                           <button onClick={closeSecSheet}
+                                   className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 transition hover:bg-gray-50"
+                                   style={{ borderColor: C.g200, color: C.g600 }}>
+                             Cancel
+                           </button>
+                           <button onClick={handleSecCloseAccount}
+                                   disabled={secClosing || secWalletLoading || (secWalletBalance ?? 0) > 0}
+                                   className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition hover:opacity-90 disabled:opacity-50"
+                                   style={{ backgroundColor: C.green }}>
+                             {secClosing ? 'Submitting…' : 'Continue'}
+                           </button>
+                         </>
+                       }>
+                     <p className="text-sm mb-4" style={{ color: C.g700 }}>To close your account, please complete the following:</p>
+
+                     <button type="button" onClick={() => { closeSecSheet(); navigate('/wallet'); }}
+                             className="w-full flex items-center justify-between p-3 rounded-xl border mb-4 transition hover:bg-gray-50"
+                             style={{ borderColor: C.g200 }}>
+                       <div className="text-left">
+                         <p className="text-sm font-bold" style={{ color: C.g800 }}>Wallet</p>
+                         <p className="text-xs" style={{ color: C.g500 }}>Withdraw all funds from your wallet</p>
+                       </div>
+                       <ChevronRight size={16} style={{ color: C.g400 }} />
+                     </button>
+
+                     <div className="p-3 rounded-xl" style={{ backgroundColor: '#FEF2F2' }}>
+                       <p className="text-xs font-semibold leading-relaxed" style={{ color: '#991B1B' }}>
+                         {secWalletLoading
+                           ? 'Checking your wallet balance…'
+                           : secWalletBalance > 0
+                             ? `Your remaining wallet balance of $${secWalletBalance.toFixed(2)} USD will be lost and cannot be recovered. This action is irreversible. Are you sure you want to continue?`
+                             : 'Your remaining wallet balance will be lost and cannot be recovered. This action is irreversible. Are you sure you want to continue?'}
+                       </p>
+                     </div>
+                   </AccountBottomSheet>
+               )}
+
+               {/* ── PREFERENCES ─────────────────────────────────────── */}
               {activeTab === 'preferences' && (
                   <div className="space-y-4">
                     <div className="bg-white rounded-2xl shadow-sm border p-6" style={{ borderColor: C.g200 }}>

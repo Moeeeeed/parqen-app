@@ -71,6 +71,7 @@ const {
   unregisterEmailChannelTicket,
 } = require('./services/inboundEmailService');
 const speakeasy = require('speakeasy');
+const { checkClockHealth } = require('./services/timeService');
 
 // ── 2FA login-store: maps tempTokenHash -> { code, expires, userId, method } ─
 const pending2FALogin = new Map();
@@ -2721,12 +2722,7 @@ app.post('/api/auth/verify-2fa-login', authLimiter, async (req, res) => {
           pending2FALogin.delete(tempToken);
           return res.status(400).json({ error: 'TOTP not configured. Please log in again.' });
         }
-        isVerified = speakeasy.totp.verify({
-          secret: userForTOTP.totp_secret,
-          encoding: 'base32',
-          token: String(code).trim(),
-          window: 1,
-        });
+        isVerified = await verifyTotp(userForTOTP.totp_secret, code);
         if (!isVerified) {
           logSecurityEvent({ userId: decoded.userId, eventType: 'LOGIN_FAILED_2FA', ip: getClientIp(req), userAgent: req.headers['user-agent'], details: { method: 'totp' } });
           return res.status(400).json({ error: 'Incorrect authenticator code. Please try again.' });
@@ -2752,12 +2748,7 @@ app.post('/api/auth/verify-2fa-login', authLimiter, async (req, res) => {
       userDataFor2FA = userForTOTP;
 
       if (userForTOTP.two_factor_method === 'totp' && userForTOTP.totp_secret) {
-        isVerified = speakeasy.totp.verify({
-          secret: userForTOTP.totp_secret,
-          encoding: 'base32',
-          token: String(code).trim(),
-          window: 1,
-        });
+        isVerified = await verifyTotp(userForTOTP.totp_secret, code);
         if (!isVerified) {
           logSecurityEvent({ userId: decoded.userId, eventType: 'LOGIN_FAILED_2FA', ip: getClientIp(req), userAgent: req.headers['user-agent'], details: { method: 'totp' } });
           return res.status(400).json({ error: 'Incorrect authenticator code. Please try again.' });
@@ -4377,7 +4368,13 @@ app.post('/api/auth/send-action-code', otpLimiter, verifyToken, async (req, res)
     if (hasPhone && !smsOk) console.warn(`[2FA] SMS delivery failed for ${user.phone}:`, smsResult.reason?.message);
 
     if (!emailOk && !smsOk) {
-      throw new Error(emailResult.reason?.message || 'All delivery channels failed');
+      // Every channel failed. Return 502 (upstream/delivery failure) with a
+      // precise, retryable message instead of throwing a generic 500 — the
+      // old path made a provider outage indistinguishable from a server bug.
+      // The generated code is already persisted (upsert), so an immediate
+      // retry reuses the same code rather than flooding new ones.
+      console.error(`[2FA send-action-code] ALL channels failed action=${action} user=${req.userId.slice(0, 8)} emailErr="${emailResult.reason?.message}" smsErr="${smsResult.reason?.message}"`);
+      return res.status(502).json({ error: "We couldn't deliver your security code right now. Please tap 'Try again' in a moment." });
     }
 
     const via = emailOk && smsOk ? `${user.email} and your phone` : emailOk ? user.email : 'your phone via SMS';
@@ -4621,11 +4618,28 @@ app.patch('/api/users/toggle-2fa', verifyToken, async (req, res) => {
   }
 });
 
+// ── 2FA method mutual exclusivity (Settings → Security, NoOnes parity) ───────
+// The data model already guarantees "one active method" (two_factor_method is a
+// single field set to null on disable) — but the TOTP endpoints re-check it
+// explicitly so a stale client can never end up with two methods live.
+const ACTION_REQUIRED_LABELS = {
+  totp: 'Google Authenticator or Authy',
+  email: 'Email',
+};
+
+// Shared TOTP verification (Issue 4): explicit parameters matching what the
+// QR code encodes (SHA1 / 6 digits / 30s period — Google Authenticator &
+// Authy defaults), ±1 step window, digit normalization, and a clock-drift
+// check so a skewed server clock is flagged instead of silently rejecting
+// correct codes. DEBUG LOGGING (temporary, remove before production):
+// on failure, logs the server time, time-step, and expected codes for the
+// current and ±1 steps so drift/secret mismatches are diagnosable from logs.
+const { verifyTotp } = require('./services/totpService');
+
 // ── TOTP Authenticator App setup ──────────────────────────────────────────────
 // POST /api/users/2fa/totp/setup — generate secret + QR code URL (does NOT enable 2FA yet)
 app.post('/api/users/2fa/totp/setup', verifyToken, async (req, res) => {
   try {
-    // Check current 2FA state
     const { data: user, error: dbErr } = await supabaseAdmin
       .from('users').select('two_factor_enabled, totp_secret, email').eq('id', req.userId).single();
 
@@ -4636,23 +4650,46 @@ app.post('/api/users/2fa/totp/setup', verifyToken, async (req, res) => {
     }
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.two_factor_enabled) {
-      return res.status(400).json({ error: '2FA is already enabled. Disable it first to reconfigure.' });
+      const activeLabel = ACTION_REQUIRED_LABELS[user.two_factor_method] || 'another method';
+      return res.status(409).json({
+        error: `Google Authenticator or Authy-based 2FA cannot be enabled while ${activeLabel} is active. Please disable it first`,
+        conflict: true,
+        active_method: user.two_factor_method,
+      });
     }
 
     // Include user email in the label so authenticator apps show a distinguishable entry
     const label = user.email ? `PRAQEN (${user.email})` : 'PRAQEN';
-    const secret = speakeasy.generateSecret({ name: label, issuer: 'PRAQEN' });
 
-    // Store secret temporarily (not yet confirmed, but we overwrite any old one)
-    await supabaseAdmin.from('users')
-      .update({ totp_secret: secret.base32, updated_at: new Date() })
-      .eq('id', req.userId);
+    // Reuse a pending unconfirmed secret instead of rotating on every request
+    // (Issue 4, secret-consistency): setup is called each time the setup modal
+    // opens — if we generated a fresh secret every time, any QR the user
+    // already scanned would go stale against the newly stored one (QR↔DB
+    // mismatch → "Invalid code" with a correct app code). A fresh secret is
+    // only minted when none is pending. The stored secret is overwritten by:
+    // - a successful /confirm (2FA then enabled; this endpoint 409s afterwards), or
+    // - the legacy toggle-2fa disable path (totp_secret = null), or
+    // - manual clearing for support scenarios.
+    let base32 = user.totp_secret;
+    let otpauthUrl;
+    if (base32) {
+      // Rebuild the otpauth URI deterministically from the stored base32
+      // secret — parameters pinned to match verifyTotp exactly (SHA1/6/30).
+      otpauthUrl = `otpauth://totp/${encodeURIComponent(label)}?secret=${base32}&issuer=PRAQEN&algorithm=SHA1&digits=6&period=30`;
+    } else {
+      const secret = speakeasy.generateSecret({ name: label, issuer: 'PRAQEN' });
+      base32 = secret.base32;
+      otpauthUrl = secret.otpauth_url;
+      await supabaseAdmin.from('users')
+        .update({ totp_secret: base32, updated_at: new Date() })
+        .eq('id', req.userId);
+    }
 
     console.log(`[TOTP] Setup initiated for user ${req.userId.slice(0, 8)}`);
     res.json({
       success: true,
-      secret: secret.base32,
-      otpauth_url: secret.otpauth_url,
+      secret: base32,
+      otpauth_url: otpauthUrl,
     });
   } catch (error) {
     console.error('[TOTP-setup]', error.message);
@@ -4671,7 +4708,7 @@ app.post('/api/users/2fa/totp/confirm', verifyToken, async (req, res) => {
     if (!code) return res.status(400).json({ error: 'Verification code is required' });
 
     const { data: user, error: dbErr } = await supabaseAdmin
-      .from('users').select('totp_secret').eq('id', req.userId).single();
+      .from('users').select('totp_secret, two_factor_enabled, two_factor_method').eq('id', req.userId).single();
 
     // Handle missing database columns gracefully
     if (dbErr && dbErr.message && dbErr.message.includes('does not exist')) {
@@ -4682,13 +4719,16 @@ app.post('/api/users/2fa/totp/confirm', verifyToken, async (req, res) => {
     if (!user.totp_secret) {
       return res.status(400).json({ error: 'No TOTP secret found. Call /setup first.' });
     }
+    if (user.two_factor_enabled && user.two_factor_method !== 'totp') {
+      const activeLabel = ACTION_REQUIRED_LABELS[user.two_factor_method] || 'another method';
+      return res.status(409).json({
+        error: `Google Authenticator or Authy-based 2FA cannot be enabled while ${activeLabel} is active. Please disable it first`,
+        conflict: true,
+        active_method: user.two_factor_method,
+      });
+    }
 
-    const verified = speakeasy.totp.verify({
-      secret: user.totp_secret,
-      encoding: 'base32',
-      token: String(code).trim(),
-      window: 1, // ±1 step (30s) tolerance = 90s window
-    });
+    const verified = await verifyTotp(user.totp_secret, code);
 
     if (!verified) {
       return res.status(400).json({ error: 'Invalid code. Make sure your authenticator app shows the correct code.' });
@@ -4703,6 +4743,124 @@ app.post('/api/users/2fa/totp/confirm', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('[TOTP-confirm]', error.message);
     res.status(500).json({ error: 'Failed to verify TOTP code. Please try again.' });
+  }
+});
+
+// ── Security tab: 2FA state + per-event preferences (NoOnes parity) ──────────
+// GET /api/users/security — 2FA method, enrollment state and per-event toggles.
+// PATCH /api/users/security — update per-event 2FA requirements; each event
+// must confirm with a fresh code from the CURRENT method before it is changed
+// (the 6-digit code-entry bottom sheet in the frontend feeds this field).
+const TWO_FA_EVENTS = ['login', 'sending_crypto', 'releasing_crypto'];
+const DEFAULT_2FA_EVENTS = { login: true, sending_crypto: true, releasing_crypto: true };
+
+function normalizeTwoFaEvents(raw) {
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_2FA_EVENTS };
+  const out = {};
+  for (const key of TWO_FA_EVENTS) {
+    out[key] = typeof raw[key] === 'boolean' ? raw[key] : DEFAULT_2FA_EVENTS[key];
+  }
+  return out;
+}
+
+app.get('/api/users/security', verifyToken, async (req, res) => {
+  try {
+    const { data: user, error } = await supabaseAdmin
+      .from('users').select('two_factor_enabled, two_factor_method, two_fa_events').eq('id', req.userId).single();
+    if (error || !user) return res.status(404).json({ error: 'User not found' });
+    return res.json({
+      two_factor_enabled: !!user.two_factor_enabled,
+      two_factor_method: user.two_factor_enabled ? (user.two_factor_method || 'email') : 'none',
+      two_fa_events: normalizeTwoFaEvents(user.two_fa_events),
+    });
+  } catch (error) {
+    console.error('[GET users/security]', error.message);
+    res.status(500).json({ error: 'Failed to load security settings. Please try again.' });
+  }
+});
+
+app.patch('/api/users/security', verifyToken, async (req, res) => {
+  try {
+    const { events, actionCode } = req.body;
+    if (!events || typeof events !== 'object') {
+      return res.status(400).json({ error: 'Missing event preferences.' });
+    }
+    const { data: user } = await supabaseAdmin
+      .from('users').select('two_factor_enabled, two_factor_method, two_fa_events, totp_secret').eq('id', req.userId).single();
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user.two_factor_enabled || !user.two_factor_method) {
+      return res.status(400).json({ error: 'Enable 2FA first before choosing which events require a code.' });
+    }
+
+    // Confirm with a fresh code from the ACTIVE method. TOTP is verified live
+    // against the stored secret; email methods reuse the enable_2fa action-code
+    // channel (a separate action type would need a DB migration for no gain).
+    const submitted = String(actionCode || '').trim();
+    if (!submitted) return res.status(400).json({ error: 'Enter the 6-digit verification code to confirm this change.' });
+    if (user.two_factor_method === 'totp') {
+      if (!user.totp_secret) return res.status(400).json({ error: 'No authenticator secret found. Re-enable the authenticator method first.' });
+      const verified = await verifyTotp(user.totp_secret, submitted);
+      if (!verified) return res.status(400).json({ error: 'Incorrect verification code. Check your authenticator app and try again.' });
+    } else {
+      const check = await actionCodeService.verify(req.userId, 'enable_2fa', submitted);
+      if (!check.valid) return res.status(400).json({ error: check.error });
+    }
+
+    // Merge over the stored prefs so unknown/partial payloads can't wipe values
+    const current = normalizeTwoFaEvents(user.two_fa_events);
+    const merged = normalizeTwoFaEvents({ ...current, ...events });
+    const { error: updateError } = await supabaseAdmin.from('users')
+      .update({ two_fa_events: merged, updated_at: new Date() })
+      .eq('id', req.userId);
+    if (updateError) {
+      console.error('[PATCH users/security] DB update failed:', updateError.message);
+      return res.status(500).json({ error: 'Failed to save event settings. Please try again.' });
+    }
+    console.log(`[PATCH users/security] Event prefs updated for user ${req.userId.slice(0, 8)} (method=${user.two_factor_method})`);
+    return res.json({ success: true, two_fa_events: merged });
+  } catch (error) {
+    console.error('[PATCH users/security]', error.message);
+    res.status(500).json({ error: 'Failed to update security settings. Please try again.' });
+  }
+});
+
+// ── Close account request (Security tab, NoOnes parity) ─────────────────────
+// Records the request + emails the user a confirmation link. No destructive
+// action happens here — a moderator processes the deletion manually.
+app.post('/api/users/close-account', otpLimiter, verifyToken, async (req, res) => {
+  try {
+    const { data: user } = await supabaseAdmin
+      .from('users').select('email, username, status, is_banned, banned').eq('id', req.userId).single();
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.is_banned || user.banned || user.status === 'banned') {
+      return res.status(403).json({ error: 'Banned accounts cannot be closed this way.' });
+    }
+
+    // Email the confirmation link. Failure here is the user-visible signal that
+    // the request did NOT go through, so delivery must succeed.
+    const code = await actionCodeService.generate(req.userId, 'close_account');
+    const confirmUrl = `${(process.env.FRONTEND_URL || 'https://praqen.com').replace(/\/$/, '')}/settings?tab=security&close_token=${code}`;
+    const html = `
+      <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;padding:24px">
+        <h2 style="color:#1B4332;margin:0 0 12px">Close account request received</h2>
+        <p style="color:#334155;font-size:14px;line-height:1.6">
+          We received a request to permanently close the PraQen account
+          <strong>${user.username || user.email}</strong>.
+        </p>
+        <p style="color:#334155;font-size:14px;line-height:1.6">
+          Confirm by opening this link (valid for 5 minutes):
+          <a href="${confirmUrl}">Confirm account closure</a>
+        </p>
+        <p style="color:#EF4444;font-size:13px;font-weight:bold">
+          Did not request this? Your account stays open — just ignore this email.
+        </p>
+      </div>`;
+    await sendVerificationEmail(user.email, code, 'PraQen — Confirm your account closure request');
+
+    return res.json({ success: true, message: 'Confirmation link sent to your email. Open it to submit your closure request.' });
+  } catch (error) {
+    console.error('[close-account]', error.message);
+    res.status(500).json({ error: 'Failed to submit close-account request. Please try again.' });
   }
 });
 

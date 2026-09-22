@@ -15,7 +15,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
 
-const VALID_ACTIONS = ['release_btc', 'send_btc', 'send_usdt', 'enable_2fa'];
+const VALID_ACTIONS = ['release_btc', 'send_btc', 'send_usdt', 'enable_2fa', 'close_account'];
 const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 async function generate(userId, action) {
