@@ -110,9 +110,18 @@ async function updateOfferStatus(userId) {
     // A banned/frozen seller's listings must stay PAUSED no matter what their balance
     // does — this hook fires on every deposit, and without this check a restricted
     // seller could simply top up their wallet to have their offers silently reactivated.
+    // Same reasoning extends to activity: a seller who's been gone 2+ days (and had
+    // their listing paused for it by deactivateStaleOffers) must not have it silently
+    // reactivated just because their wallet balance happens to clear $10 — reactivation
+    // needs BOTH a healthy balance AND a present seller, not balance alone. Confirmed
+    // live 2026-09-21: fast_and_fair's BUY_GIFT_CARD listings kept reappearing every
+    // 10 minutes via this exact path despite being 9 days inactive and manually paused.
     const { data: sellerUser } = await supabaseAdmin
-      .from('users').select('account_status').eq('id', userId).maybeSingle();
+      .from('users').select('account_status, last_seen_at, last_login').eq('id', userId).maybeSingle();
     const isBanned = ['banned', 'frozen'].includes(String(sellerUser?.account_status || '').trim().toLowerCase());
+    const TWO_DAYS_AGO = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const lastActive = sellerUser?.last_seen_at || sellerUser?.last_login || null;
+    const isRecentlyActive = !!lastActive && new Date(lastActive) >= TWO_DAYS_AGO;
 
     const { data: offers } = await supabaseAdmin
       .from('listings')
@@ -125,7 +134,7 @@ async function updateOfferStatus(userId) {
 
     const balUsdFor = (o) => o.asset === 'USDT' ? usdtBalUsd : btcBalUsd;
     const toPause      = offers.filter(o => o.status === 'ACTIVE'  && balUsdFor(o) < MIN_USD).map(o => o.id);
-    const toReactivate = isBanned ? [] : offers.filter(o => o.status === 'PAUSED'  && balUsdFor(o) >= MIN_USD && isListingMarginInBounds(o.listing_type, o.margin)).map(o => o.id);
+    const toReactivate = (isBanned || !isRecentlyActive) ? [] : offers.filter(o => o.status === 'PAUSED'  && balUsdFor(o) >= MIN_USD && isListingMarginInBounds(o.listing_type, o.margin)).map(o => o.id);
 
     if (toPause.length > 0) {
       await supabaseAdmin.from('listings')
@@ -193,10 +202,18 @@ async function syncAllOfferStatuses() {
       .from('wallets').select('user_id, balance_btc, balance_usdt').in('user_id', sellerIds);
 
     // Banned sellers must never come back through this balance-based sweep — same reasoning
-    // as reactivateReturnedSellers() below, just missing here until now.
+    // as reactivateReturnedSellers() below, just missing here until now. Same for activity:
+    // a seller inactive 2+ days must not be reactivated by balance alone — see the matching
+    // comment in updateOfferStatus() above for why (confirmed live 2026-09-21).
     const { data: sellerUsers } = await supabaseAdmin
-      .from('users').select('id, account_status').in('id', sellerIds);
+      .from('users').select('id, account_status, last_seen_at, last_login').in('id', sellerIds);
     const bannedSellerIds = new Set((sellerUsers || []).filter(u => ['banned', 'frozen'].includes(String(u.account_status || '').trim().toLowerCase())).map(u => u.id));
+    const TWO_DAYS_AGO = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const recentlyActiveSellerIds = new Set(
+      (sellerUsers || [])
+        .filter(u => { const la = u.last_seen_at || u.last_login; return !!la && new Date(la) >= TWO_DAYS_AGO; })
+        .map(u => u.id)
+    );
 
     const balMap = {};
     const usdtBalMap = {};
@@ -219,7 +236,7 @@ async function syncAllOfferStatuses() {
       // Pause if balance < $10 or can't meet the offer's own minimum
       const cantFulfil = balUsd < MIN_USD || (minUsd > 0 && balUsd < minUsd);
       if (listing.status === 'ACTIVE'  && cantFulfil)  toPause.push(listing.id);
-      if (listing.status === 'PAUSED'  && !cantFulfil && !bannedSellerIds.has(listing.seller_id) && isListingMarginInBounds(listing.listing_type, listing.margin)) toReactivate.push(listing.id);
+      if (listing.status === 'PAUSED'  && !cantFulfil && !bannedSellerIds.has(listing.seller_id) && recentlyActiveSellerIds.has(listing.seller_id) && isListingMarginInBounds(listing.listing_type, listing.margin)) toReactivate.push(listing.id);
 
       // NOTE: we intentionally do NOT permanently cap max_limit_usd/max_limit_local to the
       // live balance here. That used to clamp max down (with a $10 floor) but never restore
@@ -306,12 +323,12 @@ async function sweepGiftCardVendorSafety() {
 }
 
 /**
- * Deactivates offers from sellers who haven't been active for 10+ days.
+ * Deactivates offers from sellers who haven't been active for 2+ days.
  * Runs at startup and every 6 hours. Sends one in-app notification per seller.
  */
 async function deactivateStaleOffers() {
   try {
-    const TEN_DAYS_AGO = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+    const TWO_DAYS_AGO = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
 
     // All currently ACTIVE listings
     const { data: activeListings, error: listErr } = await supabaseAdmin
@@ -332,18 +349,18 @@ async function deactivateStaleOffers() {
 
     if (usersErr || !sellers?.length) return;
 
-    // Sellers where BOTH last_seen_at and last_login are older than 10 days (or null)
+    // Sellers where BOTH last_seen_at and last_login are older than 2 days (or null)
     const staleSellers = new Set(
       sellers
         .filter(s => {
           const lastActive = s.last_seen_at || s.last_login;
-          return !lastActive || new Date(lastActive) < new Date(TEN_DAYS_AGO);
+          return !lastActive || new Date(lastActive) < new Date(TWO_DAYS_AGO);
         })
         .map(s => s.id)
     );
 
     if (staleSellers.size === 0) {
-      console.log('[deactivateStaleOffers] ✅ No stale sellers — all sellers active within 10 days.');
+      console.log('[deactivateStaleOffers] ✅ No stale sellers — all sellers active within 2 days.');
       return;
     }
 
@@ -371,7 +388,7 @@ async function deactivateStaleOffers() {
         user_id:    l.seller_id,
         type:       'offer_paused',
         title:      `⏸ Your offer${plural ? 's have' : ' has'} been paused`,
-        message:    `Your ${plural ? count + ' offers were' : 'offer was'} automatically paused — you haven't been active on PRAQEN for over 10 days. Visit My Offers to reactivate and start receiving trade requests again.`,
+        message:    `Your ${plural ? count + ' offers were' : 'offer was'} automatically paused — you haven't been active on PRAQEN for over 2 days. Visit My Offers to reactivate and start receiving trade requests again.`,
         action:     '/my-listings',
         is_read:    false,
         created_at: new Date().toISOString(),
@@ -389,7 +406,7 @@ async function deactivateStaleOffers() {
 
 /**
  * Companion to deactivateStaleOffers — that function pauses any listing once its
- * seller goes 10+ days quiet, but nothing ever reversed it. A seller who logs back
+ * seller goes 2+ days quiet, but nothing ever reversed it. A seller who logs back
  * in the very next day stayed permanently hidden from the market with no self-service
  * way back (unlike the balance-based pause above, which reactivates automatically the
  * moment the wallet is topped up). Found via a live audit: 24 sellers had 50 paused
@@ -398,14 +415,14 @@ async function deactivateStaleOffers() {
  *
  * There's no stored reason on `listings` distinguishing "auto-paused for staleness"
  * from "seller paused this on purpose" — so this only reactivates a PAUSED listing
- * once its seller is demonstrably active again (seen within the last 10 days), and
+ * once its seller is demonstrably active again (seen within the last 2 days), and
  * for BTC/USDT-required types, only if their wallet still clears the same $10 bar
  * every other reactivation path already enforces. A seller who truly wants a listing
  * to stay off is one click away from pausing it again from My Listings.
  */
 async function reactivateReturnedSellers() {
   try {
-    const TEN_DAYS_AGO = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+    const TWO_DAYS_AGO = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
 
     const { data: pausedListings, error } = await supabaseAdmin
       .from('listings')
@@ -426,7 +443,7 @@ async function reactivateReturnedSellers() {
         .filter(s => !['banned', 'frozen'].includes(String(s.account_status || '').trim().toLowerCase()))
         .filter(s => {
           const lastActive = s.last_seen_at || s.last_login;
-          return lastActive && new Date(lastActive) >= new Date(TEN_DAYS_AGO);
+          return lastActive && new Date(lastActive) >= new Date(TWO_DAYS_AGO);
         })
         .map(s => s.id)
     );
@@ -437,7 +454,7 @@ async function reactivateReturnedSellers() {
 
     // A listing paused for an out-of-bounds margin must not come back just because
     // its seller logged back in — that pause has nothing to do with activity or
-    // balance, and "came back within 10 days" is not a margin review.
+    // balance, and "came back within 2 days" is not a margin review.
     const marginOk = candidates.filter(l => isListingMarginInBounds(l.listing_type, l.margin));
 
     const nonGated = marginOk.filter(l => !BTC_REQUIRED_TYPES.includes(l.listing_type));
@@ -467,7 +484,7 @@ async function reactivateReturnedSellers() {
     await supabaseAdmin.from('listings')
       .update({ status: 'ACTIVE', updated_at: new Date().toISOString() })
       .in('id', toReactivate);
-    console.log(`[reactivateReturnedSellers] ✅ Reactivated ${toReactivate.length} listing(s) for sellers who came back within 10 days.`);
+    console.log(`[reactivateReturnedSellers] ✅ Reactivated ${toReactivate.length} listing(s) for sellers who came back within 2 days.`);
     _bustCache();
   } catch (err) {
     console.error('[reactivateReturnedSellers]', err.message);

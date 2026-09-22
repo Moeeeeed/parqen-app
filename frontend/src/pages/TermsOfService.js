@@ -8,7 +8,7 @@ const C = {
   g600: '#475569', g700: '#334155', g800: '#1E293B',
 };
 
-const LAST_UPDATED = 'July 25, 2026';
+const LAST_UPDATED = 'September 22, 2026';
 
 function Section({ title, children }) {
   return (

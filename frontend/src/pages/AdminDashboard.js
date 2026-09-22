@@ -275,7 +275,9 @@ function AdminLogin({ onAuth }) {
 
   const finishLogin = (token, user) => {
     if (!token) throw new Error('No token returned');
-    const isPermitted = user?.is_admin || user?.is_ceo || user?.is_moderator || user?.email === 'admin@praqen.com' || user?.email === 'support@praqen.com';
+    // Real admin only — is_ceo/is_moderator deliberately excluded so neither role can
+    // reach the Admin Dashboard's user-data/stats/monitoring surface by URL alone.
+    const isPermitted = user?.is_admin || user?.email === 'admin@praqen.com' || user?.email === 'support@praqen.com';
     if (!isPermitted) {
       throw new Error('This account does not have admin access');
     }
