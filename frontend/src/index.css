@@ -96,6 +96,17 @@ label {
   }
 }
 
+/* ── Hide browser-native password reveal icon ───────────────────── */
+/* Edge (Chromium) injects its own eye/reveal icon into every
+   input[type="password"] once text is typed, which overlaps the app's
+   custom show/hide eye toggle (e.g. duplicate eye in the Change
+   Password modal). Hide the native one; Safari/Firefox/Chrome don't
+   inject one, so this is a no-op elsewhere. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+
 /* ── Safe area inset utilities (iPhone X+ notch/home bar) ───────── */
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom);
