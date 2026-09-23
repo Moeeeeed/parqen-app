@@ -393,14 +393,17 @@ function GCCardSkeleton() {
   );
 }
 
-function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
+function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType, liveSeenAt, userBuyAmt }) {
   const { rates: USD_RATES } = useRates();
   const u = getUser(listing.users);
-  const [seen, setSeen] = useState(() => getLastSeen(u));
+  const [seen, setSeen] = useState(() => getLastSeen({ ...u, last_seen_at: liveSeenAt || u.last_seen_at }));
   useEffect(() => {
-    const id = setInterval(() => setSeen(getLastSeen(u)), 30000);
+    setSeen(getLastSeen({ ...u, last_seen_at: liveSeenAt || u.last_seen_at }));
+  }, [liveSeenAt]);
+  useEffect(() => {
+    const id = setInterval(() => setSeen(getLastSeen({ ...u, last_seen_at: liveSeenAt || u.last_seen_at })), 30000);
     return () => clearInterval(id);
-  }, []);
+  }, [liveSeenAt]);
   const trades = getTrades(u);
   const brand = getBrand(listing);
   const fv = getFaceVal(listing);
@@ -417,18 +420,19 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   const cardRange = getCardRange(listing);
 
   // Fallback local starting value if range not found
-  const localVal = cardRange
+  const localVal = (userBuyAmt && parseFloat(userBuyAmt) > 0) ? parseFloat(userBuyAmt) : (cardRange
     ? (cardRange[0]?.isRange ? cardRange[0].min : cardRange[0])
-    : (listing.min_limit_local || listing.min_amount || fv || 0);
+    : (listing.min_limit_local || listing.min_amount || fv || 0));
 
   // Card-value side of the trade — always the gift card's face value, regardless of which direction this listing runs.
   const cardSide = (() => {
+    if (userBuyAmt && parseFloat(userBuyAmt) > 0) return { val: `${sym}${fmt(localVal)}`, sub: '' };
     if (!cardRange) {
-      return { val: localVal > 0 ? `${sym}${fmt(localVal)}` : 'Flexible', sub: localVal > 0 ? `${cur} starting` : cur };
+      return { val: localVal > 0 ? `${sym}${fmt(localVal)}` : 'Flexible', sub: '' };
     }
-    if (cardRange[0]?.isRange) return { val: `${sym}${fmt(cardRange[0].min)}`, sub: `${cur} starting` };
-    if (cardRange.length === 1) return { val: `${sym}${fmt(cardRange[0])}`, sub: `${cur} card` };
-    return { val: `${sym}${fmt(cardRange[0])}`, sub: `${cur} starting` };
+    if (cardRange[0]?.isRange) return { val: `${sym}${fmt(cardRange[0].min)}`, sub: '' };
+    if (cardRange.length === 1) return { val: `${sym}${fmt(cardRange[0])}`, sub: '' };
+    return { val: `${sym}${fmt(cardRange[0])}`, sub: '' };
   })();
 
   // Convert local currency value into USD equivalent for crypto calculation
@@ -440,248 +444,130 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType }) {
   const cryptoSide = { val: `${fBtc(btcOut)} ${assetLabel}`, sub: `≈ $${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}` };
   const youGive    = viewerIsBuyingCard ? cardSide   : cryptoSide;
   const youReceive = viewerIsBuyingCard ? cryptoSide : cardSide;
+  const giveLabel = viewerIsBuyingCard ? `Pay ${brand}` : `Pay ${assetLabel}`;
+  const receiveLabel = viewerIsBuyingCard ? `Receive ${assetLabel}` : `Receive ${brand}`;
 
-  const rangeLabel = !cardRange ? (localVal > 0 ? `${sym}${fmt(localVal)}+` : 'Any value')
-    : cardRange[0]?.isRange ? `${sym}${fmt(cardRange[0].min)} – ${sym}${fmt(cardRange[0].max)}`
-    : cardRange.map(v => `${sym}${fmt(v)}`).join(' | ');
+  const minLocal = listing.min_limit_local || (listing.min_limit_usd ? listing.min_limit_usd*usdRate : 100*usdRate);
+  const maxLocal = listing.max_limit_local || (listing.max_limit_usd ? listing.max_limit_usd*usdRate : 1000*usdRate);
 
   const pos = parseInt(u.positive_feedback || 0);
   const neg = parseInt(u.negative_feedback || 0);
+  const total = pos + neg;
+  const trust = total > 0 ? Math.round(pos / total * 100) : trades > 0 ? 100 : 0;
 
   const brandLabel = /card/i.test(brand) ? brand.toUpperCase() : `${brand.toUpperCase()} CARD`;
   const ft = featuredType ? FEATURED[featuredType] : null;
 
   return (
-    <div className={`rounded-2xl overflow-hidden transition-all w-full hover:-translate-y-0.5 ${ft ? '' : 'shadow-[0_1px_2px_rgba(27,67,50,0.04),0_10px_28px_-14px_rgba(27,67,50,0.18)] hover:shadow-[0_2px_4px_rgba(27,67,50,0.06),0_20px_44px_-16px_rgba(27,67,50,0.28)]'}`}
-      style={{
-        background: ft?.bgGradient || (ft ? ft.bg : '#fff'),
-        border: ft ? `2.5px solid ${ft.border}` : `1px solid ${C.g200}`,
-        boxShadow: ft ? `0 0 0 3px ${ft.glow}, 0 10px 36px ${ft.glow}` : undefined,
-        animation: ft?.pulse ? (featuredType === 'fast_responder' ? 'fastResponderPulse 2.5s ease-in-out infinite' : 'featuredPulse 2.5s ease-in-out infinite') : undefined,
-      }}>
-
-      {/* ─ Featured ribbon ───────────────────────────────────────── */}
+    <div className={`w-full bg-white border transition-all ${ft ? '' : 'border-gray-200 shadow-sm hover:shadow-md'} rounded-xl overflow-hidden`}
+        style={{
+          borderColor: ft ? ft.border : undefined,
+          boxShadow: ft ? `0 0 0 1px ${ft.border}, 0 4px 20px ${ft.glow}` : undefined,
+        }}>
       {ft && (
-        <div style={{ position: 'relative', overflow: 'hidden' }}>
-          <div className="flex items-center justify-center gap-2"
-            style={{ background: ft.ribbon, padding: '10px 16px' }}>
-            <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '0.08em', color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>
-              {ft.tag}
-            </span>
-          </div>
-          {ft.pulse && (
-            <div style={{
-              position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-              background: 'linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.30) 50%,transparent 100%)',
-              animation: 'shimmer 2.4s linear infinite',
-              pointerEvents: 'none',
-            }} />
-          )}
+        <div className="flex items-center justify-center gap-1.5 py-1.5 px-3" style={{background: ft.ribbon}}>
+          <span className="text-[10px] font-black text-white tracking-widest">{ft.tag}</span>
         </div>
       )}
 
-      {/* ─ Seller row ────────────────────────────────────────────── */}
-      <div className="px-3.5 pt-3 pb-2">
-        <div className="flex items-start justify-between gap-2">
-          {/* Left section: Avatar + Username & Like/Dislike/Trades */}
-          <div className="flex items-start gap-2.5 min-w-0 flex-1">
-            <div className="relative flex-shrink-0">
-              <button onClick={onViewSeller}>
-                <Avatar user={u} size={40} radius="rounded-xl" />
-              </button>
-              {seen.online && (
-                <span className="absolute -bottom-0.5 -right-0.5">
-                  <span className="absolute inline-flex w-3 h-3 rounded-full animate-ping"
-                    style={{ backgroundColor: C.online, opacity: 0.6 }} />
-                  <span className="relative inline-flex rounded-full w-3 h-3 border-2 border-white"
-                    style={{ backgroundColor: C.online }} />
-                </span>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-0.5 items-start min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <CountryFlag
-                  countryCode={u?.country_code || u?.country || u?.location || null}
-                  className="w-4 h-3 rounded-sm flex-shrink-0" />
-                <button onClick={onViewSeller}
-                  className="font-black text-sm hover:underline leading-tight truncate min-w-0"
-                  style={{ color: C.g800 }}>
-                  {getDisplayName(u) || 'Seller'}
-                </button>
-                {isVerified(u) && <BadgeCheck size={14} style={{ color: '#3B82F6', flexShrink: 0 }} />}
-                {listing.listing_type === 'SELL_GIFT_CARD' && listing.seller_has_deposit && (
-                  <span title="Seller has a $200 security deposit locked" className="inline-flex items-center gap-0.5 flex-shrink-0"
-                    style={{ color: '#16A34A' }}>
-                    <ShieldCheck size={14} />
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                <span className="inline-flex items-center gap-0.5 font-bold flex-shrink-0"
-                  style={{ color: '#16A34A', fontSize: '11px' }}>
-                  <ThumbsUp size={10} strokeWidth={2.5} />{fmt(pos)}
-                </span>
-                <span className="inline-flex items-center gap-0.5 font-bold flex-shrink-0"
-                  style={{ color: '#EF4444', fontSize: '11px' }}>
-                  <ThumbsDown size={10} strokeWidth={2.5} />{fmt(neg)}
-                </span>
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold flex-shrink-0" style={{ color: C.g500 }}>
-                  <Repeat2 size={10} strokeWidth={2.5} style={{ color: C.g400 }} />
-                  {fmt(trades)} trades
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Right section: Stacked BadgeChip & Active status pill */}
-          <div className="flex flex-col gap-1 items-end flex-shrink-0 pt-0.5">
-            <div className="flex items-center gap-1">
-              <BadgeChip user={u} size="xs" />
-              <SafetyBadge user={u} size="xs" />
-            </div>
-            <div>
-              {seen.online ? (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold flex-shrink-0"
-                  style={{ backgroundColor: '#F0FDF4', color: C.online }}>
-                  <span className="relative flex w-1.5 h-1.5 flex-shrink-0">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: C.online }} />
-                    <span className="relative inline-flex rounded-full w-1.5 h-1.5" style={{ backgroundColor: C.online }} />
-                  </span>
-                  Active
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium flex-shrink-0"
-                  style={{ backgroundColor: C.g100, color: C.g400 }}>
-                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: C.g300 }} />
-                  {seen.label}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ─ Divider ───────────────────────────────────────────────── */}
-      <div style={{ height: 1, backgroundColor: ft ? ft.divider : C.g100 }} />
-
-      {/* ─ You Give / You Receive ────────────────────────────────── */}
-      <div className="px-3.5 py-2.5 grid grid-cols-2 gap-2.5">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-wide mb-0.5" style={{ color: ft ? ft.labelColor : C.g500 }}>You give</p>
-          <p className="text-base font-bold leading-tight" style={{ color: C.g800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '4px' }}>
-            {youGive.val}
-          </p>
-          <p className="text-[10px] font-semibold mt-0.5" style={{ color: C.g500 }}>{youGive.sub}</p>
-        </div>
-        <div className="border-l pl-3" style={{ borderColor: ft ? ft.divider : C.g100 }}>
-          <p className="text-[11px] font-bold uppercase tracking-wide mb-0.5" style={{ color: ft ? ft.labelColor : C.g500 }}>You receive</p>
-          <p className="text-base font-bold leading-tight" style={{ color: C.g800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '4px' }}>
-            {youReceive.val}
-          </p>
-          <p className="text-[10px] font-semibold mt-0.5" style={{ color: C.g500 }}>{youReceive.sub}</p>
-        </div>
-      </div>
-
-      {/* Brand + card type pills above the divider line */}
-      <div className="px-3.5 pt-1 pb-2 flex items-center gap-1.5 flex-wrap">
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold"
-          style={{ backgroundColor: 'rgba(13,148,136,0.08)', color: C.accent, border: '1px solid rgba(13,148,136,0.15)' }}>
-          {brandLabel}
-        </span>
-        {(cardType === 'physical' || cardType === 'both') && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold" style={{ backgroundColor: '#DCFCE7', color: '#166534' }}>
-            Physical
-          </span>
-        )}
-        {(cardType === 'ecode' || cardType === 'both') && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold" style={{ backgroundColor: '#EDE9FE', color: '#5B21B6' }}>
-            E-Code
-          </span>
-        )}
-        {listing.listing_type === 'SELL_GIFT_CARD' && listing.seller_has_deposit && (
-          <span title="Seller has locked a $200 security deposit — PRAQEN-approved"
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold"
-            style={{ backgroundColor: '#DCFCE7', color: '#166534', border: '1px solid rgba(22,101,52,0.2)' }}>
-            <ShieldCheck size={12} /> S. Deposit
-          </span>
-        )}
-      </div>
-
-      <div className="px-3.5 pb-2.5" style={{ borderTop: `1px solid ${ft ? ft.divider : C.g100}` }}>
-        {/* ── Rate / % / Range — grey info board ───── */}
-        <div className="group relative mt-1">
-          <div className="rounded-xl px-2.5 py-2 flex items-center justify-between transition-colors"
-            style={{ backgroundColor: C.g100, border: `1px solid ${C.g200}` }}>
-
-            <div className="min-w-0">
-              <p className="text-xs font-semibold" style={{ color: C.g600 }}>
-                Rate:&nbsp;<span style={{ color: C.g800, fontWeight: 700 }}>{fmt(rateLocal)}</span>&nbsp;<span style={{ color: C.g500, fontSize: '0.85em' }}>{cur}</span>
-              </p>
-              <p className="text-xs font-semibold mt-1 truncate" style={{ color: C.g600, maxWidth: 190 }}>
-                Range:&nbsp;<span style={{ color: C.g700, fontWeight: 700 }}>{rangeLabel}</span>
-              </p>
-            </div>
-
-            <div className="flex items-center flex-shrink-0 ml-4 mr-6">
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[11px] font-black"
-                style={{
-                  backgroundColor: margin < 0 ? 'rgba(16,185,129,0.14)' : margin > 0 ? 'rgba(239,68,68,0.12)' : '#E2E8F0',
-                  color: margin < 0 ? '#16A34A' : margin > 0 ? '#EF4444' : C.g500,
-                  border: margin < 0 ? '1px solid rgba(16,185,129,0.25)' : margin > 0 ? '1px solid rgba(239,68,68,0.25)' : `1px solid ${C.g300}`,
-                }}>
-                {margin === 0 ? 'Market' : `${margin > 0 ? '+' : ''}${margin}%`}
-              </span>
-            </div>
-          </div>
-
-          {/* Tooltip — visible on hover */}
-          <div className="absolute bottom-full left-0 right-0 mb-3 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity"
-            style={{ zIndex: 20 }}>
-            <div className="rounded-xl shadow-2xl border p-3 text-xs"
-              style={{ backgroundColor: '#1E293B', borderColor: '#334155', color: '#E2E8F0', position: 'relative' }}>
-              <p className="font-black text-[10px] uppercase tracking-wider mb-2" style={{ color: '#64748B' }}>Offer Details</p>
-              <div className="flex items-center justify-between mb-1.5">
-                <span style={{ color: '#94A3B8' }}>Rate</span>
-                <span className="font-bold" style={{ color: '#F0FAF5' }}>{fmt(rateLocal)} {cur}</span>
-              </div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span style={{ color: '#94A3B8' }}>Margin</span>
-                <span className="font-bold"
-                  style={{ color: margin < 0 ? '#4ADE80' : margin > 0 ? '#F87171' : '#94A3B8' }}>
-                  {margin === 0 ? 'Market rate' : `${margin > 0 ? '+' : ''}${margin}%`}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span style={{ color: '#94A3B8' }}>Range</span>
-                <span className="font-bold" style={{ color: '#F0FAF5' }}>{rangeLabel}</span>
-              </div>
-              <div style={{ position: 'absolute', bottom: '-5px', left: '20px', width: 10, height: 10, backgroundColor: '#1E293B', border: '1px solid #334155', borderTop: 'none', borderLeft: 'none', transform: 'rotate(45deg)' }} />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ─ Actions ───────────────────────────────────────────────── */}
-      <div className="px-3.5 pb-3 flex items-center gap-2">
-        <button onClick={onViewSeller}
-          className="w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 transition"
-          style={{
-            borderColor: ft ? ft.border : C.g200,
-            backgroundColor: ft ? `${ft.border}12` : 'transparent',
-          }}>
-          <Info size={14} style={{ color: ft ? ft.border : C.g400 }} />
-        </button>
-        <div style={{ position: 'relative', flex: 1 }}>
-          <button onClick={onTrade}
-            className="w-full h-9 rounded-xl text-white font-black text-sm flex items-center justify-center gap-1.5 hover:opacity-90 active:scale-[0.98] transition"
-            style={{
-              background: ft ? ft.btnGradient : C.forest,
-              boxShadow: ft ? ft.btnShadow : undefined,
-            }}>
-            {viewerIsBuyingCard ? 'BUY' : 'SELL'} <ArrowRight size={14} />
+      {/* ═══ DESKTOP ROW (lg+) ═══ */}
+      <div className="hidden lg:flex items-center px-4 py-4 gap-6">
+        {/* Col 1: User Info */}
+        <div className="flex items-center gap-3 w-[280px] flex-shrink-0">
+          <button onClick={onViewSeller} className="flex-shrink-0 relative">
+            <Avatar user={u} size={48} radius="rounded-lg"/>
+            <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white"
+                style={{backgroundColor: seen.online ? C.online : C.g400}}/>
           </button>
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <CountryFlag countryCode={u?.country_code || u?.country || u?.location} className="w-4 h-3 rounded-sm shadow-sm" />
+              <button onClick={onViewSeller} className="font-black text-[15px] hover:underline truncate" style={{color:'#111827',textUnderlineOffset:'2px'}}>
+                {getDisplayName(u) || 'Seller'}
+              </button>
+              <BadgeChip user={u} size="xs" />
+            </div>
+            <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 font-semibold">
+              <div className="flex items-center gap-1"><ThumbsUp size={13} className="text-gray-400" strokeWidth={2.5}/><span className="text-gray-700">{trust}%</span></div>
+              <span className="text-gray-700">{fmt(trades)} Trades</span>
+              <div className="flex items-center gap-1">
+                <span className={`w-1.5 h-1.5 rounded-full ${seen.online?'bg-emerald-500':'bg-gray-400'}`}/>
+                <span className={seen.online?"text-emerald-600 font-bold":""}>{seen.online?'Active':seen.label}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        {/* Col 2: Price + Range */}
+        <div className="flex flex-col flex-1 min-w-[200px]">
+          <div className="flex items-center gap-1.5">
+            <div className="w-[18px] h-[18px] rounded-full bg-[#F7931A] text-white flex items-center justify-center text-[10px] font-black shadow-sm">₿</div>
+            <span className="font-black text-[16px] text-gray-900">{fmt(rateLocal,2)} {cur}</span>
+            <span className="px-1.5 py-0.5 rounded text-[11px] font-black tracking-wide" style={{backgroundColor:margin<0?'#10B981':margin>0?'#EF4444':'#64748B',color:'#fff'}}>
+              {margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}
+            </span>
+          </div>
+          <span className="text-[13px] font-semibold text-gray-500 mt-1">{fmt(minLocal)} - {fmt(maxLocal)} {cur}</span>
+        </div>
+        {/* Col 3: You Give */}
+        <div className="flex flex-col w-[180px] flex-shrink-0">
+          <span className="text-[12px] font-bold text-gray-500 mb-0.5 truncate pr-2">{giveLabel}</span>
+          <span className="text-[15px] font-black text-gray-900">{youGive.val}</span>
+          <span className="text-[11px] font-semibold text-gray-500 mt-0.5">{youGive.sub}</span>
+        </div>
+        {/* Col 4: You Receive */}
+        <div className="flex flex-col w-[160px] flex-shrink-0">
+          <span className="text-[12px] font-bold text-gray-500 mb-0.5 truncate pr-2">{receiveLabel}</span>
+          <span className="text-[15px] font-black text-gray-900">{youReceive.val}</span>
+          <span className="text-[11px] font-semibold text-gray-500 mt-0.5">{youReceive.sub}</span>
+        </div>
+        {/* Col 5: Actions */}
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <button onClick={onViewSeller} className="w-10 h-10 rounded-full border border-gray-200 flex items-center justify-center bg-gray-50 text-gray-600 hover:bg-gray-100 transition shadow-sm"><Info size={18}/></button>
+          <button onClick={onTrade} className={`h-10 px-6 rounded-full text-white font-black text-[15px] flex items-center gap-1.5 shadow-md active:scale-95 transition ${viewerIsBuyingCard ? "bg-[#10B981] hover:bg-emerald-600" : "bg-[#F4A422] hover:bg-[#D4891A]"}`}>
+            {viewerIsBuyingCard ? "Buy" : "Sell"} <div className="w-[18px] h-[18px] rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[11px]">₿</div>
+          </button>
+        </div>
+      </div>
+
+      {/* ═══ MOBILE CARD (< lg) ═══ */}
+      <div className="lg:hidden">
+        <div className="p-4 pb-3 flex items-start gap-3">
+          <button onClick={onViewSeller} className="flex-shrink-0"><Avatar user={u} size={48} radius="rounded-lg"/></button>
+          <div className="flex flex-col flex-1 min-w-0 pt-0.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <CountryFlag countryCode={u?.country_code || u?.country || u?.location} className="w-4 h-3 rounded-sm shadow-sm" />
+              <button onClick={onViewSeller} className="font-black text-[15px] hover:underline" style={{color:'#111827',textUnderlineOffset:'2px'}}>{getDisplayName(u)||'Seller'}</button>
+              <BadgeChip user={u} size="xs" />
+            </div>
+            <div className="flex items-center gap-2.5 mt-1 text-xs text-gray-600 font-semibold">
+              <div className="flex items-center gap-1"><ThumbsUp size={13} className="text-gray-400" strokeWidth={2.5}/><span className="text-gray-700">{trust}%</span></div>
+              <span>{fmt(trades)} Trades</span>
+              <div className="flex items-center gap-1.5">
+                {seen.online?<span className="w-2 h-2 rounded-full bg-emerald-500"/>:<span className="w-2 h-2 rounded-full bg-gray-400"/>}
+                <span className={seen.online?"text-emerald-600 font-bold":"text-gray-500"}>{seen.online?'Active':seen.label}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="px-4 py-2 flex items-center justify-between">
+          <div className="flex flex-col"><span className="text-xs font-bold text-gray-600 mb-0.5 truncate pr-2 max-w-[140px]">{giveLabel}</span><span className="text-lg font-black text-gray-900">{youGive.val}</span></div>
+          <div className="flex flex-col text-right"><span className="text-xs font-bold text-gray-600 mb-0.5 truncate pl-2 max-w-[140px]">{receiveLabel}</span><span className="text-lg font-black text-gray-900">{youReceive.val}</span></div>
+        </div>
+        <div className="bg-gray-50 mt-1 px-4 py-3 flex items-center justify-between gap-2 border-t border-gray-100">
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <div className="w-4 h-4 rounded-full bg-[#F7931A] text-white flex items-center justify-center text-[9px] font-black shadow-sm">₿</div>
+              <span className="font-black text-[15px] text-gray-900 truncate">{fmt(rateLocal,2)} {cur}</span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide" style={{backgroundColor:margin<0?'#10B981':margin>0?'#EF4444':'#64748B',color:'#fff'}}>{margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}</span>
+            </div>
+            <div className="text-xs font-semibold text-gray-600 mt-1">{fmt(minLocal)} - {fmt(maxLocal)} {cur}</div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button onClick={onViewSeller} className="w-9 h-9 rounded-full border border-gray-300 flex items-center justify-center bg-white text-gray-700 hover:bg-gray-100 transition shadow-sm"><Info size={16}/></button>
+            <button onClick={onTrade} className={`h-9 px-4 rounded-full text-white font-black text-[15px] flex items-center gap-1.5 shadow-md active:scale-95 transition ${viewerIsBuyingCard ? "bg-[#10B981] hover:bg-emerald-600" : "bg-[#F4A422] hover:bg-[#D4891A]"}`}>
+              {viewerIsBuyingCard ? "Buy" : "Sell"} <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[10px]">₿</div>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1157,6 +1043,7 @@ export default function GiftCards({ user }) {
   const isGcListing = (l) => l.listing_type === 'BUY_GIFT_CARD' || l.listing_type === 'SELL_GIFT_CARD';
   const _gcNow = () => { const a = _cacheAll(); return a ? a.filter(isGcListing) : []; };
   const [listings, setListings] = useState(() => _gcNow());
+  const [liveStatus, setLiveStatus] = useState({});
   const [traderOfWeek, setTraderOfWeek] = useState(null); // auto-picked winner from the backend, not hardcoded
   const [loading, setLoading] = useState(() => _gcNow().length === 0);
   const [loadError, setLoadError] = useState(false);
@@ -1177,6 +1064,7 @@ export default function GiftCards({ user }) {
   const [traderSearch, setTraderSearch] = useState('');
   const [showCurrency, setShowCurrency] = useState(false);
   const [showBrand, setShowBrand] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [showCountry, setShowCountry] = useState(false);
   const [showAssetMenu, setShowAssetMenu] = useState(false);
   const [showSellAssetMenu, setShowSellAssetMenu] = useState(false);
@@ -1296,10 +1184,11 @@ export default function GiftCards({ user }) {
       axios.post(`${API_URL}/users/heartbeat`, {}, { headers: h }).catch(() => { }),
       fetchTrades(),
     ]);
-    const iv1 = setInterval(() => axios.post(`${API_URL}/users/heartbeat`, {}, { headers: h }).catch(() => { }), 60000);
+    const iv1 = setInterval(() => { if (localStorage.getItem('token')) axios.post(`${API_URL}/users/heartbeat`, {}, { headers: h }).catch(() => { }) }, 60000);
     const iv2 = setInterval(fetchTrades, 10000);
-    return () => { clearInterval(iv1); clearInterval(iv2); };
-  }, [user]);
+    const iv3 = setInterval(() => fetchOnlineStatus(), 30000);
+    return () => { clearInterval(iv1); clearInterval(iv2); clearInterval(iv3); };
+  }, [user, listings]);
   useEffect(() => {
     const h = e => {
       if (currencyRef.current && !currencyRef.current.contains(e.target)) { setShowCurrency(false); setCurrencySearch(''); }
@@ -1315,6 +1204,15 @@ export default function GiftCards({ user }) {
   useEffect(() => {
     setVisibleCount(24);
   }, [gcMode, cryptoFilter, selBrand, amountInput, selCountry.code, traderSearch, sortBy]);
+  // Helper to fetch online status of the users currently on the page
+  const fetchOnlineStatus = (currentListings) => {
+    const ids = [...new Set((currentListings || listings).map(l => l.users?.id).filter(Boolean))];
+    if (ids.length === 0) return;
+    axios.get(`${API_URL}/users/online-status?ids=${ids.join(',')}`)
+      .then(r => { if (r.data?.status) setLiveStatus(r.data.status); })
+      .catch(() => {});
+  };
+
   const loadListings = async (attempt = 1, force = false) => {
     // Show cached data immediately for fast render (stale-while-revalidate),
     // but ALWAYS fetch fresh data from the API in the background so newly
@@ -1341,6 +1239,7 @@ export default function GiftCards({ user }) {
       // Only update if we got real data — never blank out the list on an empty response
       if (data.length > 0) {
         setListings(data);
+        fetchOnlineStatus(data);
         try { localStorage.setItem('praqen_market_all', JSON.stringify({ data: all, ts: Date.now() })); } catch { }
       } else if (!listings.length) {
         setListings(data);
@@ -1395,6 +1294,7 @@ useEffect(() => {
 
       if (cryptoFilter === 'BTC') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'BTC');
       if (cryptoFilter === 'USDT') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'USDT');
+      if (selCurrency && selCurrency.code) list = list.filter(l => (l.currency || 'USD').toUpperCase() === selCurrency.code);
     if (selBrand !== 'All Brands') list = list.filter(l => (getBrand(l) || '').toLowerCase().includes(selBrand.toLowerCase()));
     const amt = parseFloat(amountInput);
     if (!isNaN(amt) && amt > 0) list = list.filter(l => {
@@ -1483,299 +1383,109 @@ useEffect(() => {
         html, body { overscroll-behavior: none; }
       `}</style>
 
-      {/* ══════════════════════════════════════════════════
-          1. RATE BAR
-      ══════════════════════════════════════════════════ */}
-      <div style={{ backgroundColor: C.forest }} className="w-full flex-shrink-0">
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2 sm:py-2.5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex-1 min-w-0">
-              <p className="text-base sm:text-xl md:text-3xl font-black text-white leading-tight mb-1.5">
-                Gift Card <span style={{ color: C.gold }}>Marketplace</span>
-              </p>
-              <div className="flex items-center gap-2 whitespace-nowrap overflow-hidden">
-                <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.45)' }}>
-                  1 BTC = <span className="font-semibold" style={{ color: 'rgba(255,255,255,0.8)' }}>${fmt(btcPrice)} USD</span>
-                </span>
-                <span style={{ color: 'rgba(255,255,255,0.18)', fontSize: 11 }}>|</span>
-                <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.45)' }}>
-                  1 USD = <span className="font-semibold" style={{ color: 'rgba(255,255,255,0.65)' }}>
-                    {cur === 'USD' ? `₵${fmt(USD_RATES['GHS'] || 1, 2)} GHS` : `${sym}${fmt(usdRate, 2)} ${cur}`}
-                  </span>
-                </span>
-              </div>
-            </div>
-            <button onClick={() => loadListings(1, true)}
-              className="w-9 h-9 rounded-xl flex items-center justify-center transition hover:bg-white/20 flex-shrink-0"
-              style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-              <RefreshCw size={15} className={`text-white ${loading ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ══════════════════════════════════════════════════
-          2. TAB NAVIGATION
-      ══════════════════════════════════════════════════ */}
-      <div className="bg-white border-b sticky z-30 flex-shrink-0" style={{ top: 'var(--navbar-h)', borderColor: C.g200 }}>
-        <div className="flex w-full">
-          <div className="flex-1 relative">
-            <button onClick={() => setGcMode('buy')}
-              className="w-full text-center py-3 text-xs font-black border-b-2 transition-all flex items-center justify-center gap-1"
-              style={{
-                borderColor: gcMode === 'buy' ? C.forest : 'transparent',
-                color: gcMode === 'buy' ? C.forest : C.g400,
-                backgroundColor: gcMode === 'buy' ? `${C.forest}18` : 'transparent',
-              }}>
-              Buy
-            </button>
-          </div>
-
-          <div className="flex-1 relative">
-            <button onClick={() => setGcMode('sell')}
-              className="w-full text-center py-3 text-xs font-black border-b-2 transition-all flex items-center justify-center gap-1"
-              style={{
-                borderColor: gcMode === 'sell' ? C.gold : 'transparent',
-                color: gcMode === 'sell' ? C.gold : C.g400,
-                backgroundColor: gcMode === 'sell' ? 'rgba(244,164,34,0.08)' : 'transparent',
-              }}>
-              Sell
-            </button>
-          </div>
-
-          {/* ── 3rd Dropdown: Crypto Filter (All Crypto / BTC / USDT) ── */}
-          <div className="flex-1 relative" ref={cryptoRef}>
-            <button onClick={() => setShowCryptoMenu(v => !v)}
-              className="w-full text-center py-3 text-xs font-black border-b-2 border-transparent transition-all flex items-center justify-center gap-1.5"
-              style={{ color: cryptoFilter === 'ALL' ? '#0D9488' : C.g700 }}>
-              {cryptoFilter === 'ALL' && <span className="text-xs">🪙</span>}
-              {cryptoFilter === 'BTC' && <span className="w-4 h-4 rounded-full flex items-center justify-center font-black text-[10px] text-white" style={{background:'linear-gradient(135deg,#F7931A,#e8830a)'}}>₿</span>}
-              {cryptoFilter === 'USDT' && <span className="w-4 h-4 rounded-full flex items-center justify-center font-black text-[10px] text-white" style={{background:'#26A17B'}}>₮</span>}
-              <span>{cryptoFilter === 'ALL' ? 'All Crypto' : cryptoFilter}</span>
-              <ChevronDown size={12} className={`transition-transform ${showCryptoMenu ? 'rotate-180' : ''}`} />
-            </button>
-            {showCryptoMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowCryptoMenu(false)} />
-                <div className="absolute right-0 sm:left-1/2 sm:-translate-x-1/2 top-full mt-1.5 w-56 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white"
-                  style={{ borderColor: C.g200 }}>
-                  <button onClick={() => { setCryptoFilter('ALL'); setShowCryptoMenu(false); }}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition"
-                    style={{ backgroundColor: cryptoFilter === 'ALL' ? 'rgba(13,148,136,0.06)' : 'transparent' }}>
-                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
-                      style={{ background: 'linear-gradient(135deg, #0D9488, #0f766e)' }}>🌐</span>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-xs font-black" style={{ color: C.g800 }}>All Crypto</span>
-                      <span className="block text-[10px] font-semibold" style={{ color: C.g400 }}>Show both BTC & USDT offers</span>
-                    </span>
-                    {cryptoFilter === 'ALL' && <CheckCircle size={14} style={{ color: '#0D9488', flexShrink: 0 }} />}
-                  </button>
-
-                  <button onClick={() => { setCryptoFilter('BTC'); setShowCryptoMenu(false); }}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition border-t"
-                    style={{ borderColor: C.g100, backgroundColor: cryptoFilter === 'BTC' ? 'rgba(247,147,26,0.08)' : 'transparent' }}>
-                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
-                      style={{ background: 'linear-gradient(135deg,#F7931A,#e8830a)' }}>₿</span>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-xs font-black" style={{ color: C.g800 }}>Bitcoin</span>
-                      <span className="block text-[10px] font-semibold" style={{ color: C.g400 }}>BTC offers only</span>
-                    </span>
-                    {cryptoFilter === 'BTC' && <CheckCircle size={14} style={{ color: '#e8830a', flexShrink: 0 }} />}
-                  </button>
-
-                  <button onClick={() => { setCryptoFilter('USDT'); setShowCryptoMenu(false); }}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left hover:bg-gray-50 transition border-t"
-                    style={{ borderColor: C.g100, backgroundColor: cryptoFilter === 'USDT' ? 'rgba(38,161,123,0.08)' : 'transparent' }}>
-                    <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white"
-                      style={{ background: '#26A17B' }}>₮</span>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-xs font-black" style={{ color: C.g800 }}>Tether</span>
-                      <span className="block text-[10px] font-semibold" style={{ color: C.g400 }}>USDT offers only</span>
-                    </span>
-                    {cryptoFilter === 'USDT' && <CheckCircle size={14} style={{ color: '#26A17B', flexShrink: 0 }} />}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* PRAQEN Weekly Stars — admin-selected recognition */}
-      <WeeklyStarsSection />
-
-      {/* ══ PAUSED OFFER BANNER — shown to seller when their gift card offer is paused ══ */}
-      {pausedOffer && (
-        <div className="flex-shrink-0 px-3 pt-3">
-          <div className="max-w-7xl mx-auto rounded-2xl p-4 flex items-start gap-3"
-            style={{ backgroundColor: '#FFFBEB', border: '1.5px solid #FCD34D' }}>
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: '#FEF3C7' }}>
-              <Wallet size={16} style={{ color: '#D97706' }} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold" style={{ color: '#92400E' }}>Your gift card offer is off the market</p>
-              <p className="text-xs mt-0.5 leading-relaxed" style={{ color: '#B45309' }}>
-                Your Bitcoin wallet is empty, so your offer has been automatically paused. Top up your wallet to bring it back to the marketplace.
-              </p>
-            </div>
-            <button
-              onClick={() => window.location.href = '/wallet'}
-              className="flex-shrink-0 px-3 py-2 rounded-xl text-xs font-black text-white"
-              style={{ backgroundColor: '#D97706' }}>
-              Top Up Wallet
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════════════
-          4. FILTER BAR
-      ══════════════════════════════════════════════════ */}
-      <div className="bg-white border-b" style={{ borderColor: C.g200 }}>
-        <div className="max-w-7xl mx-auto px-3 py-3">
-
-          {/* 2×2 grid on mobile, 4-col on sm+ */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-
-            {/* ── AMOUNT ── */}
-            <div style={{ position: 'relative' }}
-              onMouseEnter={() => handleGuideEnter('gc_amount')} onMouseLeave={handleGuideLeave}>
-              <MarketGuide id="gc_amount" icon={Gift} guideStep={1}
-                title="Card Value / Amount"
-                body="Enter the card amount in USD or local currency. The list will automatically filter to show vendors who trade cards within this value range."
-                example="Type 50 to find vendors accepting $50 gift cards" />
-              <p className="text-xs font-bold mb-1 tracking-wide" style={{ color: C.g500 }}>AMOUNT</p>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold pointer-events-none select-none"
-                  style={{ color: amountInput ? C.forest : C.g400 }}>$</span>
-                <input
-                  type="number" min="0" placeholder="e.g. 50"
-                  value={amountInput}
-                  onChange={e => setAmountInput(e.target.value)}
-                  onFocus={() => handleGuideEnter('gc_amount')} onBlur={handleGuideLeave}
-                  className="w-full pl-6 pr-7 py-2.5 rounded-xl border-2 font-bold focus:outline-none"
-                  style={{
-                    borderColor: amountInput ? C.forest : C.g200,
-                    color: C.g800,
-                    backgroundColor: amountInput ? `${C.forest}08` : 'transparent',
-                    fontSize: '16px',
-                  }}
-                />
-                {amountInput && (
-                  <button onClick={() => setAmountInput('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center rounded-full"
-                    style={{ backgroundColor: C.g200 }}>
-                    <X size={9} style={{ color: C.g600 }} />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* ── CURRENCY ── */}
-            <div style={{ position: 'relative' }}
-              onMouseEnter={() => handleGuideEnter('gc_currency')} onMouseLeave={handleGuideLeave}>
-              {!showCurrency && (
-                <MarketGuide id="gc_currency" icon={CreditCard} guideStep={2} align="right"
-                  title="Currency"
-                  body="Filter by the currency of the gift card or payment currency. All card values will update to show amounts in your chosen currency."
-                  example="USD for US Cards · EUR for European Cards · GHS for Ghana" />
+      
+      {/* ══ 1. NOONES-STYLE HEADER & CONVERSION BAR ════════════════════════════════════ */}
+      <div className="w-full bg-white border-b px-4 py-4" style={{borderColor:C.g200}}>
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl sm:text-3xl font-black" style={{color:C.g800}}>
+              {gcMode === 'buy' ? 'Buy' : 'Sell'} <span style={{color: cryptoFilter === 'USDT' ? '#0F766E' : '#F4A422'}}>
+                {cryptoFilter === 'ALL' ? 'Crypto' : cryptoFilter === 'USDT' ? 'USDT' : 'BTC'}
+              </span>
+              {selBrand !== 'All Brands' && (
+                <span className="font-bold" style={{color: '#F4A422'}}> with {selBrand}</span>
               )}
-              <p className="text-xs font-bold mb-1 tracking-wide" style={{ color: C.g500 }}>CURRENCY</p>
-              <div className="relative" ref={currencyRef}>
-                <button onFocus={() => handleGuideEnter('gc_currency')} onBlur={handleGuideLeave}
-                  onClick={() => { setShowCurrency(!showCurrency); setCurrencySearch(''); setShowBrand(false); setShowCountry(false); }}
-                  className="w-full flex items-center gap-1.5 px-3 py-2.5 rounded-xl border-2 font-bold transition"
-                  style={{
-                    borderColor: selCurrency.code !== 'USD' ? C.forest : C.g200,
-                    color: selCurrency.code !== 'USD' ? C.forest : C.g600,
-                    backgroundColor: selCurrency.code !== 'USD' ? `${C.forest}08` : 'transparent'
-                  }}>
-                  <span className="text-xs font-bold flex-shrink-0">{selCurrency.symbol}</span>
-                  <span className="text-xs font-bold flex-1 text-left">{selCurrency.code}</span>
-                  <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${showCurrency ? 'rotate-180' : ''}`}
-                    style={{ color: C.g400 }} />
-                </button>
-                {showCurrency && (
-                  <div className="dropdown-panel absolute top-full right-0 mt-1.5 bg-white rounded-2xl shadow-2xl z-50 border overflow-hidden"
-                    style={{ borderColor: C.g100, minWidth: '200px', maxWidth: 'calc(100vw - 24px)' }}>
-                    <div className="px-2 py-2 border-b sticky top-0 bg-white" style={{ borderColor: C.g100 }}>
-                      <input type="text" placeholder="Search currency..." value={currencySearch}
-                        onChange={e => setCurrencySearch(e.target.value)} onClick={e => e.stopPropagation()}
-                        className="w-full px-2.5 py-1.5 rounded-lg focus:outline-none"
-                        style={{ border: `1.5px solid ${C.g200}`, color: C.g800, backgroundColor: C.g50, fontSize: '16px' }} />
-                    </div>
-                    <div style={{ maxHeight: 260, overflowY: 'auto' }}>
-                      {(() => {
-                        const q = currencySearch.toLowerCase();
-                        const filtered = GC_FILTER_CURRENCIES.filter(c => !q || c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q));
-                        let lastRegion = null;
-                        return filtered.map(c => {
-                          const regionHdr = !q && c.region !== lastRegion
-                            ? (lastRegion = c.region, (
-                              <div key={`r-${c.region}`} className="px-3 py-1.5" style={{ backgroundColor: '#F8FAFC', borderBottom: `1px solid ${C.g100}` }}>
-                                <span className="text-xs font-bold uppercase tracking-wider" style={{ color: COUNTRY_REGIONS[c.region] || C.g500 }}>{c.region}</span>
-                              </div>
-                            ))
-                            : (lastRegion = c.region, null);
-                          return (
-                            <Fragment key={c.code}>
-                              {regionHdr}
-                              <button onClick={() => { setSelCurrency(c); setShowCurrency(false); setCurrencySearch(''); }}
-                                className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 border-b last:border-0 transition"
-                                style={{ borderColor: C.g50, backgroundColor: selCurrency.code === c.code ? `${C.forest}08` : 'transparent' }}>
-                                <span className="text-sm font-bold w-6 text-center flex-shrink-0" style={{ color: C.forest }}>{c.symbol}</span>
-                                <div className="flex-1 text-left">
-                                  <p className="font-bold text-xs" style={{ color: C.g800 }}>{c.code}</p>
-                                  <p className="text-xs" style={{ color: C.g400 }}>{c.name}</p>
-                                </div>
-                                {selCurrency.code === c.code && <CheckCircle size={13} style={{ color: C.green }} />}
-                              </button>
-                            </Fragment>
-                          );
-                        });
-                      })()}
-                    </div>
+            </h1>
+            <button className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200">
+              <Info size={18} />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-4 mt-2 text-xs font-bold text-gray-600">
+            <div className="flex items-center gap-1.5">
+              <span className="w-4 h-4 rounded-full bg-gray-200 flex items-center justify-center text-[10px]">$</span>
+              <span>1 USD = {fmt(usdRate, 2)} {cur}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px] font-black">₿</span>
+              <span>1 BTC = {fmt(btcPrice * usdRate, 1)} {cur}</span>
+            </div>
+          </div>
+
+          {/* ══ 2. INLINE CONTROL CARD ════════════════════════════════════ */}
+          <div className="mt-4 bg-white rounded-2xl border p-2 sm:p-3 shadow-sm flex flex-wrap items-center gap-2 sm:gap-3" style={{borderColor:C.g200}}>
+            
+            {/* Toggle Pill (Buy/Sell) */}
+            <div className="flex bg-gray-100 p-1 rounded-xl shrink-0">
+              <button onClick={() => setGcMode('buy')}
+                className={`flex items-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-black transition ${gcMode === 'buy' ? 'bg-[#10B981] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>
+                <ArrowDown size={14} strokeWidth={3} /> Buy
+              </button>
+              <button onClick={() => setGcMode('sell')}
+                className={`flex items-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-black transition ${gcMode === 'sell' ? 'bg-[#F4A422] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>
+                <ArrowUp size={14} strokeWidth={3} /> Sell
+              </button>
+            </div>
+
+            {/* Crypto Dropdown */}
+            <div className="relative shrink-0" ref={cryptoRef}>
+              <button onClick={()=>setShowCryptoMenu(v=>!v)}
+                className="h-[36px] sm:h-[40px] px-2 sm:px-3 rounded-xl border bg-gray-50 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-black text-gray-800 hover:bg-gray-100 transition"
+                style={{borderColor: C.g200}}>
+                {cryptoFilter === 'BTC' ? (
+                  <><span className="w-5 h-5 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px]">₿</span> BTC</>
+                ) : cryptoFilter === 'USDT' ? (
+                  <><span className="w-5 h-5 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-[10px]">₮</span> USDT</>
+                ) : (
+                  <><span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px]">🌐</span> ALL</>
+                )}
+                <ChevronDown size={14} className="text-gray-400" />
+              </button>
+              {showCryptoMenu && (
+                <div className="absolute left-0 top-full mt-1.5 w-48 sm:w-56 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white" style={{borderColor:C.g200}}>
+                  <div className="fixed inset-0 z-40" onClick={()=>setShowCryptoMenu(false)}/>
+                  <div className="relative z-50">
+                    <button onClick={()=>{setCryptoFilter('ALL'); setShowCryptoMenu(false);}}
+                      className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition ${cryptoFilter === 'ALL' ? 'bg-emerald-50/80' : 'hover:bg-gray-50'}`}>
+                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#0D9488,#14B8A6)'}}>🌐</span>
+                      <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">All Crypto</span></span>
+                    </button>
+                    <button onClick={()=>{setCryptoFilter('BTC'); setShowCryptoMenu(false);}}
+                      className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${cryptoFilter === 'BTC' ? 'bg-amber-50/80' : 'hover:bg-gray-50'}`} style={{borderColor:C.g100}}>
+                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#F7931A,#e8830a)'}}>₿</span>
+                      <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">Bitcoin</span></span>
+                    </button>
+                    <button onClick={()=>{setCryptoFilter('USDT'); setShowCryptoMenu(false);}}
+                      className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${cryptoFilter === 'USDT' ? 'bg-teal-50/80' : 'hover:bg-gray-50'}`} style={{borderColor:C.g100}}>
+                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#0F766E,#14B8A6)'}}>₮</span>
+                      <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">Tether</span></span>
+                    </button>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
-            {/* ── PAYMENT (Gift Card Brand) ── */}
-            <div style={{ position: 'relative' }}
-              onMouseEnter={() => handleGuideEnter('gc_brand')} onMouseLeave={handleGuideLeave}>
-              {!showBrand && (
-                <MarketGuide id="gc_brand" icon={Gift} guideStep={3}
-                  title="Gift Card Brand"
-                  body="Filter by the specific gift card brand you want to buy or sell. Pick Amazon, iTunes, Google Play, Steam, Razer Gold and more."
-                  example="Amazon · Apple iTunes · Google Play · Steam · Razer Gold" />
-              )}
-              <p className="text-xs font-bold mb-1 tracking-wide" style={{ color: C.g500 }}>PAYMENT</p>
-              <div className="relative" ref={brandRef}>
-                <button onFocus={() => handleGuideEnter('gc_brand')} onBlur={handleGuideLeave}
-                  onClick={() => { setShowBrand(!showBrand); setBrandSearch(''); setShowCurrency(false); setShowCountry(false); }}
-                  className="w-full flex items-center gap-1.5 px-3 py-2.5 rounded-xl border-2 font-bold transition"
-                  style={{
-                    borderColor: selBrand !== 'All Brands' ? C.forest : C.g200,
-                    color: selBrand !== 'All Brands' ? C.forest : C.g600,
-                    backgroundColor: selBrand !== 'All Brands' ? `${C.forest}08` : 'transparent'
-                  }}>
-                  <span className="text-xs font-bold flex-1 text-left truncate">
-                    {selBrand === 'All Brands' ? 'All Cards' : selBrand}
-                  </span>
-                  <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${showBrand ? 'rotate-180' : ''}`}
-                    style={{ color: selBrand !== 'All Brands' ? C.forest : C.g400 }} />
-                </button>
-                {showBrand && (
+            {/* Brand Dropdown (Replaces Payment Method) */}
+            <div className="relative shrink-0 flex-1 sm:flex-none sm:w-40" ref={brandRef}>
+              <span className="absolute -top-2 left-3 px-1 bg-white text-[9px] font-black text-emerald-600 tracking-wider uppercase z-10">BRAND</span>
+              <button
+                onClick={() => { setShowBrand(!showBrand); setBrandSearch(''); }}
+                className="w-full h-[36px] sm:h-[40px] flex items-center justify-between px-3 rounded-xl border bg-gray-50 text-xs font-bold text-gray-700 hover:bg-gray-100 transition"
+                style={{borderColor: C.g200}}>
+                <span className="truncate">{selBrand === 'All Brands' ? 'All Cards' : selBrand}</span>
+                <ChevronDown size={14} className="text-gray-400 flex-shrink-0" />
+              </button>
+
+              {showBrand && (
                   <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-2xl z-50 border overflow-hidden"
-                    style={{ borderColor: C.g100 }}>
-                    <div className="px-2 py-2 border-b sticky top-0 bg-white" style={{ borderColor: C.g100 }}>
+                    style={{ borderColor: C.g100, minWidth: '240px' }}>
+                    <div className="px-2 py-2 border-b sticky top-0 bg-white z-40" style={{ borderColor: C.g100 }}>
                       <input type="text" placeholder="Search card brand..." value={brandSearch}
                         onChange={e => setBrandSearch(e.target.value)} onClick={e => e.stopPropagation()}
                         className="w-full px-2.5 py-1.5 rounded-lg focus:outline-none"
                         style={{ border: `1.5px solid ${C.g200}`, color: C.g800, backgroundColor: C.g50, fontSize: '16px' }} />
                     </div>
-                    <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+                    <div style={{ maxHeight: 260, overflowY: 'auto' }} className="relative z-30">
                       {brandSearch.trim() ? (
                         GC_BRANDS.filter(b => b.toLowerCase().includes(brandSearch.toLowerCase())).map(b => (
                           <button key={b} onClick={() => { setSelBrand(b); setShowBrand(false); setBrandSearch(''); }}
@@ -1807,112 +1517,47 @@ useEffect(() => {
                     </div>
                   </div>
                 )}
-              </div>
             </div>
 
-            {/* ── COUNTRY ── */}
-            <div style={{ position: 'relative' }}
-              onMouseEnter={() => handleGuideEnter('gc_country')} onMouseLeave={handleGuideLeave}>
-              {!showCountry && (
-                <MarketGuide id="gc_country" icon={Globe} guideStep={4} align="right"
-                  title="Country / Region"
-                  body="Filter vendors by country. Local vendors can complete trade verification and payouts faster in your country."
-                  example="Ghana · Nigeria · Kenya · USA · All Countries" />
-              )}
-              <p className="text-xs font-bold mb-1 tracking-wide" style={{ color: C.g500 }}>COUNTRY</p>
-              <div className="relative" ref={countryRef}>
-                <button onFocus={() => handleGuideEnter('gc_country')} onBlur={handleGuideLeave}
-                  onClick={() => { setShowCountry(!showCountry); setShowCurrency(false); setShowBrand(false); }}
-                  className="w-full flex items-center gap-1.5 px-3 py-2.5 rounded-xl border-2 font-bold transition"
-                  style={{
-                    borderColor: selCountry.code !== 'ALL' ? C.forest : C.g200,
-                    color: selCountry.code !== 'ALL' ? C.forest : C.g600,
-                    backgroundColor: selCountry.code !== 'ALL' ? `${C.forest}08` : 'transparent'
-                  }}>
-                  <span className="text-xs">{selCountry.flag}</span>
-                  <span className="text-xs font-bold flex-1 text-left">{selCountry.name}</span>
-                  <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${showCountry ? 'rotate-180' : ''}`}
-                    style={{ color: selCountry.code !== 'ALL' ? C.forest : C.g400 }} />
-                </button>
-                {showCountry && (
-                  <div className="absolute top-full right-0 mt-1.5 bg-white rounded-2xl shadow-2xl z-50 border overflow-hidden"
-                    style={{ borderColor: C.g100, minWidth: '220px', maxWidth: 'calc(100vw - 24px)' }}>
-                    <div className="p-2 border-b sticky top-0 bg-white" style={{ borderColor: C.g100 }}>
-                      <input type="text" placeholder="Search country…"
-                        value={countrySearch} onChange={e => setCountrySearch(e.target.value)}
-                        className="w-full px-3 py-1.5 font-semibold rounded-xl border focus:outline-none"
-                        style={{ borderColor: C.g200, color: C.g800, fontSize: '16px' }} />
-                    </div>
-                    <div className="overflow-y-auto max-h-56">
-                      {(() => {
-                        const q = countrySearch.toLowerCase();
-                        const filtered = COUNTRIES.filter(c => !q || c.name.toLowerCase().includes(q));
-                        let lastReg = null;
-                        return filtered.map(c => {
-                          const regHdr = !q && c.region && c.region !== lastReg
-                            ? (lastReg = c.region, <div key={`r-${c.region}`} className="px-3 py-1" style={{ backgroundColor: '#F8FAFC' }}>
-                              <span className="text-xs font-bold uppercase tracking-wider" style={{ color: COUNTRY_REGIONS[c.region] || C.g500 }}>{c.region}</span>
-                            </div>)
-                            : (c.region && (lastReg = c.region), null);
-                          return (
-                            <Fragment key={c.code}>
-                              {regHdr}
-                              <button onClick={() => { setSelCountry(c); setShowCountry(false); setCountrySearch(''); }}
-                                className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50 border-b last:border-0 transition"
-                                style={{ borderColor: C.g50, backgroundColor: selCountry.code === c.code ? `${C.forest}08` : 'transparent' }}>
-                                <span className="text-sm">{c.flag}</span>
-                                <span className="text-xs font-bold flex-1 text-left" style={{ color: C.g800 }}>{c.name}</span>
-                                {selCountry.code === c.code && <CheckCircle size={13} style={{ color: C.green }} />}
-                              </button>
-                            </Fragment>
-                          );
-                        });
-                      })()}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Sort + Search + Create + Clear — all on one line */}
-          <div className="mt-2 flex items-center gap-2">
-            <span className="text-xs font-bold flex-shrink-0" style={{ color: C.g500 }}>Sort:</span>
-            <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-              className="flex-shrink-0 px-2 py-2 font-bold border-2 rounded-xl focus:outline-none"
-              style={{ borderColor: sortBy !== 'rate_low' ? C.forest : C.g200, color: C.g800, fontSize: '13px', width: '105px' }}>
-              <option value="rate_low">Best Rate</option>
-              <option value="rate_high">Highest Rate</option>
-              <option value="rating">Top Rated</option>
-              <option value="trades">Most Trades</option>
-            </select>
-            <div className="flex-1 min-w-0 flex items-center border-2 rounded-xl overflow-hidden"
-              style={{ borderColor: traderSearch.trim() ? C.forest : C.g200 }}>
+            {/* Amount Input */}
+            <div className="relative flex-1 min-w-[140px] flex items-center bg-gray-50 rounded-xl border pl-3 pr-1" style={{borderColor: C.g200, height: '40px'}}>
+              <span className="absolute -top-2 left-3 px-1 bg-white text-[9px] font-black text-gray-500 tracking-wider uppercase z-10">AMOUNT</span>
               <input
-                type="text"
-                placeholder="Search trader…"
-                value={traderSearch}
-                onChange={e => setTraderSearch(e.target.value)}
-                className="flex-1 min-w-0 px-2.5 py-2 font-bold focus:outline-none bg-transparent"
-                style={{ color: C.g800, fontSize: '16px' }} />
-              {traderSearch.trim() && (
-                <button onClick={() => setTraderSearch('')} className="px-2 flex-shrink-0" style={{ color: C.g400 }}>
-                  <X size={12} />
-                </button>
-              )}
-            </div>
-            <button onClick={() => navigate('/create-offer')}
-              className="flex-shrink-0 flex items-center gap-1 px-2.5 py-2 rounded-xl text-white font-black text-xs transition hover:opacity-90 active:scale-[0.97]"
-              style={{ backgroundColor: C.accent, whiteSpace: 'nowrap' }}>
-              <PlusCircle size={12} /> Create
-            </button>
-            {hasFilters && (
-              <button onClick={() => { setAmountInput(''); setSelBrand('All Brands'); setSelCountry(COUNTRIES[0]); setTraderSearch(''); setSortBy('rate_low'); setCountrySearch(''); }}
-                className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl text-xs font-bold border-2 transition"
-                style={{ borderColor: C.danger, color: C.danger, backgroundColor: '#FEF2F2' }}>
-                ✕
+                type="number"
+                placeholder="Enter amount..."
+                value={amountInput}
+                onChange={e => setAmountInput(e.target.value)}
+                className="w-full bg-transparent text-xs font-bold focus:outline-none text-gray-800 h-full"
+              />
+              <button
+                onClick={() => setShowCurrency(true)}
+                className="flex-shrink-0 flex items-center gap-1 pl-2 border-l hover:bg-gray-200 transition text-xs font-black text-gray-700 h-full px-2 rounded-r-lg"
+                style={{borderColor: C.g200}}>
+                {selCurrency.code}
+                <ChevronDown size={12} className="text-gray-400" />
               </button>
-            )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-2 shrink-0 ml-auto sm:ml-0">
+              <button onClick={() => navigate('/create-offer')}
+                className="h-[36px] sm:h-[40px] px-3 sm:px-4 rounded-xl bg-emerald-500 text-white text-xs sm:text-sm font-black flex items-center gap-1.5 shadow-sm hover:bg-emerald-600 transition">
+                <PlusCircle size={14} /> <span className="hidden sm:inline">Create</span>
+              </button>
+
+              <button onClick={() => setShowFilters(true)}
+                className="h-[36px] sm:h-[40px] px-3 sm:px-4 rounded-xl border bg-white text-gray-700 text-xs sm:text-sm font-black flex items-center gap-1.5 hover:bg-gray-50 transition"
+                style={{borderColor: C.g200}}>
+                <Filter size={14} /> <span className="hidden sm:inline">Filters</span>
+              </button>
+
+              <button onClick={() => loadListings(1, true)}
+                className="w-[36px] h-[36px] sm:w-[40px] sm:h-[40px] rounded-xl border bg-white flex items-center justify-center text-gray-500 hover:bg-gray-50 hover:text-emerald-600 transition"
+                style={{borderColor: C.g200}}>
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+              </button>
+            </div>
+
           </div>
         </div>
       </div>
@@ -1959,7 +1604,7 @@ useEffect(() => {
                 Our server is starting up, this takes a few seconds…
               </p>
             )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 w-full">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3 w-full">
               {Array.from({ length: 8 }).map((_, i) => <GCCardSkeleton key={i} />)}
             </div>
           </>
@@ -2012,7 +1657,7 @@ useEffect(() => {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 w-full">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3 w-full">
               {filtered.slice(0, visibleCount).map(l => (
                 <GCCard
                   key={l.id}
@@ -2021,6 +1666,8 @@ useEffect(() => {
                   featuredType={l.id === featuredListingId ? featuredBadgeType : undefined}
                   onViewSeller={() => setModal({ seller: l.users || {}, listing: l })}
                   onTrade={() => handleTrade(l.id)}
+                  liveSeenAt={liveStatus[l.users?.id] || null}
+                  userBuyAmt={amountInput}
                 />
               ))}
             </div>
@@ -2202,6 +1849,140 @@ useEffect(() => {
           onTrade={() => handleTrade(modal.listing?.id)}
         />
       )}
-    </div>
-  );
+    
+      
+      {/* ══ NOONES CURRENCY MODAL ════════════════════════════════════ */}
+      {showCurrency && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
+          <div className="w-full md:max-w-md bg-white h-[85vh] md:h-full rounded-t-2xl md:rounded-none flex flex-col p-4 overflow-y-auto">
+            <div className="flex items-center justify-between border-b pb-3 mb-4" style={{borderColor:C.g200}}>
+              <h3 className="text-lg font-black text-gray-900">Currency</h3>
+              <button onClick={() => setShowCurrency(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition">
+                <X size={18} />
+              </button>
+            </div>
+            <input
+              type="text"
+              placeholder="Search..."
+              value={currencySearch}
+              onChange={(e) => setCurrencySearch(e.target.value)}
+              className="w-full px-4 py-3 bg-gray-50 border rounded-xl font-semibold mb-4 focus:outline-none"
+              style={{borderColor:C.g200}}
+            />
+            <div className="space-y-1 flex-1 overflow-y-auto">
+              {GC_FILTER_CURRENCIES.filter(c => !currencySearch || c.name.toLowerCase().includes(currencySearch.toLowerCase()) || c.code.toLowerCase().includes(currencySearch.toLowerCase())).map((c, idx) => {
+                const countryCode = c.code.substring(0, 2).toLowerCase();
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => { setSelCurrency(c); setShowCurrency(false); }}
+                    className={`w-full flex items-center justify-between p-3 rounded-xl text-xs font-bold border-b transition ${selCurrency.code === c.code ? 'bg-emerald-50 text-emerald-700' : 'hover:bg-gray-50 text-gray-800'}`}
+                    style={{borderColor:C.g100}}>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-black text-gray-800">{c.code}</span>
+                      <span className="text-xs text-gray-500">{c.name}</span>
+                    </div>
+                    {selCurrency.code === c.code && <CheckCircle size={16} className="text-emerald-600" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ NOONES FILTER DRAWER MODAL ════════════════════════════════════ */}
+      {showFilters && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex justify-end transition-opacity">
+          <div className="w-full max-w-md bg-white h-full flex flex-col justify-between p-4 overflow-y-auto animate-slideLeft">
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b pb-3" style={{borderColor:C.g200}}>
+                <h3 className="text-lg font-black text-gray-900">Filters</h3>
+                <button onClick={() => setShowFilters(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition">
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Country Selection */}
+              <div>
+                <span className="text-sm font-bold text-gray-700 block mb-2">Location</span>
+                <button
+                  onClick={() => setShowCountry(!showCountry)}
+                  className="w-full flex items-center justify-between px-3 py-3 rounded-xl border bg-gray-50 text-sm font-bold text-gray-700 hover:bg-gray-100 transition"
+                  style={{borderColor: C.g200}}>
+                  <div className="flex items-center gap-2">
+                    <span>{selCountry.flag}</span>
+                    <span>{selCountry.name}</span>
+                  </div>
+                  <ChevronDown size={16} className="text-gray-400" />
+                </button>
+                {showCountry && (
+                  <div className="mt-2 rounded-xl border overflow-hidden" style={{ borderColor: C.g100 }}>
+                    <div className="p-2 border-b bg-gray-50" style={{ borderColor: C.g100 }}>
+                      <input type="text" placeholder="Search country…"
+                        value={countrySearch} onChange={e => setCountrySearch(e.target.value)}
+                        className="w-full px-3 py-1.5 font-semibold rounded-lg border focus:outline-none"
+                        style={{ borderColor: C.g200, color: C.g800, fontSize: '14px' }} />
+                    </div>
+                    <div className="overflow-y-auto max-h-56 bg-white">
+                      {COUNTRIES.filter(c => !countrySearch.toLowerCase() || c.name.toLowerCase().includes(countrySearch.toLowerCase())).map(c => (
+                        <button key={c.code} onClick={() => { setSelCountry(c); setShowCountry(false); setCountrySearch(''); }}
+                          className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50 border-b last:border-0 transition"
+                          style={{ borderColor: C.g50, backgroundColor: selCountry.code === c.code ? `${C.forest}08` : 'transparent' }}>
+                          <span className="text-sm">{c.flag}</span>
+                          <span className="text-xs font-bold flex-1 text-left" style={{ color: C.g800 }}>{c.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Search Trader */}
+              <div>
+                <span className="text-sm font-bold text-gray-700 block mb-2">Trader Search</span>
+                <div className="flex items-center border rounded-xl overflow-hidden bg-gray-50" style={{ borderColor: C.g200 }}>
+                  <input
+                    type="text"
+                    placeholder="Search username..."
+                    value={traderSearch}
+                    onChange={e => setTraderSearch(e.target.value)}
+                    className="flex-1 min-w-0 px-3 py-3 font-bold focus:outline-none bg-transparent"
+                    style={{ color: C.g800, fontSize: '14px' }} />
+                  {traderSearch.trim() && (
+                    <button onClick={() => setTraderSearch('')} className="px-3" style={{ color: C.g400 }}>
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Sorting */}
+              <div className="flex items-center justify-between py-2 border-b" style={{borderColor:C.g100}}>
+                <span className="text-sm font-bold text-gray-700">Sorting</span>
+                <select
+                  value={sortBy}
+                  onChange={e => setSortBy(e.target.value)}
+                  className="text-sm font-black text-gray-900 bg-transparent focus:outline-none cursor-pointer">
+                  <option value="rate_low">Recommended</option>
+                  <option value="rating">Top Rated</option>
+                  <option value="trades">Most Trades</option>
+                </select>
+              </div>
+
+            </div>
+
+            <div className="pt-6 border-t space-y-2" style={{borderColor:C.g200}}>
+              <button
+                onClick={() => setShowFilters(false)}
+                className="w-full py-3.5 rounded-xl bg-[#10B981] text-white font-black text-sm shadow-md transition">
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>  );
 }
+
