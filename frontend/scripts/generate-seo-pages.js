@@ -94,7 +94,7 @@ function articleJsonLd(post) {
         '@id': `${canonical}#article`,
         headline: post.title,
         description: post.metaDescription,
-        image: 'https://praqen.com/og-image.png',
+        image: 'https://praqen.com/og-image-v2.png',
         datePublished: post.publishDate,
         dateModified: post.publishDate,
         author: { '@type': 'Organization', name: 'PRAQEN', url: SITE },

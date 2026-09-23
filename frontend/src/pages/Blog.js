@@ -64,7 +64,7 @@ export default function Blog() {
       <SEO
         title="Bitcoin & USDT Trading Guides for Africa & Worldwide | PRAQEN Blog"
         description="Learn how to buy and sell Bitcoin & USDT with Mobile Money, M-Pesa and bank transfer. Guides for Ghana, Nigeria, and P2P traders across Africa and worldwide."
-        image="https://praqen.com/og-image.png"
+        image="https://praqen.com/og-image-v2.png"
       />
 
       <div style={{ backgroundColor: C.forest }} className="w-full">

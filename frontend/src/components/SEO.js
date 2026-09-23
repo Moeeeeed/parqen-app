@@ -36,11 +36,11 @@ export default function SEO({ title, description, noindex, image, ogType, publis
       <meta property="og:url"         content={canonical} />
       <meta property="og:type"        content={ogType || 'website'} />
       <meta property="og:site_name"   content="PRAQEN" />
-      <meta property="og:image"       content={image || 'https://praqen.com/og-image.png'} />
+      <meta property="og:image"       content={image || 'https://praqen.com/og-image-v2.png'} />
       {publishedTime && <meta property="article:published_time" content={publishedTime} />}
       <meta name="twitter:title"       content={ogTitle} />
       <meta name="twitter:description" content={ogDesc} />
-      <meta name="twitter:image"       content={image || 'https://praqen.com/og-image.png'} />
+      <meta name="twitter:image"       content={image || 'https://praqen.com/og-image-v2.png'} />
     </Helmet>
   );
 }
