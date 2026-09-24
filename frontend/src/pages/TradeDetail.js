@@ -6,7 +6,7 @@ import {
   Send, Star, Clock, CheckCircle, AlertCircle, Lock,
   MessageCircle, Bitcoin, Shield, AlertTriangle,
   X, RefreshCw, Info, Check, CheckCheck, Timer,
-  Flag, BadgeCheck, FileText, Copy, Globe,
+  Flag, BadgeCheck, FileText, Copy, Globe, Clipboard,
   ChevronDown, ChevronUp, DollarSign, CreditCard,
 Smartphone, Building2, ThumbsUp, ThumbsDown, Gift, Repeat2, Heart,
   Bell, Camera, Mail, PartyPopper, Rocket, Unlock, Stamp,
@@ -69,9 +69,10 @@ function Avatar({user,size=40,radius='rounded-full'}) {
 }
 
 // ─── Feedback modal ───────────────────────────────────────────────────────────
-function FeedbackModal({name,onClose,onSubmit,submitting}) {
-  const [isPositive, setIsPositive] = useState(null);
-  const [comment,    setComment]    = useState('');
+function FeedbackModal({name,onClose,onSubmit,submitting,editing,initial}) {
+  // Prefill when editing existing feedback (same modal, edit mode).
+  const [isPositive, setIsPositive] = useState(initial ? initial.rating>=4 : null);
+  const [comment,    setComment]    = useState(initial ? (initial.comment||'') : '');
 
   const rating = isPositive ? 5 : 1;
   const canSubmit = isPositive !== null;
@@ -90,7 +91,7 @@ function FeedbackModal({name,onClose,onSubmit,submitting}) {
         {/* Header */}
         <div className="p-5 text-white text-center"
           style={{background:`linear-gradient(135deg,${C.forest},${C.mint})`}}>
-          <h2 className="text-lg font-black">Rate Your Trade</h2>
+          <h2 className="text-lg font-black">{editing?'Edit Your Feedback':'Rate Your Trade'}</h2>
           <p className="text-white/70 text-xs mt-1">How was trading with <span className="font-black text-white">{name}</span>?</p>
         </div>
 
@@ -915,6 +916,315 @@ function OfferTerms({trade}) {
   );
 }
 
+// ─── Completed trade state (spec: "Trade Completed" screen) ─────────────────
+// Rendered in place of the in-progress actions column when status is COMPLETED.
+// Header + bottom Actions/Chat bar + chat column stay shared — only this
+// middle content is state-specific. All values are data-driven; nothing here
+// is copied from the mockup's sample data.
+
+// 2.1 — status banner: green check circle + bold label, no card border.
+function CompletedBanner() {
+  return(
+    <div className="flex items-center gap-3 px-1 py-1">
+      <span className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+        style={{backgroundColor:C.green}}>
+        <Check size={18} className="text-white" strokeWidth={3}/>
+      </span>
+      <h2 className="text-base font-black" style={{color:C.g800}}>Trade Completed</h2>
+    </div>
+  );
+}
+
+// 2.2 — release box. Heading is role-aware: "You sold Bitcoin" for seller,
+// "You Bought Bitcoin" for buyer.
+function CompletedReleasedBox({isSeller,cur,userPays,nav}) {
+  const fiat   = `${fmt(userPays)} ${cur}`;
+  const wallet = <button onClick={()=>nav('/wallet')} className="font-bold underline" style={{color:C.green}}>PRAQEN</button>;
+  return(
+    <div className="bg-white rounded-2xl border shadow-sm p-4" style={{borderColor:C.g200}}>
+      <p className="text-sm font-black mb-1" style={{color:C.g800}}>
+        {isSeller ? 'You sold Bitcoin' : 'You Bought Bitcoin'}
+      </p>
+      <p className="text-xs leading-relaxed" style={{color:C.g600}}>
+        {isSeller
+          ? `You received ${fiat} in your payment account and funds left escrow.`
+          : `You received your Bitcoin into your ${wallet} wallet.`}
+      </p>
+    </div>
+  );
+}
+
+// 2.3 — one row per party. Pill label derives from role. "Add to Contacts"
+// renders only on the counterparty's row: link → POST /contacts, then a
+// confirmed "Added" state (filled icon) that can't be tapped again.
+function CompletedSummaryRow({p,role,received,cur,userPays,btcReceived,payMethod,nav,isSelf,cpIsTrusted,trustLoading,onToggleTrust}) {
+  const fiat   = `${fmt(userPays)} ${cur}`;
+  const crypto = `${fmtBtc(btcReceived)} BTC`;
+  return(
+    <div className="flex items-start gap-3 py-3">
+      <button onClick={()=>nav(`/profile/${p?.id}`)} className="flex-shrink-0">
+        <Avatar user={p} size={44}/>
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={()=>nav(`/profile/${p?.id}`)} className="font-black text-sm hover:underline" style={{color:C.g800}}>
+            {p?.username||'User'}
+          </button>
+          {/* Sold = red-toned, Purchased = green-toned (visually distinct) */}
+          <span className="text-[10px] font-black px-2 py-0.5 rounded-full"
+            style={role==='seller'
+              ? {backgroundColor:'#FEE2E2',color:'#B91C1C'}
+              : {backgroundColor:C.mist,color:C.green}}>
+            {role==='seller'?'Sold':'Purchased'}
+          </span>
+        </div>
+        <p className="text-xs font-bold mt-1" style={{color:C.g700}}>{crypto} ({fiat})</p>
+        <p className="text-xs mt-0.5" style={{color:C.g500}}>
+          {received?`Received ${fiat} ${payMethod}`:`Paid with ${fiat} ${payMethod}`}
+        </p>
+        {!isSelf&&(
+          cpIsTrusted?(
+            <button onClick={onToggleTrust} disabled={trustLoading}
+              className="mt-2 inline-flex items-center gap-1.5 text-xs font-black transition disabled:opacity-50 hover:opacity-80"
+              style={{color:C.sage}}>
+              <Heart size={12} fill="currentColor"/> Trusted ✓
+            </button>
+          ):(
+            <button onClick={onToggleTrust} disabled={trustLoading}
+              className="mt-2 inline-flex items-center gap-1.5 text-xs font-black hover:opacity-75 transition disabled:opacity-50"
+              style={{color:C.green}}>
+              <Heart size={12}/> {trustLoading?'Updating…':'Trust this user'}
+            </button>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CompletedTradeSummary(props) {
+  // sellerIsFiatSide: whether the SELLER was the fiat-receiving side of this
+  // trade (true for every trade type except SELL_GIFT_CARD, where the buyer's
+  // BTC is the escrowed asset and the seller delivers the card for fiat).
+  const sellerIsFiatSide = props.sellerIsFiatSide;
+  return(
+    <div className="bg-white rounded-2xl border shadow-sm px-4 pt-3 pb-1" style={{borderColor:C.g200}}>
+      <p className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5 mb-1" style={{color:C.g400}}>
+        <FileText size={13}/> Trade Summary
+      </p>
+      <CompletedSummaryRow {...props} p={props.seller} role="seller" received={sellerIsFiatSide} isSelf={props.isSelfSeller}/>
+      <div className="border-t" style={{borderColor:C.g100}}/>
+      <CompletedSummaryRow {...props} p={props.buyer} role="buyer" received={!sellerIsFiatSide} isSelf={props.isSelfBuyer}/>
+    </div>
+  );
+}
+
+// 2.4 — offer terms: standalone collapsible card, default EXPANDED per mockup,
+// full stored string with whitespace preserved (never truncated). Heading is a
+// bold black title-case label (matches Trade Summary size/weight, no icon or
+// small-caps); the Hide/Show toggle lives on its own line below the terms box.
+function CompletedOfferTerms({terms}) {
+  const [open,setOpen]=useState(true);
+  return(
+    <div className="bg-white rounded-2xl border shadow-sm p-4" style={{borderColor:C.g200}}>
+      <p className="text-xs font-black" style={{color:C.g800}}>Offer terms</p>
+      {open&&(
+        <div className="mt-2">
+          <div className="rounded-xl border px-3 py-2.5 text-xs leading-relaxed whitespace-pre-wrap"
+            style={{borderColor:C.g200,color:C.g600}}>
+            {terms||'No offer terms were added to this listing.'}
+          </div>
+        </div>
+      )}
+      <button onClick={()=>setOpen(!open)}
+        className="mt-3 text-xs font-black hover:opacity-75 transition"
+        style={{color:C.green}}>
+        {open?'Hide':'Show'}
+      </button>
+    </div>
+  );
+}
+
+// 2.5 — feedback card (used for both given/received). Heading matches the
+// Trade Summary style (bold black, same size); sentiment icon (green up /
+// red down, from the stored rating>=4 convention) sits top-right whenever
+// feedback exists. Populated: quoted text in a light-gray rounded box, with
+// the author's Edit feedback button as a full-width gray button below it.
+// Empty states keep the existing behavior (prompt+Leave / neutral text).
+function CompletedFeedbackCard({title,feedback,mine,cpName,onLeave,onEdit}) {
+  const positive  = feedback ? feedback.rating>=4 : true;
+  const FbIcon    = positive?ThumbsUp:ThumbsDown;
+  const iconColor = positive?C.success:C.danger;
+  return(
+    <div className="bg-white rounded-2xl border shadow-sm p-4" style={{borderColor:C.g200}}>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-black" style={{color:C.g800}}>{title}</p>
+        {feedback&&(
+          <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
+            style={{backgroundColor:positive?`${C.success}15`:`${C.danger}15`}}>
+            <FbIcon size={14} style={{color:iconColor}} className={positive?'':'fill-current'}/>
+          </span>
+        )}
+      </div>
+      {feedback ? (
+        <>
+          <div className="bg-gray-50 rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed mt-2" style={{color:C.g600}}>
+            <q>{feedback.comment||'(No comment left)'}</q>
+          </div>
+          {mine&&(
+            <button onClick={onEdit}
+              className="mt-2.5 w-full py-2 rounded-xl text-xs font-black transition hover:opacity-90"
+              style={{backgroundColor:C.g100,color:C.g700}}>
+              Edit feedback
+            </button>
+          )}
+        </>
+      ) : mine ? (
+        <div className="flex items-center justify-between gap-2 mt-2">
+          <p className="text-xs" style={{color:C.g500}}>You haven't left feedback for {cpName} yet.</p>
+          <button onClick={onLeave}
+            className="text-xs font-black px-3 py-1.5 rounded-lg flex-shrink-0 text-white transition hover:opacity-90"
+            style={{backgroundColor:C.green}}>
+            Leave feedback
+          </button>
+        </div>
+      ) : (
+        <p className="text-xs mt-2" style={{color:C.g500}}>No feedback left yet</p>
+      )}
+    </div>
+  );
+}
+
+// 2.6 — action list card containing "Public receipt" and "Report a problem".
+function CompletedActionList({trade, onReport}) {
+  const handlePublicReceipt = () => {
+    toast.info('Public trade receipt link copied to clipboard!');
+    copyToClipboard(`${window.location.origin}/trade/${trade?.id || ''}`, 'Receipt link copied!');
+  };
+
+  return(
+    <div className="bg-white rounded-2xl border shadow-sm overflow-hidden" style={{borderColor:C.g200}}>
+      <p className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5 px-4 pt-3 pb-1" style={{color:C.g400}}>
+        <Flag size={13}/> Trade actions
+      </p>
+      <div className="divide-y" style={{borderColor:C.g100}}>
+        <button onClick={handlePublicReceipt}
+          className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-emerald-50/50 transition">
+          <span className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{backgroundColor:`${C.green}12`}}>
+            <Clipboard size={15} style={{color:C.green}}/>
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-black" style={{color:C.g800}}>Public receipt</span>
+            <span className="block text-xs" style={{color:C.g400}}>View trade receipt</span>
+          </span>
+        </button>
+
+        <button onClick={onReport}
+          className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-red-50 transition">
+          <span className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{backgroundColor:`${C.danger}12`}}>
+            <Flag size={15} style={{color:C.danger}}/>
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-black" style={{color:C.g800}}>Report a problem</span>
+            <span className="block text-xs" style={{color:C.g400}}>Reach out to PRAQEN support</span>
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// 2.7 — info card, mockup layout: "Trade actions" heading, 2-column grid —
+// Trade ID + Offer side by side, the two Trade-started cells side by side,
+// Rate on its own full-width row with the coin icon. NOTE: the data model
+// stores a single canonical start time, so both Trade-started cells show the
+// same value (flagged to the team vs the mockup's two distinct timestamps).
+function CompletedInfoCard({trade,shortId,sellerRate,cur,sym,tradeAge}) {
+  const copyBtn=(val)=>(
+    <button onClick={()=>{copyToClipboard(val,'Copied!');}}
+      className="w-5 h-5 rounded flex items-center justify-center hover:bg-gray-100">
+      <Copy size={10} style={{color:C.g400}}/>
+    </button>
+  );
+  const cell="rounded-xl border p-3 flex flex-col gap-1";
+  return(
+    <div className="bg-white rounded-2xl border p-4" style={{borderColor:C.g200}}>
+      <p className="text-xs font-black uppercase tracking-wider flex items-center gap-1 mb-3" style={{color:C.g400}}>
+        <Info size={13}/> Trade actions
+      </p>
+      <div className="grid grid-cols-2 gap-2.5">
+        <div className={cell} style={{borderColor:C.g200}}>
+          <span className="text-xs" style={{color:C.g500}}>Trade ID</span>
+          <span className="flex items-center gap-1.5">
+            <span className="font-mono font-bold text-xs" style={{color:C.forest}}>#{shortId}</span>
+            {copyBtn(trade.id||'')}
+          </span>
+        </div>
+        <div className={cell} style={{borderColor:C.g200}}>
+          <span className="text-xs" style={{color:C.g500}}>Offer</span>
+          <span className="flex items-center gap-1.5">
+            <span className="font-mono font-bold text-xs" style={{color:C.g700}}>#{String(trade.listing_id||'').slice(0,8).toUpperCase()}</span>
+            {copyBtn(trade.listing_id||'')}
+          </span>
+        </div>
+        <div className={cell} style={{borderColor:C.g200}}>
+          <span className="text-xs" style={{color:C.g500}}>Trade started</span>
+          <span className="text-xs font-bold" style={{color:C.g700}}>{tradeAge}</span>
+        </div>
+        <div className={cell} style={{borderColor:C.g200}}>
+          <span className="text-xs" style={{color:C.g500}}>Offer created</span>
+          <span className="text-xs font-bold" style={{color:C.g700}}>{fmtAge(trade?.listing?.created_at || trade?.created_at)}</span>
+        </div>
+        <div className="col-span-2 rounded-xl border p-3 flex flex-col gap-1" style={{borderColor:C.g200}}>
+          <span className="text-xs" style={{color:C.g500}}>Rate</span>
+          <span className="flex items-center gap-1.5 text-sm font-black" style={{color:C.forest}}>
+            <Bitcoin size={15}/> {sym}{fmt(sellerRate)} {cur}/BTC
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Assembled completed view — section order per spec §2.
+function CompletedTradeView(props) {
+  const {trade}=props;
+  // Terms live on the offer/listing (verified in DB: listings.trade_instructions
+  // / listing_terms — the same fields the create-offer form sends). Test
+  // listings currently store empty strings, so the card renders its empty
+  // state instead of silently hiding the box.
+  const terms = trade?.listing?.trade_instructions || trade?.listing?.listing_terms || '';
+  // "Fiat side" = current user received the fiat value. Same escrow flip as the
+  // summary rows: seller is the fiat receiver except on SELL_GIFT_CARD trades.
+  const isFiatSide = props.isSeller ? props.sellerIsFiatSide : !props.sellerIsFiatSide;
+  return(
+    <>
+      <CompletedBanner/>
+      <CompletedReleasedBox isSeller={props.isSeller} cur={props.cur} userPays={props.userPays} nav={props.nav}/>
+      <CompletedTradeSummary
+        seller={props.seller} buyer={props.buyer}
+        sellerIsFiatSide={props.sellerIsFiatSide}
+        isSelfSeller={props.isSeller} isSelfBuyer={props.isBuyer}
+        cur={props.cur} userPays={props.userPays} btcReceived={props.btcReceived}
+        payMethod={props.payMethod} nav={props.nav}
+        cpIsTrusted={props.cpIsTrusted} trustLoading={props.trustLoading}
+        onToggleTrust={props.onToggleTrust}/>
+      <CompletedOfferTerms terms={terms}/>
+      <CompletedFeedbackCard
+        title={`Your feedback for ${props.cpName}`} feedback={props.fbGiven} mine
+        cpName={props.cpName} onLeave={props.onLeaveFeedback}
+        onEdit={props.onEditFeedback}/>
+      <CompletedFeedbackCard
+        title={`Your feedback from ${props.cpName}`} feedback={props.fbReceived}/>
+      <CompletedActionList trade={trade} onReport={props.onReport}/>
+      <CompletedInfoCard trade={trade} shortId={props.shortId} sellerRate={props.sellerRate}
+        cur={props.cur} sym={props.sym} tradeAge={props.tradeAge}/>
+    </>
+  );
+}
+
 // ─── Main Trade Detail ────────────────────────────────────────────────────────
 export default function TradeDetail({user}) {
   const {id}       = useParams();
@@ -949,6 +1259,7 @@ export default function TradeDetail({user}) {
 
   const [showRelConfirm, setShowRelConfirm] = useState(false);
   const [showFb,         setShowFb]         = useState(false);
+  const [editingFb,      setEditingFb]      = useState(false); // true → PUT (edit) instead of POST (create)
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [tradeCompleted, setTradeCompleted] = useState(false);
   const [show2FA,        setShow2FA]        = useState(false);
@@ -957,6 +1268,10 @@ export default function TradeDetail({user}) {
   const [sending2FA,     setSending2FA]     = useState(false);
   const [imgSrc,    setImgSrc]    = useState(null);
   const [fbSub,     setFbSub]     = useState(false);
+  const [fbGiven,    setFbGiven]    = useState(null);    // current user's review on this trade
+  const [fbReceived, setFbReceived] = useState(null);    // counterparty's review on this trade
+  const [cpIsTrusted,   setCpIsTrusted]   = useState(false); // counterparty trusted by current user
+  const [trustLoading,  setTrustLoading]  = useState(false);
   const [profUser,  setProfUser]  = useState(null);
   const [profLabel, setProfLabel] = useState('');
   const [loadErr,   setLoadErr]   = useState(false);
@@ -1061,6 +1376,13 @@ export default function TradeDetail({user}) {
     }
   },[isCompleted, trade?.user_gave_feedback, tradeCompleted, id]);
 
+  // On mobile the actions column is tab-hidden — land the user on Actions when
+  // the trade reaches the completed state so the Completed view is visible.
+  // Desktop (md+) shows both columns regardless; this is a no-op there.
+  useEffect(()=>{
+    if(isCompleted) setActiveTab(t=>t==='chat'?'actions':t);
+  },[isCompleted]);
+
   // Cleanup staged preview URLs on unmount
   useEffect(()=>{
     return()=>{stagedPreviews.forEach(u=>URL.revokeObjectURL(u));};
@@ -1131,6 +1453,7 @@ export default function TradeDetail({user}) {
       toastShown.current=false;
       if(t.seller) setSeller(t.seller);
       if(t.buyer)  setBuyer(t.buyer);
+      if((t.status||'').toUpperCase()==='COMPLETED') loadTradeReviews(t);
     }catch(e){
       const status = e.response?.status;
       console.error('[TradeDetail] loadTrade error — status:', status, 'msg:', e.message);
@@ -1159,7 +1482,53 @@ export default function TradeDetail({user}) {
       setTrade(t);
       if(t.seller) setSeller(t.seller);
       if(t.buyer)  setBuyer(t.buyer);
+      if((t.status||'').toUpperCase()==='COMPLETED'&&!fbGiven) loadTradeReviews(t);
     }catch{}
+  };
+
+  // Both directions of feedback for this trade, fetched in parallel from the
+  // existing per-user reviews endpoints (each review carries its trade_id).
+  // Takes the freshly-loaded trade as an arg — state may still be stale/null
+  // when called from loadTrade right after setTrade.
+  const loadTradeReviews=async(t)=>{
+    const tr = t || trade;
+    if(!id||!user||!tr)return;
+    const cpId = String(user.id)===String(tr.buyer_id) ? tr.seller_id : tr.buyer_id;
+    if(!cpId)return;
+    try{
+      const [aboutMe,aboutCp]=await Promise.all([
+        axios.get(`${API_URL}/users/${user.id}/reviews`),
+        axios.get(`${API_URL}/users/${cpId}/reviews`),
+      ]);
+      // Each endpoint returns reviews ABOUT the queried user, so:
+      // my given feedback = review about cp authored by ME;
+      // my received feedback = review about ME authored by the cp.
+      const given    = (aboutCp.data.reviews||[]).find(r=>r.trade_id===id && String(r.reviewer_id)===String(user.id));
+      const received = (aboutMe.data.reviews||[]).find(r=>r.trade_id===id && String(r.reviewer_id)===String(cpId));
+      setFbGiven(given||null);
+      setFbReceived(received||null);
+    }catch{}
+    // Trust status for the counterparty (restores trusted state on reload via relationship API).
+    axios.get(`${API_URL}/users/${cpId}/relationship`,{headers:authH()})
+      .then(r=>setCpIsTrusted(!!r.data?.is_trusted))
+      .catch(()=>{});
+  };
+
+  // Toggle trust state for counterparty using existing /users/:id/trust endpoint
+  const toggleTrust=async()=>{
+    if(!trade||!user||trustLoading)return;
+    const cpId = String(user.id)===String(trade.buyer_id)?trade.seller_id:trade.buyer_id;
+    if(!cpId)return;
+    setTrustLoading(true);
+    try{
+      const prevTrusted = cpIsTrusted;
+      const r=await axios.post(`${API_URL}/users/${cpId}/trust`,{},{headers:authH()});
+      const newTrusted = typeof r.data?.trusted === 'boolean' ? r.data.trusted : !prevTrusted;
+      setCpIsTrusted(newTrusted);
+      toast.success(newTrusted ? 'User added to your trusted list' : 'Trust removed');
+    }catch(e){
+      toast.error(e.response?.data?.error||'Failed to update trust');
+    }finally{ setTrustLoading(false); }
   };
 
   const loadMessages=async()=>{
@@ -1409,17 +1778,23 @@ export default function TradeDetail({user}) {
     localStorage.setItem('fb_done_'+id,'1');
     setShowFb(false);
     setShowSuccessModal(false);
+    setEditingFb(false); // never reopen the create-prompt in edit mode
   };
 
   const submitFeedback=async(rating,comment)=>{
     setFbSub(true);
     try{
-      await axios.post(`${API_URL}/trades/${id}/feedback`,{rating,comment,toUserId:isBuyer?trade.seller_id:trade.buyer_id},{headers:authH()});
+      if(editingFb){
+        // Edit mode: overwrite my existing review for this trade (one edit allowed).
+        await axios.put(`${API_URL}/trades/${id}/feedback`,{rating,comment},{headers:authH()});
+      }else{
+        await axios.post(`${API_URL}/trades/${id}/feedback`,{rating,comment,toUserId:isBuyer?trade.seller_id:trade.buyer_id},{headers:authH()});
+      }
       toast.success('Feedback submitted!');
       dismissFeedbackModal();
       await loadTrade();
     }catch(e){toast.error(e?.response?.data?.error||'Failed');}
-    finally{setFbSub(false);}
+    finally{setFbSub(false);setEditingFb(false);}
   };
 
   const fmtTimer=s=>{
@@ -1582,6 +1957,27 @@ export default function TradeDetail({user}) {
               activeTab === 'actions' ? 'block' : 'hidden'
             } md:block md:w-80 md:flex-shrink-0 md:overflow-y-auto md:h-full md:pb-0`}>
               <div className="space-y-3 pr-1">
+
+            {isCompleted ? (
+              <CompletedTradeView
+                trade={trade}
+                isSeller={isSeller} isBuyer={isBuyer}
+                sellerIsFiatSide={!isSellGiftCard}
+                seller={seller} buyer={buyer}
+                cur={cur} sym={sym}
+                userPays={userPays} btcReceived={btcReceived}
+                payMethod={payMethod}
+                cpName={cp?.username||'User'}
+                fbGiven={fbGiven} fbReceived={fbReceived}
+                cpIsTrusted={cpIsTrusted} trustLoading={trustLoading}
+                onToggleTrust={toggleTrust}
+                onLeaveFeedback={()=>setShowFb(true)}
+                onEditFeedback={()=>{setEditingFb(true);setShowFb(true);}}
+                onReport={()=>setShowReportModal(true)}
+                shortId={shortId} sellerRate={sellerRate} tradeAge={tradeAge}
+                nav={navigate}/>
+            ) : (
+            <>
 
             {/* ── TRADE PROGRESS ───────────────────────────────────────── */}
             <div className="bg-white rounded-2xl border shadow-sm p-4" style={{borderColor:C.g200}}>
@@ -1795,6 +2191,19 @@ export default function TradeDetail({user}) {
                       <div className="pt-2 space-y-1.5">
                         <p className="text-xs font-black uppercase tracking-widest" style={{color:C.g400}}>Actions</p>
 
+                        <button onClick={()=>{
+                          toast.info('Public trade receipt link copied to clipboard!');
+                          copyToClipboard(`${window.location.origin}/trade/${trade?.id || ''}`, 'Receipt link copied!');
+                        }}
+                          className="w-full flex items-center gap-2 p-2.5 rounded-xl hover:bg-emerald-50/50 transition text-left border"
+                          style={{borderColor:C.g100}}>
+                          <Clipboard size={12} style={{color:C.green}}/>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-black" style={{color:C.g700}}>Public receipt</p>
+                            <p className="text-xs" style={{color:C.g400}}>View trade receipt</p>
+                          </div>
+                        </button>
+
                         <button onClick={()=>{copyToClipboard(trade.id||'', 'Trade ID copied!');}}
                           className="w-full flex items-center gap-2 p-2.5 rounded-xl hover:bg-gray-50 transition text-left border"
                           style={{borderColor:C.g100}}>
@@ -1852,6 +2261,8 @@ export default function TradeDetail({user}) {
                 </div>
               )}
             </div>
+            </>
+            )}
 
               </div>
             </div>
@@ -2013,6 +2424,32 @@ export default function TradeDetail({user}) {
                     const isPmt    =/⏳.*payment|payment.*sent|buyer.*paid|mark.*paid|sent.*payment|confirmed payment|payment.*confirm|payment confirmed/i.test(text);
                     const isOpen   =/trade.*open|escrow.*lock|btc.*locked|opened/i.test(text);
                     const isDisp   =/disput|moderator|support.*review/i.test(text);
+
+                    /* ── AUTOMATED DISPUTE NOTICE — red/pink card, distinct from
+                          the green/blue payment-status system messages. Used for
+                          the two automatic dispute messages (dispute opened +
+                          15-min video-proof request). Falls through to the
+                          generic DISPUTE banner for any other dispute text. ── */
+                    const isDisputeNotice = text.includes('A dispute has been started by')||text.includes('provide new video proof');
+                    if(isDisputeNotice) return(
+                      <div key={i} className="flex justify-center my-3 px-1">
+                        <div className="w-full max-w-[95%] rounded-2xl overflow-hidden shadow-lg" style={{border:'1px solid #FCA5A5'}}>
+                          <div className="flex items-center gap-2.5 px-3.5 py-2" style={{background:'linear-gradient(135deg,#F43F5E,#E11D48)'}}>
+                            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-base" style={{backgroundColor:'#FFE4E6'}}>
+                              <AlertTriangle size={16} style={{color:'#BE123C'}}/>
+                            </div>
+                            <span className="text-xs font-black tracking-widest flex-1" style={{color:'rgba(255,255,255,0.95)',letterSpacing:'0.08em'}}>DISPUTE</span>
+                            <span className="text-xs font-semibold" style={{color:'rgba(255,255,255,0.7)'}}>{ts}</span>
+                          </div>
+                          <div className="px-4 py-3" style={{background:'#FFF1F2'}}>
+                            <p className="text-xs font-black mb-1.5" style={{color:'#BE123C'}}>
+                              {text.includes('provide new video proof')?'System message (from moderator)':'System message'}
+                            </p>
+                            <p className="text-xs font-semibold leading-relaxed whitespace-pre-line" style={{color:'#1E293B'}}>{text}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
 
                     /* ── PAYMENT CONFIRMED — simple green system message ── */
                     if(isPmt) return(
@@ -2544,7 +2981,8 @@ export default function TradeDetail({user}) {
       {/* ── MODALS ─────────────────────────────────────────────────────────── */}
       {profUser && <ProfilePopup user={profUser} label={profLabel} trade={trade} onClose={()=>setProfUser(null)}/>}
       {showSuccessModal && <FeedbackModal name={cp?.username} onClose={dismissFeedbackModal} onSubmit={submitFeedback} submitting={fbSub}/>}
-      {showFb && <FeedbackModal name={cp?.username} onClose={dismissFeedbackModal} onSubmit={submitFeedback} submitting={fbSub}/>}
+      {showFb && <FeedbackModal name={cp?.username} onClose={dismissFeedbackModal} onSubmit={submitFeedback} submitting={fbSub}
+        editing={editingFb} initial={editingFb?fbGiven:null}/>}
       {showCancel && <CancelModal onClose={()=>setShowCancel(false)} onConfirm={cancelTrade} submitting={submitting}/>}
       {imgSrc && <ImgModal src={imgSrc} onClose={()=>setImgSrc(null)}/>}
       {showDisputeModal && <DisputeModal onClose={()=>setShowDisputeModal(false)} onSubmit={submitDispute} submitting={disputeSubmitting}/>}

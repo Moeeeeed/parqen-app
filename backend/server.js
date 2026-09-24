@@ -1460,6 +1460,114 @@ async function notifyModerators(tradeId, trade, reason) {
   console.log(`✅ Notified ${ids.length} moderators about dispute on trade ${tradeId}`);
 }
 
+// ============================================================
+// DISPUTE CHAT SYSTEM MESSAGES
+// Both automatic dispute messages are stored as regular SYSTEM rows in the
+// `messages` table (sender_id/recipient_id null) — the exact same shape every
+// other trade-chat system message uses — so they render in the shared chat for
+// BOTH parties, persist in chat history, and arrive via the chat's normal
+// polling. No separate messaging mechanism.
+// ============================================================
+
+// MESSAGE 1 — posted the moment a dispute is opened. Dynamic parts: the
+// disputer's username and the reason they selected/typed. Everything after the
+// reason is fixed text — do not reword without team sign-off.
+function disputeOpenedChatText(disputerUsername, reasonText) {
+  // The reason is free text typed by one trader and appears inside a SYSTEM-styled message
+  // the other trader will read as official. Flatten it to one line, cap it, and quote it as
+  // the user's own words so it cannot masquerade as moderator/platform instructions.
+  const reason = String(reasonText || 'User opened a dispute')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200) || 'User opened a dispute';
+  return [
+    `A dispute has been started by ${disputerUsername}. The reason given by the user is: "${reason}"`,
+    '',
+    'Disputes are processed in live queue and a moderator will join the trade chat when available. Decision for the award of escrowed cryptocurrency is based on following of offer terms, trading activity, provided proof of payment and the information request by a moderator during the trade.',
+    '',
+    'While waiting for a moderator to join you can summarize what happened and present all possible proof to support your claim.',
+  ].join('\n');
+}
+
+// MESSAGE 2 — posted 15 minutes after the dispute opened (see
+// runDisputeProofFollowUps) if it is still unresolved. Static compliance text
+// addressing both parties by username — do not reword without team sign-off.
+function disputeProofChatText(sellerUsername, buyerUsername) {
+  return [
+    `@${sellerUsername} and @${buyerUsername}`,
+    '',
+    'This trade is now in dispute and both parties are required to provide new video proof of their claims. Please include the following:',
+    '• A video recording showing you navigating to your account details and then displaying the transaction history for the last 10 days. Buyer must also show the detailed receipt of the payment',
+    "• A video recording where you call your financial institution's support and have them confirm the status of the payment",
+    '• A video recording where you chat with live support and have them confirm the status of the payment',
+    '',
+    'NOTE: We must hear/see details such as Account name, Account no., Date of transfer, Amount, and Status of transaction in the recording. Also, do not send screenshots or old proof. Dispute resolution can take up to 48 hours.',
+  ].join('\n');
+}
+
+// Shared insert for both messages. sender_id and recipient_id stay null so the
+// message is visible to BOTH parties and every chat surface reads it as SYSTEM.
+async function postDisputeChatMessage(tradeId, text) {
+  const { error } = await supabaseAdmin.from('messages').insert([{
+    trade_id: tradeId,
+    sender_id: null,
+    recipient_id: null,
+    message_text: text,
+    message_type: 'SYSTEM',
+    sender_role: 'system',
+    created_at: new Date(),
+  }]);
+  if (error) console.error('[disputeChat] system message insert failed:', error.message);
+  return !error;
+}
+
+// 15-minute follow-up (MESSAGE 2). Runs on the same pattern as the
+// expired-trades cron — a 60-second interval that queries the DB instead of
+// holding in-memory timers, so it survives server restarts. Idempotent per
+// dispute: a trade only gets the follow-up if no proof-request message exists
+// AFTER its disputed_at, so re-opened disputes (fresh disputed_at) get a fresh
+// window and resolved disputes (status no longer DISPUTED) never fire.
+async function runDisputeProofFollowUps() {
+  try {
+    const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    // 48h age cap (matches the stated dispute-resolution SLA): prevents the very
+    // first cron pass after deploy from dropping proof requests into long-open
+    // disputes moderators have been working for days.
+    const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const { data: due, error } = await supabaseAdmin.from('trades')
+      .select('id, buyer_id, seller_id, disputed_at, dispute_reason')
+      .eq('status', 'DISPUTED')
+      .lt('disputed_at', fifteenMinAgo)
+      .gt('disputed_at', twoDaysAgo);
+    if (error || !due || due.length === 0) return;
+
+    // Auto-escalated disputes (accountEnforcement) are opened by the system,
+    // not by a trade party, and already carry their own explanatory message —
+    // the buyer/seller proof request doesn't apply to them.
+    const candidates = due.filter(t => !/^Auto-escalated:/i.test(t.dispute_reason || ''));
+
+    for (const t of candidates) {
+      // Already asked for proof since this dispute was opened? Then never again
+      // for this dispute window.
+      const { count } = await supabaseAdmin.from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('trade_id', t.id)
+        .gte('created_at', t.disputed_at)
+        .ilike('message_text', '%provide new video proof%');
+      if (count > 0) continue;
+
+      const partyIds = [t.buyer_id, t.seller_id].filter(Boolean);
+      const { data: partyUsers } = await supabaseAdmin.from('users').select('id, username').in('id', partyIds);
+      const usernameOf = (uid) => (partyUsers || []).find(u => String(u.id) === String(uid))?.username || 'Trader';
+
+      const posted = await postDisputeChatMessage(t.id, disputeProofChatText(usernameOf(t.seller_id), usernameOf(t.buyer_id)));
+      if (posted) console.log(`✅ [disputeChat] 15-min proof request posted to trade ${t.id.slice(0, 8)}`);
+    }
+  } catch (err) {
+    console.error('[disputeChat] follow-up cron error:', err.message);
+  }
+}
+
 async function createNotification(userId, type, title, message, action, extra = {}) {
   try {
     const hasExtra = extra && (extra.actor_id || extra.direction || extra.trade_id);
@@ -9677,6 +9785,20 @@ app.post('/api/trades/:id/dispute', tradeLimiter, verifyToken, requireNotBanned,
     res.json({ success: true, trade: data });
 
     setImmediate(async () => {
+      // Fetch both parties once — usernames for the chat message, emails below
+      const [buyerRes, sellerRes] = await Promise.allSettled([
+        supabaseAdmin.from('users').select('id, email, username').eq('id', trade.buyer_id).single(),
+        supabaseAdmin.from('users').select('id, email, username').eq('id', trade.seller_id).single(),
+      ]);
+      const buyerUser = buyerRes.value?.data;
+      const sellerUser = sellerRes.value?.data;
+
+      // MESSAGE 1 — instant shared trade-chat system message naming the
+      // disputer and their reason, visible to BOTH buyer and seller.
+      const disputerUser = String(req.userId) === String(trade.seller_id) ? sellerUser : buyerUser;
+      postDisputeChatMessage(req.params.id, disputeOpenedChatText(disputerUser?.username || 'Trader', reason))
+        .catch(e => console.error('[disputeChat] message 1 failed:', e.message));
+
       // In-app notifications and system message
       await createNotification(trade.seller_id, 'support', '⚠️ Dispute Opened', `Dispute opened for trade #${req.params.id.slice(0, 8)}. Moderator will review.`, `/trade/${req.params.id}`);
       await createNotification(trade.buyer_id, 'support', '⚠️ Dispute Opened', `Dispute opened for trade #${req.params.id.slice(0, 8)}. Please provide evidence.`, `/trade/${req.params.id}`);
@@ -9687,15 +9809,6 @@ app.post('/api/trades/:id/dispute', tradeLimiter, verifyToken, requireNotBanned,
       const disputeRef = `#${String(req.params.id).slice(0,8).toUpperCase()}`;
       sendTelegramAlert(trade.buyer_id, `🚨 Dispute opened on trade ${disputeRef}. Reason: ${(reason || 'User opened a dispute').slice(0, 100)}. A moderator will review.`).catch(() => {});
       sendTelegramAlert(trade.seller_id, `🚨 Dispute opened on trade ${disputeRef}. Reason: ${(reason || 'User opened a dispute').slice(0, 100)}. A moderator will review.`).catch(() => {});
-      supabaseAdmin.from('messages').insert([{ trade_id: req.params.id, sender_id: null, recipient_id: null, message_text: `🚨 DISPUTE OPENED — Reason: ${reason || 'User opened a dispute'}. Moderators notified.`, message_type: 'SYSTEM', sender_role: 'system', created_at: new Date() }]).then(null, () => { });
-
-      // Email both parties — fetch their user records in parallel
-      const [buyerRes, sellerRes] = await Promise.allSettled([
-        supabaseAdmin.from('users').select('id, email, username').eq('id', trade.buyer_id).single(),
-        supabaseAdmin.from('users').select('id, email, username').eq('id', trade.seller_id).single(),
-      ]);
-      const buyerUser = buyerRes.value?.data;
-      const sellerUser = sellerRes.value?.data;
       if (buyerUser?.email)
         emailService.sendDisputeOpenedEmail(buyerUser, trade, reason).catch(e => console.error('[dispute] buyer email failed:', e.message));
       if (sellerUser?.email)
@@ -10275,6 +10388,151 @@ app.post('/api/trades/:id/feedback', verifyToken, async (req, res) => {
     }
 
     res.json({ success: true, review: review[0] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Edit existing feedback for a trade (author-only, ONE edit per review).
+//
+// Safety rules (deliberate):
+//  * The rating may only move WITHIN its sentiment bucket — positive (4–5), neutral (3) or
+//    negative (1–2), the same buckets POST /feedback uses to bump positive_feedback /
+//    negative_feedback. Moving between buckets would require lowering a stat counter, which
+//    the protect_user_stats trigger blocks and the praqen_update_feedback RPC (not deployed)
+//    would be needed for; a raise-only fallback would count one review twice. The comment
+//    can always be edited.
+//  * The one-edit rule needs reviews.edited (database/2026-09-24_add_edited_to_reviews.sql).
+//    If that column is missing the edit is REFUSED rather than silently allowing unlimited edits.
+//  * The reviewee's average_rating is recomputed from their reviews after every edit.
+const feedbackBucket = r => (r >= 4 ? 'positive' : r <= 2 ? 'negative' : 'neutral');
+app.put('/api/trades/:id/feedback', verifyToken, async (req, res) => {
+  try {
+    const { rating, comment } = req.body;
+    const ratingVal = parseInt(rating);
+    if (!ratingVal || ratingVal < 1 || ratingVal > 5) return res.status(400).json({ error: 'Rating must be 1–5' });
+    const cleanComment = String(comment || '').slice(0, 1000);
+    const { data: existing } = await supabaseAdmin
+      .from('reviews')
+      .select('*')
+      .eq('trade_id', req.params.id)
+      .eq('reviewer_id', req.userId)
+      .maybeSingle();
+    if (!existing) return res.status(404).json({ error: 'No feedback found for this trade' });
+    if (!('edited' in existing)) {
+      return res.status(503).json({ error: 'Feedback editing is not available yet. Please try again later.' });
+    }
+    if (existing.edited) return res.status(400).json({ error: 'Feedback has already been edited and can only be edited once' });
+    if (feedbackBucket(existing.rating) !== feedbackBucket(ratingVal)) {
+      return res.status(400).json({ error: 'You can adjust your rating within the same category (positive 4–5, neutral 3, negative 1–2) and edit your comment. Changing between categories is not allowed.' });
+    }
+
+    const { data: updated, error } = await supabaseAdmin
+      .from('reviews')
+      .update({ rating: ratingVal, comment: cleanComment, edited: true })
+      .eq('id', existing.id)
+      .eq('edited', false)
+      .select()
+      .single();
+    if (error) return res.status(400).json({ error: error.message });
+
+    // Keep the displayed average in step with the review rows. Best-effort: a failure here
+    // must not undo an edit that already saved.
+    try {
+      const { data: all } = await supabaseAdmin.from('reviews').select('rating').eq('reviewee_id', existing.reviewee_id);
+      if (all && all.length) {
+        const avg = parseFloat((all.reduce((sum, r) => sum + (parseInt(r.rating) || 0), 0) / all.length).toFixed(2));
+        await supabaseAdmin.from('users').update({ average_rating: avg }).eq('id', existing.reviewee_id);
+      }
+    } catch (avgErr) {
+      console.warn('[feedback-edit] average_rating recompute failed:', avgErr.message);
+    }
+    res.json({ success: true, review: updated });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================
+// CONTACTS — minimal add-only feature (owner_user_id ← contact_user_id).
+// Backs the "Add to Contacts" action on the completed-trade screen.
+// No contacts list/management surface exists yet (deliberately out of scope).
+// ============================================================
+
+// Idempotent add: re-adding an existing pair is a success no-op, never an error.
+app.post('/api/contacts', verifyToken, async (req, res) => {
+  try {
+    const { contact_user_id: contactId } = req.body || {};
+    if (!contactId) return res.status(400).json({ error: 'contact_user_id is required' });
+    if (contactId === req.userId) return res.status(400).json({ error: 'You cannot add yourself as a contact' });
+    // Only people you have actually traded with can be added — stops arbitrary user IDs being
+    // stored (and keeps the raw database error text out of the response for bad IDs).
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(contactId))) {
+      return res.status(400).json({ error: 'Invalid contact' });
+    }
+    const { data: sharedTrade } = await supabaseAdmin
+      .from('trades')
+      .select('id')
+      .or(`and(buyer_id.eq.${req.userId},seller_id.eq.${contactId}),and(buyer_id.eq.${contactId},seller_id.eq.${req.userId})`)
+      .limit(1)
+      .maybeSingle();
+    if (!sharedTrade) return res.status(403).json({ error: 'You can only add people you have traded with' });
+
+    const { data: exists } = await supabaseAdmin
+      .from('contacts')
+      .select('*')
+      .eq('owner_user_id', req.userId)
+      .eq('contact_user_id', contactId)
+      .maybeSingle();
+    if (exists) return res.json({ success: true, added: false, contact: exists });
+
+    const { data: contact, error } = await supabaseAdmin
+      .from('contacts')
+      .insert([{ owner_user_id: req.userId, contact_user_id: contactId }])
+      .select()
+      .single();
+    if (error) {
+      // 23505 = unique(owner,contact) — a concurrent insert won the race; treat
+      // it as the same idempotent no-op.
+      if (error.code === '23505') {
+        const { data: contact2 } = await supabaseAdmin
+          .from('contacts')
+          .select('*')
+          .eq('owner_user_id', req.userId)
+          .eq('contact_user_id', contactId)
+          .maybeSingle();
+        return res.json({ success: true, added: false, contact: contact2 || null });
+      }
+      // 42P01 = table missing — migration not yet run in this environment.
+      if (error.code === '42P01') {
+        return res.status(500).json({ error: 'contacts table is missing — run database/2026-09-24_create_contacts_table.sql in the Supabase SQL Editor' });
+      }
+      return res.status(400).json({ error: error.message });
+    }
+    res.json({ success: true, added: true, contact });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Lookup used to restore the "Added" state on reload. Scoped to the pairs
+// relevant to a single screen (max 20 ids). Missing table degrades to an
+// empty result so the UI just shows the add link.
+app.get('/api/contacts/check', verifyToken, async (req, res) => {
+  try {
+    const ids = String(req.query.contact_user_ids || '')
+      .split(',').map(s => s.trim()).filter(Boolean).slice(0, 20);
+    if (!ids.length) return res.json({ contact_user_ids: [] });
+    const { data, error } = await supabaseAdmin
+      .from('contacts')
+      .select('contact_user_id')
+      .eq('owner_user_id', req.userId)
+      .in('contact_user_id', ids);
+    if (error) {
+      if (error.code === '42P01') return res.json({ contact_user_ids: [] });
+      return res.status(400).json({ error: error.message });
+    }
+    res.json({ contact_user_ids: (data || []).map(r => r.contact_user_id) });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -15749,6 +16007,14 @@ if (
   _runExpiredTrades();
   setInterval(_runExpiredTrades, 60 * 1000);
   console.log('⏱  Expired trade cron: checks every 60 seconds — BTC auto-refunded to seller on expiry');
+
+  // ── Dispute follow-up: post the 15-minute proof-request message ──────────
+  // Runs every 60s and picks up trades that crossed the 15-minute mark while
+  // the server was offline, so restarts never lose a follow-up.
+  const _runDisputeFollowUps = () => runDisputeProofFollowUps().catch(err => console.error('[disputeChat] cron error:', err.message));
+  _runDisputeFollowUps();
+  setInterval(_runDisputeFollowUps, 60 * 1000);
+  console.log('⏱  Dispute follow-up cron: checks every 60 seconds — posts 15-min proof-request message to still-open disputes');
 });
 
 module.exports = app;
