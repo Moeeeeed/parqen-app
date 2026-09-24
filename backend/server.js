@@ -138,6 +138,19 @@ function getCachedStale(key) {
 }
 function setCached(key, data) { _marketCache.set(key, { data, ts: Date.now() }); }
 
+// Awaits `promise` for at most `ms`, then moves on WITHOUT cancelling it — the work keeps
+// running in the background. Never rejects. Used so a slow email provider can delay an
+// API response by a couple of seconds at most, never hold it hostage.
+const TRADE_EMAIL_MAX_WAIT_MS = 2000;
+function settleWithin(promise, ms) {
+  let timer;
+  const timeout = new Promise(resolve => { timer = setTimeout(resolve, ms); });
+  return Promise.race([
+    Promise.resolve(promise).then(() => undefined, () => undefined),
+    timeout,
+  ]).finally(() => clearTimeout(timer));
+}
+
 // When something changes (trade started, listing updated), clear the cache but immediately
 // kick off a background refresh so the NEXT user request hits a warm cache.
 let _cacheRefreshTimer = null;
@@ -9131,16 +9144,22 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
 
     // Invalidate marketplace cache so seller's reduced BTC balance shows immediately
     bustCache();
-    // Respond immediately — escrow is locked, trade is live. Do NOT block on emails.
-    res.json({ success: true, trade: trade[0], escrowAddress: escrowResult.escrowAddress, fee });
 
-    // Send emails in the background as detached promises (without setImmediate which can be frozen on some environments)
+    // Start both "trade opened" emails now, then give them a short, BOUNDED window to
+    // finish before responding. Normally they complete within that window, so delivery is
+    // dispatched before the response; if the mail provider is slow the trade still goes
+    // through on time (escrow is already locked) and the send simply finishes in the
+    // background. A failed email is logged and never fails the trade.
+    const openedEmailJobs = [];
     if (buyerEmailUser?.email) {
-      emailService.sendTradeOpenedEmail(buyerEmailUser, trade[0], 'buyer').catch(e => console.error('[TradeOpen] buyer email:', e.message));
+      openedEmailJobs.push(emailService.sendTradeOpenedEmail(buyerEmailUser, trade[0], 'buyer').catch(e => console.error('[TradeOpen] buyer email:', e.message)));
     }
     if (sellerEmailUser?.email) {
-      emailService.sendTradeOpenedEmail(sellerEmailUser, trade[0], 'seller').catch(e => console.error('[TradeOpen] seller email:', e.message));
+      openedEmailJobs.push(emailService.sendTradeOpenedEmail(sellerEmailUser, trade[0], 'seller').catch(e => console.error('[TradeOpen] seller email:', e.message)));
     }
+    await settleWithin(Promise.allSettled(openedEmailJobs), TRADE_EMAIL_MAX_WAIT_MS);
+
+    res.json({ success: true, trade: trade[0], escrowAddress: escrowResult.escrowAddress, fee });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -9461,13 +9480,36 @@ app.post('/api/messages', verifyToken, async (req, res) => {
     if (error) return res.status(400).json({ error: error.message });
     res.json({ success: true, message: data[0] });
 
-    // Notify recipient — throttled to 1 per 5 min per trade to avoid spam
+    // Notify recipient. The response above has already gone out, so none of this can slow
+    // chat down. Two independent jobs, each with its own error handling:
+    //   1. First-message email — sent once per sender per trade. It is deliberately NOT
+    //      inside the 5-minute throttle below: previously a recent in-app notification
+    //      for the same trade silently suppressed this email.
+    //   2. In-app notification + push — throttled to 1 per 5 min per trade to avoid spam.
     if (!useSystem && isParticipant && recipientId) {
-      setImmediate(async () => {
+      const senderName = userData?.username || 'Trader';
+      const tradeRef = tradeId.slice(0, 8).toUpperCase();
+      const preview = message.length > 60 ? message.slice(0, 60) + '…' : message;
+
+      (async () => {
         try {
-          const senderName = userData?.username || 'Trader';
-          const tradeRef = tradeId.slice(0, 8).toUpperCase();
-          const preview = message.length > 60 ? message.slice(0, 60) + '…' : message;
+          const { count: msgCount } = await supabaseAdmin.from('messages')
+            .select('id', { count: 'exact', head: true })
+            .eq('trade_id', tradeId)
+            .eq('sender_id', req.userId);
+          if (msgCount === 1) { // 1 because the message was just inserted
+            const { data: recipientData } = await supabaseAdmin.from('users').select('id, email, username').eq('id', recipientId).single();
+            if (recipientData?.email) {
+              await emailService.sendNewChatMessageEmail(recipientData, senderName, tradeId, preview);
+            }
+          }
+        } catch (e) {
+          console.error('[Message email] Failed:', e.message);
+        }
+      })();
+
+      (async () => {
+        try {
           const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
           const { data: recent } = await supabaseAdmin
             .from('notifications')
@@ -9489,25 +9531,11 @@ app.post('/api/messages', verifyToken, async (req, res) => {
             sendSystemAlert(recipientId, `💬 New Message in Trade #${tradeRef}`,
               `${senderName}: ${preview}`,
               `https://praqen.com/trade/${tradeId}`).catch(() => { });
-            
-            // Check if this is the FIRST message sent by this user in this trade, to send an email alert
-            const { count: msgCount } = await supabaseAdmin.from('messages')
-              .select('id', { count: 'exact', head: true })
-              .eq('trade_id', tradeId)
-              .eq('sender_id', req.userId);
-            
-            if (msgCount === 1) { // 1 because the message was just inserted
-              const { data: recipientData } = await supabaseAdmin.from('users').select('id, email, username').eq('id', recipientId).single();
-              if (recipientData?.email) {
-                emailService.sendNewChatMessageEmail(recipientData, senderName, tradeId, preview)
-                  .catch(e => console.error('[Message email] Failed:', e.message));
-              }
-            }
           }
         } catch (e) {
           console.error('[Message notification] Failed:', e.message);
         }
-      });
+      })();
     }
 
     // ── Update sender's avg_response_time — how fast they engage after a trade
