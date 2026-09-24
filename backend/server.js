@@ -10692,6 +10692,28 @@ app.get('/api/referral/earnings', verifyToken, async (req, res) => {
   }
 });
 
+// Public profile photo for referral leaderboard / Hall of Fame. Many photos are stored inline as
+// data URLs (30-450KB), which would bloat the list response, so the list only says whether a photo
+// exists and the browser fetches (and caches) the image from here. Raster types only (no SVG).
+app.get('/api/referral/avatar/:id', async (req, res) => {
+  try {
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(404).end();
+    const { data } = await supabaseAdmin.from('users').select('avatar_url').eq('id', req.params.id).maybeSingle();
+    const url = data?.avatar_url;
+    if (!url) return res.status(404).end();
+    if (/^https:\/\//i.test(url)) return res.redirect(302, url);
+    const m = /^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/i.exec(url);
+    if (!m) return res.status(404).end();
+    res.set('Content-Type', 'image/' + m[1].toLowerCase().replace('jpg', 'jpeg'));
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.send(Buffer.from(m[2], 'base64'));
+  } catch (e) {
+    res.status(404).end();
+  }
+});
+
 // Public leaderboard — top 10 referrers using the most accurate data source for each metric
 app.get('/api/referral/leaderboard', async (req, res) => {
   try {
@@ -10751,7 +10773,7 @@ app.get('/api/referral/leaderboard', async (req, res) => {
         return {
           id: rid,
           username: userMap[rid]?.username || 'Trader',
-          badge: userMap[rid]?.badge || 'BEGINNER', country: userMap[rid]?.country || null, avatar_url: (userMap[rid]?.avatar_url && userMap[rid].avatar_url.length <= 40000) ? userMap[rid].avatar_url : null,
+          badge: userMap[rid]?.badge || 'BEGINNER', country: userMap[rid]?.country || null, has_avatar: !!userMap[rid]?.avatar_url,
           earned_btc: parseFloat((earningsMap[rid] || 0).toFixed(8)), month_btc: parseFloat((monthMap[rid] || 0).toFixed(8)),
           // Take the larger value — cached counter may include old signups
           // that predate the referred_by field being saved reliably

@@ -52,6 +52,9 @@ function shareUrl(kind, link) {
   }
 }
 
+// Leaderboard entries only say whether a photo exists; the image itself comes from the avatar endpoint.
+const photoOf = (p) => (p.has_avatar ? `${API_URL}/referral/avatar/${p.id}` : null);
+
 // Profile photo when the partner has one, otherwise their first letter.
 function Avatar({ url, name, large }) {
   const [bad, setBad] = useState(false);
@@ -267,7 +270,7 @@ function PartnerProgram({ user }) {
               {(board || []).filter(matches).map((b) => (
                 <div className="tr" key={b.id}>
                   <span className="pp">
-                    <Avatar url={b.avatar_url} name={b.username} />
+                    <Avatar url={photoOf(b)} name={b.username} />
                     <span>
                       <Link className="plink" to={`/profile/${encodeURIComponent(b.username)}`}>{b.username}</Link>
                       <small>{b.country && <><CountryFlag countryCode={b.country} style={{ width: 16, height: 12 }} /> {countryName(b.country)} · </>}{b.badge}</small>
@@ -354,7 +357,7 @@ function PartnerProgram({ user }) {
                 <div className="hc" key={h.id}>
                   <div className="rankchip">#{i + 1}</div>
                   <div className="hh">
-                    <Avatar url={h.avatar_url} name={h.username} large />
+                    <Avatar url={photoOf(h)} name={h.username} large />
                     <div>
                       <b>@{h.username}</b>
                       <small>{h.country ? <><CountryFlag countryCode={h.country} style={{ width: 16, height: 12 }} /> {countryName(h.country)}</> : 'PRAQEN partner'}</small>
