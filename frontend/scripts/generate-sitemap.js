@@ -50,7 +50,7 @@ function main() {
 
   const lastmod = today();
   const body = urls.map(u => `    <url>
-        <loc>${SITE}${u.loc === '/' ? '/' : u.loc}</loc>
+        <loc>${SITE}${u.loc === '/' ? '/' : u.loc+'/'}</loc>
         <lastmod>${u.lastmod || lastmod}</lastmod>
         <changefreq>${u.changefreq}</changefreq>
         <priority>${u.priority}</priority>
