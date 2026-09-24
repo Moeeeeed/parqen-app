@@ -179,6 +179,10 @@ const EmailConfirmation = lazyRetry(() => import('./pages/EmailConfirmation'));
 const CheckEmail = lazyRetry(() => import('./pages/CheckEmail'));
 // eslint-disable-next-line import/first
 const PlaceholderPage = lazyRetry(() => import('./pages/PlaceholderPage'));
+// eslint-disable-next-line import/first
+const PartnerProgram = lazyRetry(() => import('./pages/PartnerProgram'));
+// eslint-disable-next-line import/first
+const PartnerCalculator = lazyRetry(() => import('./pages/PartnerCalculator'));
 
 // Note: ArrowLeftRight, Send, MoveRight, Award, CircleHelp, Sparkles,
 // Disc, Bell, CreditCard, ShieldCheck, TrendingUp, Info, Medal, Share2
@@ -694,7 +698,8 @@ function App() {
                     <Route path="/receive" element={user ? <PlaceholderPage title="Receive" description="Generate a deposit address to receive Bitcoin in your PRAQEN wallet." icon={ArrowRight} overrideColor="#1B4332" /> : <Navigate to="/login" />} />
                     <Route path="/send" element={user ? <PlaceholderPage title="Send" description="Send Bitcoin to any address or trade directly with other users." icon={Send} overrideColor="#1B4332" /> : <Navigate to="/login" />} />
                     <Route path="/transfer" element={user ? <PlaceholderPage title="Transfer" description="Transfer funds between your PRAQEN wallet and external wallets." icon={MoveRight} overrideColor="#1B4332" /> : <Navigate to="/login" />} />
-                    <Route path="/partner-program" element={user ? <PlaceholderPage title="Partner Program" description="Earn bonuses, discounts, and exclusive perks by reaching higher levels in the PRAQEN partner program." icon={Award} overrideColor="#8B5CF6" /> : <Navigate to="/login" />} />
+                    <Route path="/partner-program" element={<PartnerProgram user={user} />} />
+                    <Route path="/partner-program/calculator" element={<PartnerCalculator />} />
                     <Route path="*" element={<Navigate to="/" />} />
                   </Routes>
                   </RouteErrorBoundary>
