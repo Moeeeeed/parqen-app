@@ -422,10 +422,10 @@ function PlatformStatsSection() {
     try {
       const [sRes, pRes] = await Promise.all([
         axios.get(`${API_URL}/team/platform-stats`, cfg),
-        axios.get(`${API_URL}/btc-price`, cfg).catch(() => ({ data: { price: 0 } })),
+        axios.get(`${API_URL}/rates`, cfg).catch(() => ({ data: { price: 0 } })),
       ]);
       setStats(sRes.data);
-      setBtcPrice(pRes.data?.price || 0);
+      setBtcPrice(pRes.data?.btcUsd || pRes.data?.price || 0);
     } catch (err) { toast.error(err.response?.data?.error || 'Failed to load stats'); }
     finally { setLoading(false); }
   }, []);
@@ -2954,7 +2954,7 @@ function OverviewSection({ teamUser }) {
   const load = useCallback(async () => {
     setLoading(true);
     const [s, t, d] = await Promise.allSettled([
-      axios.get(`${API_URL}/admin/stats`, { headers: authH() }),
+      axios.get(`${API_URL}/team/stats`, { headers: authH() }),
       axios.get(`${API_URL}/admin/trades/all`, { headers: authH(), params: { limit: 6, page: 1 } }),
       axios.get(`${API_URL}/admin/disputes`, { headers: authH() }),
     ]);
@@ -4700,7 +4700,7 @@ function FeedbackSection() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await axios.get(`${API_URL}/admin/reviews`, { headers: authH(), params: { page, limit: LIMIT, rating: ratingFilter } });
+      const r = await axios.get(`${API_URL}/team/reviews`, { headers: authH(), params: { page, limit: LIMIT, rating: ratingFilter } });
       setReviews(r.data.reviews || []); setTotal(r.data.total || 0);
     } catch { toast.error('Failed to load feedback'); }
     setLoading(false);
@@ -4837,7 +4837,7 @@ function TopTradersSection() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await axios.get(`${API_URL}/admin/top-traders`, { headers: authH(), params: { sort, limit: 30 } });
+      const r = await axios.get(`${API_URL}/team/top-traders`, { headers: authH(), params: { sort, limit: 30 } });
       setTraders(r.data.traders || []);
     } catch (err) { toast.error(err.response?.data?.error || 'Failed to load top traders'); }
     setLoading(false);
@@ -5185,7 +5185,7 @@ function UsersSection() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await axios.get(`${API_URL}/admin/users`, { headers: authH(), params: { search, page, limit: LIMIT } });
+      const r = await axios.get(`${API_URL}/team/users`, { headers: authH(), params: { search, page, limit: LIMIT } });
       setUsers(r.data.users || []); setTotal(r.data.total || 0);
     } catch { toast.error('Failed to load users'); }
     setLoading(false);
@@ -5204,7 +5204,7 @@ function UsersSection() {
     try {
       const [reviewsR, detailR] = await Promise.all([
         axios.get(`${API_URL}/users/${u.id}/reviews`).catch(() => null),
-        axios.get(`${API_URL}/admin/users/${u.id}/detail`, { headers: authH() }).catch(() => null),
+        axios.get(`${API_URL}/team/users/${u.id}/detail`, { headers: authH() }).catch(() => null),
       ]);
       if (reviewsR) setUserReviews(reviewsR.data.reviews?.slice(0, 4) || []);
       if (detailR) setDetail(detailR.data);

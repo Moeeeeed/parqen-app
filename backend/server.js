@@ -11362,9 +11362,10 @@ app.get('/api/admin/audit-log', verifyToken, async (req, res) => {
 });
 
 // GET /api/admin/stats — full platform overview
-app.get('/api/admin/stats', verifyToken, async (req, res) => {
+// Shared by the admin-only route and its Team-portal twin below — same data, different gate.
+async function handleStaffStats(req, res, gate) {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await gate(req, res); if (!admin) return;
     const [usersR, tradesR, listingsR, profitsR, disputesR, kycR] = await Promise.allSettled([
       supabaseAdmin.from('users').select('id, created_at, account_status, is_email_verified, is_id_verified, badge, country', { count: 'exact' }),
       supabaseAdmin.from('trades').select('id, status, amount_usd, amount_btc, created_at', { count: 'exact' }),
@@ -11427,7 +11428,9 @@ app.get('/api/admin/stats', verifyToken, async (req, res) => {
       tradeDays,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
-});
+}
+app.get('/api/admin/stats', verifyToken, (req, res) => handleStaffStats(req, res, requireAdmin));          // real admin only
+app.get('/api/team/stats', verifyToken, (req, res) => handleStaffStats(req, res, requireTeam));    // admin or moderator (Team page)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADMIN MONITORING & ALERTS API
@@ -11603,9 +11606,10 @@ app.post('/api/admin/monitoring/test-alert', verifyToken, async (req, res) => {
 });
 
 // GET /api/admin/users — all users with search/filter/pagination
-app.get('/api/admin/users', verifyToken, async (req, res) => {
+// Shared by the admin-only route and its Team-portal twin below — same data, different gate.
+async function handleStaffUsersList(req, res, gate) {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await gate(req, res); if (!admin) return;
     const {
       search = '', status = '', country = '', page = 1, limit = 50,
       joinedFrom = '', joinedTo = '', sort = 'created_at', sortDir = 'desc',
@@ -11658,7 +11662,9 @@ app.get('/api/admin/users', verifyToken, async (req, res) => {
     const users = (data || []).map(u => ({ ...u, phone_country: phoneToCountryCode(u.phone) }));
     res.json({ users, total: count || 0, page: parseInt(page), limit: parseInt(limit) });
   } catch (e) { res.status(500).json({ error: e.message }); }
-});
+}
+app.get('/api/admin/users', verifyToken, (req, res) => handleStaffUsersList(req, res, requireAdmin));          // real admin only
+app.get('/api/team/users', verifyToken, (req, res) => handleStaffUsersList(req, res, requireTeam));    // admin or moderator (Team page)
 
 // GET /api/admin/users/:id/detail — one-click lookup for the Team Portal's Users tab
 // (also read by the Admin Panel's Users tab alongside /wallet-detail below). Read-only,
@@ -11670,9 +11676,10 @@ app.get('/api/admin/users', verifyToken, async (req, res) => {
 // can lag, so trust a fresh count/sum instead of the cached column). Deliberately does
 // NOT include wallet balance, withdrawal history, or funding-source detail — that's the
 // separate CEO-only audit on ceo-withdrawals (or /wallet-detail below for full admins).
-app.get('/api/admin/users/:id/detail', verifyToken, async (req, res) => {
+// Shared by the admin-only route and its Team-portal twin below — same data, different gate.
+async function handleStaffUserDetail(req, res, gate) {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await gate(req, res); if (!admin) return;
     const { id } = req.params;
 
     const { data: user, error } = await supabaseAdmin.from('users').select(
@@ -11729,7 +11736,9 @@ app.get('/api/admin/users/:id/detail', verifyToken, async (req, res) => {
     console.error('[GET /api/admin/users/:id/detail]', error.message);
     res.status(500).json({ error: 'Failed to load user details: ' + error.message });
   }
-});
+}
+app.get('/api/admin/users/:id/detail', verifyToken, (req, res) => handleStaffUserDetail(req, res, requireAdmin));          // real admin only
+app.get('/api/team/users/:id/detail', verifyToken, (req, res) => handleStaffUserDetail(req, res, requireTeam));    // admin or moderator (Team page)
 
 // GET /api/admin/users/:id/wallet-detail — the "more powerful" view for the Admin Panel's
 // Users tab: current wallet balance and full send-out (withdrawal) history. Deliberately
@@ -13204,9 +13213,10 @@ app.get('/api/admin/reports', verifyToken, async (req, res) => {
 });
 
 // GET /api/admin/reviews — all platform reviews/feedback
-app.get('/api/admin/reviews', verifyToken, async (req, res) => {
+// Shared by the admin-only route and its Team-portal twin below — same data, different gate.
+async function handleStaffReviews(req, res, gate) {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await gate(req, res); if (!admin) return;
     const { page = 1, limit = 30, rating = '' } = req.query;
     let query = supabaseAdmin.from('reviews')
       .select('*, reviewer:reviewer_id(id, username, average_rating), reviewee:reviewee_id(id, username, total_trades)', { count: 'exact' })
@@ -13217,12 +13227,15 @@ app.get('/api/admin/reviews', verifyToken, async (req, res) => {
     if (error) return res.status(400).json({ error: error.message });
     res.json({ reviews: data || [], total: count || 0 });
   } catch (e) { res.status(500).json({ error: e.message }); }
-});
+}
+app.get('/api/admin/reviews', verifyToken, (req, res) => handleStaffReviews(req, res, requireAdmin));          // real admin only
+app.get('/api/team/reviews', verifyToken, (req, res) => handleStaffReviews(req, res, requireTeam));    // admin or moderator (Team page)
 
 // GET /api/admin/top-traders — users sorted by volume/trades
-app.get('/api/admin/top-traders', verifyToken, async (req, res) => {
+// Shared by the admin-only route and its Team-portal twin below — same data, different gate.
+async function handleStaffTopTraders(req, res, gate) {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await gate(req, res); if (!admin) return;
     const { sort = 'trades', limit = 30 } = req.query;
 
     // Fetch users sorted by trade count first
@@ -13259,7 +13272,9 @@ app.get('/api/admin/top-traders', verifyToken, async (req, res) => {
 
     res.json({ traders: traders.slice(0, parseInt(limit)) });
   } catch (e) { res.status(500).json({ error: e.message }); }
-});
+}
+app.get('/api/admin/top-traders', verifyToken, (req, res) => handleStaffTopTraders(req, res, requireAdmin));          // real admin only
+app.get('/api/team/top-traders', verifyToken, (req, res) => handleStaffTopTraders(req, res, requireTeam));    // admin or moderator (Team page)
 
 // GET /api/admin/activity — recent user activity logs
 app.get('/api/admin/activity', verifyToken, async (req, res) => {
