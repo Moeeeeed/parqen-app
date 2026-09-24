@@ -454,3 +454,6 @@
 .ppx .hc .pf{flex:none;text-decoration:none;color:var(--ink)}
 .ppx .hc>p{font-size:16px;font-weight:600}
 .ppx .lvtag{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--brand);background:#FFF3D6;border-radius:99px;padding:4px 10px;align-self:flex-start;margin-bottom:4px}
+
+/* profile photos */
+.ppx img.avimg{object-fit:cover;background:var(--soft);display:block}

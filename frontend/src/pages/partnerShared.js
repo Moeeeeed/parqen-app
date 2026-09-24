@@ -14,6 +14,15 @@ export const LEVELS = [
 
 export const CLAIM_MIN_USD = 10;
 
+// 'GH' -> 'Ghana'. Falls back to whatever is stored (already a full name, or unknown).
+export function countryName(raw) {
+  const v = String(raw || '').trim();
+  if (/^[A-Za-z]{2}$/.test(v)) {
+    try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(v.toUpperCase()) || v; } catch (e) { return v; }
+  }
+  return v;
+}
+
 export const pct = (r) => `${r.toFixed(2)}%`;
 export const money = (v) => `$${v > 0 && v < 10 ? v.toFixed(2) : Math.round(v).toLocaleString()}`;
 export const usd = (n) => `${Math.round(n).toLocaleString()} USD`;
@@ -96,7 +105,8 @@ export function usePartnerStats(user) {
         const byName = {};
         (mine.referrals || []).forEach((r) => { byName[r.username] = r; });
         const countryById = {};
-        (mine.referrals || []).forEach((r) => { countryById[r.id] = r.country || null; });
+        const avatarById = {};
+        (mine.referrals || []).forEach((r) => { countryById[r.id] = r.country || null; avatarById[r.id] = r.avatar_url || null; });
         const history = rows.map((e) => {
           const btcAmt = parseFloat(e.trade_amount_btc || 0);
           const usdAmt = parseFloat(e.trade_amount_usd || 0);
@@ -106,6 +116,7 @@ export function usePartnerStats(user) {
             id: e.id,
             username: ru.username || `user_${String(e.referred_user_id || '').slice(0, 8)}`,
             country: countryById[e.referred_user_id] || null,
+            avatar_url: avatarById[e.referred_user_id] || (ru.avatar_url || null),
             btc: comBtc,
             usd: btcAmt > 0 ? comBtc * (usdAmt / btcAmt) : 0,
             date: e.created_at,

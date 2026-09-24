@@ -6,7 +6,7 @@ import PropTypes from 'prop-types';
 import CountryFlag from '../components/CountryFlag';
 import SEO from '../components/SEO';
 import './partner-program.css';
-import { LEVELS, CLAIM_MIN_USD, Badge, pct, usd, monthlyExample, levelIndexFor, usePartnerStats } from './partnerShared';
+import { countryName, LEVELS, CLAIM_MIN_USD, Badge, pct, usd, monthlyExample, levelIndexFor, usePartnerStats } from './partnerShared';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -51,6 +51,17 @@ function shareUrl(kind, link) {
     default: return `mailto:?subject=${encodeURIComponent('Join me on PRAQEN')}&body=${text}%20${u}`;
   }
 }
+
+// Profile photo when the partner has one, otherwise their first letter.
+function Avatar({ url, name, large }) {
+  const [bad, setBad] = useState(false);
+  const letter = (name || '?')[0].toUpperCase();
+  if (url && !bad) {
+    return <img className={`av${large ? ' lg' : ''} avimg`} src={url} alt={name || ''} onError={() => setBad(true)} />;
+  }
+  return <i className={`av${large ? ' lg' : ''}`}>{letter}</i>;
+}
+Avatar.propTypes = { url: PropTypes.string, name: PropTypes.string, large: PropTypes.bool };
 
 function PartnerProgram({ user }) {
   const navigate = useNavigate();
@@ -243,8 +254,8 @@ function PartnerProgram({ user }) {
           {user && s.invitedBy && (
             <div className="invby">
               <span>You were invited by</span>
-              <Link to={`/profile/${encodeURIComponent(s.invitedBy.username)}`} className="plink"><i className="av">{(s.invitedBy.username || '?')[0].toUpperCase()}</i>@{s.invitedBy.username}</Link>
-              {s.invitedBy.country && <span className="ctry"><CountryFlag countryCode={s.invitedBy.country} style={{ width: 18, height: 13 }} /> {s.invitedBy.country}</span>}
+              <Link to={`/profile/${encodeURIComponent(s.invitedBy.username)}`} className="plink"><Avatar url={s.invitedBy.avatar_url} name={s.invitedBy.username} />@{s.invitedBy.username}</Link>
+              {s.invitedBy.country && <span className="ctry"><CountryFlag countryCode={s.invitedBy.country} style={{ width: 18, height: 13 }} /> {countryName(s.invitedBy.country)}</span>}
             </div>
           )}
 
@@ -256,10 +267,10 @@ function PartnerProgram({ user }) {
               {(board || []).filter(matches).map((b) => (
                 <div className="tr" key={b.id}>
                   <span className="pp">
-                    <i className="av">{(b.username || '?')[0].toUpperCase()}</i>
+                    <Avatar url={b.avatar_url} name={b.username} />
                     <span>
                       <Link className="plink" to={`/profile/${encodeURIComponent(b.username)}`}>{b.username}</Link>
-                      <small>{b.country && <><CountryFlag countryCode={b.country} style={{ width: 16, height: 12 }} /> {b.country} · </>}{b.badge}</small>
+                      <small>{b.country && <><CountryFlag countryCode={b.country} style={{ width: 16, height: 12 }} /> {countryName(b.country)} · </>}{b.badge}</small>
                     </span>
                   </span>
                   <span data-l="Ranking">{b.rank}</span>
@@ -281,10 +292,10 @@ function PartnerProgram({ user }) {
               {stats && stats.friends.filter(matches).map((f) => (
                 <div className="tr f6" key={f.id || f.username}>
                   <span className="pp">
-                    <i className="av">{(f.username || '?')[0].toUpperCase()}</i>
+                    <Avatar url={f.avatar_url} name={f.username} />
                     <span>
                       <Link className="plink" to={`/profile/${encodeURIComponent(f.username)}`}>{f.username}</Link>
-                      <small>{f.country ? <><CountryFlag countryCode={f.country} style={{ width: 16, height: 12 }} /> {f.country}</> : 'Country not set'}</small>
+                      <small>{f.country ? <><CountryFlag countryCode={f.country} style={{ width: 16, height: 12 }} /> {countryName(f.country)}</> : 'Country not set'}</small>
                     </span>
                   </span>
                   <span data-l="Trades">{f.trades}</span>
@@ -312,10 +323,10 @@ function PartnerProgram({ user }) {
                 {stats && s.history.filter(matches).map((h) => (
                   <div className="tr e4" key={h.id || h.date + h.username}>
                     <span className="pp">
-                      <i className="av">{(h.username || '?')[0].toUpperCase()}</i>
+                      <Avatar url={h.avatar_url} name={h.username} />
                       <span>
                         <Link className="plink" to={`/profile/${encodeURIComponent(h.username)}`}>{h.username}</Link>
-                        <small>{h.country ? <><CountryFlag countryCode={h.country} style={{ width: 16, height: 12 }} /> {h.country}</> : 'Partner'}</small>
+                        <small>{h.country ? <><CountryFlag countryCode={h.country} style={{ width: 16, height: 12 }} /> {countryName(h.country)}</> : 'Partner'}</small>
                       </span>
                     </span>
                     <span data-l="Type">Revenue Share</span>
@@ -343,10 +354,10 @@ function PartnerProgram({ user }) {
                 <div className="hc" key={h.id}>
                   <div className="rankchip">#{i + 1}</div>
                   <div className="hh">
-                    <i className="av lg">{(h.username || '?')[0].toUpperCase()}</i>
+                    <Avatar url={h.avatar_url} name={h.username} large />
                     <div>
                       <b>@{h.username}</b>
-                      <small>{h.country ? <><CountryFlag countryCode={h.country} style={{ width: 16, height: 12 }} /> {h.country}</> : 'PRAQEN partner'}</small>
+                      <small>{h.country ? <><CountryFlag countryCode={h.country} style={{ width: 16, height: 12 }} /> {countryName(h.country)}</> : 'PRAQEN partner'}</small>
                     </div>
                     <Link className="pf" to={`/profile/${encodeURIComponent(h.username)}`}>Profile</Link>
                   </div>
