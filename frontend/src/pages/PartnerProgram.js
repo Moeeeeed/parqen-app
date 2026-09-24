@@ -84,7 +84,7 @@ function PartnerProgram({ user }) {
   };
 
   const matches = (r) => !q.trim() || String(r.username || '').toLowerCase().includes(q.trim().toLowerCase());
-  const s = stats || { friends: [], invitedBy: null, total: 0, active: 0, lifetimeUsd: 0, lifetimeVol: 0, vol30: 0, level: 0 };
+  const s = stats || { friends: [], history: [], invitedBy: null, total: 0, active: 0, lifetimeUsd: 0, lifetimeVol: 0, vol30: 0, level: 0 };
   const shown = cur == null ? 0 : cur;
 
   return (
@@ -233,6 +233,7 @@ function PartnerProgram({ user }) {
           <div className="lbtop">
             <div className="tabs">
               <button type="button" className={tab === 'board' ? 'on' : ''} onClick={() => setTab('board')}>Leaderboard</button>
+              {user && <button type="button" className={tab === 'earn' ? 'on' : ''} onClick={() => setTab('earn')}>My earnings</button>}
               {user && <button type="button" className={tab === 'friends' ? 'on' : ''} onClick={() => setTab('friends')}>My friends{s.friends && s.friends.length ? ` (${s.friends.length})` : ''}</button>}
             </div>
             <input className="srch" type="search" placeholder="Search partners" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search partners" />
@@ -293,6 +294,36 @@ function PartnerProgram({ user }) {
                 </div>
               ))}
             </div>
+          )}
+          {tab === 'earn' && user && (
+            <>
+              <div className="earnbar">
+                <div><small>Active partners</small><b>{s.active}</b></div>
+                <div><small>Total earned</small><b>{s.lifetimeUsd.toFixed(2)} USD</b></div>
+                <div><small>Earnings this month</small><b>{(s.history || []).filter((h) => new Date(h.date) >= new Date(new Date().getFullYear(), new Date().getMonth(), 1)).reduce((a, h) => a + h.usd, 0).toFixed(2)} USD</b></div>
+              </div>
+              <div className="tbl">
+                <div className="tr th e4"><span>Partner</span><span>Type</span><span>Amount</span><span>Date</span></div>
+                {stats === null && <p className="note" style={{ padding: 14 }}>Loading…</p>}
+                {stats && s.history.length === 0 && (
+                  <p className="note" style={{ padding: 14 }}>No earnings yet. You earn every time a friend you invited completes a trade.</p>
+                )}
+                {stats && s.history.filter(matches).map((h) => (
+                  <div className="tr e4" key={h.id || h.date + h.username}>
+                    <span className="pp">
+                      <i className="av">{(h.username || '?')[0].toUpperCase()}</i>
+                      <span>
+                        <Link className="plink" to={`/profile/${encodeURIComponent(h.username)}`}>{h.username}</Link>
+                        <small>{h.country ? <><CountryFlag countryCode={h.country} style={{ width: 16, height: 12 }} /> {h.country}</> : 'Partner'}</small>
+                      </span>
+                    </span>
+                    <span data-l="Type">Revenue Share</span>
+                    <span data-l="Amount">{h.btc.toFixed(7)} BTC <em className="usdnote">({h.usd.toFixed(2)} USD)</em></span>
+                    <span data-l="Date">{h.date ? new Date(h.date).toLocaleString() : '-'}</span>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
           <p className="note" style={{ padding: '0 6px' }}>Tap a name to see their profile. Earnings are shown in USD at the price of each trade.</p>
         </div>

@@ -95,6 +95,23 @@ export function usePartnerStats(user) {
         });
         const byName = {};
         (mine.referrals || []).forEach((r) => { byName[r.username] = r; });
+        const countryById = {};
+        (mine.referrals || []).forEach((r) => { countryById[r.id] = r.country || null; });
+        const history = rows.map((e) => {
+          const btcAmt = parseFloat(e.trade_amount_btc || 0);
+          const usdAmt = parseFloat(e.trade_amount_usd || 0);
+          const comBtc = parseFloat(e.commission_btc || 0);
+          const ru = e.referred_user || {};
+          return {
+            id: e.id,
+            username: ru.username || `user_${String(e.referred_user_id || '').slice(0, 8)}`,
+            country: countryById[e.referred_user_id] || null,
+            btc: comBtc,
+            usd: btcAmt > 0 ? comBtc * (usdAmt / btcAmt) : 0,
+            date: e.created_at,
+            status: e.status,
+          };
+        }).sort((a, b) => new Date(b.date) - new Date(a.date));
         const list = (mine.referrals && mine.referrals.length ? mine.referrals : friends).map((r) => {
           const id = r.id || (byName[r.username] && byName[r.username].id);
           const pf = perFriend[id] || { life: 0, month: 0 };
@@ -114,11 +131,12 @@ export function usePartnerStats(user) {
           vol30,
           earnedBtc: parseFloat(data.totalEarned || 0),
           friends: list,
+          history,
           invitedBy: mine.myReferrer || null,
           level: levelIndexFor(active, vol30),
         });
       })
-      .catch(() => { if (alive) setStats({ friends: [], invitedBy: null, total: 0, active: 0, lifetimeUsd: 0, lifetimeVol: 0, vol30: 0, earnedBtc: 0, level: 0 }); });
+      .catch(() => { if (alive) setStats({ friends: [], history: [], invitedBy: null, total: 0, active: 0, lifetimeUsd: 0, lifetimeVol: 0, vol30: 0, earnedBtc: 0, level: 0 }); });
     return () => { alive = false; };
   }, [user]);
 

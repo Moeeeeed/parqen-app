@@ -436,3 +436,13 @@
   .ppx input.srch{width:100%}
   .ppx .lbtop{flex-direction:column;align-items:stretch}
 }
+
+/* my earnings */
+@media(min-width:901px){.ppx .tr.th.e4,.ppx .tr.e4{grid-template-columns:2.2fr 1.1fr 2fr 1.6fr}}
+.ppx .earnbar{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+.ppx .earnbar>div{background:#F0FAF5;border-radius:12px;padding:12px 14px}
+.ppx .earnbar>div:nth-child(2){background:#FFF3D6}
+.ppx .earnbar small{display:block;color:var(--muted);font-size:12px}
+.ppx .earnbar b{font-size:20px;color:var(--brand)}
+.ppx .usdnote{font-style:normal;color:var(--muted);font-size:12px}
+@media(max-width:640px){.ppx .earnbar{grid-template-columns:1fr 1fr}.ppx .earnbar>div:first-child{grid-column:1/-1}}
