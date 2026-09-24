@@ -6,10 +6,10 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 // Partner levels. `rate` is the % of each completed trade's value paid to the
 // partner. A friend counts as "active" once they have completed a trade.
 export const LEVELS = [
-  { n: 'Starter',    r: 0.10, c: '#B9773E', f: 0,  v: 0,     ex: { f: 2,  t: 3, z: 120 }, get: ['0.10% on every friend trade', 'Your link and scan code', 'Live earnings dashboard'], bonus: ['Starter badge'] },
-  { n: 'Builder',    r: 0.12, c: '#2D9C8A', f: 3,  v: 1000,  ex: { f: 5,  t: 3, z: 150 }, get: ['0.12% on every friend trade', 'Builder badge on your profile'], bonus: ['Priority support'] },
+  { n: 'Starter',    r: 0.10, c: '#B7D9C4', f: 0,  v: 0,     ex: { f: 2,  t: 3, z: 120 }, get: ['0.10% on every friend trade', 'Your link and scan code', 'Live earnings dashboard'], bonus: ['Starter badge'] },
+  { n: 'Builder',    r: 0.12, c: '#2D6A4F', f: 3,  v: 1000,  ex: { f: 5,  t: 3, z: 150 }, get: ['0.12% on every friend trade', 'Builder badge on your profile'], bonus: ['Priority support'] },
   { n: 'Pro',        r: 0.15, c: '#F4A422', f: 10, v: 10000, ex: { f: 15, t: 4, z: 200 }, get: ['0.15% on every friend trade', 'Pro badge', 'Early access to new features'], bonus: ['Featured on the leaderboard'] },
-  { n: 'Ambassador', r: 0.20, c: '#3FB6D9', f: 30, v: 50000, ex: { f: 40, t: 5, z: 250 }, get: ['0.20% on every friend trade', 'Ambassador badge', 'Direct line to the PRAQEN team'], bonus: ['Hall of Fame spot', 'Invites to PRAQEN events'] },
+  { n: 'Ambassador', r: 0.20, c: '#1B4332', f: 30, v: 50000, ex: { f: 40, t: 5, z: 250 }, get: ['0.20% on every friend trade', 'Ambassador badge', 'Direct line to the PRAQEN team'], bonus: ['Hall of Fame spot', 'Invites to PRAQEN events'] },
 ];
 
 export const CLAIM_MIN_USD = 10;
@@ -48,8 +48,8 @@ const BADGE_SHAPES = [
     </>
   ),
 ];
-const BADGE_FILL = ['#B9773E', '#2D9C8A', '#F4A422', '#3FB6D9'];
-const BADGE_EDGE = ['#7A4A22', '#1B6B5E', '#B9770E', '#1E7FA3'];
+const BADGE_FILL = ['#B7D9C4', '#2D6A4F', '#F4A422', '#1B4332'];
+const BADGE_EDGE = ['#2D6A4F', '#1B4332', '#B9770E', '#F4A422'];
 
 export function Badge({ i, size = 40 }) {
   return (

@@ -7,8 +7,8 @@ import { LEVELS, pct, money } from './partnerShared';
 const GOALS = [10, 50, 100, 500];
 
 const TYPES = [
-  { key: 'btc', icon: '₿', bg: '#F7931A', name: 'Bitcoin', tag: 'Most popular', text: 'Friends who buy or sell Bitcoin with local payment methods.' },
-  { key: 'usdt', icon: '₮', bg: '#26A17B', name: 'USDT', tag: 'Stable and steady', text: 'Friends who trade dollar-stable coins for savings and payments.' },
+  { key: 'btc', icon: '₿', bg: '#F4A422', name: 'Bitcoin', tag: 'Most popular', text: 'Friends who buy or sell Bitcoin with local payment methods.' },
+  { key: 'usdt', icon: '₮', bg: '#2D6A4F', name: 'USDT', tag: 'Stable and steady', text: 'Friends who trade dollar-stable coins for savings and payments.' },
 ];
 
 function clamp(n, min, max) {

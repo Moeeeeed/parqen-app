@@ -10,11 +10,11 @@ import { LEVELS, CLAIM_MIN_USD, Badge, pct, usd, monthlyExample, usePartnerStats
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 const PRODUCTS = [
-  { icon: '₿', name: 'P2P Bitcoin Trading', text: 'Buy and sell Bitcoin with local payment methods, protected by escrow.', c: '#F7931A', cs: '#FFF1DE', to: '/buy-bitcoin' },
-  { icon: '₮', name: 'USDT Trading', text: 'Trade stable dollar coins quickly with real people.', c: '#26A17B', cs: '#DDF5EC', to: '/buy-usdt' },
-  { icon: '🎁', name: 'Gift Card Marketplace', text: 'Buy and sell gift cards safely at fair rates.', c: '#7C3AED', cs: '#EEE6FD', to: '/gift-cards' },
+  { icon: '₿', name: 'P2P Bitcoin Trading', text: 'Buy and sell Bitcoin with local payment methods, protected by escrow.', c: '#F4A422', cs: '#FFF3D6', to: '/buy-bitcoin' },
+  { icon: '₮', name: 'USDT Trading', text: 'Trade stable dollar coins quickly with real people.', c: '#2D6A4F', cs: '#DDF0E4', to: '/buy-usdt' },
+  { icon: '🎁', name: 'Gift Card Marketplace', text: 'Buy and sell gift cards safely at fair rates.', c: '#1B4332', cs: '#F0FAF5', to: '/gift-cards' },
   { icon: '👛', name: 'PRAQEN Wallet', text: 'Deposit, hold and withdraw your crypto in one secure place.', c: '#1B4332', cs: '#DDF0E4', to: '/wallet' },
-  { icon: '🛡️', name: 'Escrow Protection', text: 'Funds are held safely until both sides confirm the trade.', c: '#0EA5E9', cs: '#DFF3FD', to: '/quick-start' },
+  { icon: '🛡️', name: 'Escrow Protection', text: 'Funds are held safely until both sides confirm the trade.', c: '#2D6A4F', cs: '#F0FAF5', to: '/quick-start' },
   { icon: '🤝', name: 'Partner Program', text: 'Earn every time your friends trade.', c: '#F4A422', cs: '#FFF0CF', to: '/partner-program', isNew: true },
 ];
 
