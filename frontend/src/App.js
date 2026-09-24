@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigat
 import {
   HelpCircle, Sparkles, Disc, Bell, CreditCard, ShieldCheck,
   TrendingUp, Info, Medal, Share2, ArrowLeftRight, ArrowRight,
-  Send, MoveRight, Award, Clock,
+  Send, MoveRight, Clock,
 } from 'lucide-react';
 import { HelmetProvider } from 'react-helmet-async';
 import { RatesProvider } from './contexts/RatesContext';

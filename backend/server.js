@@ -10732,7 +10732,7 @@ app.get('/api/referral/leaderboard', async (req, res) => {
     // Step 3: fetch referrer profiles + their cached total_referrals counter
     const { data: referrerUsers } = await supabaseAdmin
       .from('users')
-      .select('id, username, badge, total_referrals')
+      .select('id, username, badge, total_referrals, country')
       .in('id', [...allReferrerIds]);
 
     const userMap = {};
@@ -10748,7 +10748,7 @@ app.get('/api/referral/leaderboard', async (req, res) => {
         return {
           id: rid,
           username: userMap[rid]?.username || 'Trader',
-          badge: userMap[rid]?.badge || 'BEGINNER',
+          badge: userMap[rid]?.badge || 'BEGINNER', country: userMap[rid]?.country || null,
           earned_btc: parseFloat((earningsMap[rid] || 0).toFixed(8)),
           // Take the larger value — cached counter may include old signups
           // that predate the referred_by field being saved reliably

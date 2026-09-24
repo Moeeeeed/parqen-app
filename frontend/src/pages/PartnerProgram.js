@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { QRCodeSVG } from 'qrcode.react';
 import PropTypes from 'prop-types';
+import CountryFlag from '../components/CountryFlag';
 import SEO from '../components/SEO';
 import './partner-program.css';
 import { LEVELS, CLAIM_MIN_USD, Badge, pct, usd, monthlyExample, usePartnerStats } from './partnerShared';
@@ -56,6 +57,9 @@ function PartnerProgram({ user }) {
   const stats = usePartnerStats(user);
   const [copied, setCopied] = useState(false);
   const [board, setBoard] = useState(null);
+  const [btcUsd, setBtcUsd] = useState(0);
+  const [tab, setTab] = useState('board');
+  const [q, setQ] = useState('');
 
   const code = user?.referral_code || user?.username || '';
   const link = code ? `https://praqen.com/signup?ref=${encodeURIComponent(code)}` : '';
@@ -66,6 +70,9 @@ function PartnerProgram({ user }) {
     axios.get(`${API_URL}/referral/leaderboard`)
       .then(({ data }) => { if (alive) setBoard(data.leaderboard || []); })
       .catch(() => { if (alive) setBoard([]); });
+    axios.get(`${API_URL}/rates`)
+      .then(({ data }) => { if (alive && data.btcUsd) setBtcUsd(Number(data.btcUsd)); })
+      .catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -76,7 +83,8 @@ function PartnerProgram({ user }) {
     else done();
   };
 
-  const s = stats || { total: 0, active: 0, lifetimeUsd: 0, lifetimeVol: 0, vol30: 0, level: 0 };
+  const matches = (r) => !q.trim() || String(r.username || '').toLowerCase().includes(q.trim().toLowerCase());
+  const s = stats || { friends: [], invitedBy: null, total: 0, active: 0, lifetimeUsd: 0, lifetimeVol: 0, vol30: 0, level: 0 };
   const shown = cur == null ? 0 : cur;
 
   return (
@@ -218,24 +226,75 @@ function PartnerProgram({ user }) {
         )}
       </section>
 
-      {/* LEADERBOARD */}
-      <section className="wrap sect">
+      {/* LEADERBOARD + MY FRIENDS */}
+      <section className="wrap sect" id="board">
         <h2 className="h2b" style={{ textAlign: 'left' }}>Leaderboard</h2>
         <div className="lbwrap">
-          <div className="tbl">
-            <div className="tr th"><span>Program participants</span><span>Ranking</span><span>Total friends</span><span>Trades by friends</span><span>Lifetime earnings (BTC)</span></div>
-            {board === null && <p className="note" style={{ padding: 14 }}>Loading…</p>}
-            {board && board.length === 0 && <p className="note" style={{ padding: 14 }}>No partners on the board yet. Be the first!</p>}
-            {(board || []).map((p) => (
-              <div className="tr" key={p.id} style={{ borderBottom: '1px solid var(--line)' }}>
-                <span className="pp"><i className="av">{(p.username || '?')[0].toUpperCase()}</i><span><b><u>{p.username}</u></b><small>{p.badge}</small></span></span>
-                <span>{p.rank}</span>
-                <span>{p.referrals}</span>
-                <span>{p.affiliate_trades}</span>
-                <span>{Number(p.earned_btc).toFixed(6)}</span>
-              </div>
-            ))}
+          <div className="lbtop">
+            <div className="tabs">
+              <button type="button" className={tab === 'board' ? 'on' : ''} onClick={() => setTab('board')}>Leaderboard</button>
+              {user && <button type="button" className={tab === 'friends' ? 'on' : ''} onClick={() => setTab('friends')}>My friends{s.friends && s.friends.length ? ` (${s.friends.length})` : ''}</button>}
+            </div>
+            <input className="srch" type="search" placeholder="Search partners" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search partners" />
           </div>
+
+          {user && s.invitedBy && (
+            <div className="invby">
+              <span>You were invited by</span>
+              <Link to={`/profile/${encodeURIComponent(s.invitedBy.username)}`} className="plink"><i className="av">{(s.invitedBy.username || '?')[0].toUpperCase()}</i>@{s.invitedBy.username}</Link>
+              {s.invitedBy.country && <span className="ctry"><CountryFlag countryCode={s.invitedBy.country} style={{ width: 18, height: 13 }} /> {s.invitedBy.country}</span>}
+            </div>
+          )}
+
+          {tab === 'board' && (
+            <div className="tbl">
+              <div className="tr th"><span>Program participants</span><span>Ranking</span><span>Total friends</span><span>Lifetime earnings (USD)</span><span>Trades by friends</span></div>
+              {board === null && <p className="note" style={{ padding: 14 }}>Loading…</p>}
+              {board && board.length === 0 && <p className="note" style={{ padding: 14 }}>No partners on the board yet. Be the first!</p>}
+              {(board || []).filter(matches).map((b) => (
+                <div className="tr" key={b.id}>
+                  <span className="pp">
+                    <i className="av">{(b.username || '?')[0].toUpperCase()}</i>
+                    <span>
+                      <Link className="plink" to={`/profile/${encodeURIComponent(b.username)}`}>{b.username}</Link>
+                      <small>{b.country && <><CountryFlag countryCode={b.country} style={{ width: 16, height: 12 }} /> {b.country} · </>}{b.badge}</small>
+                    </span>
+                  </span>
+                  <span data-l="Ranking">{b.rank}</span>
+                  <span data-l="Total friends">{b.referrals}</span>
+                  <span data-l="Lifetime earnings">{btcUsd ? `${(Number(b.earned_btc) * btcUsd).toFixed(2)} USD` : `${Number(b.earned_btc).toFixed(6)} BTC`}</span>
+                  <span data-l="Trades by friends">{b.affiliate_trades}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {tab === 'friends' && user && (
+            <div className="tbl">
+              <div className="tr th f6"><span>My friends</span><span>Trades</span><span>Joined</span><span>Current month earnings (USD)</span><span>Lifetime earnings (USD)</span><span>Invited by</span></div>
+              {stats === null && <p className="note" style={{ padding: 14 }}>Loading…</p>}
+              {stats && stats.friends.length === 0 && (
+                <p className="note" style={{ padding: 14 }}>You have no friends yet. Share your link or scan code above and they will show here.</p>
+              )}
+              {stats && stats.friends.filter(matches).map((f) => (
+                <div className="tr f6" key={f.id || f.username}>
+                  <span className="pp">
+                    <i className="av">{(f.username || '?')[0].toUpperCase()}</i>
+                    <span>
+                      <Link className="plink" to={`/profile/${encodeURIComponent(f.username)}`}>{f.username}</Link>
+                      <small>{f.country ? <><CountryFlag countryCode={f.country} style={{ width: 16, height: 12 }} /> {f.country}</> : 'Country not set'}</small>
+                    </span>
+                  </span>
+                  <span data-l="Trades">{f.trades}</span>
+                  <span data-l="Joined">{f.joined ? new Date(f.joined).toLocaleDateString() : '-'}</span>
+                  <span data-l="This month">{f.monthUsd.toFixed(2)} USD</span>
+                  <span data-l="Lifetime">{f.lifetimeUsd.toFixed(2)} USD</span>
+                  <span data-l="Invited by">You</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="note" style={{ padding: '0 6px' }}>Tap a name to see their profile. Earnings are shown in USD at the price of each trade.</p>
         </div>
       </section>
 
