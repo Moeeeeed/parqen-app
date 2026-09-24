@@ -9072,21 +9072,32 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
       const isGiftCardListing = (listing.listing_type || '').toUpperCase().includes('GIFT_CARD');
       const gcBrandField = isGiftCardListing ? (listing.gift_card_brand || null) : null;
       const pmDisp = gcBrandField || paymentMethod || listing.payment_method || 'Mobile Money';
-      const assetLabel = gcBrandField ? `${gcBrandField} Gift Card` : 'Bitcoin';
-      const btcDisp = `₿${parseFloat(trade[0].amount_btc || 0).toFixed(8)}`;
+      const isUsdtAsset = trade[0].currency === 'USDT';
+      const assetLabel = gcBrandField ? `${gcBrandField} Gift Card` : (isUsdtAsset ? 'USDT' : 'Bitcoin');
+      // trades.amount_btc holds the asset quantity for USDT trades too (see the insert above)
+      const btcDisp = isUsdtAsset
+        ? `₮${parseFloat(trade[0].amount_btc || 0).toFixed(2)}`
+        : `₿${parseFloat(trade[0].amount_btc || 0).toFixed(8)}`;
 
       const tradeUUID = trade[0].id;
+      const tradeUrl = `https://praqen.com/trade/${tradeUUID}`;
+      const sellerAlertMsg = `${buyerName} wants to buy ${assetLabel} · ${btcDisp} · ${localDisp} via ${pmDisp}`;
+      const buyerAlertMsg = `Your trade with ${sellerName} is now open · ${btcDisp} · ${localDisp} via ${pmDisp}`;
       await Promise.allSettled([
         createNotification(sellerId, 'trade', '💰 New Trade Request',
-          `${buyerName} wants to buy ${assetLabel} · ${btcDisp} · ${localDisp} via ${pmDisp}`,
+          sellerAlertMsg,
           `/trade/${tradeUUID}`,
           { actor_id: buyerId, direction: 'sell', trade_id: tradeUUID, payment_method: pmDisp, gift_card_brand: gcBrandField }),
         createNotification(buyerId, 'trade', '🔒 Trade Started',
-          `Your trade with ${sellerName} is now open · ${btcDisp} · ${localDisp} via ${pmDisp}`,
+          buyerAlertMsg,
           `/trade/${tradeUUID}`,
           { actor_id: sellerId, direction: 'buy', trade_id: tradeUUID, payment_method: pmDisp, gift_card_brand: gcBrandField }),
-        sendTradeAlert(sellerId, trade[0], 'new_trade').catch(() => { }),
-        sendTradeAlert(buyerId, trade[0], 'new_trade').catch(() => { }),
+        // Phone pop-up (OneSignal push). Uses the exact same text as the in-app notification —
+        // the old sendTradeAlert path filled in the RECIPIENT's own username as the trader's
+        // name ("@you wants to trade…"), always said "BTC", and titled the buyer's copy
+        // "New Trade Request!" too.
+        sendSystemAlert(sellerId, '💰 New Trade Request', sellerAlertMsg, tradeUrl).catch(() => { }),
+        sendSystemAlert(buyerId, '🔒 Trade Started', buyerAlertMsg, tradeUrl).catch(() => { }),
         // Telegram alerts for new trade
         sendTelegramAlert(sellerId, `💰 New trade request from @${buyerName}! ${btcDisp} · ${localDisp} via ${pmDisp}`),
         sendTelegramAlert(buyerId, `🔒 Trade opened with @${sellerName}! ${btcDisp} · ${localDisp} via ${pmDisp}`),
