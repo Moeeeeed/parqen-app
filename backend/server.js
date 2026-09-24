@@ -9129,18 +9129,22 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
     const buyerEmailUser = buyerEmailRes.value?.data;
     const sellerEmailUser = sellerEmailRes.value?.data;
 
+    // Determine the receiver (Maker) of this trade and send them an email alert securely
+    const isBuyer = trade[0].buyer_id === req.userId;
+    const recipientUser = isBuyer ? sellerEmailUser : buyerEmailUser;
+    const recipientRole = isBuyer ? 'seller' : 'buyer';
+
+    if (recipientUser?.email) {
+      // Await email delivery before responding to ensure it is sent on serverless
+      await Promise.allSettled([
+        emailService.sendTradeOpenedEmail(recipientUser, trade[0], recipientRole).catch(e => console.error('[TradeOpen] email failed:', e.message))
+      ]);
+    }
+
     // Invalidate marketplace cache so seller's reduced BTC balance shows immediately
     bustCache();
-    // Respond immediately — escrow is locked, trade is live. Do NOT block on emails.
+    // Respond now that the email is guaranteed dispatched
     res.json({ success: true, trade: trade[0], escrowAddress: escrowResult.escrowAddress, fee });
-
-    // Send emails in the background as detached promises (without setImmediate which can be frozen on some environments)
-    if (buyerEmailUser?.email) {
-      emailService.sendTradeOpenedEmail(buyerEmailUser, trade[0], 'buyer').catch(e => console.error('[TradeOpen] buyer email:', e.message));
-    }
-    if (sellerEmailUser?.email) {
-      emailService.sendTradeOpenedEmail(sellerEmailUser, trade[0], 'seller').catch(e => console.error('[TradeOpen] seller email:', e.message));
-    }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -9459,56 +9463,56 @@ app.post('/api/messages', verifyToken, async (req, res) => {
       created_at: new Date(),
     }]).select();
     if (error) return res.status(400).json({ error: error.message });
-    res.json({ success: true, message: data[0] });
 
-    // Notify recipient — throttled to 1 per 5 min per trade to avoid spam
+    // Handle notifications (Push, Email, DB) reliably before responding
     if (!useSystem && isParticipant && recipientId) {
-      setImmediate(async () => {
-        try {
-          const senderName = userData?.username || 'Trader';
-          const tradeRef = tradeId.slice(0, 8).toUpperCase();
-          const preview = message.length > 60 ? message.slice(0, 60) + '…' : message;
-          const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-          const { data: recent } = await supabaseAdmin
-            .from('notifications')
-            .select('id')
-            .eq('user_id', recipientId)
-            .eq('type', 'message')
-            .eq('action', `/trade/${tradeId}`)
-            .gte('created_at', fiveMinAgo)
-            .maybeSingle();
-          if (!recent) {
-            await createNotification(
-              recipientId,
-              'message',
-              `💬 New Message in Trade #${tradeRef}`,
-              `${senderName}: ${preview}`,
-              `/trade/${tradeId}`
-            );
-            // Push notification for trade chat — time-sensitive, user may be off-platform
-            sendSystemAlert(recipientId, `💬 New Message in Trade #${tradeRef}`,
-              `${senderName}: ${preview}`,
-              `https://praqen.com/trade/${tradeId}`).catch(() => { });
-            
-            // Check if this is the FIRST message sent by this user in this trade, to send an email alert
-            const { count: msgCount } = await supabaseAdmin.from('messages')
-              .select('id', { count: 'exact', head: true })
-              .eq('trade_id', tradeId)
-              .eq('sender_id', req.userId);
-            
-            if (msgCount === 1) { // 1 because the message was just inserted
-              const { data: recipientData } = await supabaseAdmin.from('users').select('id, email, username').eq('id', recipientId).single();
-              if (recipientData?.email) {
-                emailService.sendNewChatMessageEmail(recipientData, senderName, tradeId, preview)
-                  .catch(e => console.error('[Message email] Failed:', e.message));
-              }
-            }
+      try {
+        const senderName = userData?.username || 'Trader';
+        const tradeRef = tradeId.slice(0, 8).toUpperCase();
+        const preview = message.length > 60 ? message.slice(0, 60) + '…' : message;
+        
+        // 1. Send first-message Email if applicable
+        const { count: msgCount } = await supabaseAdmin.from('messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('trade_id', tradeId)
+          .eq('sender_id', req.userId);
+
+        if (msgCount === 1) { // 1 because the message was just inserted
+          const { data: recipientData } = await supabaseAdmin.from('users').select('id, email, username').eq('id', recipientId).single();
+          if (recipientData?.email) {
+            await Promise.allSettled([
+              emailService.sendNewChatMessageEmail(recipientData, senderName, tradeId, preview).catch(e => console.error('[Message email] Failed:', e.message))
+            ]);
           }
-        } catch (e) {
-          console.error('[Message notification] Failed:', e.message);
         }
-      });
+
+        // 2. Send DB Notification and Push (Throttled)
+        const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+        const { data: recent } = await supabaseAdmin
+          .from('notifications')
+          .select('id')
+          .eq('user_id', recipientId)
+          .eq('type', 'message')
+          .eq('action', `/trade/${tradeId}`)
+          .gte('created_at', fiveMinAgo)
+          .maybeSingle();
+
+        if (!recent) {
+          await createNotification(
+            recipientId,
+            'message',
+            `💬 New Message in Trade #${tradeRef}`,
+            `${senderName}: ${preview}`,
+            `/trade/${tradeId}`
+          );
+          sendSystemAlert(recipientId, `💬 New Message in Trade #${tradeRef}`, `${senderName}: ${preview}`, `https://praqen.com/trade/${tradeId}`).catch(() => { });
+        }
+      } catch (e) {
+        console.error('[Message notification] Failed:', e.message);
+      }
     }
+
+    res.json({ success: true, message: data[0] });
 
     // ── Update sender's avg_response_time — how fast they engage after a trade
     // opens, in minutes, as an exponential moving average. This is what powers
