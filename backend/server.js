@@ -10698,13 +10698,16 @@ app.get('/api/referral/leaderboard', async (req, res) => {
     // Step 1: earnings from affiliate_earnings (authoritative for BTC earned)
     const { data: earningsRows } = await supabaseAdmin
       .from('affiliate_earnings')
-      .select('referrer_id, commission_btc');
+      .select('referrer_id, commission_btc, created_at');
 
     const earningsMap = {};
+    const monthMap = {};
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
     const allReferrerIds = new Set();
     (earningsRows || []).forEach(e => {
       const rid = e.referrer_id;
       earningsMap[rid] = (earningsMap[rid] || 0) + parseFloat(e.commission_btc || 0);
+      if (e.created_at && new Date(e.created_at) >= monthStart) monthMap[rid] = (monthMap[rid] || 0) + parseFloat(e.commission_btc || 0);
       allReferrerIds.add(rid);
     });
 
@@ -10749,7 +10752,7 @@ app.get('/api/referral/leaderboard', async (req, res) => {
           id: rid,
           username: userMap[rid]?.username || 'Trader',
           badge: userMap[rid]?.badge || 'BEGINNER', country: userMap[rid]?.country || null,
-          earned_btc: parseFloat((earningsMap[rid] || 0).toFixed(8)),
+          earned_btc: parseFloat((earningsMap[rid] || 0).toFixed(8)), month_btc: parseFloat((monthMap[rid] || 0).toFixed(8)),
           // Take the larger value — cached counter may include old signups
           // that predate the referred_by field being saved reliably
           referrals: Math.max(actualRefs, cachedRefs),

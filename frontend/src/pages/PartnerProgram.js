@@ -6,7 +6,7 @@ import PropTypes from 'prop-types';
 import CountryFlag from '../components/CountryFlag';
 import SEO from '../components/SEO';
 import './partner-program.css';
-import { LEVELS, CLAIM_MIN_USD, Badge, pct, usd, monthlyExample, usePartnerStats } from './partnerShared';
+import { LEVELS, CLAIM_MIN_USD, Badge, pct, usd, monthlyExample, levelIndexFor, usePartnerStats } from './partnerShared';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -83,6 +83,7 @@ function PartnerProgram({ user }) {
     else done();
   };
 
+  const leaders = (board || []).filter((x) => x.earned_btc > 0 || x.referrals > 0).slice(0, 3);
   const matches = (r) => !q.trim() || String(r.username || '').toLowerCase().includes(q.trim().toLowerCase());
   const s = stats || { friends: [], history: [], invitedBy: null, total: 0, active: 0, lifetimeUsd: 0, lifetimeVol: 0, vol30: 0, level: 0 };
   const shown = cur == null ? 0 : cur;
@@ -332,14 +333,41 @@ function PartnerProgram({ user }) {
       {/* HALL OF FAME */}
       <section className="wrap sect ctr">
         <h2 className="h2b">Hall of Fame</h2>
-        <p className="l">Real stories from traders who built communities, mentored others, and achieved success on PRAQEN. Get inspired and start your own journey today.</p>
-        <div className="hof" style={{ gridTemplateColumns: '1fr', maxWidth: 520, margin: '26px auto 0' }}>
-          <div className="hc" style={{ textAlign: 'center', alignItems: 'center' }}>
-            <Badge i={3} size={64} />
-            <p style={{ fontSize: 18 }}>Our first Hall of Fame stories are coming soon. Yours could be here.</p>
-            <Link className="btn p" to="/partner-program/calculator">See what you could earn</Link>
+        <p className="l">Our top partners: traders who built communities, mentored others, and grew their network on PRAQEN. Get inspired and start your own journey today.</p>
+        {leaders.length > 0 ? (
+          <div className="hof">
+            {leaders.map((h, i) => {
+              const lvl = levelIndexFor(h.referrals, 0);
+              const usdOf = (btc) => (btcUsd ? `${(Number(btc || 0) * btcUsd).toFixed(2)} USD` : `${Number(btc || 0).toFixed(6)} BTC`);
+              return (
+                <div className="hc" key={h.id}>
+                  <div className="rankchip">#{i + 1}</div>
+                  <div className="hh">
+                    <i className="av lg">{(h.username || '?')[0].toUpperCase()}</i>
+                    <div>
+                      <b>@{h.username}</b>
+                      <small>{h.country ? <><CountryFlag countryCode={h.country} style={{ width: 16, height: 12 }} /> {h.country}</> : 'PRAQEN partner'}</small>
+                    </div>
+                    <Link className="pf" to={`/profile/${encodeURIComponent(h.username)}`}>Profile</Link>
+                  </div>
+                  <p>Grew a network of {h.referrals} friend{h.referrals === 1 ? '' : 's'} who completed {h.affiliate_trades} trade{h.affiliate_trades === 1 ? '' : 's'} on PRAQEN.</p>
+                  <div className="lvtag"><Badge i={lvl} size={22} /> {LEVELS[lvl].n} partner level</div>
+                  <div className="st row"><small>Lifetime earnings</small><strong>{usdOf(h.earned_btc)}</strong></div>
+                  <div className="st row"><small>Earnings this month</small><strong>{usdOf(h.month_btc)}</strong></div>
+                  <div className="st row"><small>Network growth</small><strong>{h.referrals} friends</strong></div>
+                </div>
+              );
+            })}
           </div>
-        </div>
+        ) : (
+          <div className="hof" style={{ gridTemplateColumns: '1fr', maxWidth: 520, margin: '26px auto 0' }}>
+            <div className="hc" style={{ textAlign: 'center', alignItems: 'center' }}>
+              <Badge i={3} size={64} />
+              <p style={{ fontSize: 18 }}>Our top partners will appear here. Yours could be the first name.</p>
+              <Link className="btn p" to="/partner-program/calculator">See what you could earn</Link>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* FAQ */}
