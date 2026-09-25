@@ -43,7 +43,8 @@ function getResendFromAddress(role = 'notifications') {
   if (process.env.SMTP_FROM || process.env.EMAIL_USER) {
     return formatFromAddress(process.env.SMTP_FROM || process.env.EMAIL_USER);
   }
-  return 'PraQen Notifications <onboarding@resend.dev>';
+  // Same default the code always used. (resend.dev is only a sandbox sender that delivers to the account owner.)
+  return formatFromAddress(DEFAULT_FROM_ADDRESS);
 }
 
 function getTestOverrideEmail() {

@@ -20,6 +20,7 @@ import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import CustomToastContainer from './components/CustomToastContainer';
 import Navbar from './components/Navbar';
+import { clearCachedActiveTrades } from './utils/activeTradesCache';
 import BottomNav from './components/BottomNav';
 import { NotificationPrompt, AndroidInstallBanner, IOSInstallGuide } from './components/PushSetup';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -565,6 +566,7 @@ function App() {
 
   // ── ✅ FIX: Logout function with OneSignal unidentification ──────────────
   const logout = () => {
+    clearCachedActiveTrades(); // never leave this user's trades behind for the next login
     setUser(null);
     setToken(null);
     localStorage.removeItem('token');
