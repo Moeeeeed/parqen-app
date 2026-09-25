@@ -93,6 +93,10 @@ async function computeStats(supabase, user, completed, { percentile } = {}) {
   if (volumePercentile === undefined) {
     try { volumePercentile = ms.percentileFromVolumes(await getVolumeIndex(supabase), user.id); } catch (e) { volumePercentile = 0; }
   }
+  return statsFromParts(user, completed, disputeCount, cancelledCount, volumePercentile);
+}
+
+function statsFromParts(user, completed, disputeCount, cancelledCount, volumePercentile) {
   return {
     totalTrades: completed.length,
     totalVolumeUsd: completed.reduce((s, t) => s + parseFloat(t.amount_usd || 0), 0),
@@ -232,61 +236,95 @@ async function attachMedals(objects, opts = {}) {
 }
 
 // ── Sweep / first-day backfill ──────────────────────────────────────────
-// Candidates = everyone with a real completed trade, plus accounts old enough for The OG.
-async function listCandidateUserIds(supabase) {
-  const trades = await fetchAllRows(() => supabase.from('trades')
-    .select('id, buyer_id, seller_id, is_test').eq('status', 'COMPLETED').order('id', { ascending: true }));
-  const ids = new Set();
-  trades.filter((t) => t.is_test !== true).forEach((t) => { if (t.buyer_id) ids.add(t.buyer_id); if (t.seller_id) ids.add(t.seller_id); });
-  const cutoff = new Date(Date.now() - 365 * 86400000).toISOString();
-  const old = await fetchAllRows(() => supabase.from('users').select('id').lte('created_at', cutoff).order('id', { ascending: true }));
-  old.forEach((u) => ids.add(u.id));
-  return [...ids];
+// Reads the whole platform ONCE (a handful of paged queries) and decides in memory who has earned
+// what — instead of several database calls per user. Nothing is written here.
+async function previewSweep(supabase, now = new Date()) {
+  const [trades, disputed, cancelled, users, held] = await Promise.all([
+    fetchAllRows(() => supabase.from('trades')
+      .select('id, buyer_id, seller_id, amount_usd, payment_method, completed_at, is_test, gift_card_brand, listing:listing_id(listing_type)')
+      .eq('status', 'COMPLETED').order('id', { ascending: true })),
+    fetchAllRows(() => supabase.from('trades')
+      .select('id, buyer_id, seller_id, is_test').not('disputed_at', 'is', null).order('id', { ascending: true })),
+    fetchAllRows(() => supabase.from('trades')
+      .select('id, buyer_id, seller_id, cancel_reason, is_test').eq('status', 'CANCELLED').order('id', { ascending: true })),
+    fetchAllRows(() => supabase.from('users')
+      .select('id, username, created_at, account_status').order('id', { ascending: true })),
+    fetchAllRows(() => supabase.from('user_badges')
+      .select('id, user_id, badge_name, is_unlocked, unlocked_at').in('badge_name', MEDAL_IDS).order('id', { ascending: true })),
+  ]);
+  const real = trades.filter((t) => t.is_test !== true);
+  const index = ms.volumesByUser(trades);
+
+  const byUser = new Map(); // userId -> completed real trades
+  real.forEach((t) => {
+    for (const id of new Set([t.buyer_id, t.seller_id])) {
+      if (!id) continue;
+      if (!byUser.has(id)) byUser.set(id, []);
+      byUser.get(id).push(t);
+    }
+  });
+  const countBy = (rows, keep = () => true) => {
+    const m = new Map();
+    rows.filter((t) => t.is_test !== true && keep(t)).forEach((t) => {
+      for (const id of new Set([t.buyer_id, t.seller_id])) if (id) m.set(id, (m.get(id) || 0) + 1);
+    });
+    return m;
+  };
+  const disputes = countBy(disputed);
+  const cancels = countBy(cancelled, (t) => !EXPIRY_REASON_RE.test(t.cancel_reason || ''));
+
+  const savedBy = new Map(); // userId -> Set of unlocked medal ids
+  held.forEach((r) => { if (r.is_unlocked) { if (!savedBy.has(r.user_id)) savedBy.set(r.user_id, new Set()); savedBy.get(r.user_id).add(r.badge_name); } });
+
+  const awards = [];
+  const revoked = [];
+  const skippedRestricted = [];
+  let checked = 0;
+  const cutoff = now.getTime() - 365 * 86400000;
+  for (const u of users) {
+    const completed = byUser.get(u.id) || [];
+    const old = u.created_at && new Date(u.created_at).getTime() <= cutoff;
+    const have = savedBy.get(u.id) || new Set();
+    if (isRestricted(u.account_status)) {
+      if (have.size) revoked.push({ userId: u.id, username: u.username, status: u.account_status, medals: have.size });
+      if (completed.length || old) skippedRestricted.push({ userId: u.id, username: u.username, status: u.account_status });
+      continue;
+    }
+    if (!completed.length && !old) continue;
+    checked++;
+    const stats = statsFromParts(u, completed, disputes.get(u.id) || 0, cancels.get(u.id) || 0, ms.percentileFromVolumes(index, u.id));
+    const qualifies = ms.newlyEarnedMedalIds(stats, []);
+    const list = MEDAL_IDS.filter((id) => qualifies.includes(id) && !have.has(id));
+    if (list.length) {
+      awards.push({
+        userId: u.id, username: u.username, medals: list, stats,
+        earned: list.map((id) => ({ id, earnedAt: ms.earnedAtForMedal(id, completed, u.created_at, now) || now.toISOString() })),
+      });
+    }
+  }
+  return { candidates: checked, awards, revoked, skippedRestricted };
 }
 
 // apply=false is a DRY RUN: it saves nothing and notifies nobody, and returns what would happen.
-async function runSweep({ apply = false, notify = true, supabase = defaultSupabase, onProgress, pushFn } = {}) {
+// apply=true: takes medals off restricted accounts, then awards (and announces) each medal once.
+async function runSweep({ apply = false, notify = true, supabase = defaultSupabase, pushFn } = {}) {
   _clearVolumeCache();
+  const plan = await previewSweep(supabase);
+  if (!apply) return { apply, ...plan };
+
+  for (const r of plan.revoked) r.medals = await revokeMedalsFor(r.userId, { supabase });
   const index = await getVolumeIndex(supabase, { force: true });
-
-  // 1. medals sitting on restricted accounts are taken away
-  const held = await fetchAllRows(() => supabase.from('user_badges')
-    .select('id, user_id').in('badge_name', MEDAL_IDS).eq('is_unlocked', true).order('id', { ascending: true }));
-  const holders = [...new Set(held.map((r) => r.user_id))];
-  const revoked = [];
-  for (let i = 0; i < holders.length; i += 100) {
-    const { data: us } = await supabase.from('users').select('id, username, account_status').in('id', holders.slice(i, i + 100));
-    for (const u of us || []) {
-      if (isRestricted(u.account_status)) {
-        const n = apply ? await revokeMedalsFor(u.id, { supabase }) : held.filter((r) => r.user_id === u.id).length;
-        revoked.push({ userId: u.id, username: u.username, status: u.account_status, medals: n });
-      }
-    }
-  }
-
-  // 2. award what people have earned
-  const candidates = await listCandidateUserIds(supabase);
   const awards = [];
-  const skippedRestricted = [];
-  let done = 0;
-  for (const id of candidates) {
+  for (const a of plan.awards) {
     try {
-      const r = await evaluateUser(id, { persist: apply, notify: apply && notify, supabase, pushFn, percentile: ms.percentileFromVolumes(index, id) });
-      if (r && r.restricted) skippedRestricted.push({ userId: id, username: r.user.username, status: r.user.account_status });
-      else if (r) {
-        const already = await supabase.from('user_badges').select('badge_name').eq('user_id', id).eq('is_unlocked', true).in('badge_name', MEDAL_IDS);
-        const have = new Set((already.data || []).map((x) => x.badge_name));
-        // dry run: everything earned that is not saved yet; apply: what this run just saved
-        const list = apply ? r.newlyAwarded : r.earned.map((e) => e.id).filter((m) => !have.has(m));
-        if (list.length) awards.push({ userId: id, username: r.user.username, medals: list, stats: r.stats, earned: r.earned.filter((e) => list.includes(e.id)) });
-      }
+      // evaluateUser re-reads this one person from the database, so what is saved is always what they truly earned
+      const r = await evaluateUser(a.userId, { persist: true, notify, supabase, pushFn, percentile: ms.percentileFromVolumes(index, a.userId) });
+      if (r && !r.restricted && r.newlyAwarded.length) awards.push({ userId: a.userId, username: r.user.username, medals: r.newlyAwarded, stats: r.stats, earned: r.earned.filter((e) => r.newlyAwarded.includes(e.id)) });
     } catch (e) {
-      console.error(`[medals] sweep failed for ${String(id).slice(0, 8)}:`, e.message);
+      console.error(`[medals] sweep failed for ${String(a.userId).slice(0, 8)}:`, e.message);
     }
-    done++;
-    if (onProgress && done % 25 === 0) onProgress(done, candidates.length);
   }
-  return { apply, candidates: candidates.length, awards, revoked, skippedRestricted };
+  return { apply, candidates: plan.candidates, awards, revoked: plan.revoked, skippedRestricted: plan.skippedRestricted };
 }
 
 // Daily job (only when MEDALS_AUTO_ENABLED=true).
@@ -314,6 +352,7 @@ module.exports = {
   revokeMedalsFor,
   getMedalsForUsers,
   attachMedals,
+  previewSweep,
   runSweep,
   startDailySweep,
 };
