@@ -85,7 +85,7 @@ export default function PartnerCalculator() {
               <div className="lvs">
                 {LEVELS.map((x, i) => (
                   <button type="button" key={x.n} className={`lb${lv === i ? ' on' : ''}`} onClick={() => setLv(i)}>
-                    <small>Level {i + 1}</small><b>{x.n}</b><span>{pct(x.r)}</span><em>{x.f ? `${x.f}+ active friends` : 'Everyone'}</em>
+                    <small>Level {i + 1}</small><b>{x.n}</b><span>{pct(x.r)}</span><em>{x.f} active partners · ${x.v.toLocaleString()} volume</em>
                   </button>
                 ))}
               </div>

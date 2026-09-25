@@ -457,3 +457,26 @@
 
 /* profile photos */
 .ppx img.avimg{object-fit:cover;background:var(--soft);display:block}
+
+/* level requirements (unlock / keep / payout) */
+.ppx .explain{background:#F0FAF5;border:1px solid #D7E8DD;border-radius:14px;padding:14px 16px;font-size:14px;color:var(--muted);margin-bottom:14px}
+.ppx .explain b{color:var(--ink)}
+.ppx .nextcard{background:#FFF8E6;border:1px solid #F1D08A;border-radius:18px;padding:18px;margin-bottom:14px}
+.ppx .nextcard .nh{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+.ppx .nextcard .nh small{display:block;color:var(--muted);font-size:12px}
+.ppx .nextcard .nh b{font-size:18px;color:var(--brand)}
+.ppx .bars{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:640px){.ppx .bars{grid-template-columns:1fr}}
+.ppx .bar2 .bl{display:flex;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:6px;flex-wrap:wrap}
+.ppx .bar2 .bl span{color:var(--muted)}
+.ppx .need{margin-top:12px;font-size:14px}
+.ppx .yah.ok{background:#2D6A4F;color:#fff}
+.ppx .bd3{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 14px 14px}
+@media(max-width:760px){.ppx .bd3{grid-template-columns:1fr}}
+.ppx .box{background:rgba(255,255,255,.78);border-radius:14px;padding:14px 16px}
+.ppx .box h5{font-size:12px;letter-spacing:.05em;color:var(--brand);margin-bottom:8px}
+.ppx .mrow{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px}
+.ppx .mrow span{color:var(--muted)}
+.ppx .mrow b.ok{color:var(--green)}
+.ppx .box .small{font-size:12px;color:var(--muted);margin-top:8px}
+.ppx .box ul{margin:2px 0 0 18px;font-size:14px;color:var(--muted)}

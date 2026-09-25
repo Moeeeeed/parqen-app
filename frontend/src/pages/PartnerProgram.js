@@ -6,7 +6,7 @@ import PropTypes from 'prop-types';
 import CountryFlag from '../components/CountryFlag';
 import SEO from '../components/SEO';
 import './partner-program.css';
-import { countryName, LEVELS, CLAIM_MIN_USD, Badge, pct, usd, monthlyExample, levelIndexFor, usePartnerStats } from './partnerShared';
+import { countryName, LEVELS, CLAIM_MIN_USD, ACTIVE_MIN_USD, Badge, pct, usd, monthlyExample, usePartnerStats } from './partnerShared';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -26,7 +26,7 @@ const FAQ = [
   ['Can I earn from gift card trades?', 'Not yet. Right now partner rewards come from Bitcoin and USDT trades only.'],
   ['Which cryptocurrencies can generate partner rewards?', 'Bitcoin (BTC) and USDT trades completed on PRAQEN.'],
   ['How much commission can I earn?', 'Between 0.10% and 0.20% of each completed trade, depending on your level: Starter 0.10%, Builder 0.12%, Pro 0.15%, Ambassador 0.20%.'],
-  ['How do levels work?', 'You move up when you have enough active friends or enough friend trading volume in the last 30 days. See the "Your status" section for what each level needs.'],
+  ['How do levels work?', 'You move up when you have BOTH enough active partners and enough trading volume from them. A friend is active once they have traded at least $20 in total. Each stage shows what you need to unlock it and what you need to keep it.'],
   ['When and how do I get paid?', `Rewards wait 3 days to make sure the trade is safe. Once your balance reaches $${CLAIM_MIN_USD}, tap Claim and it is added to your PRAQEN wallet.`],
   ['How long do I earn from each friend?', 'For 12 months from the day your friend joins. After that, the rate is halved so your older friends still pay you.'],
   ['Is there a limit to how many friends I can invite?', 'No. Invite as many real friends as you like. Fake or self-referral accounts are not allowed and will be removed.'],
@@ -99,8 +99,12 @@ function PartnerProgram({ user }) {
 
   const leaders = (board || []).filter((x) => x.earned_btc > 0 || x.referrals > 0).slice(0, 3);
   const matches = (r) => !q.trim() || String(r.username || '').toLowerCase().includes(q.trim().toLowerCase());
-  const s = stats || { friends: [], history: [], invitedBy: null, total: 0, active: 0, lifetimeUsd: 0, lifetimeVol: 0, vol30: 0, level: 0 };
-  const shown = cur == null ? 0 : cur;
+  const s = stats || { friends: [], history: [], invitedBy: null, total: 0, active: 0, lifetimeUsd: 0, lifetimeVol: 0, qvol: 0, level: -1 };
+  const shown = cur == null ? 0 : Math.max(0, cur);
+  const nextIdx = cur == null ? null : cur + 1;
+  const nextLv = nextIdx != null && nextIdx < LEVELS.length ? LEVELS[nextIdx] : null;
+  const moreFriends = nextLv ? Math.max(0, nextLv.f - s.active) : 0;
+  const moreVolume = nextLv ? Math.max(0, nextLv.v - s.qvol) : 0;
 
   return (
     <div className="ppx">
@@ -180,17 +184,17 @@ function PartnerProgram({ user }) {
 
         <div className="track4wrap">
           <h4 className="lab2" style={{ margin: '0 0 4px' }}>Your journey: grow and earn your badges</h4>
-          <p className="note" style={{ margin: '0 0 14px' }}>Invite active friends and watch your badge and rate grow: Starter, Builder, Pro, Ambassador.</p>
+          <p className="note" style={{ margin: '0 0 14px' }}>To unlock each stage you need enough active partners AND enough trading volume from them. Both numbers are shown under each badge.</p>
           <div className="track4">
             {LEVELS.map((l, i) => {
-              const fill = cur == null ? 100 : i <= cur ? 100 : i === cur + 1 ? Math.min(100, Math.round((s.active / l.f) * 100)) : 0;
+              const fill = cur == null ? 100 : i <= cur ? 100 : i === cur + 1 ? Math.min(100, Math.round(Math.min(s.active / l.f, s.qvol / l.v) * 100)) : 0;
               return (
                 <React.Fragment key={l.n}>
                   {i > 0 && <div className="seg"><i style={{ width: `${fill}%` }} /></div>}
                   <div className={`tb${cur != null && i > cur ? ' off' : ''}${i === cur ? ' now' : ''}`}>
                     <Badge i={i} size={56} />
                     <span>{l.n}</span>
-                    <small>{l.f ? `${l.f}+ active friends` : 'Start here'}</small>
+                    <small>{l.f} active · ${l.v.toLocaleString()}</small>
                     <em className="rt2" style={{ fontStyle: 'normal' }}>{pct(l.r)}</em>
                     {i === cur && <em className="here" style={{ fontStyle: 'normal' }}>YOU ARE HERE</em>}
                   </div>
@@ -204,39 +208,75 @@ function PartnerProgram({ user }) {
       {/* STATUS */}
       <section className="wrap sect">
         <h4 className="lab2">Your status</h4>
+        <p className="explain">
+          <b>How you move up:</b> invite friends who trade. A friend is <b>active</b> once they have traded at least ${ACTIVE_MIN_USD} in total.
+          To unlock the next stage you need <b>both</b> enough active partners <b>and</b> enough trading volume from them (lifetime).
+          Every trade your friends make earns you a share of PRAQEN's fee, and the higher your stage, the bigger your share.
+        </p>
+
+        {user && (
+          <div className="nextcard">
+            {nextLv ? (
+              <>
+                <div className="nh"><Badge i={nextIdx} size={36} /><div><small>Your next stage</small><b>{nextLv.n} · {pct(nextLv.r)}</b></div></div>
+                <div className="bars">
+                  <div className="bar2"><div className="bl"><span>Active partners</span><b>{s.active} / {nextLv.f}</b></div><div className="track"><i style={{ width: `${Math.min(100, (s.active / nextLv.f) * 100)}%` }} /></div></div>
+                  <div className="bar2"><div className="bl"><span>Qualified volume</span><b>{usd(s.qvol)} / {nextLv.v.toLocaleString()} USD</b></div><div className="track"><i style={{ width: `${Math.min(100, (s.qvol / nextLv.v) * 100)}%` }} /></div></div>
+                </div>
+                <p className="need">
+                  {moreFriends > 0 || moreVolume > 0
+                    ? <>To unlock <b>{nextLv.n}</b> you still need {moreFriends > 0 && <b>{moreFriends} more active partner{moreFriends === 1 ? '' : 's'}</b>}{moreFriends > 0 && moreVolume > 0 && ' and '}{moreVolume > 0 && <b>{usd(moreVolume)} more volume</b>}.</>
+                    : <>You have both numbers for <b>{nextLv.n}</b>. It unlocks automatically.</>}
+                </p>
+              </>
+            ) : (
+              <div className="nh"><Badge i={3} size={36} /><div><small>Top stage</small><b>You are an Ambassador. Keep your numbers up to stay here.</b></div></div>
+            )}
+          </div>
+        )}
+
         <div className="lvl">
           {LEVELS.map((l, i) => {
             const here = i === cur;
+            const unlocked = cur != null && i <= cur;
             return (
-              <details className={`lr${here ? ' cur' : ''}`} key={l.n} open={here || (cur == null && i === 1)}>
+              <details className={`lr${here ? ' cur' : ''}`} key={l.n} open={here || (cur != null && i === cur + 1) || (cur == null && i === 0)}>
                 <summary>
-                  <span className="ln"><Badge i={i} size={40} /><b>{l.n} · {pct(l.r)}</b>{here && <em className="yah">YOU ARE HERE</em>}</span>
-                  <span className="lm">Active friends: {s.active} / {l.f}<br />Friends volume: {usd(s.vol30)} / {l.v.toLocaleString()} USD</span>
+                  <span className="ln"><Badge i={i} size={40} /><b>{l.n} · {pct(l.r)}</b>{here && <em className="yah">YOU ARE HERE</em>}{unlocked && !here && <em className="yah ok">UNLOCKED</em>}</span>
+                  <span className="lm">Unlock — active partners: {s.active} / {l.f}<br />Unlock — qualified volume: {usd(s.qvol).replace(' USD', '')} / {l.v.toLocaleString()} USD</span>
                   <span className="pl" />
                 </summary>
-                {i === 0 ? (
-                  <div className="bd2"><p>Everyone starts here. No minimum.</p><ul>{l.get.map((x) => <li key={x}>{x}</li>)}</ul></div>
-                ) : (
-                  <>
-                    <div className="two">
-                      <div className="pn"><div className="pt2"><small>Active friends</small></div><strong className={s.active >= l.f ? 'ok' : 'no'}>{s.active}</strong><small>{here ? 'Keep level' : 'Needed'}: {l.f} active friends</small></div>
-                      <div className="orr">OR</div>
-                      <div className="pn"><div className="pt2"><small>Friends trade volume</small></div><strong className={s.vol30 >= l.v ? 'ok' : 'no'}>{usd(s.vol30)}</strong><small>{here ? 'Keep level' : 'Needed'}: ${l.v.toLocaleString()} / month</small></div>
-                    </div>
-                    <div className="bd2">
-                      <b>What you get</b><ul>{l.get.map((x) => <li key={x}>{x}</li>)}</ul>
-                      <b>Extras</b><ul>{l.bonus.map((x) => <li key={x}>{x}</li>)}</ul>
-                    </div>
-                  </>
-                )}
+                <div className="bd3">
+                  <div className="box">
+                    <h5>TO UNLOCK</h5>
+                    <div className="mrow"><span>Active direct partners</span><b className={s.active >= l.f ? 'ok' : ''}>{s.active} / {l.f}</b></div>
+                    <div className="mrow"><span>Qualified volume (lifetime)</span><b className={s.qvol >= l.v ? 'ok' : ''}>{usd(s.qvol)} / {l.v.toLocaleString()} USD</b></div>
+                    <p className="small">Active = a friend you invited who has traded at least {ACTIVE_MIN_USD} USD in total. Qualified volume is the trading volume of your active friends. You need both numbers to unlock.</p>
+                  </div>
+                  <div className="box">
+                    <h5>TO KEEP</h5>
+                    <div className="mrow"><span>Active direct partners</span><b>{l.kf}</b></div>
+                    <div className="mrow"><span>Qualified volume (lifetime)</span><b>{l.kv.toLocaleString()} USD</b></div>
+                    <p className="small">After you unlock, stay at or above these keep numbers. Falling short drops you one stage. Keep numbers are lower than unlock numbers.</p>
+                  </div>
+                  <div className="box">
+                    <h5>PAYOUT</h5>
+                    <div className="mrow"><span>Your share of each friend trade</span><b>{pct(l.r)}</b></div>
+                    <p className="small">Example: a friend trades $100, PRAQEN's fee is about $1.00, and you get ${(l.r).toFixed(2)}. PRAQEN keeps ${(1 - l.r).toFixed(2)}.</p>
+                  </div>
+                  <div className="box">
+                    <h5>WHAT YOU GET</h5>
+                    <ul>{l.get.concat(l.bonus).map((x) => <li key={x}>{x}</li>)}</ul>
+                  </div>
+                </div>
               </details>
             );
           })}
         </div>
         {user && (
           <div className="tot">
-            <div className="st row"><b>Total friends</b><strong>{s.total}</strong></div>
-            <div className="st row"><b>Active friends</b><strong>{s.active}</strong></div>
+            <div className="st row"><b>Total partners</b><strong>{s.total}</strong></div>
+            <div className="st row"><b>Active partners</b><strong>{s.active}</strong></div>
           </div>
         )}
       </section>
@@ -351,7 +391,7 @@ function PartnerProgram({ user }) {
         {leaders.length > 0 ? (
           <div className="hof">
             {leaders.map((h, i) => {
-              const lvl = levelIndexFor(h.referrals, 0);
+              const lvl = Math.max(0, LEVELS.reduce((a, l, k) => (h.referrals >= l.f ? k : a), 0));
               const usdOf = (btc) => (btcUsd ? `${(Number(btc || 0) * btcUsd).toFixed(2)} USD` : `${Number(btc || 0).toFixed(6)} BTC`);
               return (
                 <div className="hc" key={h.id}>
