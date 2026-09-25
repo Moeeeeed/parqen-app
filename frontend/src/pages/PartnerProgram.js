@@ -119,25 +119,22 @@ function PartnerProgram({ user }) {
         <h1 className="mega">The Affiliate Program</h1>
         <p className="sub2">Bring users who trade and earn from every trade they make. Join the PRAQEN Affiliate Program</p>
         <div className="dash"><div className="in worth">
-          <div className="wh"><div><h3>What could your network be worth?</h3><span>See how much you could earn from the users you bring, and what you need to reach each level</span></div><em className="chip">Monthly</em></div>
+          <div className="wh"><div><h3>What could your network be worth?</h3><span>See how much you could earn from the users you bring</span></div><em className="chip">Monthly</em></div>
           <div className="w4">
             {LEVELS.map((l, i) => {
               const m = monthlyExample(l);
               return (
                 <div className={`wi${i === cur ? ' mine' : ''}`} key={l.n}>
-                  <div className="wtop"><Badge i={i} size={40} /><div className="wname"><span>{l.n}</span><em>{pct(l.r)} of each trade</em></div>{i === cur && <i className="youtag">YOU</i>}</div>
-                  <b className="wamt">{m < 10 ? m.toFixed(2) : `${Math.round(m)}+`} USD <small>a month</small></b>
-                  <div className="wneed">
-                    <span className="wlabel">To reach this level you need</span>
-                    <span className="wreq"><b>{l.f}</b> active users</span>
-                    <span className="wreq"><b>${l.v.toLocaleString()}</b> trade volume</span>
+                  <Badge i={i} size={34} />
+                  <div className="wtxt">
+                    <span>{l.n}{i === cur && <i className="youtag">YOU</i>}</span>
+                    <b>{m < 10 ? m.toFixed(2) : `${Math.round(m)}+`} USD</b>
+                    <small>{l.f} active users · ${l.v.toLocaleString()} volume</small>
                   </div>
-                  <small className="wex">Example: {l.ex.f} users × {l.ex.t} trades a month × ${l.ex.z} each</small>
                 </div>
               );
             })}
           </div>
-          <p className="wnote">To move up you need <b>both</b> the active users <b>and</b> the trade volume. An active user is someone you brought who has traded at least ${ACTIVE_MIN_USD}.</p>
           <Link className="btn big" to="/partner-program/calculator">Calculate my earnings</Link>
         </div></div>
         <div className="coin big2">₮</div>

@@ -512,3 +512,18 @@
 .ppx .wex{display:block;margin-top:8px;font-size:11px;color:#6b7f73}
 .ppx .wnote{font-size:13px;color:var(--muted);margin:0 0 14px}
 .ppx .wnote b{color:var(--ink)}
+
+/* compact hero card (NoOnes-style) */
+.ppx .dash{padding:12px 14px}
+.ppx .dash .in.worth{padding:14px 16px}
+.ppx .wh h3{font-size:16px}
+.ppx .wh span{font-size:12px}
+.ppx .w4{gap:8px 28px;margin:10px 0 12px}
+.ppx .wi,.ppx .wi:nth-child(n){display:flex;align-items:center;gap:10px;padding:8px 6px;background:transparent;border:0;border-bottom:1px solid var(--line);border-radius:0;box-shadow:none;text-align:left}
+.ppx .wi.mine{box-shadow:none;background:#FFF8E6}
+.ppx .wtxt span{display:block;font-size:13px;color:#48624F;font-weight:500}
+.ppx .wtxt b{display:block;font-size:16px;color:#1B4332;line-height:1.25}
+.ppx .wtxt small{display:block;font-size:11px;color:#6b7f73;margin-top:1px}
+.ppx .wtxt .youtag{margin-left:6px;font-style:normal;background:#F4A422;color:#1B4332;font-size:9px;font-weight:700;padding:1px 6px;border-radius:99px}
+.ppx .btn.big{padding:12px;font-size:15px;border-radius:10px}
+@media(max-width:560px){.ppx .w4{grid-template-columns:1fr 1fr;gap:4px 12px}.ppx .wtxt small{font-size:10px}}
