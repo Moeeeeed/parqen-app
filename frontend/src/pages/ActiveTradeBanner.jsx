@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../App';
@@ -30,17 +30,13 @@ const tradeColor  = (isGift, isBuyer) => isGift ? '#8B5CF6' : isBuyer ? '#F59E0B
 const ACTIVE_STATUSES = new Set(['CREATED','FUNDS_LOCKED','PAYMENT_SENT','PAID','DISPUTED']);
 const isActive = s => ACTIVE_STATUSES.has((s||'').toUpperCase());
 
+import { isGiftCardTrade } from '../utils/activeTradesCache';
+
 const matchesPage = (trade, page) => {
   if (!isActive(trade.status)) return false;
-  const isGC = !!(
-    trade.trade_type?.toUpperCase().includes('GIFT') ||
-    trade.listing?.listing_type?.toUpperCase().includes('GIFT')
-  );
-  if (isGC) return page === 'gift-cards';
-  const type = (trade.trade_type || '').toUpperCase();
-  if (page === 'buy')  return type === 'BUY';
-  if (page === 'sell') return type === 'SELL';
-  return false;
+  const isGC = isGiftCardTrade(trade);
+  if (page === 'gift-cards') return isGC;
+  return !isGC;
 };
 
 // sessionStorage helpers — popup fires only once per trade per browser session

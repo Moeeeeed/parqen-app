@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ThumbsUp, ThumbsDown, Clock, ArrowRight, X, Repeat2, CheckCircle2, CreditCard, AlertTriangle, Lock, Scale, Star } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, ChevronRight, X, Repeat2, Star } from 'lucide-react';
 import axios from 'axios';
 import CountryFlag from './CountryFlag';
 import { deriveBadge } from '../lib/badge';
@@ -8,20 +8,14 @@ import { deriveBadge } from '../lib/badge';
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 const STATUS_CFG = {
-  CREATED:      { label: 'Waiting for Escrow', icon: Clock,        statusColor: '#D97706', statusBg: '#FEF3C7' },
-  FUNDS_LOCKED: { label: 'Active & Funded',     icon: CheckCircle2, statusColor: '#16A34A', statusBg: '#DCFCE7' },
-  PAYMENT_SENT: { label: 'Payment Sent',        icon: CreditCard,   statusColor: '#2563EB', statusBg: '#DBEAFE' },
-  DISPUTED:     { label: 'In Dispute',          icon: AlertTriangle, statusColor: '#7C3AED', statusBg: '#EDE9FE' },
+  CREATED:      { label: 'Active funded', statusColor: '#92400E', statusBg: '#FEF3C7' },
+  FUNDS_LOCKED: { label: 'Active funded', statusColor: '#92400E', statusBg: '#FEF3C7' },
+  PAYMENT_SENT: { label: 'Paid',          statusColor: '#15803D', statusBg: '#DCFCE7' },
+  PAID:         { label: 'Paid',          statusColor: '#15803D', statusBg: '#DCFCE7' },
+  DISPUTED:     { label: 'In Dispute',    statusColor: '#7C3AED', statusBg: '#EDE9FE' },
+  CANCELLED:    { label: 'Cancelled',     statusColor: '#64748B', statusBg: '#F1F5F9' },
+  EXPIRED:      { label: 'Expired',       statusColor: '#64748B', statusBg: '#F1F5F9' },
 };
-
-// What market / page this trade belongs to
-function getMarketInfo(listingType) {
-  const t = (listingType || '').toUpperCase();
-  if (t === 'SELL')                              return { label: 'SELL TRADE',  color: '#D97706', bg: '#FEF3C7' };
-  if (t === 'BUY')                               return { label: 'BUY TRADE',   color: '#1B4332', bg: '#DCFCE7' };
-  if (t === 'BUY_GIFT_CARD' || t === 'SELL_GIFT_CARD') return { label: 'GIFT CARD',   color: '#0D9488', bg: '#CCFBF1' };
-  return { label: 'TRADE', color: '#475569', bg: '#F1F5F9' };
-}
 
 function getMyId() {
   try {
@@ -31,104 +25,41 @@ function getMyId() {
   } catch { return null; }
 }
 
-// Sanitize time limit: if > 1440 (24h in minutes) it was stored as seconds — convert
-function sanitizeLimitMins(raw) {
-  const n = parseInt(raw) || 30;
-  if (n > 1440) return Math.min(480, Math.round(n / 60)); // seconds → minutes, cap 8h
-  return Math.min(480, Math.max(5, n));
+function timeAgo(dateStr) {
+  if (!dateStr) return 'Under a minute ago';
+  const diffSecs = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (diffSecs < 60) return 'Under a minute ago';
+  const mins = Math.floor(diffSecs / 60);
+  if (mins < 60) return `${mins} minute${mins > 1 ? 's' : ''} ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hour${hrs > 1 ? 's' : ''} ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days} day${days > 1 ? 's' : ''} ago`;
 }
 
-// Returns effective expires_at — validates server value against expected deadline.
-// Returns null when expires_at is explicitly null (trade marked paid — timer permanently stopped).
-function resolveExpiresAt(expiresAt, createdAt, limitMins) {
-  // null means the server intentionally cleared it (buyer marked paid) — honour that
-  if (expiresAt === null) return null;
-  const computed = createdAt
-    ? new Date(new Date(createdAt).getTime() + (limitMins || 30) * 60 * 1000).toISOString()
-    : null;
-  if (!expiresAt) return computed;
-  // If server expires_at differs from computed by more than 2× the limit, the stored value
-  // has bad data (e.g. seconds stored as minutes). Fall back to computed.
-  if (computed) {
-    const diffMs = Math.abs(new Date(expiresAt) - new Date(computed));
-    if (diffMs > (limitMins || 30) * 60 * 2000) return computed;
-  }
-  return expiresAt;
+function formatPaymentMethod(pm) {
+  if (!pm) return 'Payment Method';
+  const p = String(pm).toLowerCase();
+  if (p.includes('mtn')) return 'MTN Mobile Money';
+  if (p.includes('vodafone')) return 'Vodafone Cash';
+  if (p.includes('mpesa') || p.includes('m-pesa')) return 'M-Pesa';
+  if (p.includes('bank')) return 'Bank Transfer';
+  if (p.includes('paypal')) return 'PayPal';
+  return pm.charAt(0).toUpperCase() + pm.slice(1);
 }
 
-// MM:SS countdown
-function TradeTimer({ expiresAt, timeLimitMins = 30, onExpire }) {
-  const limitSecs    = Math.max(60, timeLimitMins * 60);
-  const expiredFired = useRef(false);
-  const mountTime    = useRef(Date.now());
-
-  const calcRemaining = () => {
-    if (expiresAt) {
-      const diff = Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000);
-      return Math.max(0, diff);
-    }
-    // No server expiry deadline — show a static countdown from mount time (visual only).
-    // onExpire must NOT fire when expiresAt is null: null means the server intentionally
-    // cleared the deadline (buyer marked paid) and the trade must stay locked forever.
-    const elapsed = Math.floor((Date.now() - mountTime.current) / 1000);
-    return Math.max(0, limitSecs - elapsed);
-  };
-
-  const [secs, setSecs] = useState(calcRemaining);
-
-  useEffect(() => {
-    expiredFired.current = false;
-    mountTime.current = Date.now();
-    setSecs(calcRemaining());
-    const tick = setInterval(() => {
-      const remaining = calcRemaining();
-      setSecs(remaining);
-      // Only fire onExpire when we have a real server deadline (expiresAt is set).
-      // If expiresAt is null the server cleared the timer intentionally — never expire.
-      if (remaining === 0 && !expiredFired.current && expiresAt) {
-        expiredFired.current = true;
-        onExpire?.();
-      }
-    }, 1000);
-    return () => clearInterval(tick);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expiresAt]);
-
-  const expired = secs === 0;
-  const urgent  = !expired && secs < 300;
-  const pct     = Math.min(100, Math.round((secs / limitSecs) * 100));
-  const mm      = String(Math.floor(secs / 60)).padStart(2, '0');
-  const ss      = String(secs % 60).padStart(2, '0');
-  const color   = urgent ? '#D97706' : '#16A34A';
-  const bg      = urgent ? '#FEF3C7' : '#DCFCE7';
-
-  // When expired, remove the timer entirely (leave space clean)
-  if (expired) return null;
-
-  return (
-    <div className="flex flex-col items-end gap-1 flex-shrink-0">
-      <span className={`inline-flex items-center gap-1 text-xs font-mono font-black px-2.5 py-1 rounded-full ${urgent ? 'animate-pulse' : ''}`}
-        style={{ backgroundColor: bg, color }}>
-        <Clock size={10} />
-        {mm}:{ss}
-      </span>
-      <div className="w-20 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: '#E5E7EB' }}>
-        <div className="h-full rounded-full transition-all duration-1000"
-          style={{ width: `${pct}%`, backgroundColor: color }} />
-      </div>
-    </div>
-  );
-}
-
-function fmtLocal(sym, amount) {
+function fmtLocal(cur, amount) {
   if (!amount || isNaN(parseFloat(amount))) return null;
   const num = parseFloat(amount);
-  return `${sym || ''}${num.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  const code = (cur && cur.length === 3) ? cur.toUpperCase() : 'USD';
+  return `${num.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${code}`;
 }
 
-function fmtBtc(amount) {
+function fmtBtc(amount, isUsdt) {
   if (!amount || isNaN(parseFloat(amount))) return null;
-  return `₿ ${parseFloat(amount).toFixed(6)}`;
+  const num = parseFloat(amount);
+  if (isUsdt) return `${num.toFixed(2)} USDT`;
+  return `${num.toFixed(6)} BTC`;
 }
 
 // Popup — fetches fresh profile so badge is always accurate
@@ -186,7 +117,6 @@ function TraderPopup({ cpId, cpFallback, onClose }) {
                   {user.username || '—'}
                 </span>
               </div>
-              {/* Badge — always from fresh profile data */}
               {loading ? (
                 <div className="h-5 w-24 rounded-full animate-pulse" style={{ backgroundColor: 'rgba(255,255,255,0.15)' }} />
               ) : (
@@ -254,165 +184,120 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
     : (typeof trade.buyer  === 'object' ? trade.buyer  : {})
   ) || {};
 
-  const cfg      = STATUS_CFG[trade.status] || STATUS_CFG.CREATED;
-  const btnColor = pageColor || '#1B4332';
+  const cfg = STATUS_CFG[trade.status] || STATUS_CFG.CREATED;
 
-  // Listing type — check nested join AND direct field; fall back to role when unknown
-  const listingType   = trade.listing?.listing_type || trade.listing_type || trade.trade_type || '';
-  const market        = listingType
-    ? getMarketInfo(listingType)
-    : { label: isBuyer ? 'BUY TRADE' : 'SELL TRADE', color: isBuyer ? '#1B4332' : '#D97706', bg: isBuyer ? '#DCFCE7' : '#FEF3C7' };
-  const timeLimitMins = sanitizeLimitMins(trade.listing?.time_limit || trade.time_limit || 30);
+  const listingType = trade.listing?.listing_type || trade.listing_type || trade.trade_type || '';
+  const isUsdt       = listingType.includes('USDT') || (trade.crypto_currency || '').toUpperCase() === 'USDT';
+  const assetTag     = isUsdt ? 'USDT' : 'BTC';
 
-  // Timer: use server expires_at, fall back to created_at + limit
-  const effectiveExpiresAt = resolveExpiresAt(trade.expires_at, trade.created_at, timeLimitMins);
+  const rawCur   = trade.currency || trade.local_currency || trade.listing?.currency;
+  const cleanCur = (!rawCur || ['BTC','USDT','₿','₮','$'].includes(rawCur)) ? 'USD' : String(rawCur).toUpperCase();
 
-  // Badge from joined data — may be null, deriveBadge handles gracefully
-  const badge = deriveBadge(cp);
+  const payNum   = parseFloat(trade.amount_local || trade.amount_usd || trade.fiat_amount || 0);
+  let recvNum    = parseFloat(trade.amount_receive_usd || trade.receive_amount || 0);
 
-  // Amounts
-  const sym      = trade.currency_symbol || '';
-  const localAmt = fmtLocal(sym, trade.amount_local) || fmtLocal('$', trade.amount_usd);
-  const btcAmt   = fmtBtc(trade.amount_btc);
+  if (!recvNum || recvNum === payNum) {
+    const margin = parseFloat(trade.listing?.margin || 0);
+    if (margin !== 0) {
+      recvNum = payNum * (1 - (margin / 100));
+    } else {
+      recvNum = payNum * 0.95;
+    }
+  }
 
-  const youPayAmt   = isBuyer ? localAmt : btcAmt;
-  const youRecvAmt  = isBuyer ? btcAmt   : localAmt;
-  const roleLabel   = isBuyer ? 'You are the Buyer' : 'You are the Seller';
+  const fmtPay  = `${payNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${cleanCur}`;
+  const fmtRecv = `${recvNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${cleanCur}`;
 
-  const pos    = parseInt(cp.positive_feedback || 0);
-  const neg    = parseInt(cp.negative_feedback || 0);
-  const cpTrades = parseInt(cp.total_trades || cp.trade_count || 0);
-  const cc     = (cp.country || '').toLowerCase() || null;
+  const rawPm = trade.listing?.payment_method || trade.payment_method || 'Mobile Money';
+  const pmName = formatPaymentMethod(rawPm);
+
+  const payTitle   = isBuyer ? `Pay ${pmName}` : `Pay (${assetTag})`;
+  const payVal     = isBuyer ? fmtPay : fmtRecv;
+  const recvTitle  = isBuyer ? `Receive (${assetTag})` : `Receive ${pmName}`;
+  const recvVal    = isBuyer ? fmtRecv : fmtPay;
+
+  const pos       = parseInt(cp.positive_feedback || 0);
+  const neg       = parseInt(cp.negative_feedback || 0);
+  const total     = pos + neg;
+  const trust     = total > 0 ? Math.round(pos / total * 100) : parseInt(cp.total_trades || cp.trade_count || 0) > 0 ? 100 : 100;
+  const cc        = (cp.country || '').toLowerCase() || null;
+  const startedAt = timeAgo(trade.created_at);
 
   return (
     <>
-      <style>{`@keyframes pmtBorderPulse{0%,100%{box-shadow:0 0 0 2px rgba(37,99,235,0.25),0 1px 6px rgba(0,0,0,0.06);}50%{box-shadow:0 0 0 3px rgba(37,99,235,0.5),0 2px 10px rgba(37,99,235,0.18);}}`}</style>
-      <div className="rounded-xl mb-2.5 overflow-hidden w-full transition-all"
-        style={{
-          background: '#FFFFFF',
-          border: trade.status === 'PAYMENT_SENT' ? '1px solid #2563EB50' : `1px solid ${cfg.statusColor}30`,
-          borderLeft: trade.status === 'PAYMENT_SENT' ? '3.5px solid #2563EB' : `3.5px solid ${btnColor}`,
-          boxShadow: '0 1.5px 6px rgba(0,0,0,0.05)',
-          animation: trade.status === 'PAYMENT_SENT' ? 'pmtBorderPulse 2.5s ease-in-out infinite' : undefined,
-        }}>
-
-        {/* ── Header Row: Market Label + Role + Feedback/Trades + Status + Timer ── */}
-        <div className="flex items-center justify-between px-3 pt-2 pb-1 gap-1.5 flex-wrap">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="inline-flex items-center text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full flex-shrink-0"
-              style={{ backgroundColor: market.bg, color: market.color }}>
-              {market.label}
-            </span>
-            <span className="text-[10px] font-bold text-gray-400">
-              {roleLabel}
-            </span>
+      <div
+        onClick={() => navigate(`/trade/${trade.id}`)}
+        className="bg-white rounded-2xl p-4 mb-3 border border-gray-200/90 shadow-sm cursor-pointer hover:shadow-md transition-all relative overflow-hidden"
+      >
+        {/* Top Header Row: Counterparty Avatar, Username, Trust, and Status Pill */}
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              onClick={(e) => { e.stopPropagation(); setShowPopup(true); }}
+              className="w-10 h-10 rounded-xl bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-500 font-bold text-sm shrink-0 hover:bg-gray-200 transition"
+            >
+              {cp.avatar_url ? (
+                <img src={cp.avatar_url} alt="" className="w-full h-full rounded-xl object-cover" />
+              ) : (
+                (cp.username || '?').charAt(0).toUpperCase()
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <CountryFlag countryCode={cc} className="w-4 h-3 rounded-sm shrink-0" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowPopup(true); }}
+                  className="font-black text-sm text-gray-900 truncate hover:underline underline-offset-2"
+                >
+                  {cp.username || '—'}
+                </button>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-gray-500 font-medium mt-0.5">
+                <span className="flex items-center gap-1 font-semibold text-gray-700">
+                  <ThumbsUp size={11} className="text-emerald-600" /> {trust}%
+                </span>
+                <span>•</span>
+                <span>Seen {timeAgo(cp.last_seen_at || cp.last_login)}</span>
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full"
-              style={{ backgroundColor: cfg.statusBg, color: cfg.statusColor }}>
-              {cfg.label}
-            </span>
-            {['CREATED', 'FUNDS_LOCKED'].includes(trade.status) && effectiveExpiresAt && (
-              <TradeTimer
-                expiresAt={effectiveExpiresAt}
-                timeLimitMins={timeLimitMins}
-                onExpire={() => onExpire?.(trade.id)}
-              />
-            )}
-            {['CREATED', 'FUNDS_LOCKED'].includes(trade.status) && !effectiveExpiresAt && (
-              <span className="inline-flex items-center gap-0.5 text-[9px] font-black px-2 py-0.5 rounded-full"
-                style={{ backgroundColor: '#DCFCE7', color: '#16A34A' }}>
-                <Lock size={9} /> Locked
-              </span>
-            )}
-            {trade.status === 'PAYMENT_SENT' && (
-              <span className="inline-flex items-center gap-0.5 text-[9px] font-black px-2 py-0.5 rounded-full"
-                style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>
-                <Lock size={9} /> Awaiting Release
-              </span>
-            )}
-            {trade.status === 'DISPUTED' && (
-              <span className="inline-flex items-center gap-0.5 text-[9px] font-black px-2 py-0.5 rounded-full"
-                style={{ backgroundColor: '#EDE9FE', color: '#7C3AED' }}>
-                <Scale size={9} /> In Review
-              </span>
-            )}
+          {/* Right Status Badge */}
+          <span
+            className="px-2.5 py-1 rounded-md text-xs font-black shrink-0 tracking-tight"
+            style={{ backgroundColor: cfg.statusBg, color: cfg.statusColor }}
+          >
+            {cfg.label}
+          </span>
+        </div>
+
+        {/* Middle Row: Pay Amount & Receive Amount */}
+        <div className="grid grid-cols-2 gap-4 py-2 border-t border-gray-100">
+          <div>
+            <span className="text-xs font-bold text-gray-500 block mb-0.5">{payTitle}</span>
+            <span className="text-lg font-black text-gray-900 block truncate">{payVal}</span>
+          </div>
+          <div className="text-right">
+            <span className="text-xs font-bold text-gray-500 block mb-0.5">{recvTitle}</span>
+            <span className="text-lg font-black text-gray-900 block truncate">{recvVal}</span>
           </div>
         </div>
 
-        {/* ── Main Row: Counterparty info + Stats + Amounts + Action button ── */}
-        <div className="px-3 py-1.5 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
-          {/* Counterparty info + Trade stats & Feedback always visible */}
-          <div className="flex items-center gap-1.5 min-w-0 flex-shrink-0 flex-wrap">
-            <CountryFlag countryCode={cc} className="w-3.5 h-2.5 rounded-sm flex-shrink-0" />
-            <button
-              onClick={() => setShowPopup(true)}
-              className="font-black text-xs truncate hover:underline decoration-dotted"
-              style={{ color: btnColor, maxWidth: '95px' }}>
-              {cp.username || '—'}
-            </button>
-            <span
-              className={`inline-flex items-center font-bold px-1.5 py-0.2 rounded-full border max-w-[90px] min-w-0 flex-shrink-0 ${badge.animate ? 'shadow-sm' : ''}`}
-              style={{
-                background: badge.bg,
-                borderColor: badge.borderColor,
-                fontSize: '8.5px',
-                boxShadow: badge.glow ? `0 0 5px ${badge.glow}` : undefined,
-              }}
-              title={badge.label}>
-              <span style={{ color: badge.iconColor || badge.textColor }} className="flex-shrink-0">{badge.icon}</span>
-              <span style={{ color: badge.textColor }} className="ml-0.5 truncate min-w-0">{badge.label}</span>
-            </span>
-
-            {/* Trade count & Positive/Negative feedback — ALWAYS VISIBLE ON ALL SCREENS */}
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">
-              <span className="flex items-center gap-0.5 text-gray-600"><Repeat2 size={9} />{cpTrades}</span>
-              <span className="flex items-center gap-0.5 text-emerald-600"><ThumbsUp size={9} />{pos}</span>
-              <span className="flex items-center gap-0.5 text-rose-600"><ThumbsDown size={9} />{neg}</span>
-            </div>
+        {/* Bottom Row: Started Time + Action Button */}
+        <div className="mt-3 pt-2.5 bg-gray-50 -mx-4 -mb-4 px-4 py-3 rounded-b-2xl flex items-center justify-between border-t border-gray-100">
+          <div>
+            <span className="text-[11px] font-extrabold text-gray-400 uppercase tracking-wider block">Started</span>
+            <span className="text-xs font-black text-gray-800">{startedAt}</span>
           </div>
 
-          {/* Amount summary pill */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg flex-1 min-w-[170px] justify-between"
-            style={{ backgroundColor: '#F8FAFC', border: '1px solid #F1F5F9' }}>
-            <div className="min-w-0">
-              <span className="text-[8px] font-black uppercase text-gray-400 block leading-none mb-0.5">You Pay</span>
-              <span className="font-extrabold text-xs text-gray-900 leading-tight block truncate">
-                {youPayAmt || '—'}
-              </span>
-            </div>
-
-            <ArrowRight size={11} className="text-gray-400 flex-shrink-0" />
-
-            <div className="min-w-0 text-right">
-              <span className="text-[8px] font-black uppercase block leading-none mb-0.5" style={{ color: btnColor }}>You Get</span>
-              <span className="font-extrabold text-xs leading-tight block truncate" style={{ color: btnColor }}>
-                {youRecvAmt || '—'}
-              </span>
-            </div>
-          </div>
-
-          {/* Action Button */}
           <button
-            onClick={() => navigate(`/trade/${trade.id}`)}
-            className="px-3 py-1.5 text-white text-[11px] font-black tracking-wider uppercase rounded-lg flex items-center justify-center gap-1 hover:opacity-90 active:scale-[0.98] transition-all flex-shrink-0 w-full sm:w-auto"
-            style={{ backgroundColor: trade.status === 'PAYMENT_SENT' ? '#2563EB' : btnColor }}>
-            <span>{trade.status === 'PAYMENT_SENT' ? 'Open' : 'Attend'}</span>
-            <ArrowRight size={11} />
+            onClick={(e) => { e.stopPropagation(); navigate(`/trade/${trade.id}`); }}
+            className="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-md hover:bg-emerald-600 active:scale-95 transition"
+            title="Open Trade"
+          >
+            <ChevronRight size={20} strokeWidth={3} />
           </button>
         </div>
-
-        {/* ── Payment-sent notice bar ── */}
-        {trade.status === 'PAYMENT_SENT' && (
-          <div className="mx-3 mb-2 px-2.5 py-1 rounded-md flex items-center gap-1.5"
-            style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
-            <CheckCircle2 size={16} style={{ color: '#2563EB', flexShrink: 0 }} />
-            <p className="text-[11px] font-black leading-tight" style={{ color: '#1E40AF' }}>
-              Payment sent — awaiting Bitcoin release from {cp.username || 'seller'}
-            </p>
-          </div>
-        )}
       </div>
 
       {showPopup && (

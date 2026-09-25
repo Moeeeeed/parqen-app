@@ -194,6 +194,7 @@ async function _warmListingsCache() {
 
     const userMap = {};
     usersData.forEach(u => { userMap[u.id] = u; });
+    await medalAwardService.attachMedals(Object.values(userMap)); // same medals as the live /api/listings answer
 
     // Only include listings whose seller data was successfully fetched
     const listings = rawListings
@@ -5873,6 +5874,31 @@ app.post('/api/users/check-badges', verifyToken, async (req, res) => {
   }
 });
 
+// ============================================================
+// MEDALS — achievement medals (Trader Settings → Badges & Medals, and next to names in the market)
+// ============================================================
+// Rules + dates live in services/medalService.js (pure, unit-tested); saving, notifying, revoking
+// and the market lookup live in services/medalAwardService.js. Everything that writes is switched
+// by MEDALS_AUTO_ENABLED (exactly "true"); until then this screen only SHOWS live progress.
+const { buildMedalPayloads } = require('./services/medalService');
+const medalAwardService = require('./services/medalAwardService');
+
+// GET /api/users/me/medals — the logged-in user's medals and progress.
+app.get('/api/users/me/medals', verifyToken, async (req, res) => {
+  try {
+    const on = medalAwardService.medalsAutoEnabled();
+    const r = await medalAwardService.evaluateUser(req.userId, { persist: on, notify: on });
+    if (!r) return res.status(404).json({ error: 'User not found.' });
+    const noStats = { totalTrades: 0, totalVolumeUsd: 0, momoTrades: 0, bankTrades: 0, giftCardTrades: 0, disputeCount: 0, cancelledCount: 0, dailyStreak: 0, registeredAt: null, volumePercentile: 0 };
+    const earnedDateById = {};
+    (r.earned || []).forEach((e) => { earnedDateById[e.id] = e.earnedAt; });
+    res.json({ success: true, medals: buildMedalPayloads(r.stats || noStats, earnedDateById) });
+  } catch (error) {
+    console.error('[medals] error:', error.message);
+    res.status(500).json({ error: 'Failed to load medals.' });
+  }
+});
+
 app.post('/api/users/heartbeat', verifyToken, async (req, res) => {
   try {
     await supabaseAdmin.from('users')
@@ -6140,9 +6166,11 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
     delete data.totp_secret;
     delete data.two_factor_temp_secret;
 
+    const _ownMedals = ((await medalAwardService.getMedalsForUsers([data.id]).catch(() => ({})))[data.id]) || [];
     res.json({
       user: {
         ...data,
+        medals: _ownMedals,
         ...extraFields,
         ...lockFlags,
         ...levelFlags,
@@ -6259,9 +6287,10 @@ app.get('/api/users/:userId', async (req, res) => {
       }
     } catch { }
 
+    const _userMedals = ((await medalAwardService.getMedalsForUsers([data.id]).catch(() => ({})))[data.id]) || [];
     res.json({
       user: {
-        ...data, ...extraFields, referral_trade_count,
+        ...data, medals: _userMedals, ...extraFields, referral_trade_count,
         total_trades: real_total_trades,
         positive_feedback: real_positive,
         negative_feedback: real_negative,
@@ -6954,6 +6983,7 @@ app.get('/api/featured-offers', async (req, res) => {
       console.log('[featured] sellerIds:', allSellerIds.length, '| profilesResult count:', (profilesResult.data || []).length, '| err:', profilesResult.error?.message);
       (profilesResult.data || []).forEach(u => { userMap[u.id] = u; });
       (avatarResult.data || []).forEach(u => { if (userMap[u.id]) userMap[u.id].avatar_url = capAvatar(u.avatar_url); });
+      await medalAwardService.attachMedals(Object.values(userMap));
     }
 
     const enriched = listings.map(l => ({ ...l, users: userMap[l.seller_id] || {} }));
@@ -7198,6 +7228,7 @@ app.get('/api/listings', async (req, res) => {
         return res.status(503).json({ error: isTimeout ? 'Seller profiles took too long to load. Please retry.' : 'Could not load seller profiles. Please retry in a moment.' });
       }
       (usersResult.data || []).forEach(u => { userMap[u.id] = { ...u, avatar_url: capAvatar(u.avatar_url) }; });
+      await medalAwardService.attachMedals(Object.values(userMap)); // medals replace the old badge chip in the market
       walletRows = walletsResult.data || [];
       // Only a never-seized (amount_usdt === remaining_amount) LOCKED deposit counts as "secured"
       depositedSellerIds = new Set(
@@ -7395,6 +7426,8 @@ app.get('/api/listings/:id', async (req, res) => {
         }
       } catch { }
     }
+
+    await medalAwardService.attachMedals([enrichedSeller]); // medals shown next to the seller's name
 
     // Use the LIVE market price, not the listing's own bitcoin_price field, for balance-
     // sufficiency math — that field is a snapshot taken at creation time (or unused entirely
@@ -7695,6 +7728,7 @@ app.get('/api/offers', async (req, res) => {
       display_name: computeDisplayName(u),
       country: u.country || null,
     }]));
+    await medalAwardService.attachMedals(Object.values(userMap)); // medals shown next to each seller's name
 
     // Drop offers whose seller is banned or frozen (see the matching filter in
     // /api/listings). Only excluded when the status is positively known.
@@ -9257,29 +9291,41 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
       });
     }
     // Fetch users before response to ensure email data is ready
-    const [buyerEmailRes, sellerEmailRes] = await Promise.allSettled([
-      supabaseAdmin.from('users').select('id, email, username').eq('id', buyerId).single(),
-      supabaseAdmin.from('users').select('id, email, username').eq('id', sellerId).single(),
-    ]);
-    const buyerEmailUser = buyerEmailRes.value?.data;
-    const sellerEmailUser = sellerEmailRes.value?.data;
+    let buyerEmailUser = null;
+    let sellerEmailUser = null;
+    try {
+      const [buyerEmailRes, sellerEmailRes] = await Promise.allSettled([
+        supabaseAdmin.from('users').select('id, email, username').eq('id', buyerId).maybeSingle(),
+        supabaseAdmin.from('users').select('id, email, username').eq('id', sellerId).maybeSingle(),
+      ]);
+      buyerEmailUser = buyerEmailRes.status === 'fulfilled' ? buyerEmailRes.value?.data : null;
+      sellerEmailUser = sellerEmailRes.status === 'fulfilled' ? sellerEmailRes.value?.data : null;
+    } catch (uErr) {
+      console.error('[TradeOpen] Failed to fetch buyer/seller for email:', uErr.message);
+    }
 
     // Invalidate marketplace cache so seller's reduced BTC balance shows immediately
     bustCache();
 
-    // Start both "trade opened" emails now, then give them a short, BOUNDED window to
-    // finish before responding. Normally they complete within that window, so delivery is
-    // dispatched before the response; if the mail provider is slow the trade still goes
-    // through on time (escrow is already locked) and the send simply finishes in the
-    // background. A failed email is logged and never fails the trade.
+    // Start both "trade opened" emails now, then give them a short, BOUNDED window to finish
     const openedEmailJobs = [];
     if (buyerEmailUser?.email) {
-      openedEmailJobs.push(emailService.sendTradeOpenedEmail(buyerEmailUser, trade[0], 'buyer').catch(e => console.error('[TradeOpen] buyer email:', e.message)));
+      console.log(`[TradeOpen] Sending buyer email to ${buyerEmailUser.email}`);
+      openedEmailJobs.push(
+        emailService.sendTradeOpenedEmail(buyerEmailUser, trade[0], 'buyer')
+          .catch(e => console.error('[TradeOpen] buyer email error:', e.message))
+      );
     }
     if (sellerEmailUser?.email) {
-      openedEmailJobs.push(emailService.sendTradeOpenedEmail(sellerEmailUser, trade[0], 'seller').catch(e => console.error('[TradeOpen] seller email:', e.message)));
+      console.log(`[TradeOpen] Sending seller email to ${sellerEmailUser.email}`);
+      openedEmailJobs.push(
+        emailService.sendTradeOpenedEmail(sellerEmailUser, trade[0], 'seller')
+          .catch(e => console.error('[TradeOpen] seller email error:', e.message))
+      );
     }
-    await settleWithin(Promise.allSettled(openedEmailJobs), TRADE_EMAIL_MAX_WAIT_MS);
+    if (openedEmailJobs.length > 0) {
+      await settleWithin(Promise.allSettled(openedEmailJobs), TRADE_EMAIL_MAX_WAIT_MS);
+    }
 
     res.json({ success: true, trade: trade[0], escrowAddress: escrowResult.escrowAddress, fee });
   } catch (error) {
@@ -16085,6 +16131,10 @@ if (
     // ── Wallet-address provisioning reconciler — fills any user missing a
     //    BTC / Tron deposit address (signup provisioning is fire-and-forget).
     walletProvisioningReconciler.start();
+
+    // ── Medals: daily safety net (restricted accounts cleaned, time-based medals awarded).
+    //    Does nothing unless MEDALS_AUTO_ENABLED=true.
+    medalAwardService.startDailySweep();
   } else {
     console.log('⏸  Live mainnet services (deposit monitor, sweep, balance integrity) skipped — NODE_ENV is not "production"');
   }

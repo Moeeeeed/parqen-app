@@ -266,6 +266,11 @@ async function setAccountState(userId, state, { reason = '', adminId = null } = 
 
   const label = target === 'banned' ? 'banned' : 'frozen';
 
+  // Medals are not kept by a banned or frozen account.
+  try { await require('./medalAwardService').revokeMedalsFor(userId); } catch (e) {
+    console.error(`[accountEnforcement] medal revoke failed for ${userId.slice(0, 8)}:`, e.message);
+  }
+
   const listingsTerminated = target === 'banned' ? await terminateListings(userId) : 0;
   const { disputed, tradeIds } = await escalateOpenTrades(userId, label, adminId);
   const pendingWithdrawals = await listPendingWithdrawals(userId);
@@ -308,6 +313,12 @@ async function clearAccountState(userId, { adminId = null } = {}) {
   });
 
   await notifyUser(userId, 'active');
+
+  // Back to normal: re-check medals in the background (only acts when MEDALS_AUTO_ENABLED=true).
+  try {
+    const medals = require('./medalAwardService');
+    if (medals.medalsAutoEnabled()) medals.evaluateUser(userId, { persist: true, notify: true }).catch(() => {});
+  } catch (e) { /* ignore */ }
 
   console.log(`[accountEnforcement] CLEAR (${previousStatus} -> active) ${userId.slice(0, 8)} by ${adminId ? adminId.slice(0, 8) : 'system'}`);
 

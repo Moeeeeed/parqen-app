@@ -9,6 +9,7 @@ import {
   ThumbsUp, Copy, FileSpreadsheet, FileText,
 } from 'lucide-react';
 import { getStatusStyle } from '../components/Notifications';
+import { fmtEarnedDate, medalMetaText } from '../lib/medals';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -90,6 +91,15 @@ const SIDEBAR_ITEMS = [
   { id: 'badges', label: 'Badges & Medals', icon: Award },
   { id: 'account-settings', label: 'Account settings', icon: Settings },
 ];
+
+// Sidebar items that open a real page elsewhere in the app.
+const SECTION_ROUTES = {
+  'p2p-offers': '/my-listings',
+  'trade-statistics': '/profile',
+  'payment-accounts': '/settings?tab=payment',
+  'traders': '/buy-bitcoin',
+  'account-settings': '/settings?tab=account',
+};
 
 // ── Supported currencies for filter ───────────────────────────────────
 const CRYPTO_CURRENCIES = ['All', 'USDT', 'BTC', 'ETH', 'USDC', 'BCH', 'BNB', 'LTC', 'SOL'];
@@ -577,6 +587,7 @@ export default function TraderSettings({ user }) {
 
   // Update URL when section changes
   useEffect(() => {
+    if (SECTION_ROUTES[activeSection]) { navigate(SECTION_ROUTES[activeSection], { replace: true }); return; }
     const params = new URLSearchParams(location.search);
     params.set('section', activeSection);
     navigate(`${location.pathname}?${params.toString()}`, { replace: true });
@@ -701,6 +712,16 @@ export default function TraderSettings({ user }) {
     <div style={{ minHeight: '100vh', background: C.mist, fontFamily: "'DM Sans', sans-serif" }}>
       <style>{`
         .ts-tab-btn { flex: 1; }
+        /* Badges & Medals grid: 2-up base (tablet/mobile, matches existing
+           mobile behavior), 4-up on desktop per reference layout. */
+        .medals-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 28px 20px;
+        }
+        @media (min-width: 1024px) {
+          .medals-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
         @media (max-width: 767px) {
@@ -758,13 +779,12 @@ export default function TraderSettings({ user }) {
             }}>
               {SIDEBAR_ITEMS.map((item) => {
                 const isActive = activeSection === item.id;
-                const isAccountSettings = item.id === 'account-settings';
                 return (
                   <button
                     key={item.id}
                     onClick={() => {
-                      if (isAccountSettings) {
-                        navigate('/settings?tab=account');
+                      if (SECTION_ROUTES[item.id]) {
+                        navigate(SECTION_ROUTES[item.id]);
                       } else {
                         setActiveSection(item.id);
                       }
@@ -818,14 +838,13 @@ export default function TraderSettings({ user }) {
                 <div style={{ padding: '16px 14px 18px', display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto' }}>
                   {SIDEBAR_ITEMS.map((item) => {
                     const isActive = activeSection === item.id;
-                    const isAccountSettings = item.id === 'account-settings';
                     return (
                       <button
                         key={item.id}
                         onClick={() => {
                           setMobileSidebarOpen(false);
-                          if (isAccountSettings) {
-                            navigate('/settings?tab=account');
+                          if (SECTION_ROUTES[item.id]) {
+                            navigate(SECTION_ROUTES[item.id]);
                           } else {
                             setActiveSection(item.id);
                           }
@@ -880,11 +899,7 @@ export default function TraderSettings({ user }) {
                 onExport={handleExport}
               />
             )}
-            {activeSection === 'p2p-offers' && <PlaceholderSection title="P2P offers" subtitle="Manage your trade offers" icon={Tag} />}
-            {activeSection === 'trade-statistics' && <PlaceholderSection title="Trade statistics" subtitle="View your trading performance" icon={TrendingUp} />}
-            {activeSection === 'payment-accounts' && <PlaceholderSection title="Payment accounts" subtitle="Manage your payment methods" icon={CreditCard} />}
-            {activeSection === 'traders' && <PlaceholderSection title="Traders" subtitle="Find and connect with traders" icon={Users} />}
-            {activeSection === 'badges' && <PlaceholderSection title="Badges & Medals" subtitle="Your achievements and rewards" icon={Award} />}
+            {activeSection === 'badges' && <MedalsSection />}
           </div>
         </div>
       </div>
@@ -1152,23 +1167,131 @@ function TradeInsights({
   );
 }
 
-// ── Placeholder Section ────────────────────────────────────────────────
-function PlaceholderSection({ title, subtitle, icon: Icon }) {
+// ── Medals Grid (medal data fetch + grid; rendered for both Badges and Medals tabs) ─
+function MedalsGrid({ tab = 'medals' }) {
+  const [medals, setMedals] = useState(null); // null = loading
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await axios.get(`${API_URL}/users/me/medals`, { headers: authH() });
+        if (!cancelled) setMedals(r.data.medals || []);
+      } catch (e) {
+        if (!cancelled) setError(e.response?.data?.error || 'Failed to load medals');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Bottom metadata line: tab-driven (Medals → earned date, falls back to
+  // progress while unearned; Badges → progress). Locked/no-data medals return
+  // null → line hidden. Icon muted-treatment state is separate (see below).
+  const medalState = m => {
+    if (m.earnedDate) return 'earned';
+    if (m.progressCurrent != null && m.progressTarget != null && m.progressCurrent > 0) return 'progress';
+    return 'locked';
+  };
+
+  const ICON = 88; // consistent square size across all medals
+
   return (
-    <div style={{
+    <>
+      {error ? (
+        <div style={{ padding: '32px 24px', textAlign: 'center' }}>
+          <p style={{ fontSize: 13, color: C.danger, fontWeight: 700, margin: 0 }}>{error}</p>
+        </div>
+      ) : !medals ? (
+        <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+          <div style={{ width: 24, height: 24, border: `3px solid ${C.g200}`, borderTopColor: C.green, borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto' }} />
+          <p style={{ fontSize: 12, color: C.g500, marginTop: 12 }}>Loading medals…</p>
+        </div>
+      ) : (
+        <div className="medals-grid" style={{ padding: '20px 20px 28px' }}>
+          {medals.map(m => {
+            const state = medalState(m);
+            const isMuted = state !== 'earned'; // locked + in-progress: grayscale, still recognizable
+            const metaText = medalMetaText(m, tab);
+            return (
+              <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+                {/* Icon — fixed square, rounded like app cards; unearned =
+                    light faded look: mostly transparent with only a slight
+                    desaturation, so original colors/shape stay faintly visible
+                    (never fully gray). Earned → no filter, full opacity. */}
+                <div style={{
+                  width: ICON, height: ICON, borderRadius: 16, overflow: 'hidden',
+                  background: C.g100, flexShrink: 0,
+                }}>
+                  <img
+                    src={m.icon}
+                    alt={m.name}
+                    loading="lazy"
+                    style={{
+                      width: '100%', height: '100%', objectFit: 'contain',
+                      filter: isMuted ? 'grayscale(30%) opacity(0.4)' : 'none',
+                      transition: 'filter 0.2s',
+                    }}
+                  />
+                </div>
+                <p style={{ fontSize: 13, fontWeight: 800, color: C.g800, margin: '10px 0 0' }}>{m.name}</p>
+                <p style={{ fontSize: 12, color: C.sage, margin: '3px 0 0', maxWidth: 160, lineHeight: 1.25 }}>
+                  {m.description || ''}
+                </p>
+                {/* Date or progress — one shared style block so both render with
+                    identical quiet, secondary styling on every medal card */}
+                {metaText && (
+                  <p style={{ fontSize: 10, fontWeight: 500, color: C.g400, margin: '2px 0 0' }}>
+                    {metaText}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Medals Section (Badges & Medals tab — Badges/Medals pill toggle) ────
+function MedalsSection() {
+  // Medals is the default landing tab (existing links point at this section).
+  const [innerTab, setInnerTab] = useState('medals');
+
+  return (
+    <div className="ts-main-card" style={{
       background: '#fff', borderRadius: 16, overflow: 'hidden',
-      boxShadow: '0 1px 3px rgba(15,23,42,0.06)', textAlign: 'center',
-      padding: '48px 24px',
+      boxShadow: '0 1px 3px rgba(15,23,42,0.06)',
     }}>
-      <div style={{
-        width: 64, height: 64, borderRadius: 20, background: `${C.green}10`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px',
-      }}>
-        <Icon size={28} style={{ color: C.green }} />
+      <div className="ts-main-card-header" style={{ padding: '20px 20px 0' }}>
+        <h2 className="ts-main-heading" style={{ fontSize: 18, fontWeight: 900, color: C.g800, margin: '0 0 4px' }}>Badges & Medals</h2>
+        <p className="ts-main-subtitle" style={{ fontSize: 13, color: C.g500, margin: '0 0 16px' }}>
+          View your trading progress toward badges and medals
+        </p>
+
+        {/* Badges / Medals pill toggle */}
+        <div style={{ display: 'flex', gap: 10 }}>
+          {[
+            { id: 'badges', label: 'Badges' },
+            { id: 'medals', label: 'Medals' },
+          ].map(tab => (
+            <button key={tab.id} onClick={() => setInnerTab(tab.id)}
+              className="ts-tab-btn"
+              style={{
+                padding: '11px 18px', background: innerTab === tab.id ? C.green : C.g100,
+                border: 'none', borderRadius: 8, cursor: 'pointer',
+                fontSize: 13, fontWeight: innerTab === tab.id ? 800 : 700,
+                color: innerTab === tab.id ? '#fff' : C.g600,
+                transition: 'all 0.2s',
+              }}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
-      <h3 style={{ fontSize: 16, fontWeight: 800, color: C.g800, margin: '0 0 6px' }}>{title}</h3>
-      <p style={{ fontSize: 13, color: C.g500, margin: 0 }}>{subtitle}</p>
-      <p style={{ fontSize: 11, color: C.g400, marginTop: 8 }}>Coming soon</p>
+
+      <MedalsGrid tab={innerTab} />
     </div>
   );
 }

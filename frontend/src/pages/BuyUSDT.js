@@ -7,15 +7,16 @@ import axios from 'axios';
 import {
   Bitcoin, CheckCircle, RefreshCw,
   AlertTriangle, BadgeCheck, Timer,
-  Heart, MapPin, X, Info, Shield, ArrowRight, PlusCircle,
+  Heart, MapPin, X, Info, Shield, ArrowRight, PlusCircle, Plus, SlidersHorizontal, Coins,
   Filter, Home, Wallet, User, Gift,
   ChevronDown, TrendingUp, BarChart2, ThumbsUp, ThumbsDown, Repeat2,
-Phone, Mail, Ban, ArrowUp, ArrowDown, Trophy, Crown, Zap, Flame,
+  Phone, Mail, Ban, ArrowUp, ArrowDown, Trophy, Crown, Zap, Flame,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
 import { BadgeChip, BADGE_COLORS } from '../lib/badge';
 import ActiveTradeCard from '../components/ActiveTradeCard';
+import { getCachedActiveTrades, setCachedActiveTrades, isGiftCardTrade } from '../utils/activeTradesCache';
 import PRQFooter from '../components/PRQFooter';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -922,7 +923,7 @@ export default function BuyUSDT({user}) {
   const [modal,        setModal]        = useState(null);
   const [liked,        setLiked]        = useState(new Set());
   const [buyAmt,       setBuyAmt]       = useState('');
-  const [activeTrades, setActiveTrades] = useState([]);
+  const [activeTrades, setActiveTrades] = useState(() => getCachedActiveTrades('p2p'));
   const [showAllTrades, setShowAllTrades] = useState(false);
   const [lastSynced,   setLastSynced]   = useState(null);
 
@@ -1054,20 +1055,41 @@ export default function BuyUSDT({user}) {
     const tk = localStorage.getItem('token');
     if (!tk) return;
     const h = { Authorization: `Bearer ${tk}` };
-    const toUTC = s => new Date(/[Z+]/.test(s) ? s : s + 'Z');
+    const toUTC = (s) => {
+      if (!s) return null;
+      if (s instanceof Date) return s;
+      let str = String(s).trim().replace(' ', 'T');
+      if (!str.endsWith('Z') && !/[+-]\d{2}/.test(str)) str += 'Z';
+      const d = new Date(str);
+      return isNaN(d.getTime()) ? new Date(s) : d;
+    };
     const fetchTrades = () => axios.get(`${API_URL}/trades/active`, { headers: h }).then(res => {
-      if (res.data.success) {
+      if (res.data?.success || Array.isArray(res.data?.trades)) {
         const now = Date.now();
-        setActiveTrades((res.data.trades||[]).filter(t =>
-          ['PAYMENT_SENT','DISPUTED'].includes(t.status) ||
-          !t.expires_at || toUTC(t.expires_at).getTime() > now
-        ));
+        const raw = res.data.trades || [];
+        setCachedActiveTrades(raw);
+        const filtered = raw.filter(t => {
+          if (isGiftCardTrade(t)) return false;
+          if (!t.status) return true;
+          if (['PAYMENT_SENT', 'DISPUTED', 'FUNDS_LOCKED', 'CREATED'].includes(t.status)) {
+            if (!t.expires_at) return true;
+            const parsed = toUTC(t.expires_at);
+            const expTime = parsed ? parsed.getTime() : NaN;
+            if (isNaN(expTime)) return true;
+            return expTime > now - 60000;
+          }
+          return false;
+        });
+        setActiveTrades(filtered);
       }
     }).catch(() => {});
     Promise.all([
       axios.post(`${API_URL}/users/heartbeat`, {}, { headers: h }).catch(() => {}),
       fetchTrades(),
     ]);
+    const iv1 = setInterval(() => axios.post(`${API_URL}/users/heartbeat`, {}, { headers: h }).catch(() => {}), 60000);
+    const iv2 = setInterval(fetchTrades, 10000);
+    return () => { clearInterval(iv1); clearInterval(iv2); };
   }, []);
 
   // ── Own USDT balance — drives the low-balance seller reminder banner ──────
@@ -1115,11 +1137,15 @@ export default function BuyUSDT({user}) {
       .finally(() => clearTimeout(geoTimeout));
   }, []);
 
-  const handleTradeExpire = (id) => setActiveTrades(prev => prev.filter(t =>
-    t.id !== id ||
-    ['PAYMENT_SENT','DISPUTED'].includes(t.status) ||
-    !t.expires_at
-  ));
+  const handleTradeExpire = (id) => setActiveTrades(prev => {
+    const updated = prev.filter(t =>
+      t.id !== id ||
+      ['PAYMENT_SENT','DISPUTED'].includes(t.status) ||
+      !t.expires_at
+    );
+    setCachedActiveTrades(updated);
+    return updated;
+  });
 
 
 
@@ -1252,8 +1278,122 @@ export default function BuyUSDT({user}) {
             </div>
           </div>
 
-          {/* ══ 2. INLINE CONTROL CARD ════════════════════════════════════ */}
-          <div className="mt-4 bg-white rounded-2xl border p-2 sm:p-3 shadow-sm flex flex-wrap items-center gap-2 sm:gap-3" style={{borderColor:C.g200}}>
+          {/* ══ MOBILE CONTROL CARD (Light Theme) ══ */}
+          <div className="block sm:hidden mt-3 bg-white rounded-2xl p-2.5 border border-gray-200 shadow-sm space-y-2.5">
+            {/* Top Row: Buy/Sell Toggle (Left) & Asset Selector Dropdown (Right) */}
+            <div className="flex items-center justify-between gap-2">
+              {/* Buy / Sell Toggle Pills */}
+              <div className="flex bg-gray-100 p-1 rounded-xl">
+                <button
+                  onClick={() => navigate(selectedCrypto === 'BTC' ? '/buy-bitcoin' : '/buy-usdt')}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-black transition bg-emerald-500 text-white shadow-sm"
+                >
+                  <ArrowDown size={13} strokeWidth={3} /> Buy
+                </button>
+                <button
+                  onClick={() => navigate(selectedCrypto === 'BTC' ? '/sell-bitcoin' : '/sell-usdt')}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-black transition text-gray-600 hover:text-gray-900"
+                >
+                  <ArrowUp size={13} strokeWidth={3} /> Sell
+                </button>
+              </div>
+
+              {/* Crypto / Asset Dropdown Selector */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowAllCryptoMenu(v => !v)}
+                  className="h-9 px-3 rounded-xl bg-gray-50 border border-gray-200 flex items-center gap-1.5 text-xs font-black text-gray-800 hover:bg-gray-100 transition"
+                >
+                  {selectedCrypto === 'BTC' ? (
+                    <>
+                      <span className="w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px] font-bold">₿</span>
+                      <span>BTC</span>
+                    </>
+                  ) : selectedCrypto === 'USDT' ? (
+                    <>
+                      <span className="w-4 h-4 rounded-full bg-teal-500 text-white flex items-center justify-center text-[10px] font-bold">₮</span>
+                      <span>USDT</span>
+                    </>
+                  ) : (
+                    <>
+                      <Coins size={14} className="text-teal-600" />
+                      <span>All Cryptos</span>
+                    </>
+                  )}
+                  <ChevronDown size={13} className="text-gray-400" />
+                </button>
+
+                {/* Menu Overlay for Mobile */}
+                {showAllCryptoMenu && (
+                  <div className="absolute right-0 top-full mt-1.5 w-48 rounded-2xl border border-gray-200 shadow-xl overflow-hidden z-50 bg-white">
+                    <div className="fixed inset-0 z-40" onClick={() => setShowAllCryptoMenu(false)} />
+                    <div className="relative z-50 py-1">
+                      <button
+                        onClick={() => { setSelectedCrypto(null); setShowAllCryptoMenu(false); navigate('/buy-usdt', { state: { selectedCrypto: null } }); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-xs font-black text-gray-800 hover:bg-gray-50"
+                      >
+                        <Coins size={16} className="text-teal-600" />
+                        <span>All Cryptos</span>
+                      </button>
+                      <button
+                        onClick={() => { setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); navigate('/buy-bitcoin', { state: { selectedCrypto: 'BTC' } }); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-xs font-black text-gray-800 hover:bg-gray-50 border-t border-gray-100"
+                      >
+                        <span className="w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px]">₿</span>
+                        <span>Bitcoin</span>
+                      </button>
+                      <button
+                        onClick={() => { setSelectedCrypto('USDT'); setShowAllCryptoMenu(false); navigate('/buy-usdt', { state: { selectedCrypto: 'USDT' } }); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-xs font-black text-gray-800 hover:bg-gray-50 border-t border-gray-100"
+                      >
+                        <span className="w-5 h-5 rounded-full bg-teal-500 text-white flex items-center justify-center text-[10px]">₮</span>
+                        <span>Tether</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Centered Small "WITH" Badge */}
+            <div className="relative flex justify-center -my-1 z-10">
+              <span className="bg-white border border-emerald-200 text-emerald-600 text-[9px] font-black tracking-wider px-2 py-0.5 rounded shadow-sm uppercase">
+                WITH
+              </span>
+            </div>
+
+            {/* Bottom Row: Payment Method Dropdown (Left) & Amount Input with Currency (Right) */}
+            <div className="grid grid-cols-2 gap-2 pt-0.5">
+              {/* Payment Method Button */}
+              <button
+                onClick={() => setShowPayment(true)}
+                className="h-9 px-3 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-between text-xs font-bold text-gray-800 hover:bg-gray-100 transition overflow-hidden"
+              >
+                <span className="truncate">{selPmInfo?.label || 'All Methods'}</span>
+                <ChevronDown size={13} className="text-gray-400 shrink-0 ml-1" />
+              </button>
+
+              {/* Amount Input with Currency Badge */}
+              <div className="h-9 px-2.5 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-between gap-1">
+                <input
+                  type="number"
+                  placeholder="Amount"
+                  value={buyAmt}
+                  onChange={e => setBuyAmt(e.target.value)}
+                  className="w-full bg-transparent text-xs font-bold text-gray-900 placeholder-gray-400 focus:outline-none"
+                />
+                <button
+                  onClick={() => setShowCurrency(true)}
+                  className="shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-gray-200 border border-gray-300 text-[10px] font-black text-gray-700 hover:text-gray-900"
+                >
+                  {selCurrency.code}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ══ 2. DESKTOP CONTROL CARD (UNTOUCHED FOR DESKTOP) ════════════════════════════════════ */}
+          <div className="hidden sm:flex mt-4 bg-white rounded-2xl border p-2 sm:p-3 shadow-sm flex-wrap items-center gap-2 sm:gap-3" style={{borderColor:C.g200}}>
             
             {/* Toggle Pill (Buy/Sell) */}
             <div className="flex bg-gray-100 p-1 rounded-xl shrink-0">
@@ -1277,7 +1417,7 @@ export default function BuyUSDT({user}) {
                 ) : selectedCrypto === 'USDT' ? (
                   <><span className="w-5 h-5 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-[10px]">₮</span> USDT</>
                 ) : (
-                  <><span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px]">🌐</span> ALL</>
+                  <><Coins size={15} className="text-[#0D9488]" /> All Cryptos</>
                 )}
                 <ChevronDown size={14} className="text-gray-400" />
               </button>
@@ -1287,8 +1427,8 @@ export default function BuyUSDT({user}) {
                   <div className="relative z-50">
                     <button onClick={()=>{setSelectedCrypto(null); setShowAllCryptoMenu(false); navigate('/buy-usdt', { state: { selectedCrypto: null } });}}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition ${!selectedCrypto ? 'bg-emerald-50/80' : 'hover:bg-gray-50'}`}>
-                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#0D9488,#14B8A6)'}}>🌐</span>
-                      <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">All Crypto</span></span>
+                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#0D9488,#14B8A6)'}}><Coins size={14} /></span>
+                      <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">All Cryptos</span></span>
                     </button>
                     <button onClick={()=>{setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); navigate('/buy-bitcoin', { state: { selectedCrypto: 'BTC' } });}}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${selectedCrypto === 'BTC' ? 'bg-amber-50/80' : 'hover:bg-gray-50'}`} style={{borderColor:C.g100}}>
@@ -1360,8 +1500,24 @@ export default function BuyUSDT({user}) {
         </div>
       </div>
 
-
-
+      {/* ── Inline active trade cards (Immediately below filter bar) ── */}
+      {activeTrades.length > 0 && (
+        <div className="px-3 mt-3 mb-2 max-w-7xl mx-auto w-full">
+          <div className="flex items-center gap-2 mb-2 font-black text-sm text-gray-900">
+            <Repeat2 size={16} /> Active trades ({activeTrades.length})
+          </div>
+          {activeTrades.slice(0, showAllTrades ? activeTrades.length : 3).map(trade => (
+            <ActiveTradeCard key={trade.id} trade={trade} pageColor="#1B4332" onExpire={handleTradeExpire} />
+          ))}
+          {activeTrades.length > 3 && (
+            <button onClick={() => setShowAllTrades(p => !p)}
+              className="w-full text-xs font-semibold py-1.5 rounded-xl border mb-1"
+              style={{color:'#92400E', borderColor:'#F59E0B', backgroundColor:'#FFFBEB'}}>
+              {showAllTrades ? 'Show less ▲' : `Show all (${activeTrades.length}) ▼`}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Low-balance reminder — shown to logged-in sellers whose USDT is below $10 */}
       {user && userUsdtBalance < 10 && (
@@ -1390,28 +1546,42 @@ export default function BuyUSDT({user}) {
         </div>
       )}
 
-
-
-      {/* ── Inline active trade cards ── */}
-      {activeTrades.length > 0 && (
-        <div className="px-3 mb-2 max-w-7xl mx-auto w-full">
-          {activeTrades.slice(0, showAllTrades ? activeTrades.length : 3).map(trade => (
-            <ActiveTradeCard key={trade.id} trade={trade} pageColor="#1B4332" onExpire={handleTradeExpire} />
-          ))}
-          {activeTrades.length > 3 && (
-            <button onClick={() => setShowAllTrades(p => !p)}
-              className="w-full text-xs font-semibold py-1.5 rounded-xl border mb-1"
-              style={{color:'#92400E', borderColor:'#F59E0B', backgroundColor:'#FFFBEB'}}>
-              {showAllTrades ? 'Show less ▲' : `Show all (${activeTrades.length}) ▼`}
-            </button>
-          )}
-        </div>
-      )}
-
       {/* ══ 4. OFFER GRID ══════════════════════════════════════ */}
       <div className="max-w-7xl mx-auto w-full px-3 pt-2 pb-3 space-y-3">
 
-        <div className="flex items-center justify-between flex-wrap gap-2">
+        {/* Mobile Offers Header & Action Buttons Row */}
+        <div className="flex sm:hidden items-center justify-between my-1 px-0.5">
+          <h2 className="text-xl font-black text-gray-900">Offers</h2>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleCreateOffer()}
+              className="w-9 h-9 rounded-xl bg-gray-50 border border-gray-200 text-gray-700 flex items-center justify-center font-bold shadow-sm hover:bg-gray-100 transition"
+              title="Create Offer"
+            >
+              <Plus size={16} />
+            </button>
+            <button
+              onClick={() => setShowFilters(true)}
+              className="h-9 px-2.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-700 flex items-center gap-1.5 text-xs font-bold shadow-sm hover:bg-gray-100 transition"
+            >
+              <SlidersHorizontal size={14} />
+              {hasFilters && (
+                <span className="w-4 h-4 rounded-full bg-emerald-500 text-white text-[10px] font-black flex items-center justify-center">
+                  1
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => { setLoading(true); loadListings(1, true); }}
+              className="w-9 h-9 rounded-xl bg-gray-50 border border-gray-200 text-gray-700 flex items-center justify-center shadow-sm hover:bg-gray-100 transition"
+              title="Refresh"
+            >
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
+        </div>
+
+        <div className="hidden sm:flex items-center justify-between flex-wrap gap-2">
           {(() => {
             const onlineCount = sorted.filter(l => {
               const seen = liveStatus[l.users?.id] || l.users?.last_seen_at;

@@ -12,12 +12,13 @@ import {
   ChevronDown, CreditCard, ThumbsUp, ThumbsDown, Repeat2,
   Phone, Mail, Ban, ArrowUp, ArrowDown,
   Zap, Users, TrendingUp, Award, Sparkles, ShieldCheck,
-  Crown, Star, MessageSquare, Wifi, Coins, Trophy, Globe
+  Crown, Star, MessageSquare, Wifi, Coins, Trophy, Globe, Plus, SlidersHorizontal
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
 import { TRUST_MAP, deriveBadge, BadgeChip, BADGE_COLORS, SafetyBadge } from '../lib/badge';
 import ActiveTradeCard from '../components/ActiveTradeCard';
+import { getCachedActiveTrades, setCachedActiveTrades, isGiftCardTrade } from '../utils/activeTradesCache';
 import PRQFooter from '../components/PRQFooter';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -424,15 +425,15 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType, liv
     ? (cardRange[0]?.isRange ? cardRange[0].min : cardRange[0])
     : (listing.min_limit_local || listing.min_amount || fv || 0));
 
-  // Card-value side of the trade — always the gift card's face value, regardless of which direction this listing runs.
+  // Card-value side of the trade — formatted as amount + currency code (e.g. 100 USD, 100 EUR, 100 GBP)
   const cardSide = (() => {
-    if (userBuyAmt && parseFloat(userBuyAmt) > 0) return { val: `${sym}${fmt(localVal)}`, sub: '' };
+    if (userBuyAmt && parseFloat(userBuyAmt) > 0) return { val: `${fmt(localVal)} ${cur}`, sub: '' };
     if (!cardRange) {
-      return { val: localVal > 0 ? `${sym}${fmt(localVal)}` : 'Flexible', sub: '' };
+      return { val: localVal > 0 ? `${fmt(localVal)} ${cur}` : 'Flexible', sub: '' };
     }
-    if (cardRange[0]?.isRange) return { val: `${sym}${fmt(cardRange[0].min)}`, sub: '' };
-    if (cardRange.length === 1) return { val: `${sym}${fmt(cardRange[0])}`, sub: '' };
-    return { val: `${sym}${fmt(cardRange[0])}`, sub: '' };
+    if (cardRange[0]?.isRange) return { val: `${fmt(cardRange[0].min)} ${cur}`, sub: '' };
+    if (cardRange.length === 1) return { val: `${fmt(cardRange[0])} ${cur}`, sub: '' };
+    return { val: `${fmt(cardRange[0])} ${cur}`, sub: '' };
   })();
 
   // Convert local currency value into USD equivalent for crypto calculation
@@ -440,15 +441,15 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType, liv
   const btcOut = refUSD / (rateUSD || 1);
   const viewerIsBuyingCard = listing.listing_type === 'BUY_GIFT_CARD';
   const assetLabel = isUsdtCard ? 'USDT' : 'BTC';
-  const receiveUSD = btcOut * spotPriceUSD;
-  const cryptoSide = { val: `${fBtc(btcOut)} ${assetLabel}`, sub: `≈ $${receiveUSD < 1 ? receiveUSD.toFixed(2) : fmt(receiveUSD, 2)}` };
-  const youGive    = viewerIsBuyingCard ? cardSide   : cryptoSide;
+  const receiveValLocal = (btcOut * spotPriceUSD) * usdRate;
+  const cryptoSide = { val: `${fmt(receiveValLocal, 2)} ${cur}`, sub: `(${isUsdtCard ? fmt(btcOut, 2) : fBtc(btcOut)} ${assetLabel})` };
+  const youGive = viewerIsBuyingCard ? cardSide : cryptoSide;
   const youReceive = viewerIsBuyingCard ? cryptoSide : cardSide;
   const giveLabel = viewerIsBuyingCard ? `Pay ${brand}` : `Pay ${assetLabel}`;
   const receiveLabel = viewerIsBuyingCard ? `Receive ${assetLabel}` : `Receive ${brand}`;
 
-  const minLocal = listing.min_limit_local || (listing.min_limit_usd ? listing.min_limit_usd*usdRate : 100*usdRate);
-  const maxLocal = listing.max_limit_local || (listing.max_limit_usd ? listing.max_limit_usd*usdRate : 1000*usdRate);
+  const minLocal = listing.min_limit_local || (listing.min_limit_usd ? listing.min_limit_usd * usdRate : 100 * usdRate);
+  const maxLocal = listing.max_limit_local || (listing.max_limit_usd ? listing.max_limit_usd * usdRate : 1000 * usdRate);
 
   const pos = parseInt(u.positive_feedback || 0);
   const neg = parseInt(u.negative_feedback || 0);
@@ -460,12 +461,12 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType, liv
 
   return (
     <div className={`w-full bg-white border transition-all ${ft ? '' : 'border-gray-200 shadow-sm hover:shadow-md'} rounded-xl overflow-hidden`}
-        style={{
-          borderColor: ft ? ft.border : undefined,
-          boxShadow: ft ? `0 0 0 1px ${ft.border}, 0 4px 20px ${ft.glow}` : undefined,
-        }}>
+      style={{
+        borderColor: ft ? ft.border : undefined,
+        boxShadow: ft ? `0 0 0 1px ${ft.border}, 0 4px 20px ${ft.glow}` : undefined,
+      }}>
       {ft && (
-        <div className="flex items-center justify-center gap-1.5 py-1.5 px-3" style={{background: ft.ribbon}}>
+        <div className="flex items-center justify-center gap-1.5 py-1.5 px-3" style={{ background: ft.ribbon }}>
           <span className="text-[10px] font-black text-white tracking-widest">{ft.tag}</span>
         </div>
       )}
@@ -475,24 +476,24 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType, liv
         {/* Col 1: User Info */}
         <div className="flex items-center gap-3 w-[280px] flex-shrink-0">
           <button onClick={onViewSeller} className="flex-shrink-0 relative">
-            <Avatar user={u} size={48} radius="rounded-lg"/>
+            <Avatar user={u} size={48} radius="rounded-lg" />
             <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white"
-                style={{backgroundColor: seen.online ? C.online : C.g400}}/>
+              style={{ backgroundColor: seen.online ? C.online : C.g400 }} />
           </button>
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
               <CountryFlag countryCode={u?.country_code || u?.country || u?.location} className="w-4 h-3 rounded-sm shadow-sm" />
-              <button onClick={onViewSeller} className="font-black text-[15px] hover:underline truncate" style={{color:'#111827',textUnderlineOffset:'2px'}}>
+              <button onClick={onViewSeller} className="font-black text-[15px] hover:underline truncate" style={{ color: '#111827', textUnderlineOffset: '2px' }}>
                 {getDisplayName(u) || 'Seller'}
               </button>
               <BadgeChip user={u} size="xs" />
             </div>
             <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 font-semibold">
-              <div className="flex items-center gap-1"><ThumbsUp size={13} className="text-gray-400" strokeWidth={2.5}/><span className="text-gray-700">{trust}%</span></div>
+              <div className="flex items-center gap-1"><ThumbsUp size={13} className="text-gray-400" strokeWidth={2.5} /><span className="text-gray-700">{trust}%</span></div>
               <span className="text-gray-700">{fmt(trades)} Trades</span>
               <div className="flex items-center gap-1">
-                <span className={`w-1.5 h-1.5 rounded-full ${seen.online?'bg-emerald-500':'bg-gray-400'}`}/>
-                <span className={seen.online?"text-emerald-600 font-bold":""}>{seen.online?'Active':seen.label}</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${seen.online ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+                <span className={seen.online ? "text-emerald-600 font-bold" : ""}>{seen.online ? 'Active' : seen.label}</span>
               </div>
             </div>
           </div>
@@ -501,9 +502,9 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType, liv
         <div className="flex flex-col flex-1 min-w-[200px]">
           <div className="flex items-center gap-1.5">
             <div className="w-[18px] h-[18px] rounded-full bg-[#F7931A] text-white flex items-center justify-center text-[10px] font-black shadow-sm">₿</div>
-            <span className="font-black text-[16px] text-gray-900">{fmt(rateLocal,2)} {cur}</span>
-            <span className="px-1.5 py-0.5 rounded text-[11px] font-black tracking-wide" style={{backgroundColor:margin<0?'#10B981':margin>0?'#EF4444':'#64748B',color:'#fff'}}>
-              {margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}
+            <span className="font-black text-[16px] text-gray-900">{fmt(rateLocal, 2)} {cur}</span>
+            <span className="px-1.5 py-0.5 rounded text-[11px] font-black tracking-wide" style={{ backgroundColor: margin < 0 ? '#10B981' : margin > 0 ? '#EF4444' : '#64748B', color: '#fff' }}>
+              {margin === 0 ? 'MARKET' : `${margin > 0 ? '+' : ''}${margin}%`}
             </span>
           </div>
           <span className="text-[13px] font-semibold text-gray-500 mt-1">{fmt(minLocal)} - {fmt(maxLocal)} {cur}</span>
@@ -522,7 +523,7 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType, liv
         </div>
         {/* Col 5: Actions */}
         <div className="flex items-center gap-3 flex-shrink-0">
-          <button onClick={onViewSeller} className="w-10 h-10 rounded-full border border-gray-200 flex items-center justify-center bg-gray-50 text-gray-600 hover:bg-gray-100 transition shadow-sm"><Info size={18}/></button>
+          <button onClick={onViewSeller} className="w-10 h-10 rounded-full border border-gray-200 flex items-center justify-center bg-gray-50 text-gray-600 hover:bg-gray-100 transition shadow-sm"><Info size={18} /></button>
           <button onClick={onTrade} className={`h-10 px-6 rounded-full text-white font-black text-[15px] flex items-center gap-1.5 shadow-md active:scale-95 transition ${viewerIsBuyingCard ? "bg-[#10B981] hover:bg-emerald-600" : "bg-[#F4A422] hover:bg-[#D4891A]"}`}>
             {viewerIsBuyingCard ? "Buy" : "Sell"} <div className="w-[18px] h-[18px] rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[11px]">₿</div>
           </button>
@@ -532,19 +533,19 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType, liv
       {/* ═══ MOBILE CARD (< lg) ═══ */}
       <div className="lg:hidden">
         <div className="p-4 pb-3 flex items-start gap-3">
-          <button onClick={onViewSeller} className="flex-shrink-0"><Avatar user={u} size={48} radius="rounded-lg"/></button>
+          <button onClick={onViewSeller} className="flex-shrink-0"><Avatar user={u} size={48} radius="rounded-lg" /></button>
           <div className="flex flex-col flex-1 min-w-0 pt-0.5">
             <div className="flex items-center gap-1.5 flex-wrap">
               <CountryFlag countryCode={u?.country_code || u?.country || u?.location} className="w-4 h-3 rounded-sm shadow-sm" />
-              <button onClick={onViewSeller} className="font-black text-[15px] hover:underline" style={{color:'#111827',textUnderlineOffset:'2px'}}>{getDisplayName(u)||'Seller'}</button>
+              <button onClick={onViewSeller} className="font-black text-[15px] hover:underline" style={{ color: '#111827', textUnderlineOffset: '2px' }}>{getDisplayName(u) || 'Seller'}</button>
               <BadgeChip user={u} size="xs" />
             </div>
             <div className="flex items-center gap-2.5 mt-1 text-xs text-gray-600 font-semibold">
-              <div className="flex items-center gap-1"><ThumbsUp size={13} className="text-gray-400" strokeWidth={2.5}/><span className="text-gray-700">{trust}%</span></div>
+              <div className="flex items-center gap-1"><ThumbsUp size={13} className="text-gray-400" strokeWidth={2.5} /><span className="text-gray-700">{trust}%</span></div>
               <span>{fmt(trades)} Trades</span>
               <div className="flex items-center gap-1.5">
-                {seen.online?<span className="w-2 h-2 rounded-full bg-emerald-500"/>:<span className="w-2 h-2 rounded-full bg-gray-400"/>}
-                <span className={seen.online?"text-emerald-600 font-bold":"text-gray-500"}>{seen.online?'Active':seen.label}</span>
+                {seen.online ? <span className="w-2 h-2 rounded-full bg-emerald-500" /> : <span className="w-2 h-2 rounded-full bg-gray-400" />}
+                <span className={seen.online ? "text-emerald-600 font-bold" : "text-gray-500"}>{seen.online ? 'Active' : seen.label}</span>
               </div>
             </div>
           </div>
@@ -557,13 +558,13 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType, liv
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
               <div className="w-4 h-4 rounded-full bg-[#F7931A] text-white flex items-center justify-center text-[9px] font-black shadow-sm">₿</div>
-              <span className="font-black text-[15px] text-gray-900 truncate">{fmt(rateLocal,2)} {cur}</span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide" style={{backgroundColor:margin<0?'#10B981':margin>0?'#EF4444':'#64748B',color:'#fff'}}>{margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}</span>
+              <span className="font-black text-[15px] text-gray-900 truncate">{fmt(rateLocal, 2)} {cur}</span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide" style={{ backgroundColor: margin < 0 ? '#10B981' : margin > 0 ? '#EF4444' : '#64748B', color: '#fff' }}>{margin === 0 ? 'MARKET' : `${margin > 0 ? '+' : ''}${margin}%`}</span>
             </div>
             <div className="text-xs font-semibold text-gray-600 mt-1">{fmt(minLocal)} - {fmt(maxLocal)} {cur}</div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            <button onClick={onViewSeller} className="w-9 h-9 rounded-full border border-gray-300 flex items-center justify-center bg-white text-gray-700 hover:bg-gray-100 transition shadow-sm"><Info size={16}/></button>
+            <button onClick={onViewSeller} className="w-9 h-9 rounded-full border border-gray-300 flex items-center justify-center bg-white text-gray-700 hover:bg-gray-100 transition shadow-sm"><Info size={16} /></button>
             <button onClick={onTrade} className={`h-9 px-4 rounded-full text-white font-black text-[15px] flex items-center gap-1.5 shadow-md active:scale-95 transition ${viewerIsBuyingCard ? "bg-[#10B981] hover:bg-emerald-600" : "bg-[#F4A422] hover:bg-[#D4891A]"}`}>
               {viewerIsBuyingCard ? "Buy" : "Sell"} <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[10px]">₿</div>
             </button>
@@ -1072,7 +1073,7 @@ export default function SellGiftCardMarketplace({ user }) {
   const [showCryptoMenu, setShowCryptoMenu] = useState(false);
   const [gcMode, setGcMode] = useState('sell'); // 'buy' | 'sell' | 'all'
   const [modal, setModal] = useState(null);
-  const [activeTrades, setActiveTrades] = useState([]);
+  const [activeTrades, setActiveTrades] = useState(() => getCachedActiveTrades('gift-card'));
   const [showAllTrades, setShowAllTrades] = useState(false);
   const [pausedOffer, setPausedOffer] = useState(false);
   const [currencySearch, setCurrencySearch] = useState('');
@@ -1164,20 +1165,38 @@ export default function SellGiftCardMarketplace({ user }) {
   useEffect(() => {
     axios.get(`${API_URL}/trader-of-week`)
       .then(r => setTraderOfWeek(r.data?.winners?.gift_card || null))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
   useEffect(() => {
     const tk = localStorage.getItem('token');
     if (!tk) return;
     const h = { Authorization: `Bearer ${tk}` };
-    const toUTC = s => new Date(/[Z+]/.test(s) ? s : s + 'Z');
+    const toUTC = (s) => {
+      if (!s) return null;
+      if (s instanceof Date) return s;
+      let str = String(s).trim().replace(' ', 'T');
+      if (!str.endsWith('Z') && !/[+-]\d{2}/.test(str)) str += 'Z';
+      const d = new Date(str);
+      return isNaN(d.getTime()) ? new Date(s) : d;
+    };
     const fetchTrades = () => axios.get(`${API_URL}/trades/active`, { headers: h }).then(res => {
-      if (res.data.success) {
+      if (res.data?.success || Array.isArray(res.data?.trades)) {
         const now = Date.now();
-        setActiveTrades((res.data.trades || []).filter(t =>
-          ['PAYMENT_SENT', 'DISPUTED'].includes(t.status) ||
-          !t.expires_at || toUTC(t.expires_at).getTime() > now
-        ));
+        const raw = res.data.trades || [];
+        setCachedActiveTrades(raw);
+        const filtered = raw.filter(t => {
+          if (!isGiftCardTrade(t)) return false;
+          if (!t.status) return true;
+          if (['PAYMENT_SENT', 'DISPUTED', 'FUNDS_LOCKED', 'CREATED'].includes(t.status)) {
+            if (!t.expires_at) return true;
+            const parsed = toUTC(t.expires_at);
+            const expTime = parsed ? parsed.getTime() : NaN;
+            if (isNaN(expTime)) return true;
+            return expTime > now - 60000;
+          }
+          return false;
+        });
+        setActiveTrades(filtered);
       }
     }).catch(() => { });
     Promise.all([
@@ -1210,7 +1229,7 @@ export default function SellGiftCardMarketplace({ user }) {
     if (ids.length === 0) return;
     axios.get(`${API_URL}/users/online-status?ids=${ids.join(',')}`)
       .then(r => { if (r.data?.status) setLiveStatus(r.data.status); })
-      .catch(() => {});
+      .catch(() => { });
   };
 
   const loadListings = async (attempt = 1, force = false) => {
@@ -1269,32 +1288,32 @@ export default function SellGiftCardMarketplace({ user }) {
     finally { if (attempt === 1 || attempt >= 3) setLoading(false); }
   };
 
-useEffect(() => {
-      const fetchBoard = () => {
-        axios.get(`${API_URL}/referral/leaderboard`).then(r => {
-          if (r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0, 3));
-        }).catch(() => { });
-      };
-      fetchBoard();
-      const iv = setInterval(fetchBoard, 60000);
-      return () => clearInterval(iv);
-    }, []);
+  useEffect(() => {
+    const fetchBoard = () => {
+      axios.get(`${API_URL}/referral/leaderboard`).then(r => {
+        if (r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0, 3));
+      }).catch(() => { });
+    };
+    fetchBoard();
+    const iv = setInterval(fetchBoard, 60000);
+    return () => clearInterval(iv);
+  }, []);
 
-    const getFiltered = () => {
-      let list = [...listings];
-      // Filter by mode — "All" shows every gift card offer; "Sell" narrows to offers
-      // where the viewer sells their own card (BUY_GIFT_CARD listings — people requesting
-      // to buy one). This matches ListingDetail.js's role assignment (trade_type:
-      // SELL_GIFT_CARD -> viewer BUYs) and the Buy/Sell Bitcoin page convention.
-      if (gcMode === 'buy') {
-        list = list.filter(l => l.listing_type === 'BUY_GIFT_CARD');
-      } else if (gcMode === 'sell') {
-        list = list.filter(l => l.listing_type === 'SELL_GIFT_CARD');
-      }
+  const getFiltered = () => {
+    let list = [...listings];
+    // Filter by mode — "All" shows every gift card offer; "Sell" narrows to offers
+    // where the viewer sells their own card (BUY_GIFT_CARD listings — people requesting
+    // to buy one). This matches ListingDetail.js's role assignment (trade_type:
+    // SELL_GIFT_CARD -> viewer BUYs) and the Buy/Sell Bitcoin page convention.
+    if (gcMode === 'buy') {
+      list = list.filter(l => l.listing_type === 'BUY_GIFT_CARD');
+    } else if (gcMode === 'sell') {
+      list = list.filter(l => l.listing_type === 'SELL_GIFT_CARD');
+    }
 
-      if (cryptoFilter === 'BTC') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'BTC');
-      if (cryptoFilter === 'USDT') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'USDT');
-      if (selCurrency && selCurrency.code) list = list.filter(l => (l.currency || 'USD').toUpperCase() === selCurrency.code);
+    if (cryptoFilter === 'BTC') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'BTC');
+    if (cryptoFilter === 'USDT') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'USDT');
+    if (selCurrency && selCurrency.code) list = list.filter(l => (l.currency || 'USD').toUpperCase() === selCurrency.code);
     if (selBrand !== 'All Brands') list = list.filter(l => (getBrand(l) || '').toLowerCase().includes(selBrand.toLowerCase()));
     const amt = parseFloat(amountInput);
     if (!isNaN(amt) && amt > 0) list = list.filter(l => {
@@ -1383,17 +1402,17 @@ useEffect(() => {
         html, body { overscroll-behavior: none; }
       `}</style>
 
-      
+
       {/* ══ 1. NOONES-STYLE HEADER & CONVERSION BAR ════════════════════════════════════ */}
-      <div className="w-full bg-white border-b px-4 py-4" style={{borderColor:C.g200}}>
+      <div className="w-full bg-white border-b px-4 py-4" style={{ borderColor: C.g200 }}>
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl sm:text-3xl font-black" style={{color:C.g800}}>
-              {gcMode === 'buy' ? 'Buy' : 'Sell'} <span style={{color: cryptoFilter === 'USDT' ? '#0F766E' : '#F4A422'}}>
+            <h1 className="text-2xl sm:text-3xl font-black" style={{ color: C.g800 }}>
+              {gcMode === 'buy' ? 'Buy' : 'Sell'} <span style={{ color: cryptoFilter === 'USDT' ? '#0F766E' : '#F4A422' }}>
                 {cryptoFilter === 'ALL' ? 'Crypto' : cryptoFilter === 'USDT' ? 'USDT' : 'BTC'}
               </span>
               {selBrand !== 'All Brands' && (
-                <span className="font-bold" style={{color: '#F4A422'}}> with {selBrand}</span>
+                <span className="font-bold" style={{ color: '#F4A422' }}> with {selBrand}</span>
               )}
             </h1>
             <button className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200">
@@ -1412,9 +1431,126 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* ══ 2. INLINE CONTROL CARD ════════════════════════════════════ */}
-          <div className="mt-4 bg-white rounded-2xl border p-2 sm:p-3 shadow-sm flex flex-wrap items-center gap-2 sm:gap-3" style={{borderColor:C.g200}}>
-            
+          {/* ══ MOBILE CONTROL CARD (Light Theme) ══ */}
+          <div className="block sm:hidden mt-3 bg-white rounded-2xl p-2.5 border border-gray-200 shadow-sm space-y-2.5">
+            {/* Top Row: Buy/Sell Toggle (Left) & Asset Selector Dropdown (Right) */}
+            <div className="flex items-center justify-between gap-2">
+              {/* Buy / Sell Toggle Pills */}
+              <div className="flex bg-gray-100 p-1 rounded-xl">
+                <button
+                  onClick={() => setGcMode('buy')}
+                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-black transition ${gcMode === 'buy' ? 'bg-emerald-500 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                >
+                  <ArrowDown size={13} strokeWidth={3} /> Buy
+                </button>
+                <button
+                  onClick={() => setGcMode('sell')}
+                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-black transition ${gcMode === 'sell' ? 'bg-[#F4A422] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                >
+                  <ArrowUp size={13} strokeWidth={3} /> Sell
+                </button>
+              </div>
+
+              {/* Crypto / Asset Dropdown Selector */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowCryptoMenu(v => !v)}
+                  className="h-9 px-3 rounded-xl bg-gray-50 border border-gray-200 flex items-center gap-1.5 text-xs font-black text-gray-800 hover:bg-gray-100 transition"
+                >
+                  {cryptoFilter === 'BTC' ? (
+                    <>
+                      <span className="w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px] font-bold">₿</span>
+                      <span>BTC</span>
+                    </>
+                  ) : cryptoFilter === 'USDT' ? (
+                    <>
+                      <span className="w-4 h-4 rounded-full bg-teal-500 text-white flex items-center justify-center text-[10px] font-bold">₮</span>
+                      <span>USDT</span>
+                    </>
+                  ) : (
+                    <>
+                      <Coins size={14} className="text-[#F4A422]" />
+                      <span>All Cryptos</span>
+                    </>
+                  )}
+                  <ChevronDown size={13} className="text-gray-400" />
+                </button>
+
+                {/* Menu Overlay for Mobile */}
+                {showCryptoMenu && (
+                  <div className="absolute right-0 top-full mt-1.5 w-48 rounded-2xl border border-gray-200 shadow-xl overflow-hidden z-50 bg-white">
+                    <div className="fixed inset-0 z-40" onClick={() => setShowCryptoMenu(false)} />
+                    <div className="relative z-50 py-1">
+                      <button
+                        onClick={() => { setCryptoFilter('ALL'); setShowCryptoMenu(false); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-xs font-black text-gray-800 hover:bg-gray-50"
+                      >
+                        <Coins size={16} className="text-[#F4A422]" />
+                        <span>All Cryptos</span>
+                      </button>
+                      <button
+                        onClick={() => { setCryptoFilter('BTC'); setShowCryptoMenu(false); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-xs font-black text-gray-800 hover:bg-gray-50 border-t border-gray-100"
+                      >
+                        <span className="w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px]">₿</span>
+                        <span>Bitcoin</span>
+                      </button>
+                      <button
+                        onClick={() => { setCryptoFilter('USDT'); setShowCryptoMenu(false); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-xs font-black text-gray-800 hover:bg-gray-50 border-t border-gray-100"
+                      >
+                        <span className="w-5 h-5 rounded-full bg-teal-500 text-white flex items-center justify-center text-[10px]">₮</span>
+                        <span>Tether</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Centered Small Badge (FOR for Sell, WITH for Buy) */}
+            <div className="relative flex justify-center -my-1 z-10">
+              <span className={`bg-white border text-[9px] font-black tracking-wider px-2 py-0.5 rounded shadow-sm uppercase ${gcMode === 'sell' ? 'border-amber-200 text-amber-600' : 'border-emerald-200 text-emerald-600'
+                }`}>
+                {gcMode === 'sell' ? 'FOR' : 'WITH'}
+              </span>
+            </div>
+
+            {/* Bottom Row: Brand Dropdown (Left) & Amount Input with Currency (Right) */}
+            <div className="grid grid-cols-2 gap-2 pt-0.5">
+              {/* Brand Button */}
+              <button
+                onClick={() => { setShowBrand(!showBrand); setBrandSearch(''); }}
+                className="h-9 px-3 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-between text-xs font-bold text-gray-800 hover:bg-gray-100 transition overflow-hidden"
+              >
+                <span className="truncate">{selBrand === 'All Brands' ? 'All Cards' : selBrand}</span>
+                <ChevronDown size={13} className="text-gray-400 shrink-0 ml-1" />
+              </button>
+
+              {/* Amount Input with Currency Badge */}
+              <div className="h-9 px-2.5 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-between gap-1">
+                <input
+                  type="number"
+                  placeholder="Amount"
+                  value={amountInput}
+                  onChange={e => setAmountInput(e.target.value)}
+                  className="w-full bg-transparent text-xs font-bold text-gray-900 placeholder-gray-400 focus:outline-none"
+                />
+                <button
+                  onClick={() => setShowCurrency(true)}
+                  className="shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-gray-200 border border-gray-300 text-[10px] font-black text-gray-700 hover:text-gray-900"
+                >
+                  {selCurrency.code}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ══ 2. DESKTOP CONTROL CARD (UNTOUCHED FOR DESKTOP) ════════════════════════════════════ */}
+          <div className="hidden sm:flex mt-4 bg-white rounded-2xl border p-2 sm:p-3 shadow-sm flex-wrap items-center gap-2 sm:gap-3" style={{ borderColor: C.g200 }}>
+
             {/* Toggle Pill (Buy/Sell) */}
             <div className="flex bg-gray-100 p-1 rounded-xl shrink-0">
               <button onClick={() => setGcMode('buy')}
@@ -1429,35 +1565,35 @@ useEffect(() => {
 
             {/* Crypto Dropdown */}
             <div className="relative shrink-0" ref={cryptoRef}>
-              <button onClick={()=>setShowCryptoMenu(v=>!v)}
+              <button onClick={() => setShowCryptoMenu(v => !v)}
                 className="h-[36px] sm:h-[40px] px-2 sm:px-3 rounded-xl border bg-gray-50 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-black text-gray-800 hover:bg-gray-100 transition"
-                style={{borderColor: C.g200}}>
+                style={{ borderColor: C.g200 }}>
                 {cryptoFilter === 'BTC' ? (
                   <><span className="w-5 h-5 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px]">₿</span> BTC</>
                 ) : cryptoFilter === 'USDT' ? (
                   <><span className="w-5 h-5 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-[10px]">₮</span> USDT</>
                 ) : (
-                  <><span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px]">🌐</span> ALL</>
+                  <><Coins size={15} className="text-emerald-600" /> All Cryptos</>
                 )}
                 <ChevronDown size={14} className="text-gray-400" />
               </button>
               {showCryptoMenu && (
-                <div className="absolute left-0 top-full mt-1.5 w-48 sm:w-56 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white" style={{borderColor:C.g200}}>
-                  <div className="fixed inset-0 z-40" onClick={()=>setShowCryptoMenu(false)}/>
+                <div className="absolute left-0 top-full mt-1.5 w-48 sm:w-56 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white" style={{ borderColor: C.g200 }}>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowCryptoMenu(false)} />
                   <div className="relative z-50">
-                    <button onClick={()=>{setCryptoFilter('ALL'); setShowCryptoMenu(false);}}
+                    <button onClick={() => { setCryptoFilter('ALL'); setShowCryptoMenu(false); }}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition ${cryptoFilter === 'ALL' ? 'bg-emerald-50/80' : 'hover:bg-gray-50'}`}>
-                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#0D9488,#14B8A6)'}}>🌐</span>
-                      <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">All Crypto</span></span>
+                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{ background: 'linear-gradient(135deg,#0D9488,#14B8A6)' }}><Coins size={14} /></span>
+                      <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">All Cryptos</span></span>
                     </button>
-                    <button onClick={()=>{setCryptoFilter('BTC'); setShowCryptoMenu(false);}}
-                      className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${cryptoFilter === 'BTC' ? 'bg-amber-50/80' : 'hover:bg-gray-50'}`} style={{borderColor:C.g100}}>
-                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#F7931A,#e8830a)'}}>₿</span>
+                    <button onClick={() => { setCryptoFilter('BTC'); setShowCryptoMenu(false); }}
+                      className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${cryptoFilter === 'BTC' ? 'bg-amber-50/80' : 'hover:bg-gray-50'}`} style={{ borderColor: C.g100 }}>
+                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{ background: 'linear-gradient(135deg,#F7931A,#e8830a)' }}>₿</span>
                       <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">Bitcoin</span></span>
                     </button>
-                    <button onClick={()=>{setCryptoFilter('USDT'); setShowCryptoMenu(false);}}
-                      className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${cryptoFilter === 'USDT' ? 'bg-teal-50/80' : 'hover:bg-gray-50'}`} style={{borderColor:C.g100}}>
-                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#0F766E,#14B8A6)'}}>₮</span>
+                    <button onClick={() => { setCryptoFilter('USDT'); setShowCryptoMenu(false); }}
+                      className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${cryptoFilter === 'USDT' ? 'bg-teal-50/80' : 'hover:bg-gray-50'}`} style={{ borderColor: C.g100 }}>
+                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{ background: 'linear-gradient(135deg,#0F766E,#14B8A6)' }}>₮</span>
                       <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">Tether</span></span>
                     </button>
                   </div>
@@ -1471,56 +1607,56 @@ useEffect(() => {
               <button
                 onClick={() => { setShowBrand(!showBrand); setBrandSearch(''); }}
                 className="w-full h-[36px] sm:h-[40px] flex items-center justify-between px-3 rounded-xl border bg-gray-50 text-xs font-bold text-gray-700 hover:bg-gray-100 transition"
-                style={{borderColor: C.g200}}>
+                style={{ borderColor: C.g200 }}>
                 <span className="truncate">{selBrand === 'All Brands' ? 'All Cards' : selBrand}</span>
                 <ChevronDown size={14} className="text-gray-400 flex-shrink-0" />
               </button>
 
               {showBrand && (
-                  <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-2xl z-50 border overflow-hidden"
-                    style={{ borderColor: C.g100, minWidth: '240px' }}>
-                    <div className="px-2 py-2 border-b sticky top-0 bg-white z-40" style={{ borderColor: C.g100 }}>
-                      <input type="text" placeholder="Search card brand..." value={brandSearch}
-                        onChange={e => setBrandSearch(e.target.value)} onClick={e => e.stopPropagation()}
-                        className="w-full px-2.5 py-1.5 rounded-lg focus:outline-none"
-                        style={{ border: `1.5px solid ${C.g200}`, color: C.g800, backgroundColor: C.g50, fontSize: '16px' }} />
-                    </div>
-                    <div style={{ maxHeight: 260, overflowY: 'auto' }} className="relative z-30">
-                      {brandSearch.trim() ? (
-                        GC_BRANDS.filter(b => b.toLowerCase().includes(brandSearch.toLowerCase())).map(b => (
-                          <button key={b} onClick={() => { setSelBrand(b); setShowBrand(false); setBrandSearch(''); }}
-                            className="w-full flex items-center justify-between px-3 py-2.5 text-xs hover:bg-gray-50 border-b last:border-0 transition"
-                            style={{ borderColor: C.g50, backgroundColor: selBrand === b ? `${C.forest}08` : 'transparent' }}>
-                            <span className="font-semibold" style={{ color: C.g800 }}>{b === 'All Brands' ? 'All Cards' : b}</span>
-                            {selBrand === b && <CheckCircle size={11} style={{ color: C.green }} />}
-                          </button>
-                        ))
-                      ) : (
-                        GC_BRAND_GROUPS.map(group => (
-                          <div key={group.cat || 'all'}>
-                            {group.cat && (
-                              <div className="px-3 py-1.5 sticky top-0" style={{ backgroundColor: '#F8FAFC', borderBottom: `1px solid ${C.g100}` }}>
-                                <span className="text-xs font-bold uppercase tracking-wider" style={{ color: group.color || C.g500 }}>{group.cat}</span>
-                              </div>
-                            )}
-                            {group.items.map(b => (
-                              <button key={b} onClick={() => { setSelBrand(b); setShowBrand(false); setBrandSearch(''); }}
-                                className="w-full flex items-center justify-between px-3 py-2.5 text-xs hover:bg-gray-50 border-b last:border-0 transition"
-                                style={{ borderColor: C.g50, backgroundColor: selBrand === b ? `${C.forest}08` : 'transparent' }}>
-                                <span className="font-semibold" style={{ color: C.g800 }}>{b === 'All Brands' ? 'All Cards' : b}</span>
-                                {selBrand === b && <CheckCircle size={11} style={{ color: C.green }} />}
-                              </button>
-                            ))}
-                          </div>
-                        ))
-                      )}
-                    </div>
+                <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-2xl z-50 border overflow-hidden"
+                  style={{ borderColor: C.g100, minWidth: '240px' }}>
+                  <div className="px-2 py-2 border-b sticky top-0 bg-white z-40" style={{ borderColor: C.g100 }}>
+                    <input type="text" placeholder="Search card brand..." value={brandSearch}
+                      onChange={e => setBrandSearch(e.target.value)} onClick={e => e.stopPropagation()}
+                      className="w-full px-2.5 py-1.5 rounded-lg focus:outline-none"
+                      style={{ border: `1.5px solid ${C.g200}`, color: C.g800, backgroundColor: C.g50, fontSize: '16px' }} />
                   </div>
-                )}
+                  <div style={{ maxHeight: 260, overflowY: 'auto' }} className="relative z-30">
+                    {brandSearch.trim() ? (
+                      GC_BRANDS.filter(b => b.toLowerCase().includes(brandSearch.toLowerCase())).map(b => (
+                        <button key={b} onClick={() => { setSelBrand(b); setShowBrand(false); setBrandSearch(''); }}
+                          className="w-full flex items-center justify-between px-3 py-2.5 text-xs hover:bg-gray-50 border-b last:border-0 transition"
+                          style={{ borderColor: C.g50, backgroundColor: selBrand === b ? `${C.forest}08` : 'transparent' }}>
+                          <span className="font-semibold" style={{ color: C.g800 }}>{b === 'All Brands' ? 'All Cards' : b}</span>
+                          {selBrand === b && <CheckCircle size={11} style={{ color: C.green }} />}
+                        </button>
+                      ))
+                    ) : (
+                      GC_BRAND_GROUPS.map(group => (
+                        <div key={group.cat || 'all'}>
+                          {group.cat && (
+                            <div className="px-3 py-1.5 sticky top-0" style={{ backgroundColor: '#F8FAFC', borderBottom: `1px solid ${C.g100}` }}>
+                              <span className="text-xs font-bold uppercase tracking-wider" style={{ color: group.color || C.g500 }}>{group.cat}</span>
+                            </div>
+                          )}
+                          {group.items.map(b => (
+                            <button key={b} onClick={() => { setSelBrand(b); setShowBrand(false); setBrandSearch(''); }}
+                              className="w-full flex items-center justify-between px-3 py-2.5 text-xs hover:bg-gray-50 border-b last:border-0 transition"
+                              style={{ borderColor: C.g50, backgroundColor: selBrand === b ? `${C.forest}08` : 'transparent' }}>
+                              <span className="font-semibold" style={{ color: C.g800 }}>{b === 'All Brands' ? 'All Cards' : b}</span>
+                              {selBrand === b && <CheckCircle size={11} style={{ color: C.green }} />}
+                            </button>
+                          ))}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Amount Input */}
-            <div className="relative flex-1 min-w-[140px] flex items-center bg-gray-50 rounded-xl border pl-3 pr-1" style={{borderColor: C.g200, height: '40px'}}>
+            <div className="relative flex-1 min-w-[140px] flex items-center bg-gray-50 rounded-xl border pl-3 pr-1" style={{ borderColor: C.g200, height: '40px' }}>
               <span className="absolute -top-2 left-3 px-1 bg-white text-[9px] font-black text-gray-500 tracking-wider uppercase z-10">AMOUNT</span>
               <input
                 type="number"
@@ -1532,7 +1668,7 @@ useEffect(() => {
               <button
                 onClick={() => setShowCurrency(true)}
                 className="flex-shrink-0 flex items-center gap-1 pl-2 border-l hover:bg-gray-200 transition text-xs font-black text-gray-700 h-full px-2 rounded-r-lg"
-                style={{borderColor: C.g200}}>
+                style={{ borderColor: C.g200 }}>
                 {selCurrency.code}
                 <ChevronDown size={12} className="text-gray-400" />
               </button>
@@ -1547,13 +1683,13 @@ useEffect(() => {
 
               <button onClick={() => setShowFilters(true)}
                 className="h-[36px] sm:h-[40px] px-3 sm:px-4 rounded-xl border bg-white text-gray-700 text-xs sm:text-sm font-black flex items-center gap-1.5 hover:bg-gray-50 transition"
-                style={{borderColor: C.g200}}>
+                style={{ borderColor: C.g200 }}>
                 <Filter size={14} /> <span className="hidden sm:inline">Filters</span>
               </button>
 
               <button onClick={() => loadListings(1, true)}
                 className="w-[36px] h-[36px] sm:w-[40px] sm:h-[40px] rounded-xl border bg-white flex items-center justify-center text-gray-500 hover:bg-gray-50 hover:text-emerald-600 transition"
-                style={{borderColor: C.g200}}>
+                style={{ borderColor: C.g200 }}>
                 <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
               </button>
             </div>
@@ -1562,26 +1698,61 @@ useEffect(() => {
         </div>
       </div>
 
+      {/* ── Inline active trade cards ── */}
+      {activeTrades.length > 0 && (
+        <div className="px-3 mt-3 mb-2 max-w-7xl mx-auto w-full">
+          <div className="flex items-center gap-2 mb-2 font-black text-sm text-gray-900">
+            <Repeat2 size={16} /> Active trades ({activeTrades.length})
+          </div>
+          {activeTrades.slice(0, showAllTrades ? activeTrades.length : 3).map(trade => (
+            <ActiveTradeCard key={trade.id} trade={trade} pageColor="#0D9488" onExpire={handleTradeExpire} />
+          ))}
+          {activeTrades.length > 3 && (
+            <button onClick={() => setShowAllTrades(p => !p)}
+              className="w-full text-xs font-semibold py-1.5 rounded-xl border mb-1"
+              style={{ color: '#92400E', borderColor: '#F59E0B', backgroundColor: '#FFFBEB' }}>
+              {showAllTrades ? 'Show less ▲' : `Show all (${activeTrades.length}) ▼`}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ══════════════════════════════════════════════════
           5. OFFER GRID
       ══════════════════════════════════════════════════ */}
       <div className="max-w-7xl mx-auto w-full px-2 sm:px-3 pt-2 pb-3 space-y-3">
 
-        {/* ── Inline active trade cards ── */}
-        {activeTrades.length > 0 && (
-          <div className="mb-2 overflow-hidden">
-            {activeTrades.slice(0, showAllTrades ? activeTrades.length : 3).map(trade => (
-              <ActiveTradeCard key={trade.id} trade={trade} pageColor="#0D9488" onExpire={handleTradeExpire} />
-            ))}
-            {activeTrades.length > 3 && (
-              <button onClick={() => setShowAllTrades(p => !p)}
-                className="w-full text-xs font-semibold py-1.5 rounded-xl border mb-1"
-                style={{ color: '#92400E', borderColor: '#F59E0B', backgroundColor: '#FFFBEB' }}>
-                {showAllTrades ? 'Show less ▲' : `Show all (${activeTrades.length}) ▼`}
-              </button>
-            )}
+        {/* Mobile Offers Header & Action Buttons Row */}
+        <div className="flex sm:hidden items-center justify-between my-1 px-0.5">
+          <h2 className="text-xl font-black text-gray-900">Offers</h2>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate('/create-offer')}
+              className="w-9 h-9 rounded-xl bg-gray-50 border border-gray-200 text-gray-700 flex items-center justify-center font-bold shadow-sm hover:bg-gray-100 transition"
+              title="Create Offer"
+            >
+              <Plus size={16} />
+            </button>
+            <button
+              onClick={() => setShowFilters(true)}
+              className="h-9 px-2.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-700 flex items-center gap-1.5 text-xs font-bold shadow-sm hover:bg-gray-100 transition"
+            >
+              <SlidersHorizontal size={14} />
+              {hasFilters && (
+                <span className="w-4 h-4 rounded-full bg-emerald-500 text-white text-[10px] font-black flex items-center justify-center">
+                  1
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => loadListings(1, true)}
+              className="w-9 h-9 rounded-xl bg-gray-50 border border-gray-200 text-gray-700 flex items-center justify-center shadow-sm hover:bg-gray-100 transition"
+              title="Refresh"
+            >
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            </button>
           </div>
-        )}
+        </div>
 
         {/* Count row */}
         <div className="flex items-center gap-2 flex-wrap">
@@ -1682,154 +1853,154 @@ useEffect(() => {
         )}
 
         {/* ── Trade Safety Banner ── */}
-        <div style={{display:'flex',alignItems:'center',gap:11,padding:'13px 15px',borderRadius:12,background:'linear-gradient(135deg,#FFFBEB,#FEF3C7)',border:'1.5px solid #FCD34D',boxShadow:'0 2px 8px rgba(217,119,6,0.12)'}}>
-          <div style={{width:34,height:34,borderRadius:9,background:'#FDE68A',border:'1px solid #FCD34D',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-            <AlertTriangle size={17} style={{color:'#B45309'}}/>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '13px 15px', borderRadius: 12, background: 'linear-gradient(135deg,#FFFBEB,#FEF3C7)', border: '1.5px solid #FCD34D', boxShadow: '0 2px 8px rgba(217,119,6,0.12)' }}>
+          <div style={{ width: 34, height: 34, borderRadius: 9, background: '#FDE68A', border: '1px solid #FCD34D', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <AlertTriangle size={17} style={{ color: '#B45309' }} />
           </div>
           <div>
-            <p style={{margin:0,fontSize:13,fontWeight:900,color:'#92400E',lineHeight:1.3}}>Trade Safely</p>
-            <p style={{margin:0,fontSize:11,color:'#92400E',fontWeight:600,lineHeight:1.4,marginTop:1}}>Only share gift card codes inside the active escrow trade. Every trade is platform-protected.</p>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 900, color: '#92400E', lineHeight: 1.3 }}>Trade Safely</p>
+            <p style={{ margin: 0, fontSize: 11, color: '#92400E', fontWeight: 600, lineHeight: 1.4, marginTop: 1 }}>Only share gift card codes inside the active escrow trade. Every trade is platform-protected.</p>
           </div>
         </div>
 
         {/* ── NEW USER BONUS CARD ── */}
         {!user && (
-        <div style={{borderRadius:14,overflow:'hidden',boxShadow:'0 4px 20px rgba(27,67,50,0.18)'}}>
-          <div style={{background:'linear-gradient(135deg,#1B4332 0%,#2D6A4F 60%,#40916C 100%)',padding:'14px 14px 12px',position:'relative'}}>
-            {/* Dot pattern */}
-            <div style={{position:'absolute',inset:0,opacity:0.06,backgroundImage:'radial-gradient(circle at 2px 2px,white 1px,transparent 0)',backgroundSize:'16px 16px',pointerEvents:'none'}}/>
-            {/* Gold accent top border */}
-            <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:'linear-gradient(90deg,#F4A422,#FBBF24,#F4A422)',borderRadius:'14px 14px 0 0'}}/>
-            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8,marginBottom:10,position:'relative'}}>
-              <div style={{display:'flex',alignItems:'center',gap:8}}>
-                <div style={{width:32,height:32,borderRadius:10,background:'#F4A422',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:16,boxShadow:'0 2px 8px rgba(244,164,34,0.45)'}}>🎁</div>
-                <div>
-                  <p style={{margin:0,fontSize:12,fontWeight:900,color:'#FFFFFF',lineHeight:1.2}}>New users earn <span style={{color:'#F4A422'}}>$2 FREE Bitcoin!</span></p>
-                  <p style={{margin:0,fontSize:9,color:'rgba(255,255,255,0.55)',marginTop:2}}>Offer valid 30 days · Limited time</p>
-                </div>
-              </div>
-              <button onClick={()=>navigate('/register')}
-                style={{flexShrink:0,padding:'6px 12px',borderRadius:8,border:'none',cursor:'pointer',background:'#F4A422',color:'#1B4332',fontWeight:900,fontSize:10,whiteSpace:'nowrap',boxShadow:'0 2px 8px rgba(244,164,34,0.4)'}}>
-                Claim →
-              </button>
-            </div>
-            {/* 3-step flow */}
-            <div style={{display:'grid',gridTemplateColumns:'1fr auto 1fr auto 1fr',alignItems:'center',gap:3,position:'relative'}}>
-              {[
-                {icon:'✅',label:'Register',sub:'$1 locked'},
-                {icon:'⚡',label:'Verify',  sub:'stays safe'},
-                {icon:'₿', label:'1 Trade', sub:'$2 unlocks'},
-              ].map(({icon,label,sub},i,arr)=>(
-                <Fragment key={label}>
-                  <div style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.14)',borderRadius:8,padding:'6px 4px',textAlign:'center'}}>
-                    <div style={{fontSize:13,lineHeight:1,marginBottom:2}}>{icon}</div>
-                    <div style={{fontSize:9,fontWeight:800,color:'#fff',lineHeight:1}}>{label}</div>
-                    <div style={{fontSize:7,color:'rgba(255,255,255,0.45)',marginTop:2,lineHeight:1}}>{sub}</div>
+          <div style={{ borderRadius: 14, overflow: 'hidden', boxShadow: '0 4px 20px rgba(27,67,50,0.18)' }}>
+            <div style={{ background: 'linear-gradient(135deg,#1B4332 0%,#2D6A4F 60%,#40916C 100%)', padding: '14px 14px 12px', position: 'relative' }}>
+              {/* Dot pattern */}
+              <div style={{ position: 'absolute', inset: 0, opacity: 0.06, backgroundImage: 'radial-gradient(circle at 2px 2px,white 1px,transparent 0)', backgroundSize: '16px 16px', pointerEvents: 'none' }} />
+              {/* Gold accent top border */}
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg,#F4A422,#FBBF24,#F4A422)', borderRadius: '14px 14px 0 0' }} />
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 10, position: 'relative' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 10, background: '#F4A422', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 16, boxShadow: '0 2px 8px rgba(244,164,34,0.45)' }}>🎁</div>
+                  <div>
+                    <p style={{ margin: 0, fontSize: 12, fontWeight: 900, color: '#FFFFFF', lineHeight: 1.2 }}>New users earn <span style={{ color: '#F4A422' }}>$2 FREE Bitcoin!</span></p>
+                    <p style={{ margin: 0, fontSize: 9, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>Offer valid 30 days · Limited time</p>
                   </div>
-                  {i < arr.length-1 && <div style={{fontSize:10,color:'rgba(255,255,255,0.25)',textAlign:'center',flexShrink:0}}>›</div>}
-                </Fragment>
-              ))}
+                </div>
+                <button onClick={() => navigate('/register')}
+                  style={{ flexShrink: 0, padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', background: '#F4A422', color: '#1B4332', fontWeight: 900, fontSize: 10, whiteSpace: 'nowrap', boxShadow: '0 2px 8px rgba(244,164,34,0.4)' }}>
+                  Claim →
+                </button>
+              </div>
+              {/* 3-step flow */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr auto 1fr', alignItems: 'center', gap: 3, position: 'relative' }}>
+                {[
+                  { icon: '✅', label: 'Register', sub: '$1 locked' },
+                  { icon: '⚡', label: 'Verify', sub: 'stays safe' },
+                  { icon: '₿', label: '1 Trade', sub: '$2 unlocks' },
+                ].map(({ icon, label, sub }, i, arr) => (
+                  <Fragment key={label}>
+                    <div style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 8, padding: '6px 4px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 13, lineHeight: 1, marginBottom: 2 }}>{icon}</div>
+                      <div style={{ fontSize: 9, fontWeight: 800, color: '#fff', lineHeight: 1 }}>{label}</div>
+                      <div style={{ fontSize: 7, color: 'rgba(255,255,255,0.45)', marginTop: 2, lineHeight: 1 }}>{sub}</div>
+                    </div>
+                    {i < arr.length - 1 && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', textAlign: 'center', flexShrink: 0 }}>›</div>}
+                  </Fragment>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
         )}
 
         {/* ── AFFILIATE PROMO CARD ── */}
-        <div style={{borderRadius:16,overflow:'hidden',boxShadow:'0 6px 28px rgba(27,67,50,0.22)'}}>
+        <div style={{ borderRadius: 16, overflow: 'hidden', boxShadow: '0 6px 28px rgba(27,67,50,0.22)' }}>
 
           {/* Header — brand gradient with subtle pattern + glow for a premium, eye-catching feel */}
-          <div style={{padding:'20px 18px 18px',background:`linear-gradient(135deg,${C.forest},${C.green})`,position:'relative',overflow:'hidden'}}>
-            <div style={{position:'absolute',inset:0,opacity:0.08,backgroundImage:'radial-gradient(circle at 2px 2px,white 1px,transparent 0)',backgroundSize:'18px 18px'}}/>
-            <div style={{position:'absolute',top:-30,right:-20,width:140,height:140,borderRadius:'50%',background:C.gold,opacity:0.15,filter:'blur(40px)'}}/>
-            <div style={{position:'relative',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
+          <div style={{ padding: '20px 18px 18px', background: `linear-gradient(135deg,${C.forest},${C.green})`, position: 'relative', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', inset: 0, opacity: 0.08, backgroundImage: 'radial-gradient(circle at 2px 2px,white 1px,transparent 0)', backgroundSize: '18px 18px' }} />
+            <div style={{ position: 'absolute', top: -30, right: -20, width: 140, height: 140, borderRadius: '50%', background: C.gold, opacity: 0.15, filter: 'blur(40px)' }} />
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
               <div>
-                <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:8}}>
-                  <span style={{display:'flex',alignItems:'center',gap:4,fontSize:11,fontWeight:900,color:C.forest,background:C.gold,borderRadius:6,padding:'3px 9px',letterSpacing:0.5,textTransform:'uppercase'}}>
-                    <Bitcoin size={11}/>Affiliate
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 900, color: C.forest, background: C.gold, borderRadius: 6, padding: '3px 9px', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                    <Bitcoin size={11} />Affiliate
                   </span>
-                  <span style={{display:'flex',alignItems:'center',gap:4,fontSize:9,fontWeight:700,color:'#fff',background:'rgba(255,255,255,0.15)',borderRadius:5,padding:'2px 8px'}}>
-                    <span style={{width:6,height:6,borderRadius:'50%',background:'#6EE7B7',display:'inline-block'}}/>LIVE
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, fontWeight: 700, color: '#fff', background: 'rgba(255,255,255,0.15)', borderRadius: 5, padding: '2px 8px' }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#6EE7B7', display: 'inline-block' }} />LIVE
                   </span>
                 </div>
-                <p style={{margin:0,fontSize:20,fontWeight:900,color:'#fff',lineHeight:1.2}}>Invite friends. Earn BTC forever.</p>
-                <p style={{margin:0,fontSize:12,color:'rgba(255,255,255,0.7)',marginTop:5,fontWeight:500}}>Earn on every trade your referrals make — for life.</p>
+                <p style={{ margin: 0, fontSize: 20, fontWeight: 900, color: '#fff', lineHeight: 1.2 }}>Invite friends. Earn BTC forever.</p>
+                <p style={{ margin: 0, fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 5, fontWeight: 500 }}>Earn on every trade your referrals make — for life.</p>
               </div>
-              <button onClick={()=>navigate(user ? '/dashboard?tab=affiliate' : '/register')}
-                style={{flexShrink:0,padding:'12px 20px',borderRadius:11,border:'none',cursor:'pointer',background:C.gold,color:C.forest,fontWeight:900,fontSize:13,whiteSpace:'nowrap',boxShadow:'0 4px 16px rgba(244,164,34,0.45)'}}>
-                Get Link <ArrowRight size={14} style={{display:'inline',marginLeft:4,verticalAlign:'-2px'}}/>
+              <button onClick={() => navigate(user ? '/dashboard?tab=affiliate' : '/register')}
+                style={{ flexShrink: 0, padding: '12px 20px', borderRadius: 11, border: 'none', cursor: 'pointer', background: C.gold, color: C.forest, fontWeight: 900, fontSize: 13, whiteSpace: 'nowrap', boxShadow: '0 4px 16px rgba(244,164,34,0.45)' }}>
+                Get Link <ArrowRight size={14} style={{ display: 'inline', marginLeft: 4, verticalAlign: '-2px' }} />
               </button>
             </div>
           </div>
 
           {/* Commission tiers — single brand-color progression (mint → gold), not a rainbow */}
-          <div style={{padding:'12px 16px',background:'#fff',borderBottom:`1px solid ${C.g100}`}}>
-            <p style={{margin:'0 0 8px',fontSize:10,fontWeight:800,color:C.g500,textTransform:'uppercase',letterSpacing:0.8}}>Commission Tiers</p>
-            <div style={{position:'relative'}}>
-              <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:2}}>
+          <div style={{ padding: '12px 16px', background: '#fff', borderBottom: `1px solid ${C.g100}` }}>
+            <p style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 800, color: C.g500, textTransform: 'uppercase', letterSpacing: 0.8 }}>Commission Tiers</p>
+            <div style={{ position: 'relative' }}>
+              <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
                 {[
-                  {refs:'0–9',   rate:'0.20%', c:C.mint},
-                  {refs:'10–24', rate:'0.25%', c:C.green},
-                  {refs:'25–49', rate:'0.35%', c:C.forest},
-                  {refs:'50–99', rate:'0.40%', c:'#B8811A'},
-                  {refs:'100+',  rate:'0.50%', c:C.gold},
-                ].map(t=>(
-                  <div key={t.refs} style={{flex:'0 0 auto',background:`${t.c}0D`,border:`1.5px solid ${t.c}30`,borderRadius:10,padding:'9px 12px',textAlign:'center',minWidth:58}}>
-                    <div style={{fontSize:14,fontWeight:900,color:t.c,lineHeight:1}}>{t.rate}</div>
-                    <div style={{fontSize:9,color:C.g400,fontWeight:600,marginTop:3,lineHeight:1}}>{t.refs} refs</div>
+                  { refs: '0–9', rate: '0.20%', c: C.mint },
+                  { refs: '10–24', rate: '0.25%', c: C.green },
+                  { refs: '25–49', rate: '0.35%', c: C.forest },
+                  { refs: '50–99', rate: '0.40%', c: '#B8811A' },
+                  { refs: '100+', rate: '0.50%', c: C.gold },
+                ].map(t => (
+                  <div key={t.refs} style={{ flex: '0 0 auto', background: `${t.c}0D`, border: `1.5px solid ${t.c}30`, borderRadius: 10, padding: '9px 12px', textAlign: 'center', minWidth: 58 }}>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: t.c, lineHeight: 1 }}>{t.rate}</div>
+                    <div style={{ fontSize: 9, color: C.g400, fontWeight: 600, marginTop: 3, lineHeight: 1 }}>{t.refs} refs</div>
                   </div>
                 ))}
               </div>
               <div style={{
-                position:'absolute',top:0,right:0,bottom:2,width:24,
-                background:'linear-gradient(to right, transparent, #ffffff)',
-                pointerEvents:'none',
-              }}/>
+                position: 'absolute', top: 0, right: 0, bottom: 2, width: 24,
+                background: 'linear-gradient(to right, transparent, #ffffff)',
+                pointerEvents: 'none',
+              }} />
             </div>
           </div>
 
           {/* Leaderboard */}
           {affLeaderboard.length > 0 && (
-            <div style={{background:'#fff'}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 14px 6px',background:C.mist}}>
-                <div style={{display:'flex',alignItems:'center',gap:5}}>
-                  <Trophy size={11} style={{color:C.gold}}/>
-                  <span style={{fontSize:9,fontWeight:900,color:C.forest,textTransform:'uppercase',letterSpacing:0.8}}>Top Earners</span>
+            <div style={{ background: '#fff' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 14px 6px', background: C.mist }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Trophy size={11} style={{ color: C.gold }} />
+                  <span style={{ fontSize: 9, fontWeight: 900, color: C.forest, textTransform: 'uppercase', letterSpacing: 0.8 }}>Top Earners</span>
                 </div>
-                <span style={{fontSize:9,color:C.green,fontWeight:600,background:'#fff',borderRadius:4,padding:'1px 6px'}}>All Time</span>
+                <span style={{ fontSize: 9, color: C.green, fontWeight: 600, background: '#fff', borderRadius: 4, padding: '1px 6px' }}>All Time</span>
               </div>
-              {affLeaderboard.map((u,i)=>{
+              {affLeaderboard.map((u, i) => {
                 const bc = BADGE_COLORS[u.badge] || '#64748B';
-                const rankBg = i===0?C.gold:i===1?C.g300:'#C08A4E';
-                const earnedUsd = ((u.earned_btc||0)*(btcPrice||76000));
+                const rankBg = i === 0 ? C.gold : i === 1 ? C.g300 : '#C08A4E';
+                const earnedUsd = ((u.earned_btc || 0) * (btcPrice || 76000));
                 return (
-                  <div key={u.username} style={{display:'flex',alignItems:'center',gap:9,padding:'7px 14px',borderTop:`1px solid ${C.g50}`}}>
-                    <div style={{width:18,height:18,borderRadius:'50%',flexShrink:0,background:rankBg,display:'flex',alignItems:'center',justifyContent:'center'}}>
-                      <span style={{fontSize:9,fontWeight:900,color:'#fff'}}>{i+1}</span>
+                  <div key={u.username} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 14px', borderTop: `1px solid ${C.g50}` }}>
+                    <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, background: rankBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ fontSize: 9, fontWeight: 900, color: '#fff' }}>{i + 1}</span>
                     </div>
-                    <div style={{width:26,height:26,borderRadius:8,flexShrink:0,background:`${bc}15`,border:`1.5px solid ${bc}35`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:900,color:bc}}>
-                      {(u.username||'?')[0].toUpperCase()}
+                    <div style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0, background: `${bc}15`, border: `1.5px solid ${bc}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 900, color: bc }}>
+                      {(u.username || '?')[0].toUpperCase()}
                     </div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:'flex',alignItems:'center',gap:4}}>
-                        <span style={{fontSize:10,fontWeight:800,color:'#1E293B',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:80}}>{u.username}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontSize: 10, fontWeight: 800, color: '#1E293B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 80 }}>{u.username}</span>
                         <BadgeChip user={u} badgeName={u.badge} size="xs" />
                       </div>
-                      <span style={{fontSize:8,color:C.g400,fontWeight:500}}>{u.referrals} referral{u.referrals !== 1 ? 's' : ''} · {u.affiliate_trades} ref trade{u.affiliate_trades !== 1 ? 's' : ''}</span>
+                      <span style={{ fontSize: 8, color: C.g400, fontWeight: 500 }}>{u.referrals} referral{u.referrals !== 1 ? 's' : ''} · {u.affiliate_trades} ref trade{u.affiliate_trades !== 1 ? 's' : ''}</span>
                     </div>
-                    <div style={{textAlign:'right',flexShrink:0}}>
-                      <div style={{fontSize:11,fontWeight:900,color:C.gold,lineHeight:1}}>₿{(()=>{const v=parseFloat(u.earned_btc||0);return v>0&&v<0.0001?v.toFixed(8):v.toFixed(5);})()}</div>
-                      <div style={{fontSize:8,color:C.g400,fontWeight:500,marginTop:1}}>${earnedUsd>=1000?(earnedUsd/1000).toFixed(1)+'k':earnedUsd>=1?earnedUsd.toFixed(2):earnedUsd<0.01?'<$0.01':earnedUsd.toFixed(2)}</div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ fontSize: 11, fontWeight: 900, color: C.gold, lineHeight: 1 }}>₿{(() => { const v = parseFloat(u.earned_btc || 0); return v > 0 && v < 0.0001 ? v.toFixed(8) : v.toFixed(5); })()}</div>
+                      <div style={{ fontSize: 8, color: C.g400, fontWeight: 500, marginTop: 1 }}>${earnedUsd >= 1000 ? (earnedUsd / 1000).toFixed(1) + 'k' : earnedUsd >= 1 ? earnedUsd.toFixed(2) : earnedUsd < 0.01 ? '<$0.01' : earnedUsd.toFixed(2)}</div>
                     </div>
                   </div>
                 );
               })}
-              <div style={{padding:'6px 14px',background:C.mist,borderTop:`1px solid ${C.g100}`,textAlign:'center'}}>
-                <span style={{fontSize:9,color:C.green,fontWeight:700}}>Could you be next? <span style={{textDecoration:'underline',cursor:'pointer'}} onClick={()=>navigate('/dashboard?tab=affiliate')}>View full leaderboard →</span></span>
+              <div style={{ padding: '6px 14px', background: C.mist, borderTop: `1px solid ${C.g100}`, textAlign: 'center' }}>
+                <span style={{ fontSize: 9, color: C.green, fontWeight: 700 }}>Could you be next? <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => navigate('/dashboard?tab=affiliate')}>View full leaderboard →</span></span>
               </div>
             </div>
           )}
 
-          <p style={{margin:0,padding:'6px 14px 9px',textAlign:'center',fontSize:9,color:C.g400,fontWeight:600,letterSpacing:0.3,background:'#fff'}}>
+          <p style={{ margin: 0, padding: '6px 14px 9px', textAlign: 'center', fontSize: 9, color: C.g400, fontWeight: 600, letterSpacing: 0.3, background: '#fff' }}>
             Free to join · No minimum payout · Lifetime commission
           </p>
         </div>
@@ -1849,13 +2020,13 @@ useEffect(() => {
           onTrade={() => handleTrade(modal.listing?.id)}
         />
       )}
-    
-      
+
+
       {/* ══ NOONES CURRENCY MODAL ════════════════════════════════════ */}
       {showCurrency && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
           <div className="w-full md:max-w-md bg-white h-[85vh] md:h-full rounded-t-2xl md:rounded-none flex flex-col p-4 overflow-y-auto">
-            <div className="flex items-center justify-between border-b pb-3 mb-4" style={{borderColor:C.g200}}>
+            <div className="flex items-center justify-between border-b pb-3 mb-4" style={{ borderColor: C.g200 }}>
               <h3 className="text-lg font-black text-gray-900">Currency</h3>
               <button onClick={() => setShowCurrency(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition">
                 <X size={18} />
@@ -1867,7 +2038,7 @@ useEffect(() => {
               value={currencySearch}
               onChange={(e) => setCurrencySearch(e.target.value)}
               className="w-full px-4 py-3 bg-gray-50 border rounded-xl font-semibold mb-4 focus:outline-none"
-              style={{borderColor:C.g200}}
+              style={{ borderColor: C.g200 }}
             />
             <div className="space-y-1 flex-1 overflow-y-auto">
               {GC_FILTER_CURRENCIES.filter(c => !currencySearch || c.name.toLowerCase().includes(currencySearch.toLowerCase()) || c.code.toLowerCase().includes(currencySearch.toLowerCase())).map((c, idx) => {
@@ -1877,7 +2048,7 @@ useEffect(() => {
                     key={idx}
                     onClick={() => { setSelCurrency(c); setShowCurrency(false); }}
                     className={`w-full flex items-center justify-between p-3 rounded-xl text-xs font-bold border-b transition ${selCurrency.code === c.code ? 'bg-emerald-50 text-emerald-700' : 'hover:bg-gray-50 text-gray-800'}`}
-                    style={{borderColor:C.g100}}>
+                    style={{ borderColor: C.g100 }}>
                     <div className="flex items-center gap-3">
                       <span className="text-sm font-black text-gray-800">{c.code}</span>
                       <span className="text-xs text-gray-500">{c.name}</span>
@@ -1896,7 +2067,7 @@ useEffect(() => {
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex justify-end transition-opacity">
           <div className="w-full max-w-md bg-white h-full flex flex-col justify-between p-4 overflow-y-auto animate-slideLeft">
             <div className="space-y-6">
-              <div className="flex items-center justify-between border-b pb-3" style={{borderColor:C.g200}}>
+              <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: C.g200 }}>
                 <h3 className="text-lg font-black text-gray-900">Filters</h3>
                 <button onClick={() => setShowFilters(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition">
                   <X size={18} />
@@ -1909,7 +2080,7 @@ useEffect(() => {
                 <button
                   onClick={() => setShowCountry(!showCountry)}
                   className="w-full flex items-center justify-between px-3 py-3 rounded-xl border bg-gray-50 text-sm font-bold text-gray-700 hover:bg-gray-100 transition"
-                  style={{borderColor: C.g200}}>
+                  style={{ borderColor: C.g200 }}>
                   <div className="flex items-center gap-2">
                     <span>{selCountry.flag}</span>
                     <span>{selCountry.name}</span>
@@ -1958,7 +2129,7 @@ useEffect(() => {
               </div>
 
               {/* Sorting */}
-              <div className="flex items-center justify-between py-2 border-b" style={{borderColor:C.g100}}>
+              <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: C.g100 }}>
                 <span className="text-sm font-bold text-gray-700">Sorting</span>
                 <select
                   value={sortBy}
@@ -1972,7 +2143,7 @@ useEffect(() => {
 
             </div>
 
-            <div className="pt-6 border-t space-y-2" style={{borderColor:C.g200}}>
+            <div className="pt-6 border-t space-y-2" style={{ borderColor: C.g200 }}>
               <button
                 onClick={() => setShowFilters(false)}
                 className="w-full py-3.5 rounded-xl bg-[#10B981] text-white font-black text-sm shadow-md transition">
@@ -1983,6 +2154,6 @@ useEffect(() => {
         </div>
       )}
 
-    </div>  );
+    </div>);
 }
 

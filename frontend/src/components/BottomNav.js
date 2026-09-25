@@ -34,6 +34,9 @@ export default function BottomNav({ user }) {
   if (location.pathname.startsWith('/trade/')) return null;
 
   const isActive = (to) => {
+    if (to === '/buy-bitcoin') {
+      return ['/buy-bitcoin', '/sell-bitcoin', '/buy-usdt', '/sell-usdt'].some(p => location.pathname.startsWith(p));
+    }
     if (to === '/gift-cards') {
       return location.pathname.startsWith('/gift-cards') || location.pathname.startsWith('/sell-gift-card');
     }

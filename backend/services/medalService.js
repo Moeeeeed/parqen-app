@@ -1,0 +1,260 @@
+// services/medalService.js — medal definitions + unlock/progress logic for
+// Trader Settings → Badges & Medals. Extracted from server.js so the pure
+// logic (streaks, thresholds, payload shaping) is unit-testable without a
+// database; the route in server.js only wires I/O (Supabase + user_badges).
+//
+// Model: compute-on-read. Progress is always derived from source-of-truth
+// data (trades/users) at request time — nothing accumulates, so a missed
+// trigger event can never silently drop a medal's progress. Earned medals
+// persist to user_badges (is_unlocked + unlocked_at) and are skipped on
+// recompute, so a medal can never regress from earned back to locked.
+
+// ── Streak logic (Every Damn Day) ───────────────────────────────────────
+// Derives the longest run of consecutive days with 1+ completed trade from
+// real trade data — no separate daily-activity tracking needed. The streak
+// counts *calendar days* in the UTC day-bucket of each trade's completed_at,
+// so a single trade any time during a day keeps the day "active".
+//
+// Returns the streak that matters for a 30-day target: the LONGEST run in
+// the user's history (not the current run), so progress never regresses —
+// a user who hit 12 days in a row, missed a day, then did 5 more days still
+// shows 12/30, not 5/30. A medal earned off the longest streak stays earned
+// forever because longest-streak can only grow over time.
+function longestDailyStreak(completedTrades) {
+  if (!Array.isArray(completedTrades) || completedTrades.length === 0) return 0;
+  const days = new Set();
+  for (const t of completedTrades) {
+    const ts = t?.completed_at;
+    if (!ts) continue;
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) continue;
+    days.add(d.toISOString().slice(0, 10)); // UTC day bucket, e.g. '2026-09-14'
+  }
+  if (days.size === 0) return 0;
+  const sorted = [...days].sort();
+  let best = 1;
+  let run = 1;
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = new Date(`${sorted[i - 1]}T00:00:00Z`).getTime();
+    const curr = new Date(`${sorted[i]}T00:00:00Z`).getTime();
+    run = curr - prev === 86400000 ? run + 1 : 1; // consecutive UTC day → extend, else reset
+    if (run > best) best = run;
+  }
+  return best;
+}
+
+// ── Pure per-medal checks (operating on stats) ──────────────────────────
+// Each definition: id, name, description, icon (filename in frontend/public/),
+// isUnlocked(stats), and optional progress(stats) → { current, target } for
+// locked medals, or null when earned / not tracked. All numeric thresholds
+// are real data only — no hardcoded/fabricated stats.
+// Minimum completed trades before a volume-based medal (Deca Dealer, Top 1% Club) can be earned.
+const MIN_TRADES_FOR_VOLUME_MEDALS = 10;
+
+const MEDAL_CHECKS = {
+  'praqen-initiate': {
+    progress: s => (s.totalTrades >= 10 ? null : { current: Math.min(s.totalTrades, 10), target: 10 }),
+    isUnlocked: s => s.totalTrades >= 10,
+  },
+  // Volume medals also need 10 completed trades, so one big trade alone cannot earn them.
+  'deca-dealer': {
+    progress: s => (s.totalVolumeUsd < 10000
+      ? { current: Math.floor(s.totalVolumeUsd), target: 10000 }
+      : (s.totalTrades < MIN_TRADES_FOR_VOLUME_MEDALS ? { current: s.totalTrades, target: MIN_TRADES_FOR_VOLUME_MEDALS } : null)),
+    isUnlocked: s => s.totalVolumeUsd >= 10000 && s.totalTrades >= MIN_TRADES_FOR_VOLUME_MEDALS,
+  },
+  'momo-master': {
+    progress: s => (s.momoTrades >= 100 ? null : { current: s.momoTrades, target: 100 }),
+    isUnlocked: s => s.momoTrades >= 100,
+  },
+  'bank-transfer-boss': {
+    progress: s => (s.bankTrades >= 25 ? null : { current: s.bankTrades, target: 25 }),
+    isUnlocked: s => s.bankTrades >= 25,
+  },
+  'gift-card-savage': {
+    progress: s => (s.giftCardTrades >= 10 ? null : { current: s.giftCardTrades, target: 10 }),
+    isUnlocked: s => s.giftCardTrades >= 10,
+  },
+  'clean-sheet': {
+    // `disputed_at` stays stamped on resolved disputes too, so a
+    // resolved-against-you dispute still counts against the medal.
+    progress: s => (s.totalTrades >= 20 && s.disputeCount === 0 ? null : { current: Math.max(0, Math.min(s.totalTrades, 20)), target: 20 }),
+    isUnlocked: s => s.totalTrades >= 20 && s.disputeCount === 0,
+  },
+  'no-slip-zone': {
+    progress: s => (s.totalTrades >= 15 && s.cancelledCount === 0 ? null : { current: Math.max(0, Math.min(s.totalTrades, 15)), target: 15 }),
+    isUnlocked: s => s.totalTrades >= 15 && s.cancelledCount === 0,
+  },
+  'every-damn-day': {
+    progress: s => (s.dailyStreak >= 30 ? null : { current: s.dailyStreak, target: 30 }),
+    isUnlocked: s => s.dailyStreak >= 30,
+  },
+  'the-og': {
+    progress: s => {
+      if (!s.registeredAt) return null;
+      const days = (Date.now() - new Date(s.registeredAt).getTime()) / 86400000;
+      return days >= 365 ? null : { current: Math.floor(days), target: 365 };
+    },
+    isUnlocked: s => !!s.registeredAt && (Date.now() - new Date(s.registeredAt).getTime()) >= 365 * 86400000,
+  },
+  // Ranking-based, not a fixed target: percentile is computed live
+  // server-side over all users' completed-trade volume (never exposed via
+  // admin endpoints). No progress line — a percentile isn't meaningfully
+  // fraction-able. Once earned it persists like every other medal.
+  'top-1-club': {
+    isUnlocked: s => s.volumePercentile >= 99 && s.totalTrades >= MIN_TRADES_FOR_VOLUME_MEDALS,
+  },
+};
+
+const MEDAL_META = {
+  'praqen-initiate': { name: 'PraQen Initiate', description: 'First 10 trades', icon: '/praqen-initiate.jpg' },
+  'deca-dealer': { name: 'Deca Dealer', description: 'Trade volume of 10,000 USD', icon: '/deca-dealer.jpg' },
+  'momo-master': { name: 'Momo Master', description: '100+ mobile money trades', icon: '/momo-master.jpg' },
+  'bank-transfer-boss': { name: 'Bank Transfer Boss', description: '25+ bank transfer trades', icon: '/bank-transfer-boss.jpg' },
+  'gift-card-savage': { name: 'Gift Card Savage', description: '10+ gift card trades', icon: '/gift-card-savage.jpg' },
+  'clean-sheet': { name: 'Clean Sheet', description: 'Complete 20 trades, zero disputes', icon: '/clean-sheet.jpg' },
+  'no-slip-zone': { name: 'No Slip Zone', description: 'Complete 15 trades, zero cancellations', icon: '/no-slip-zone.jpg' },
+  'every-damn-day': { name: 'Every Damn Day', description: '1+ trade per day for 30 days', icon: '/every-damn-day.jpg' },
+  'the-og': { name: 'The OG', description: '1+ year on PraQen', icon: '/the-og.jpg' },
+  'top-1-club': { name: 'Top 1% Club', description: 'Top 1% of traders by volume', icon: '/top-1-club.jpg' },
+};
+
+// Display order for the grid.
+const MEDAL_ORDER = [
+  'praqen-initiate', 'deca-dealer', 'momo-master', 'bank-transfer-boss',
+  'gift-card-savage', 'clean-sheet', 'no-slip-zone', 'every-damn-day',
+  'the-og', 'top-1-club',
+];
+
+// Build API payloads from stats + earned-date map. Pure; exported for tests.
+function buildMedalPayloads(stats, earnedDateByMedalId = {}) {
+  return MEDAL_ORDER.map(id => {
+    const def = MEDAL_CHECKS[id];
+    const meta = MEDAL_META[id];
+    const earnedDate = earnedDateByMedalId[id] || null;
+    // Earned medals never re-derive progress (immutable once earned); the
+    // frontend hides the progress line for earnedDate rows and shows the
+    // formatted earned date instead.
+    const prog = earnedDate ? null : (def.progress ? def.progress(stats) : null);
+    return {
+      id,
+      name: meta.name,
+      description: meta.description,
+      icon: meta.icon,
+      earnedDate,
+      progressCurrent: prog?.current ?? null,
+      progressTarget: prog?.target ?? null,
+    };
+  });
+}
+
+// Which medal ids does this stats object newly qualify for? Pure; exported
+// for tests. Callers skip ids already recorded in user_badges.
+function newlyEarnedMedalIds(stats, alreadyEarnedIds = []) {
+  const already = new Set(alreadyEarnedIds);
+  return MEDAL_ORDER.filter(id => !already.has(id) && MEDAL_CHECKS[id].isUnlocked(stats));
+}
+
+// ── Volume ranking (Top 1% Club) ────────────────────────────────────────
+// Real trades only: test trades never count. Each trade's USD value is credited to both
+// sides (buyer and seller). Pure, so it can be unit-tested with plain numbers.
+function volumesByUser(trades) {
+  const vol = {};
+  for (const t of trades || []) {
+    if (!t || t.is_test === true) continue;
+    const usd = parseFloat(t.amount_usd || 0);
+    if (!(usd > 0)) continue;
+    if (t.buyer_id) vol[t.buyer_id] = (vol[t.buyer_id] || 0) + usd;
+    if (t.seller_id && t.seller_id !== t.buyer_id) vol[t.seller_id] = (vol[t.seller_id] || 0) + usd;
+  }
+  return vol;
+}
+
+// Percentile (0-100) of one user's volume among everyone who has traded. 100 = the top trader.
+function percentileFromVolumes(volByUser, userId) {
+  const myVol = volByUser[userId] || 0;
+  if (myVol <= 0) return 0;
+  const all = Object.values(volByUser);
+  if (all.length <= 1) return 100;
+  const ranked = all.sort((x, y) => y - x);
+  const myRank = ranked.findIndex((v) => v <= myVol) + 1;
+  if (myRank === 0) return 0;
+  return Math.round(100 * (1 - (myRank - 1) / all.length));
+}
+
+// ── Payment-method matching ─────────────────────────────────────────────
+// Mobile-network money: MTN, Vodafone / Telecel, AirtelTigo / Airtel, Orange, Moov, Wave, M-Pesa, T-Money.
+// (Bank apps such as Opay, Moniepoint or Paga are NOT mobile-network money and are not matched here.)
+const MOMO_RE = /momo|m-?pesa|mtn|vodafone|telecel|airtel|tigo|orange.?money|moov|t-?money|\bwave\b|mobile.?money/i;
+const BANK_RE = /bank/i;
+const isMomoPayment = (pm) => MOMO_RE.test(pm || '');
+const isBankPayment = (pm) => BANK_RE.test(pm || '');
+const isGiftCardRow = (t) => !!(t && ((t.gift_card_brand && String(t.gift_card_brand).trim()) || String(t.listing?.listing_type || '').toUpperCase().includes('GIFT_CARD')));
+
+// How medals look in the market: most prestigious first.
+const MEDAL_PRESTIGE = [
+  'top-1-club', 'the-og', 'deca-dealer', 'every-damn-day', 'momo-master',
+  'bank-transfer-boss', 'gift-card-savage', 'clean-sheet', 'no-slip-zone', 'praqen-initiate',
+];
+
+// ── When was a medal really earned? ─────────────────────────────────────
+// Used so the first-day awards carry the real date the user crossed the line (the day of
+// their 10th trade, the day their volume passed $10,000, ...) instead of "today".
+// `completed` = the user's completed real trades. Returns an ISO string, or null if it cannot tell.
+function earnedAtForMedal(medalId, completed, registeredAt, now = new Date()) {
+  const trades = (completed || [])
+    .filter((t) => t && t.completed_at && !isNaN(new Date(t.completed_at).getTime()))
+    .sort((x, y) => new Date(x.completed_at) - new Date(y.completed_at));
+  const nth = (list, n) => (list.length >= n ? list[n - 1].completed_at : null);
+  let at = null;
+  switch (medalId) {
+    case 'praqen-initiate': at = nth(trades, 10); break;
+    case 'no-slip-zone': at = nth(trades, 15); break;
+    case 'clean-sheet': at = nth(trades, 20); break;
+    case 'momo-master': at = nth(trades.filter((t) => isMomoPayment(t.payment_method)), 100); break;
+    case 'bank-transfer-boss': at = nth(trades.filter((t) => isBankPayment(t.payment_method)), 25); break;
+    case 'gift-card-savage': at = nth(trades.filter(isGiftCardRow), 10); break;
+    case 'deca-dealer': {
+      let sum = 0;
+      let crossed = null;
+      for (const t of trades) { sum += parseFloat(t.amount_usd || 0); if (sum >= 10000) { crossed = t.completed_at; break; } }
+      const tenth = nth(trades, MIN_TRADES_FOR_VOLUME_MEDALS);
+      at = crossed && tenth ? (new Date(crossed) > new Date(tenth) ? crossed : tenth) : null;
+      break;
+    }
+    case 'every-damn-day': {
+      const days = [...new Set(trades.map((t) => new Date(t.completed_at).toISOString().slice(0, 10)))].sort();
+      let run = 1;
+      if (days.length >= 30) {
+        for (let i = 1; i < days.length; i++) {
+          run = new Date(days[i] + 'T00:00:00Z') - new Date(days[i - 1] + 'T00:00:00Z') === 86400000 ? run + 1 : 1;
+          if (run >= 30) { at = days[i] + 'T23:59:59.000Z'; break; }
+        }
+      }
+      break;
+    }
+    case 'the-og': at = registeredAt ? new Date(new Date(registeredAt).getTime() + 365 * 86400000).toISOString() : null; break;
+    default: at = null;
+  }
+  if (!at) return null;
+  const d = new Date(at);
+  if (isNaN(d.getTime())) return null;
+  return (d > now ? now : d).toISOString(); // never a date in the future
+}
+
+module.exports = {
+  longestDailyStreak,
+  volumesByUser,
+  percentileFromVolumes,
+  MIN_TRADES_FOR_VOLUME_MEDALS,
+  isMomoPayment,
+  isBankPayment,
+  isGiftCardRow,
+  MEDAL_PRESTIGE,
+  earnedAtForMedal,
+  MEDAL_CHECKS,
+  MEDAL_META,
+  MEDAL_ORDER,
+  buildMedalPayloads,
+  newlyEarnedMedalIds,
+};

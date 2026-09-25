@@ -34,12 +34,17 @@ function formatFromAddress(address) {
 }
 
 function getResendFromAddress(role = 'notifications') {
+  if (process.env.RESEND_FROM) return process.env.RESEND_FROM;
   const configured = role === 'support'
-    ? process.env.EMAIL_FROM_SUPPORT
+    ? (process.env.EMAIL_FROM_SUPPORT || process.env.EMAIL_FROM_NOTIFICATIONS)
     : process.env.EMAIL_FROM_NOTIFICATIONS;
 
-  if (process.env.RESEND_FROM) return process.env.RESEND_FROM;
-  return formatFromAddress(configured || process.env.SMTP_FROM || process.env.EMAIL_USER || DEFAULT_FROM_ADDRESS);
+  if (configured) return formatFromAddress(configured);
+  if (process.env.SMTP_FROM || process.env.EMAIL_USER) {
+    return formatFromAddress(process.env.SMTP_FROM || process.env.EMAIL_USER);
+  }
+  // Same default the code always used. (resend.dev is only a sandbox sender that delivers to the account owner.)
+  return formatFromAddress(DEFAULT_FROM_ADDRESS);
 }
 
 function getTestOverrideEmail() {
@@ -54,14 +59,16 @@ function getTestOverrideEmail() {
 let _transporter = null;
 function getTransporter() {
   if (_transporter) return _transporter;
+  const user = process.env.SMTP_USER || process.env.EMAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
+  const host = process.env.SMTP_HOST || (user && user.includes('gmail') ? 'smtp.gmail.com' : 'smtp-relay.brevo.com');
+  const port = parseInt(process.env.SMTP_PORT || '587', 10);
+
   _transporter = nodemailer.createTransport({
-    host:   process.env.SMTP_HOST || 'smtp-relay.brevo.com',
-    port:   parseInt(process.env.SMTP_PORT || '587', 10),
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
+    host,
+    port,
+    secure: port === 465,
+    auth: user && pass ? { user, pass } : undefined,
     tls: { rejectUnauthorized: false },
     pool: true,
     maxConnections: 5,
@@ -131,8 +138,9 @@ async function sendEmail({ userId, to, subject, html, type, metadata, fromRole =
     console.warn(`[Email] Resend not configured — skipping to Brevo for ${type} → ${effectiveRecipient}`);
   }
 
-  // ── Attempt 2: Brevo SMTP fallback ───────────────────────────────────────
-  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+  // ── Attempt 2: SMTP fallback ───────────────────────────────────────────────
+  const hasSmtp = (process.env.SMTP_USER && process.env.SMTP_PASS) || (process.env.EMAIL_USER && process.env.EMAIL_PASS);
+  if (hasSmtp) {
     try {
       const transporter = getTransporter();
       // Pooled connections (pool:true, maxConnections:5) can occasionally end up in a
@@ -356,26 +364,36 @@ function depositAlertHtml(name, amountBtc, txHash) {
 }
 
 function tradeOpenedHtml(name, trade, role) {
-  const isBuyer  = role === 'buyer';
+  const isBuyer = role === 'buyer';
+  const isUsdt = trade.currency === 'USDT';
+  const assetLabel = isUsdt ? 'USDT' : 'BTC';
+  const qtyFormatted = isUsdt
+    ? `₮${parseFloat(trade.amount_btc || trade.amount_usdt || 0).toFixed(2)} USDT`
+    : `₿${parseFloat(trade.amount_btc || 0).toFixed(8)} BTC`;
+
   const headline = isBuyer ? 'Trade Opened — Send Your Payment' : 'New Trade Request Received';
-  const detail   = isBuyer
-    ? `You have opened a trade and <strong>${parseFloat(trade.amount_btc || 0).toFixed(8)} BTC</strong> is locked safely in escrow. Send your payment now to complete the trade.`
-    : `A buyer wants to trade with you. <strong>${parseFloat(trade.amount_btc || 0).toFixed(8)} BTC</strong> is locked in escrow — you'll be notified once payment is sent.`;
+  const detail = isBuyer
+    ? `You have opened a trade and <strong>${qtyFormatted}</strong> is locked safely in escrow. Send your payment now to complete the trade.`
+    : `A buyer wants to trade with you. <strong>${qtyFormatted}</strong> is locked in escrow — you'll be notified once payment is sent.`;
+
   const payDisp = (() => {
-    const fmt = n => new Intl.NumberFormat('en-US', {maximumFractionDigits:0}).format(n||0);
+    const fmt = n => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(n || 0);
     if (trade.amount_local > 0 && trade.local_currency)
       return `${trade.currency_symbol || ''}${fmt(trade.amount_local)} ${trade.local_currency}`;
     if (trade.amount_usd > 0) return `$${parseFloat(trade.amount_usd).toFixed(2)} USD`;
     return '—';
   })();
+
+  const tradeRefStr = (trade.trade_ref || trade.id || '').toString().slice(0, 10).toUpperCase();
+
   return base(headline, `
     <h2 style="color:#10b981;font-size:20px;margin:0 0 8px;">${headline}</h2>
     <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>! ${detail}</p>
     ${infoBox(`
       <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Trade Ref</td>
-          <td style="padding:7px 0;text-align:right;"><span style="background:#10b981;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;">#${(trade.trade_ref||trade.id||'').toString().slice(0,8).toUpperCase()}</span></td></tr>
-      <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Amount (BTC)</td>
-          <td style="padding:7px 0;color:#059669;font-size:18px;font-weight:900;text-align:right;">₿ ${parseFloat(trade.amount_btc||0).toFixed(8)}</td></tr>
+          <td style="padding:7px 0;text-align:right;"><span style="background:#10b981;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;">#${tradeRefStr}</span></td></tr>
+      <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Amount (${assetLabel})</td>
+          <td style="padding:7px 0;color:#059669;font-size:18px;font-weight:900;text-align:right;">${qtyFormatted}</td></tr>
       <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Amount (Fiat)</td>
           <td style="padding:7px 0;color:#1B4332;font-size:13px;font-weight:700;text-align:right;">${payDisp}</td></tr>
       <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Payment Method</td>
@@ -384,7 +402,7 @@ function tradeOpenedHtml(name, trade, role) {
           <td style="padding:7px 0;color:#1B4332;font-size:13px;text-align:right;text-transform:capitalize;">${role}</td></tr>
     `)}
     ${ctaButton('View Trade →', `https://praqen.com/trade/${trade.id}`)}
-    ${warningBox('Bitcoin is secured in <b>PraQen</b> escrow until you confirm payment')}
+    ${warningBox(`${assetLabel} is secured in <b>PraQen</b> escrow until payment is confirmed`)}
   `);
 }
 
@@ -953,14 +971,21 @@ async function sendAccountBannedEmail(user, reason) {
 }
 
 async function sendTradeOpenedEmail(user, trade, role) {
-  const subjectBuyer  = `Trade Opened — Send Payment to Get ₿${parseFloat(trade.amount_btc||0).toFixed(8)}`;
-  const subjectSeller = `New Trade — ₿${parseFloat(trade.amount_btc||0).toFixed(8)} Locked in Escrow`;
+  const isUsdt = trade.currency === 'USDT';
+  const qtyStr = isUsdt
+    ? `₮${parseFloat(trade.amount_btc || trade.amount_usdt || 0).toFixed(2)} USDT`
+    : `₿${parseFloat(trade.amount_btc || 0).toFixed(8)} BTC`;
+  const refStr = (trade.trade_ref || trade.id || '').toString().slice(0, 10).toUpperCase();
+
+  const subjectBuyer = `Trade Opened — Send Payment for #${refStr} (${qtyStr})`;
+  const subjectSeller = `New Trade Request — #${refStr} (${qtyStr}) Locked in Escrow`;
+
   return sendEmail({
-    userId:   user.id,
-    to:       user.email,
-    subject:  role === 'buyer' ? subjectBuyer : subjectSeller,
-    html:     tradeOpenedHtml(user.username || 'Trader', trade, role),
-    type:     'trade_opened',
+    userId: user.id,
+    to: user.email,
+    subject: role === 'buyer' ? subjectBuyer : subjectSeller,
+    html: tradeOpenedHtml(user.username || 'Trader', trade, role),
+    type: 'trade_opened',
     metadata: { trade_id: trade.id, trade_ref: trade.trade_ref, role },
   });
 }
