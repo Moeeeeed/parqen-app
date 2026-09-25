@@ -312,3 +312,49 @@ describe('sweep / first-day backfill', () => {
     assert.strictEqual(db.tables.notifications.length, before);
   });
 });
+
+describe('accounts under review (hold list)', () => {
+  it('RainBow68 / rainbow68-Pro are held (any capitalisation); others are not', () => {
+    assert.ok(award.isHeld({ username: 'RainBow68' }));
+    assert.ok(award.isHeld({ username: 'rainbow68-Pro' }));
+    assert.ok(!award.isHeld({ username: 'oshobtc' }));
+    assert.ok(!award.isHeld({}));
+    assert.ok(!award.isHeld(null));
+  });
+  it('MEDALS_HOLD_USERNAMES adds more names', () => {
+    process.env.MEDALS_HOLD_USERNAMES = ' Someone , other ';
+    assert.ok(award.isHeld({ username: 'someone' }));
+    assert.ok(award.isHeld({ username: 'OTHER' }));
+    delete process.env.MEDALS_HOLD_USERNAMES;
+    assert.ok(!award.isHeld({ username: 'someone' }));
+  });
+  it('a held account is awarded nothing and told nothing, even when it qualifies', async () => {
+    const db = fakeDb({ users: [mkUser('h1', { username: 'RainBow68' })], trades: Array.from({ length: 12 }, (_, i) => trade('h1', i)), user_badges: [], notifications: [] });
+    const r = await award.evaluateUser('h1', { persist: true, notify: true, supabase: db, pushFn, percentile: 0 });
+    assert.deepStrictEqual(r.newlyAwarded, []);
+    assert.deepStrictEqual(r.earned, []);
+    assert.strictEqual(db.tables.user_badges.length, 0);
+    assert.strictEqual(db.tables.notifications.length, 0);
+  });
+  it('a held account keeps medals it already had (nothing is taken away)', async () => {
+    const db = fakeDb({ users: [mkUser('h1', { username: 'rainbow68-pro' })], trades: Array.from({ length: 12 }, (_, i) => trade('h1', i)), user_badges: [{ id: 'b', user_id: 'h1', badge_name: 'praqen-initiate', is_unlocked: true, unlocked_at: day(9) }], notifications: [] });
+    const r = await award.evaluateUser('h1', { persist: true, notify: true, supabase: db, pushFn, percentile: 0 });
+    assert.deepStrictEqual(r.earned.map((e) => e.id), ['praqen-initiate']);
+    assert.strictEqual(db.tables.user_badges[0].is_unlocked, true);
+  });
+  it('the sweep skips held accounts and lists them; released later they get their medals', async () => {
+    const mk = () => fakeDb({ users: [mkUser('h1', { username: 'RainBow68' }), mkUser('u1', { username: 'ok1' })], trades: [...Array.from({ length: 10 }, (_, i) => trade('h1', i, { seller_id: 'x' })), ...Array.from({ length: 10 }, (_, i) => trade('u1', i, { seller_id: 'x' }))], user_badges: [], notifications: [] });
+    const r = await award.runSweep({ apply: false, supabase: mk(), pushFn });
+    assert.deepStrictEqual(r.awards.map((a) => a.username), ['ok1']);
+    assert.deepStrictEqual(r.skippedHeld.map((h) => h.username), ['RainBow68']);
+    process.env.MEDALS_AUTO_ENABLED = 'true';
+    const applied = await award.runSweep({ apply: true, notify: true, supabase: mk(), pushFn });
+    assert.deepStrictEqual(applied.awards.map((a) => a.username), ['ok1']);
+    delete process.env.MEDALS_AUTO_ENABLED;
+  });
+  it('sweep: a one-trade $15k user gets neither Deca Dealer nor Top 1%', async () => {
+    const db = fakeDb({ users: [mkUser('big', { username: 'bigone' })], trades: [trade('big', 0, { amount_usd: 15388, seller_id: 'x' })], user_badges: [], notifications: [] });
+    const r = await award.runSweep({ apply: false, supabase: db, pushFn });
+    assert.deepStrictEqual(r.awards, []);
+  });
+});

@@ -24,7 +24,8 @@ const wantJson = process.argv.includes('--json');
   r.awards.forEach((a) => a.medals.forEach((m) => { perMedal[m] = (perMedal[m] || 0) + 1; }));
   console.log('Per medal:', perMedal);
   console.log(`Banned/frozen accounts losing medals: ${r.revoked.length}`);
-  console.log(`Banned/frozen accounts skipped (would have qualified by activity): ${r.skippedRestricted.length}\n`);
+  console.log(`Banned/frozen accounts skipped (would have qualified by activity): ${r.skippedRestricted.length}`);
+  console.log(`Held (under review) accounts skipped: ${(r.skippedHeld || []).map((h) => h.username).join(', ') || 'none'}\n`);
   r.awards.forEach((a) => {
     const s = a.stats;
     console.log(` + ${a.username}: ${a.medals.map((m) => ms.MEDAL_META[m].name).join(', ')}`);

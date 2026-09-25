@@ -48,14 +48,20 @@ function longestDailyStreak(completedTrades) {
 // isUnlocked(stats), and optional progress(stats) → { current, target } for
 // locked medals, or null when earned / not tracked. All numeric thresholds
 // are real data only — no hardcoded/fabricated stats.
+// Minimum completed trades before a volume-based medal (Deca Dealer, Top 1% Club) can be earned.
+const MIN_TRADES_FOR_VOLUME_MEDALS = 10;
+
 const MEDAL_CHECKS = {
   'praqen-initiate': {
     progress: s => (s.totalTrades >= 10 ? null : { current: Math.min(s.totalTrades, 10), target: 10 }),
     isUnlocked: s => s.totalTrades >= 10,
   },
+  // Volume medals also need 10 completed trades, so one big trade alone cannot earn them.
   'deca-dealer': {
-    progress: s => (s.totalVolumeUsd >= 10000 ? null : { current: Math.floor(s.totalVolumeUsd), target: 10000 }),
-    isUnlocked: s => s.totalVolumeUsd >= 10000,
+    progress: s => (s.totalVolumeUsd < 10000
+      ? { current: Math.floor(s.totalVolumeUsd), target: 10000 }
+      : (s.totalTrades < MIN_TRADES_FOR_VOLUME_MEDALS ? { current: s.totalTrades, target: MIN_TRADES_FOR_VOLUME_MEDALS } : null)),
+    isUnlocked: s => s.totalVolumeUsd >= 10000 && s.totalTrades >= MIN_TRADES_FOR_VOLUME_MEDALS,
   },
   'momo-master': {
     progress: s => (s.momoTrades >= 100 ? null : { current: s.momoTrades, target: 100 }),
@@ -96,7 +102,7 @@ const MEDAL_CHECKS = {
   // admin endpoints). No progress line — a percentile isn't meaningfully
   // fraction-able. Once earned it persists like every other medal.
   'top-1-club': {
-    isUnlocked: s => s.volumePercentile >= 99,
+    isUnlocked: s => s.volumePercentile >= 99 && s.totalTrades >= MIN_TRADES_FOR_VOLUME_MEDALS,
   },
 };
 
@@ -210,7 +216,10 @@ function earnedAtForMedal(medalId, completed, registeredAt, now = new Date()) {
     case 'gift-card-savage': at = nth(trades.filter(isGiftCardRow), 10); break;
     case 'deca-dealer': {
       let sum = 0;
-      for (const t of trades) { sum += parseFloat(t.amount_usd || 0); if (sum >= 10000) { at = t.completed_at; break; } }
+      let crossed = null;
+      for (const t of trades) { sum += parseFloat(t.amount_usd || 0); if (sum >= 10000) { crossed = t.completed_at; break; } }
+      const tenth = nth(trades, MIN_TRADES_FOR_VOLUME_MEDALS);
+      at = crossed && tenth ? (new Date(crossed) > new Date(tenth) ? crossed : tenth) : null;
       break;
     }
     case 'every-damn-day': {
@@ -237,6 +246,7 @@ module.exports = {
   longestDailyStreak,
   volumesByUser,
   percentileFromVolumes,
+  MIN_TRADES_FOR_VOLUME_MEDALS,
   isMomoPayment,
   isBankPayment,
   isGiftCardRow,

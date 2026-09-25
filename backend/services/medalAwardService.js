@@ -23,6 +23,15 @@ const MEDAL_IDS = ms.MEDAL_ORDER;
 const EXPIRY_REASON_RE = /expir|time limit|payment window/i;
 const VOLUME_TTL_MS = 10 * 60 * 1000;
 
+// Accounts under review: no new medals are awarded (and none are taken away) until they are released.
+// Add usernames with the MEDALS_HOLD_USERNAMES setting (comma separated), or edit this list and redeploy.
+const HELD_USERNAMES = ['rainbow68', 'rainbow68-pro'];
+function isHeld(user) {
+  const extra = String(process.env.MEDALS_HOLD_USERNAMES || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+  const name = String((user && user.username) || '').trim().toLowerCase();
+  return !!name && (HELD_USERNAMES.includes(name) || extra.includes(name));
+}
+
 function medalsAutoEnabled() {
   return process.env.MEDALS_AUTO_ENABLED === 'true';
 }
@@ -172,6 +181,7 @@ async function evaluateUser(userId, opts = {}) {
     }
 
     const stats = await computeStats(supabase, user, completed, { percentile });
+    const held = isHeld(user);
     const { data: rows } = await supabase.from('user_badges')
       .select('badge_name, is_unlocked, unlocked_at').eq('user_id', userId).in('badge_name', MEDAL_IDS);
     const saved = {};
@@ -183,6 +193,7 @@ async function evaluateUser(userId, opts = {}) {
     for (const id of MEDAL_IDS) {
       if (saved[id]) { earned.push({ id, earnedAt: saved[id] }); continue; }
       if (!qualifies.includes(id)) continue;
+      if (held) continue; // under review: nothing new is awarded or shown as earned
       const at = ms.earnedAtForMedal(id, completed, user.created_at, now) || now.toISOString();
       if (persist) {
         const won = await saveMedal(supabase, userId, id, at, (rows || []).find((r) => r.badge_name === id));
@@ -194,7 +205,7 @@ async function evaluateUser(userId, opts = {}) {
       }
       earned.push({ id, earnedAt: at });
     }
-    return { user, restricted: false, stats, earned, newlyAwarded, revoked: 0 };
+    return { user, restricted: false, held, stats, earned, newlyAwarded, revoked: 0 };
   });
 }
 
@@ -279,6 +290,7 @@ async function previewSweep(supabase, now = new Date()) {
   const awards = [];
   const revoked = [];
   const skippedRestricted = [];
+  const skippedHeld = [];
   let checked = 0;
   const cutoff = now.getTime() - 365 * 86400000;
   for (const u of users) {
@@ -291,6 +303,7 @@ async function previewSweep(supabase, now = new Date()) {
       continue;
     }
     if (!completed.length && !old) continue;
+    if (isHeld(u)) { skippedHeld.push({ userId: u.id, username: u.username }); continue; }
     checked++;
     const stats = statsFromParts(u, completed, disputes.get(u.id) || 0, cancels.get(u.id) || 0, ms.percentileFromVolumes(index, u.id));
     const qualifies = ms.newlyEarnedMedalIds(stats, []);
@@ -302,7 +315,7 @@ async function previewSweep(supabase, now = new Date()) {
       });
     }
   }
-  return { candidates: checked, awards, revoked, skippedRestricted };
+  return { candidates: checked, awards, revoked, skippedRestricted, skippedHeld };
 }
 
 // apply=false is a DRY RUN: it saves nothing and notifies nobody, and returns what would happen.
@@ -324,7 +337,7 @@ async function runSweep({ apply = false, notify = true, supabase = defaultSupaba
       console.error(`[medals] sweep failed for ${String(a.userId).slice(0, 8)}:`, e.message);
     }
   }
-  return { apply, candidates: plan.candidates, awards, revoked: plan.revoked, skippedRestricted: plan.skippedRestricted };
+  return { apply, candidates: plan.candidates, awards, revoked: plan.revoked, skippedRestricted: plan.skippedRestricted, skippedHeld: plan.skippedHeld };
 }
 
 // Daily job (only when MEDALS_AUTO_ENABLED=true).
@@ -342,6 +355,7 @@ function startDailySweep({ intervalMs = 24 * 60 * 60 * 1000, firstDelayMs = 10 *
 module.exports = {
   medalsAutoEnabled,
   isRestricted,
+  isHeld,
   fetchAllRows,
   getVolumeIndex,
   _clearVolumeCache,

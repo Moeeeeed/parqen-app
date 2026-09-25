@@ -13,6 +13,8 @@ const {
   newlyEarnedMedalIds,
   MEDAL_ORDER,
   MEDAL_META,
+  MIN_TRADES_FOR_VOLUME_MEDALS,
+  earnedAtForMedal,
 } = require('../services/medalService');
 
 // ── Seeded mock stats factory ───────────────────────────────────────────
@@ -100,9 +102,33 @@ describe('medal unlock thresholds', () => {
     assert.ok(earned({ ...baseStats(), totalTrades: 50 }, 'praqen-initiate'));
   });
 
-  it('deca-dealer unlocks at exactly 10,000 USD volume', () => {
-    assert.deepStrictEqual(newlyEarnedMedalIds({ ...baseStats(), totalVolumeUsd: 9999.99 }), []);
-    assert.ok(earned({ ...baseStats(), totalVolumeUsd: 10000 }, 'deca-dealer'));
+  it('deca-dealer unlocks at exactly 10,000 USD volume (with at least 10 trades)', () => {
+    assert.ok(!earned({ ...baseStats(), totalTrades: 50, totalVolumeUsd: 9999.99 }, 'deca-dealer'));
+    assert.ok(earned({ ...baseStats(), totalTrades: 10, totalVolumeUsd: 10000 }, 'deca-dealer'));
+  });
+
+  it('deca-dealer and top-1-club need 10 completed trades: one big trade is not enough', () => {
+    assert.ok(!earned({ ...baseStats(), totalTrades: 1, totalVolumeUsd: 15388, volumePercentile: 99 }, 'deca-dealer'));
+    assert.ok(!earned({ ...baseStats(), totalTrades: 5, totalVolumeUsd: 17933, volumePercentile: 100 }, 'top-1-club'));
+    assert.ok(!earned({ ...baseStats(), totalTrades: 9, totalVolumeUsd: 20000, volumePercentile: 100 }, 'deca-dealer'));
+    assert.ok(earned({ ...baseStats(), totalTrades: 10, totalVolumeUsd: 20000, volumePercentile: 100 }, 'deca-dealer'));
+    assert.ok(earned({ ...baseStats(), totalTrades: 10, totalVolumeUsd: 20000, volumePercentile: 100 }, 'top-1-club'));
+    assert.strictEqual(MIN_TRADES_FOR_VOLUME_MEDALS, 10);
+  });
+
+  it('deca-dealer with enough volume but too few trades shows trade progress, not "done"', () => {
+    const m = buildMedalPayloads({ ...baseStats(), totalTrades: 4, totalVolumeUsd: 12000 }, {}).find((x) => x.id === 'deca-dealer');
+    assert.strictEqual(m.earnedDate, null);
+    assert.strictEqual(m.progressCurrent, 4);
+    assert.strictEqual(m.progressTarget, 10);
+  });
+
+  it('deca-dealer earned date is the later of "passed $10,000" and "10th trade"', () => {
+    const t = (i, amt) => ({ completed_at: new Date(Date.UTC(2026, 5, 1 + i)).toISOString(), amount_usd: amt });
+    const big = [t(0, 12000), ...Array.from({ length: 11 }, (_, i) => t(i + 1, 10))];
+    assert.strictEqual(earnedAtForMedal('deca-dealer', big, null), big[9].completed_at); // 10th trade came after the volume
+    const late = [...Array.from({ length: 10 }, (_, i) => t(i, 10)), t(10, 12000)];
+    assert.strictEqual(earnedAtForMedal('deca-dealer', late, null), late[10].completed_at); // volume crossed last
   });
 
   it('momo-master unlocks at exactly 100 momo trades', () => {
@@ -148,8 +174,8 @@ describe('medal unlock thresholds', () => {
 
   it('top-1-club unlocks at the 99th percentile (ranking-based)', () => {
     assert.deepStrictEqual(newlyEarnedMedalIds({ ...baseStats(), volumePercentile: 98.4 }), []);
-    assert.ok(earned({ ...baseStats(), volumePercentile: 99 }, 'top-1-club'));
-    assert.ok(earned({ ...baseStats(), volumePercentile: 100 }, 'top-1-club'));
+    assert.ok(earned({ ...baseStats(), totalTrades: 10, volumePercentile: 99 }, 'top-1-club'));
+    assert.ok(earned({ ...baseStats(), totalTrades: 10, volumePercentile: 100 }, 'top-1-club'));
   });
 
   it('a heavy trader earns many medals at once', () => {
