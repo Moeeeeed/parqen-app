@@ -9146,29 +9146,41 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
       });
     }
     // Fetch users before response to ensure email data is ready
-    const [buyerEmailRes, sellerEmailRes] = await Promise.allSettled([
-      supabaseAdmin.from('users').select('id, email, username').eq('id', buyerId).single(),
-      supabaseAdmin.from('users').select('id, email, username').eq('id', sellerId).single(),
-    ]);
-    const buyerEmailUser = buyerEmailRes.value?.data;
-    const sellerEmailUser = sellerEmailRes.value?.data;
+    let buyerEmailUser = null;
+    let sellerEmailUser = null;
+    try {
+      const [buyerEmailRes, sellerEmailRes] = await Promise.allSettled([
+        supabaseAdmin.from('users').select('id, email, username').eq('id', buyerId).maybeSingle(),
+        supabaseAdmin.from('users').select('id, email, username').eq('id', sellerId).maybeSingle(),
+      ]);
+      buyerEmailUser = buyerEmailRes.status === 'fulfilled' ? buyerEmailRes.value?.data : null;
+      sellerEmailUser = sellerEmailRes.status === 'fulfilled' ? sellerEmailRes.value?.data : null;
+    } catch (uErr) {
+      console.error('[TradeOpen] Failed to fetch buyer/seller for email:', uErr.message);
+    }
 
     // Invalidate marketplace cache so seller's reduced BTC balance shows immediately
     bustCache();
 
-    // Start both "trade opened" emails now, then give them a short, BOUNDED window to
-    // finish before responding. Normally they complete within that window, so delivery is
-    // dispatched before the response; if the mail provider is slow the trade still goes
-    // through on time (escrow is already locked) and the send simply finishes in the
-    // background. A failed email is logged and never fails the trade.
+    // Start both "trade opened" emails now, then give them a short, BOUNDED window to finish
     const openedEmailJobs = [];
     if (buyerEmailUser?.email) {
-      openedEmailJobs.push(emailService.sendTradeOpenedEmail(buyerEmailUser, trade[0], 'buyer').catch(e => console.error('[TradeOpen] buyer email:', e.message)));
+      console.log(`[TradeOpen] Sending buyer email to ${buyerEmailUser.email}`);
+      openedEmailJobs.push(
+        emailService.sendTradeOpenedEmail(buyerEmailUser, trade[0], 'buyer')
+          .catch(e => console.error('[TradeOpen] buyer email error:', e.message))
+      );
     }
     if (sellerEmailUser?.email) {
-      openedEmailJobs.push(emailService.sendTradeOpenedEmail(sellerEmailUser, trade[0], 'seller').catch(e => console.error('[TradeOpen] seller email:', e.message)));
+      console.log(`[TradeOpen] Sending seller email to ${sellerEmailUser.email}`);
+      openedEmailJobs.push(
+        emailService.sendTradeOpenedEmail(sellerEmailUser, trade[0], 'seller')
+          .catch(e => console.error('[TradeOpen] seller email error:', e.message))
+      );
     }
-    await settleWithin(Promise.allSettled(openedEmailJobs), TRADE_EMAIL_MAX_WAIT_MS);
+    if (openedEmailJobs.length > 0) {
+      await settleWithin(Promise.allSettled(openedEmailJobs), TRADE_EMAIL_MAX_WAIT_MS);
+    }
 
     res.json({ success: true, trade: trade[0], escrowAddress: escrowResult.escrowAddress, fee });
   } catch (error) {

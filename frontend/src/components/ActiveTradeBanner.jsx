@@ -1,7 +1,8 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../App';
+import { isGiftCardTrade } from '../utils/activeTradesCache';
 import { Timer, ArrowRight, Bell, X, Zap, Shield,
   User, Banknote, CreditCard, BarChart3, Unlock, ShoppingCart, Wallet, CheckCircle, Clock } from 'lucide-react';
 
@@ -32,15 +33,9 @@ const isActive = s => ACTIVE_STATUSES.has((s||'').toUpperCase());
 // Match a trade to the page it belongs on
 const matchesPage = (trade, page) => {
   if (!isActive(trade.status)) return false;
-  const isGC = !!(
-    trade.trade_type?.toUpperCase().includes('GIFT') ||
-    trade.listing?.listing_type?.toUpperCase().includes('GIFT')
-  );
-  if (isGC)        return page === 'gift-cards';
-  const type = (trade.trade_type || '').toUpperCase();
-  if (page === 'buy')  return type === 'BUY';
-  if (page === 'sell') return type === 'SELL';
-  return false;
+  const isGC = isGiftCardTrade(trade);
+  if (page === 'gift-cards') return isGC;
+  return !isGC;
 };
 
 // sessionStorage helpers — track which trade IDs have already been popped up
