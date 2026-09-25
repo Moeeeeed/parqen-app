@@ -5870,6 +5870,140 @@ app.post('/api/users/check-badges', verifyToken, async (req, res) => {
   }
 });
 
+// ============================================================
+// MEDALS — per-user achievement medals for Trader Settings → Badges & Medals
+// ============================================================
+// Definitions + unlock/progress logic live in services/medalService.js
+// (pure + unit-tested there); this section only wires I/O: Supabase reads,
+// user_badges persistence, and response shaping.
+const {
+  longestDailyStreak,
+  buildMedalPayloads,
+  newlyEarnedMedalIds,
+} = require('./services/medalService');
+
+// Reusable scan: all COMPLETED trades involving userId (for medal stats).
+// completed_at is included for the Every Damn Day daily-streak calculation.
+async function fetchCompletedTradesForMedals(userId) {
+  const { data, error } = await supabaseAdmin
+    .from('trades')
+    .select('buyer_id, seller_id, amount_usd, payment_method, completed_at, listing:listing_id(listing_type)')
+    .eq('status', 'COMPLETED')
+    .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`);
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
+// Rank every user by their completed-trade USD volume and return this user's
+// percentile. Computed live — other users' identities/volumes stay server-side.
+async function computeVolumePercentile(userId) {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('trades')
+      .select('buyer_id, seller_id, amount_usd')
+      .eq('status', 'COMPLETED');
+    if (error || !data?.length) return 0;
+    const volByUser = {};
+    for (const t of data) {
+      const usd = parseFloat(t.amount_usd || 0);
+      if (t.buyer_id) volByUser[t.buyer_id] = (volByUser[t.buyer_id] || 0) + usd;
+      if (t.seller_id && t.seller_id !== t.buyer_id) volByUser[t.seller_id] = (volByUser[t.seller_id] || 0) + usd;
+    }
+    const myVol = volByUser[userId] || 0;
+    const allUsers = Object.keys(volByUser).length;
+    if (allUsers <= 1) return myVol > 0 ? 100 : 0;
+    const ranked = Object.values(volByUser).sort((a, b) => b - a);
+    const myRank = ranked.findIndex(v => v <= myVol) + 1;
+    if (myRank === 0) return 0;
+    return Math.round(100 * (1 - (myRank - 1) / allUsers));
+  } catch (e) {
+    console.error('[medals] percentile error:', e.message);
+    return 0;
+  }
+}
+
+// GET /api/users/me/medals — medal unlock/progress state for the logged-in user.
+// Also persists newly-earned medals into user_badges (same unlocked_at mechanism
+// the badge system already uses) so unlock dates are stable over time. Earned
+// rows are never re-locked: once is_unlocked + unlocked_at are set they're
+// skipped on every recompute, even if the underlying metrics later change.
+app.get('/api/users/me/medals', verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    // User account data (registration date for The OG)
+    const { data: user } = await supabaseAdmin
+      .from('users').select('created_at').eq('id', userId).single();
+
+    // All completed trades involving this user (counts, volume, payment-method
+    // split, gift-card split, and completion dates for the daily streak)
+    const completedTrades = await fetchCompletedTradesForMedals(userId);
+
+    // Any trade row where this user was a party and a dispute/cancellation happened.
+    // Reuses existing status + disputed_at / cancelled_at columns — no new tracking.
+    // Note: `disputed_at` stays stamped on resolved disputes too (status moves on,
+    // the timestamp doesn't reset), so Clean Sheet checks the timestamp rather than
+    // live status — a resolved-against-you dispute still counts against the medal.
+    const [{ data: disputeRows }, { data: cancelRows }] = await Promise.all([
+      supabaseAdmin.from('trades').select('id').not('disputed_at', 'is', null).or(`buyer_id.eq.${userId},seller_id.eq.${userId}`),
+      supabaseAdmin.from('trades').select('id, cancel_reason').eq('status', 'CANCELLED').or(`buyer_id.eq.${userId},seller_id.eq.${userId}`),
+    ]);
+    // Expiry timeouts (buyer never paid) are EXPIRED in the UI, not user
+    // cancellations — don't count them against No Slip Zone.
+    const EXPIRY_REASON_RE = /expir|time limit|payment window/i;
+    const cancelledCount = (cancelRows || []).filter(t => !EXPIRY_REASON_RE.test(t.cancel_reason || '')).length;
+
+    const isMomo = pm => /momo|mpesa|vodafone|mobile.?money/i.test(pm || '');
+    const isBank = pm => /bank/i.test(pm || '');
+    const isGift = l => String(l?.listing_type || '').toUpperCase().includes('GIFT_CARD');
+
+    const stats = {
+      totalTrades: completedTrades.length,
+      totalVolumeUsd: completedTrades.reduce((s, t) => s + parseFloat(t.amount_usd || 0), 0),
+      momoTrades: completedTrades.filter(t => isMomo(t.payment_method)).length,
+      bankTrades: completedTrades.filter(t => isBank(t.payment_method)).length,
+      giftCardTrades: completedTrades.filter(t => isGift(t.listing)).length,
+      disputeCount: (disputeRows || []).length,
+      cancelledCount,
+      dailyStreak: longestDailyStreak(completedTrades),
+      registeredAt: user?.created_at || null,
+      volumePercentile: await computeVolumePercentile(userId),
+    };
+
+    // Earned dates already recorded for this user (badge_name ↔ medal id, same
+    // user_badges table the achievement badges live in).
+    const { data: badgeRows } = await supabaseAdmin
+      .from('user_badges')
+      .select('badge_name, is_unlocked, unlocked_at')
+      .eq('user_id', userId);
+    const earnedDateByMedalId = {};
+    (badgeRows || []).forEach(b => {
+      if (b.is_unlocked && b.unlocked_at) earnedDateByMedalId[b.badge_name] = b.unlocked_at;
+    });
+
+    // Persist any newly-earned medal. Already-earned ids are excluded by
+    // newlyEarnedMedalIds, so unlock records are written exactly once and
+    // never demoted.
+    const newlyEarned = newlyEarnedMedalIds(stats, Object.keys(earnedDateByMedalId));
+    for (const id of newlyEarned) {
+      const existing = (badgeRows || []).find(b => b.badge_name === id);
+      if (existing) {
+        await supabaseAdmin.from('user_badges').update({ is_unlocked: true, unlocked_at: new Date().toISOString() }).eq('user_id', userId).eq('badge_name', id);
+      } else {
+        await supabaseAdmin.from('user_badges').insert({ user_id: userId, badge_name: id, is_unlocked: true, unlocked_at: new Date().toISOString() });
+      }
+      earnedDateByMedalId[id] = new Date().toISOString();
+      console.log(`🥇 Medal EARNED: "${id}" for ${userId.slice(0, 8)}`);
+    }
+    if (newlyEarned.length) console.log(`[medals] ${newlyEarned.length} new medal(s) for ${userId.slice(0, 8)}: ${newlyEarned.join(', ')}`);
+
+    res.json({ success: true, medals: buildMedalPayloads(stats, earnedDateByMedalId) });
+  } catch (error) {
+    console.error('[medals] error:', error.message);
+    res.status(500).json({ error: 'Failed to load medals.' });
+  }
+});
+
 app.post('/api/users/heartbeat', verifyToken, async (req, res) => {
   try {
     await supabaseAdmin.from('users')
