@@ -239,7 +239,8 @@ const PHONE_CODES = [
 // picker and the phone country-code picker can never drift apart.
 const KYC_PICKER_COUNTRIES = PHONE_CODES.map(c => ({ flag: c.flag, name: c.name }));
 
-const INTERNAL_TABS = ['account', 'verification', 'security', 'notifications'];
+// 'payment' has no sidebar entry; it is only opened from Trader settings → Payment accounts.
+const INTERNAL_TABS = ['account', 'verification', 'security', 'notifications', 'payment'];
 
 const maskEmail = (email) => {
   if (!email) return "—";
@@ -1498,7 +1499,7 @@ export default function Settings({ user, setUser }) {
       return tabParam;
     }
     const savedTab = localStorage.getItem('praqen_active_tab');
-    if (savedTab && INTERNAL_TABS.includes(savedTab)) {
+    if (savedTab && savedTab !== 'payment' && INTERNAL_TABS.includes(savedTab)) {
       return savedTab;
     }
     return 'account';
@@ -1507,7 +1508,7 @@ export default function Settings({ user, setUser }) {
   // Save tab to URL and localStorage
   useEffect(() => {
     if (activeTab && INTERNAL_TABS.includes(activeTab)) {
-      localStorage.setItem('praqen_active_tab', activeTab);
+      if (activeTab !== 'payment') localStorage.setItem('praqen_active_tab', activeTab);
       const params = new URLSearchParams(location.search);
       params.set('tab', activeTab);
       const newUrl = `${window.location.pathname}?${params.toString()}`;
@@ -1521,7 +1522,7 @@ export default function Settings({ user, setUser }) {
     const tabParam = params.get('tab');
     if (tabParam && INTERNAL_TABS.includes(tabParam)) {
       setActiveTab(tabParam);
-      localStorage.setItem('praqen_active_tab', tabParam);
+      if (tabParam !== 'payment') localStorage.setItem('praqen_active_tab', tabParam);
     }
   }, [location.search]);
 

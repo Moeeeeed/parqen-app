@@ -92,6 +92,15 @@ const SIDEBAR_ITEMS = [
   { id: 'account-settings', label: 'Account settings', icon: Settings },
 ];
 
+// Sidebar items that open a real page elsewhere in the app.
+const SECTION_ROUTES = {
+  'p2p-offers': '/my-listings',
+  'trade-statistics': '/profile',
+  'payment-accounts': '/settings?tab=payment',
+  'traders': '/buy-bitcoin',
+  'account-settings': '/settings?tab=account',
+};
+
 // ── Supported currencies for filter ───────────────────────────────────
 const CRYPTO_CURRENCIES = ['All', 'USDT', 'BTC', 'ETH', 'USDC', 'BCH', 'BNB', 'LTC', 'SOL'];
 const TRADE_TYPES = ['All', 'Buy', 'Sell'];
@@ -578,6 +587,7 @@ export default function TraderSettings({ user }) {
 
   // Update URL when section changes
   useEffect(() => {
+    if (SECTION_ROUTES[activeSection]) { navigate(SECTION_ROUTES[activeSection], { replace: true }); return; }
     const params = new URLSearchParams(location.search);
     params.set('section', activeSection);
     navigate(`${location.pathname}?${params.toString()}`, { replace: true });
@@ -769,13 +779,12 @@ export default function TraderSettings({ user }) {
             }}>
               {SIDEBAR_ITEMS.map((item) => {
                 const isActive = activeSection === item.id;
-                const isAccountSettings = item.id === 'account-settings';
                 return (
                   <button
                     key={item.id}
                     onClick={() => {
-                      if (isAccountSettings) {
-                        navigate('/settings?tab=account');
+                      if (SECTION_ROUTES[item.id]) {
+                        navigate(SECTION_ROUTES[item.id]);
                       } else {
                         setActiveSection(item.id);
                       }
@@ -829,14 +838,13 @@ export default function TraderSettings({ user }) {
                 <div style={{ padding: '16px 14px 18px', display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto' }}>
                   {SIDEBAR_ITEMS.map((item) => {
                     const isActive = activeSection === item.id;
-                    const isAccountSettings = item.id === 'account-settings';
                     return (
                       <button
                         key={item.id}
                         onClick={() => {
                           setMobileSidebarOpen(false);
-                          if (isAccountSettings) {
-                            navigate('/settings?tab=account');
+                          if (SECTION_ROUTES[item.id]) {
+                            navigate(SECTION_ROUTES[item.id]);
                           } else {
                             setActiveSection(item.id);
                           }
@@ -891,10 +899,6 @@ export default function TraderSettings({ user }) {
                 onExport={handleExport}
               />
             )}
-            {activeSection === 'p2p-offers' && <PlaceholderSection title="P2P offers" subtitle="Manage your trade offers" icon={Tag} />}
-            {activeSection === 'trade-statistics' && <PlaceholderSection title="Trade statistics" subtitle="View your trading performance" icon={TrendingUp} />}
-            {activeSection === 'payment-accounts' && <PlaceholderSection title="Payment accounts" subtitle="Manage your payment methods" icon={CreditCard} />}
-            {activeSection === 'traders' && <PlaceholderSection title="Traders" subtitle="Find and connect with traders" icon={Users} />}
             {activeSection === 'badges' && <MedalsSection />}
           </div>
         </div>
@@ -1288,27 +1292,6 @@ function MedalsSection() {
       </div>
 
       <MedalsGrid tab={innerTab} />
-    </div>
-  );
-}
-
-// ── Placeholder Section ────────────────────────────────────────────────
-function PlaceholderSection({ title, subtitle, icon: Icon }) {
-  return (
-    <div style={{
-      background: '#fff', borderRadius: 16, overflow: 'hidden',
-      boxShadow: '0 1px 3px rgba(15,23,42,0.06)', textAlign: 'center',
-      padding: '48px 24px',
-    }}>
-      <div style={{
-        width: 64, height: 64, borderRadius: 20, background: `${C.green}10`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px',
-      }}>
-        <Icon size={28} style={{ color: C.green }} />
-      </div>
-      <h3 style={{ fontSize: 16, fontWeight: 800, color: C.g800, margin: '0 0 6px' }}>{title}</h3>
-      <p style={{ fontSize: 13, color: C.g500, margin: 0 }}>{subtitle}</p>
-      <p style={{ fontSize: 11, color: C.g400, marginTop: 8 }}>Coming soon</p>
     </div>
   );
 }

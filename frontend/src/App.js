@@ -702,7 +702,7 @@ function App() {
                     <Route path="/medals" element={user ? <Navigate to="/trader-settings?section=badges" replace /> : <Navigate to="/login" />} />
                     <Route path="/quick-start" element={user ? <Navigate to="/blog" replace /> : <Navigate to="/login" />} />
                     <Route path="/trade-insights" element={user ? <Navigate to="/trader-settings?section=trade-insights" replace /> : <Navigate to="/login" />} />
-                    <Route path="/payment-accounts" element={user ? <Navigate to="/trader-settings?section=payment-accounts" replace /> : <Navigate to="/login" />} />
+                    <Route path="/payment-accounts" element={user ? <Navigate to="/settings?tab=payment" replace /> : <Navigate to="/login" />} />
                     <Route path="/devices" element={user ? <Navigate to="/settings?tab=security" replace /> : <Navigate to="/login" />} />
                     <Route path="/activity-log" element={user ? <PlaceholderPage title="Activity log" description="A timeline of your account activity — logins, trades, and security events — will appear here." icon={Clock} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
                     <Route path="/security" element={user ? <Navigate to="/settings?tab=security" replace /> : <Navigate to="/login" />} />
