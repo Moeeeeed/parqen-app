@@ -5910,14 +5910,21 @@ async function fetchCompletedTradesForMedals(userId) {
 
 // Rank every user by their completed-trade USD volume and return this user's
 // percentile. Computed live — other users' identities/volumes stay server-side.
+// Everyone's volume changes slowly, so it is read from the database at most once every 10 minutes
+// (reading all completed trades takes a few seconds), then shared by every medals request.
+let _medalVolumeCache = null;
+const MEDAL_VOLUME_TTL_MS = 10 * 60 * 1000;
 async function computeVolumePercentile(userId) {
   try {
-    const trades = await fetchAllRows(() => supabaseAdmin
-      .from('trades')
-      .select('id, buyer_id, seller_id, amount_usd, is_test')
-      .eq('status', 'COMPLETED')
-      .order('id', { ascending: true }));
-    return percentileFromVolumes(volumesByUser(trades), userId);
+    if (!_medalVolumeCache || Date.now() - _medalVolumeCache.ts > MEDAL_VOLUME_TTL_MS) {
+      const trades = await fetchAllRows(() => supabaseAdmin
+        .from('trades')
+        .select('id, buyer_id, seller_id, amount_usd, is_test')
+        .eq('status', 'COMPLETED')
+        .order('id', { ascending: true }));
+      _medalVolumeCache = { ts: Date.now(), vol: volumesByUser(trades) };
+    }
+    return percentileFromVolumes(_medalVolumeCache.vol, userId);
   } catch (e) {
     console.error('[medals] percentile error:', e.message);
     return 0;
