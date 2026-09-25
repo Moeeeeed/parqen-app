@@ -305,6 +305,10 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
         <Link to="/partner-program" style={segStyle(isPartnerActive, C.forest)}>
           <Award size={14} color={C.gold} />
           Affiliate Program
+          <span style={{
+            fontSize: '8.5px', background: '#DC2626', color: '#fff',
+            padding: '1.5px 5px', borderRadius: '20px', fontWeight: 900, letterSpacing: '0.3px',
+          }}>BETA</span>
         </Link>
     </div>
  
@@ -684,6 +688,10 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
                 <Users size={18} color={C.g500} />
                 <div>
                   <span style={{ fontSize: 14, fontWeight: 700, color: C.g800 }}>Affiliate Program</span>
+                  <span style={{
+                    marginLeft: 8, fontSize: '9px', background: '#DC2626', color: '#fff',
+                    padding: '1.5px 6px', borderRadius: '20px', fontWeight: 900, letterSpacing: '0.3px', verticalAlign: 'middle',
+                  }}>BETA</span>
                   <p style={{ margin: '2px 0 0', fontSize: 11, color: C.g400 }}>Bring users and earn on every trade</p>
                 </div>
               </Link>
