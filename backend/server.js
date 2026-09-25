@@ -2167,10 +2167,10 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
         const normalizedRef = referralCode.toLowerCase().trim();
         const { data: referrer } = await supabaseAdmin
           .from('users')
-          .select('id')
+          .select('id, account_status')
           .eq('referral_code', normalizedRef)
           .maybeSingle();
-        if (referrer) {
+        if (referrer && !['banned', 'frozen', 'suspended'].includes(String(referrer.account_status || '').toLowerCase())) {
           referrerId = referrer.id;
         }
       }
@@ -2242,7 +2242,7 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
             const { data: ref } = await supabaseAdmin.from('users').select('total_referrals').eq('id', referrerId).single();
             const newCount = (ref?.total_referrals || 0) + 1;
             await supabaseAdmin.from('users').update({ total_referrals: newCount }).eq('id', referrerId);
-            notifyUserReferral(referrerId, newUser.username).catch(() => { });
+            await createNotification(referrerId, 'referral', '🎉 New Referral!', `${newUser.username} just joined PRAQEN via your affiliate link.`, '/partner-program');
           } catch (refErr) {
             console.error('[Google Auth] Referrer update failed:', refErr.message);
           }
@@ -2338,8 +2338,11 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     if (referralCode) {
       const normalized = referralCode.toLowerCase().trim();
       const { data: referrer } = await supabaseAdmin
-        .from('users').select('id').eq('referral_code', normalized).maybeSingle();
-      if (referrer) {
+        .from('users').select('id, account_status').eq('referral_code', normalized).maybeSingle();
+      if (referrer && ['banned', 'frozen', 'suspended'].includes(String(referrer.account_status || '').toLowerCase())) {
+        // A restricted account must not collect new referrals. Signup still goes ahead, just without a referrer.
+        console.log(`[Register] Referral ignored: referrer ${referrer.id} is ${referrer.account_status}`);
+      } else if (referrer) {
         referrerId = referrer.id;
         console.log(`[Register] Referral matched: code=${normalized} → referrer=${referrerId}`);
       } else {
@@ -2490,8 +2493,8 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
             referrerId,
             'referral',
             '🎉 New Referral!',
-            `${username} just joined PRAQEN via your referral link — you now have ${newCount} referral${newCount !== 1 ? 's' : ''}!`,
-            '/dashboard?tab=affiliate'
+            `${username} just joined PRAQEN via your affiliate link.`,
+            '/partner-program'
           );
         } catch (e) {
           console.error('[Register] Referral count update failed:', e.message);

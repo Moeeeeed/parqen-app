@@ -4,6 +4,7 @@ import SEO from '../components/SEO';
 import AuthLayout from '../components/AuthLayout';
 import axios from 'axios';
 import { API_URL } from '../App';
+import { captureReferralFromUrl, getStoredReferral, clearStoredReferral } from '../utils/referral';
 import {
   Mail, Lock, User, Eye, EyeOff, Shield, ShieldCheck, CheckCircle,
   ArrowRight, ArrowLeft, RefreshCw, AlertCircle, Smartphone,
@@ -497,6 +498,30 @@ export default function Register({ onLogin }) {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [errs, setErrs] = useState({});
+
+  // ── Affiliate link: who invited this visitor ────────────────────────────
+  // referrer: null (no code / not checked yet), { username } (valid), or
+  // { invalid: true } (a code was present but is not real).
+  const [referrer, setReferrer] = useState(null);
+  useEffect(() => {
+    captureReferralFromUrl(window.location.search);
+    const code = getStoredReferral();
+    if (!code) return undefined;
+    let alive = true;
+    axios.get(`${API_URL}/auth/referrer`, { params: { code }, timeout: 8000 })
+      .then(({ data }) => {
+        if (!alive) return;
+        if (data && data.success && data.referrer && data.referrer.username) {
+          setReferrer({ username: data.referrer.username });
+        } else {
+          // Not a real code: forget it so it is never sent. Signup still works.
+          clearStoredReferral();
+          setReferrer({ invalid: true });
+        }
+      })
+      .catch(() => { /* cannot verify right now: keep the code and still send it at signup */ });
+    return () => { alive = false; };
+  }, []);
   useEffect(() => {
     if (otpTimer <= 0) return;
     const iv = setInterval(() => setOtpTimer(t => t - 1), 1000);
@@ -516,8 +541,11 @@ export default function Register({ onLogin }) {
     try {
       const res = await axios.post(`${API_URL}/auth/google`, {
         credential: response.credential,
+        // read at click time (this handler is registered once, so no stale value)
+        referralCode: getStoredReferral() || undefined,
       });
       if (res.data.success && res.data.token) {
+        clearStoredReferral();
         localStorage.setItem('token', res.data.token);
         onLogin(res.data.user, res.data.token);
         pendingNavRef.current = () => navigate('/buy-bitcoin');
@@ -657,8 +685,10 @@ export default function Register({ onLogin }) {
       const res = await axios.post(`${API_URL}/auth/register`, {
         email,
         password,
+        referralCode: getStoredReferral() || undefined,
       });
       if (res.data.success && res.data.token) {
+        clearStoredReferral();
         localStorage.setItem('token', res.data.token);
         // Don't call onLogin() yet — it sets `user` in App.js, and App.js's
         // /register route is `!user ? <Register/> : <Navigate to="/"/>`. Setting
@@ -1141,6 +1171,30 @@ export default function Register({ onLogin }) {
                   }}>
                     <AlertCircle size={14} style={{ flexShrink: 0 }} />
                     {globalError}
+                  </div>
+                )}
+
+                {/* Affiliate link banner */}
+                {referrer && referrer.username && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '10px 14px', borderRadius: 12, fontSize: 13,
+                    background: '#F0FAF5', color: '#1B4332',
+                    border: '1.5px solid #B7D9C4'
+                  }}>
+                    <span role="img" aria-label="invite">🎉</span>
+                    <span>You were invited by <b>@{referrer.username}</b></span>
+                  </div>
+                )}
+                {referrer && referrer.invalid && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '10px 14px', borderRadius: 12, fontSize: 12,
+                    background: '#FFFBEB', color: '#92400E',
+                    border: '1.5px solid #FDE68A'
+                  }}>
+                    <AlertCircle size={14} style={{ flexShrink: 0 }} />
+                    This invite link is not valid, but you can still create your account.
                   </div>
                 )}
 
