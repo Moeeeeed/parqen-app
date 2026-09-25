@@ -11043,6 +11043,24 @@ app.get('/api/my-referrals', verifyToken, async (req, res) => {
   }
 });
 
+// ── Affiliate summary (READ ONLY) ───────────────────────────────────────────
+// Users the caller brought, how many are active, their trade volume, and the level
+// that unlocks. Computed from users.referred_by + trades only. Writes nothing and
+// moves no money. cash_enabled mirrors REFERRAL_PAYOUTS_ENABLED (default OFF) so the
+// page can hide money fields while payouts are not live.
+const affiliateSummaryService = require('./services/affiliateSummaryService');
+app.get('/api/affiliate/summary', verifyToken, async (req, res) => {
+  try {
+    const summary = await affiliateSummaryService.getAffiliateSummary(supabaseAdmin, req.userId, {
+      cashEnabled: process.env.REFERRAL_PAYOUTS_ENABLED === 'true',
+    });
+    res.json({ success: true, ...summary });
+  } catch (e) {
+    console.error('[affiliate/summary]', e.message);
+    res.status(500).json({ error: 'Could not load affiliate summary' });
+  }
+});
+
 // GET /api/referral-messages/:userId — chat history between current user and a referral
 app.get('/api/referral-messages/:userId', verifyToken, async (req, res) => {
   try {
