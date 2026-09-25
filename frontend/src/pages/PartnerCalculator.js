@@ -7,8 +7,8 @@ import { LEVELS, pct, money } from './partnerShared';
 const GOALS = [10, 50, 100, 500];
 
 const TYPES = [
-  { key: 'btc', icon: '₿', bg: '#F4A422', name: 'Bitcoin', tag: 'Most popular', text: 'Friends who buy or sell Bitcoin with local payment methods.' },
-  { key: 'usdt', icon: '₮', bg: '#2D6A4F', name: 'USDT', tag: 'Stable and steady', text: 'Friends who trade dollar-stable coins for savings and payments.' },
+  { key: 'btc', icon: '₿', bg: '#F4A422', name: 'Bitcoin', tag: 'Most popular', text: 'Users who buy or sell Bitcoin with local payment methods.' },
+  { key: 'usdt', icon: '₮', bg: '#2D6A4F', name: 'USDT', tag: 'Stable and steady', text: 'Users who trade dollar-stable coins for savings and payments.' },
 ];
 
 function clamp(n, min, max) {
@@ -52,12 +52,12 @@ export default function PartnerCalculator() {
 
   return (
     <div className="ppx cpage">
-      <SEO title="Partner Earnings Calculator | PRAQEN" description="See how much you could earn when your friends trade Bitcoin and USDT on PRAQEN. Try your own numbers in 3 quick steps." />
+      <SEO title="Affiliate Earnings Calculator | PRAQEN" description="See how much you could earn when the users you bring trade Bitcoin and USDT on PRAQEN. Try your own numbers in 3 quick steps." />
       <div className="wrap">
         <div className="chead">
-          <span className="pill">Partner Earnings Calculator</span>
-          <h1>See what your network could earn</h1>
-          <p>Answer 3 quick steps and see how much you could earn when your friends trade on PRAQEN.</p>
+          <span className="pill">Affiliate Earnings Calculator</span>
+          <h1>See what your users could earn you</h1>
+          <p>Answer 3 quick steps and see how much you could earn when the users you bring trade on PRAQEN.</p>
         </div>
         <div className="mob"><small>Projected monthly earnings</small><b>{money(monthly)}</b></div>
 
@@ -66,7 +66,7 @@ export default function PartnerCalculator() {
             <section className="panel">
               <span className="stp">STEP 1</span>
               <h2>What type of traders are you bringing?</h2>
-              <p className="d">Choose what your friends will mostly trade. Both earn you the same rate.</p>
+              <p className="d">Choose what your users will mostly trade. Both earn you the same rate.</p>
               <div className="acts">
                 {TYPES.map((t) => (
                   <button type="button" key={t.key} className={`act${type === t.key ? ' on' : ''}`} onClick={() => setType(t.key)}>
@@ -80,12 +80,12 @@ export default function PartnerCalculator() {
 
             <section className="panel">
               <span className="stp">STEP 2</span>
-              <h2>Choose your partner level</h2>
-              <p className="d">Your level goes up as more friends stay active. Pick one to see what it pays.</p>
+              <h2>Choose your affiliate level</h2>
+              <p className="d">Your level goes up as you bring more active users and more trade volume. Pick one to see what it pays.</p>
               <div className="lvs">
                 {LEVELS.map((x, i) => (
                   <button type="button" key={x.n} className={`lb${lv === i ? ' on' : ''}`} onClick={() => setLv(i)}>
-                    <small>Level {i + 1}</small><b>{x.n}</b><span>{pct(x.r)}</span><em>{x.f} active partners · ${x.v.toLocaleString()} volume</em>
+                    <small>Level {i + 1}</small><b>{x.n}</b><span>{pct(x.r)}</span><em>{x.f} active users<br />${x.v.toLocaleString()} trade volume</em>
                   </button>
                 ))}
               </div>
@@ -93,11 +93,11 @@ export default function PartnerCalculator() {
 
             <section className="panel">
               <span className="stp">STEP 3</span>
-              <h2>Build your referral network</h2>
+              <h2>Tell us about the users you bring</h2>
               <p className="d">Move the sliders or type your own numbers.</p>
-              <Control title="Active friends" hint="Friends who trade at least once a month." value={friends} onChange={setFriends} min={1} max={500} sliderMax={200} suffix="friends" minLabel="1" maxLabel="200+" />
+              <Control title="Active users" hint="Users you brought who trade at least once a month." value={friends} onChange={setFriends} min={1} max={500} sliderMax={200} suffix="users" minLabel="1" maxLabel="200+" />
               <Control title="Average trade size" hint="How much each trade is worth, in USD." value={avg} onChange={setAvg} min={10} max={5000} sliderMax={2000} step={10} prefix="$" minLabel="$10" maxLabel="$2,000+" />
-              <Control title="Trades per friend each month" hint="How often each friend trades." value={trades} onChange={setTrades} min={1} max={100} sliderMax={30} suffix="trades" minLabel="1" maxLabel="30+" />
+              <Control title="Trades per user each month" hint="How often each user trades." value={trades} onChange={setTrades} min={1} max={100} sliderMax={30} suffix="trades" minLabel="1" maxLabel="30+" />
             </section>
           </div>
 
@@ -110,20 +110,20 @@ export default function PartnerCalculator() {
                   <button type="button" className={period === 'y' ? 'on' : ''} onClick={() => setPeriod('y')}>Yearly</button>
                 </div>
               </div>
-              <div className="lab">If your friends trade like this…</div>
+              <div className="lab">If your users trade like this…</div>
               <div className="big">{money(period === 'm' ? monthly : yearly)}</div>
               <div className="sm">Based on your current estimates.</div>
               <div className="em"><div><small>Commission</small><b>{pct(l.r)}</b></div><div><small>Monthly volume</small><b>{money(volume)}</b></div></div>
             </section>
 
             <section className="snap">
-              <h3>Your network snapshot</h3>
-              <div className="fi"><span>Active friends</span><b>{friends.toLocaleString()}</b></div>
+              <h3>Your users at a glance</h3>
+              <div className="fi"><span>Active users</span><b>{friends.toLocaleString()}</b></div>
               <div className="fi"><span>Monthly volume</span><b>{money(volume)}</b></div>
               <div className="fi"><span>Commission rate</span><b>{pct(l.r)}</b></div>
               <div className="fi"><span>Monthly earnings</span><b>{money(monthly)}</b></div>
               <div className="fi"><span>Yearly earnings</span><b>{money(yearly)}</b></div>
-              <Link className="btn p" to="/partner-program">Become a PRAQEN Partner</Link>
+              <Link className="btn p" to="/partner-program">Become a PRAQEN Affiliate</Link>
               <p className="note">Estimates only. Actual earnings depend on completed trades and program terms.</p>
             </section>
 
@@ -141,8 +141,8 @@ export default function PartnerCalculator() {
             <section className="mth">
               <h3>How your earnings are worked out</h3>
               <div>
-                <b>{friends.toLocaleString()}</b> active friends<br />
-                × <b>{trades}</b> trades each month<br />
+                <b>{friends.toLocaleString()}</b> active users<br />
+                × <b>{trades}</b> trades per user each month<br />
                 × <b>${avg.toLocaleString()}</b> average trade<br />
                 = <b>{money(volume)}</b> monthly volume<br />
                 × <b>{pct(l.r)}</b> ({l.n} rate)<br />

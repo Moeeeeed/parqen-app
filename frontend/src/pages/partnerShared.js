@@ -6,13 +6,13 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 // Partner levels. `rate` is the % of each completed trade's value paid to the
 // partner. A friend counts as "active" once they have completed a trade.
 export const LEVELS = [
-  { n: 'Starter',    r: 0.10, c: '#B7D9C4', f: 1,   v: 100,    kf: 1,  kv: 100,    ex: { f: 2,  t: 3, z: 120 }, get: ['0.10% on every friend trade', 'Your link and scan code', 'Live earnings dashboard'], bonus: ['Starter badge'] },
-  { n: 'Builder',    r: 0.12, c: '#2D6A4F', f: 10,  v: 8000,   kf: 5,  kv: 4000,   ex: { f: 5,  t: 3, z: 150 }, get: ['0.12% on every friend trade', 'Builder badge on your profile'], bonus: ['Priority support'] },
-  { n: 'Pro',        r: 0.15, c: '#F4A422', f: 50,  v: 50000,  kf: 25, kv: 25000,  ex: { f: 15, t: 4, z: 200 }, get: ['0.15% on every friend trade', 'Pro badge', 'Early access to new features'], bonus: ['Featured on the leaderboard'] },
-  { n: 'Ambassador', r: 0.20, c: '#1B4332', f: 100, v: 500000, kf: 50, kv: 250000, ex: { f: 40, t: 5, z: 250 }, get: ['0.20% on every friend trade', 'Ambassador badge', 'Direct line to the PRAQEN team'], bonus: ['Hall of Fame spot', 'Invites to PRAQEN events'] },
+  { n: 'Explorer',   r: 0.10, c: '#B7D9C4', f: 5,  v: 50,    kf: 3,  kv: 25,    ex: { f: 5,  t: 3, z: 60 },  get: ['0.10% of every trade your users make', 'Your personal link and scan code', 'Live earnings dashboard'], bonus: ['Explorer badge'] },
+  { n: 'Builder',    r: 0.12, c: '#2D6A4F', f: 10, v: 1000,  kf: 5,  kv: 500,   ex: { f: 10, t: 3, z: 100 }, get: ['0.12% of every trade your users make', 'Builder badge on your profile'], bonus: ['Priority support'] },
+  { n: 'Titan',      r: 0.15, c: '#F4A422', f: 20, v: 10000, kf: 10, kv: 5000,  ex: { f: 20, t: 4, z: 200 }, get: ['0.15% of every trade your users make', 'Titan badge', 'Early access to new features'], bonus: ['Featured on the leaderboard'] },
+  { n: 'Ambassador', r: 0.20, c: '#1B4332', f: 50, v: 50000, kf: 25, kv: 25000, ex: { f: 50, t: 5, z: 250 }, get: ['0.20% of every trade your users make', 'Ambassador badge', 'Direct line to the PRAQEN team'], bonus: ['Hall of Fame spot', 'Invites to PRAQEN events'] },
 ];
 
-// A friend is "active" once they have traded at least this much (lifetime).
+// A user you brought is "active" once they have traded at least this much (lifetime).
 export const ACTIVE_MIN_USD = 20;
 
 export const CLAIM_MIN_USD = 10;

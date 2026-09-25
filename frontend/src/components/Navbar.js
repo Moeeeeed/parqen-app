@@ -304,7 +304,7 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
 
         <Link to="/partner-program" style={segStyle(isPartnerActive, C.forest)}>
           <Award size={14} color={C.gold} />
-          Partner Program
+          Affiliate Program
         </Link>
     </div>
  
@@ -678,13 +678,13 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
                 )}
               </div>
 
-              {/* Partner program */}
+              {/* Affiliate program */}
               <Link to="/partner-program" onClick={() => setMobileMenuOpen(false)}
                 style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', textDecoration: 'none', borderBottom: `1px solid ${C.g100}` }}>
                 <Users size={18} color={C.g500} />
                 <div>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: C.g800 }}>Partner program</span>
-                  <p style={{ margin: '2px 0 0', fontSize: 11, color: C.g400 }}>Invite friends and earn on every trade</p>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: C.g800 }}>Affiliate Program</span>
+                  <p style={{ margin: '2px 0 0', fontSize: 11, color: C.g400 }}>Bring users and earn on every trade</p>
                 </div>
               </Link>
 

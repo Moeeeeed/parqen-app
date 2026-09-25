@@ -480,3 +480,17 @@
 .ppx .mrow b.ok{color:var(--green)}
 .ppx .box .small{font-size:12px;color:var(--muted);margin-top:8px}
 .ppx .box ul{margin:2px 0 0 18px;font-size:14px;color:var(--muted)}
+
+/* affiliate wording pass */
+.ppx .explain ol{margin:8px 0 0 20px;color:var(--muted)}
+.ppx .explain ol li{margin:4px 0}
+.ppx .glance{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:6px 14px 12px;margin-bottom:14px;overflow-x:auto}
+.ppx .glance table{width:100%;border-collapse:collapse;font-size:14px;min-width:420px}
+.ppx .glance th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:10px 8px;border-bottom:1px solid var(--line)}
+.ppx .glance td{padding:10px 8px;border-bottom:1px solid var(--line)}
+.ppx .glance tr:last-child td{border-bottom:0}
+.ppx .glance tr.me{background:#FFF3D6}
+.ppx .glance .gl{display:inline-flex;align-items:center;gap:8px;font-weight:700}
+.ppx .explain ol{list-style:decimal}
+.ppx .box ul,.ppx .bd2 ul{list-style:disc}
+@media(max-width:640px){.ppx .glance table{min-width:0;font-size:13px}.ppx .glance .gl svg{display:none}.ppx .glance th,.ppx .glance td{padding:9px 5px}}
