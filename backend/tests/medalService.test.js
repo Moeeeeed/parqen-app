@@ -240,3 +240,67 @@ describe('medal definitions', () => {
     }
   });
 });
+
+// ── Top 1% Club ranking (added with the paging / test-trade fix) ─────────
+const { volumesByUser, percentileFromVolumes } = require('../services/medalService');
+
+describe('volume ranking', () => {
+  it('credits both sides of a trade and adds up per user', () => {
+    const v = volumesByUser([
+      { buyer_id: 'a', seller_id: 'b', amount_usd: '100' },
+      { buyer_id: 'a', seller_id: 'c', amount_usd: 50 },
+    ]);
+    assert.deepStrictEqual(v, { a: 150, b: 100, c: 50 });
+  });
+
+  it('ignores test trades, empty amounts and missing rows', () => {
+    const v = volumesByUser([
+      { buyer_id: 'a', seller_id: 'b', amount_usd: 900, is_test: true },
+      { buyer_id: 'a', seller_id: 'b', amount_usd: 0 },
+      { buyer_id: 'a', seller_id: 'b', amount_usd: null },
+      null,
+      { buyer_id: 'a', seller_id: 'b', amount_usd: 10, is_test: false },
+    ]);
+    assert.deepStrictEqual(v, { a: 10, b: 10 });
+  });
+
+  it('does not double count a trade where buyer and seller are the same id', () => {
+    assert.deepStrictEqual(volumesByUser([{ buyer_id: 'a', seller_id: 'a', amount_usd: 40 }]), { a: 40 });
+  });
+
+  it('percentile: the biggest trader is 100, the smallest is near 0', () => {
+    const vol = {};
+    for (let i = 1; i <= 100; i++) vol['u' + i] = i * 10;
+    assert.strictEqual(percentileFromVolumes(vol, 'u100'), 100);
+    assert.strictEqual(percentileFromVolumes(vol, 'u99'), 99);
+    assert.strictEqual(percentileFromVolumes(vol, 'u1'), 1);
+  });
+
+  it('percentile: Top 1% Club needs >= 99, only a handful at the very top qualify (rounding makes it just under 2%)', () => {
+    const vol = {};
+    for (let i = 1; i <= 300; i++) vol['u' + i] = i;
+    const qualifying = Object.keys(vol).filter((id) => percentileFromVolumes(vol, id) >= 99);
+    assert.ok(qualifying.length >= 1 && qualifying.length <= 5, 'qualifying: ' + qualifying.length);
+  });
+
+  it('percentile: a user with no volume is 0, a lone trader is 100', () => {
+    assert.strictEqual(percentileFromVolumes({ a: 5, b: 9 }, 'nobody'), 0);
+    assert.strictEqual(percentileFromVolumes({ a: 5 }, 'a'), 100);
+    assert.strictEqual(percentileFromVolumes({}, 'a'), 0);
+  });
+
+  it('percentile: tied volumes rank the same', () => {
+    assert.strictEqual(percentileFromVolumes({ a: 10, b: 10, c: 5, d: 1 }, 'a'), 100);
+    assert.strictEqual(percentileFromVolumes({ a: 10, b: 10, c: 5, d: 1 }, 'b'), 100);
+  });
+
+  it('test-account volume can no longer push real traders down the ranking', () => {
+    const trades = [
+      { buyer_id: 'real1', seller_id: 'real2', amount_usd: 100 },
+      { buyer_id: 'test1', seller_id: 'test2', amount_usd: 1000000, is_test: true },
+    ];
+    const v = volumesByUser(trades);
+    assert.strictEqual(percentileFromVolumes(v, 'real1'), 100);
+    assert.strictEqual(v.test1, undefined);
+  });
+});

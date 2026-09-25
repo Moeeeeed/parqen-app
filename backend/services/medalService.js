@@ -149,8 +149,37 @@ function newlyEarnedMedalIds(stats, alreadyEarnedIds = []) {
   return MEDAL_ORDER.filter(id => !already.has(id) && MEDAL_CHECKS[id].isUnlocked(stats));
 }
 
+// ── Volume ranking (Top 1% Club) ────────────────────────────────────────
+// Real trades only: test trades never count. Each trade's USD value is credited to both
+// sides (buyer and seller). Pure, so it can be unit-tested with plain numbers.
+function volumesByUser(trades) {
+  const vol = {};
+  for (const t of trades || []) {
+    if (!t || t.is_test === true) continue;
+    const usd = parseFloat(t.amount_usd || 0);
+    if (!(usd > 0)) continue;
+    if (t.buyer_id) vol[t.buyer_id] = (vol[t.buyer_id] || 0) + usd;
+    if (t.seller_id && t.seller_id !== t.buyer_id) vol[t.seller_id] = (vol[t.seller_id] || 0) + usd;
+  }
+  return vol;
+}
+
+// Percentile (0-100) of one user's volume among everyone who has traded. 100 = the top trader.
+function percentileFromVolumes(volByUser, userId) {
+  const myVol = volByUser[userId] || 0;
+  if (myVol <= 0) return 0;
+  const all = Object.values(volByUser);
+  if (all.length <= 1) return 100;
+  const ranked = all.sort((x, y) => y - x);
+  const myRank = ranked.findIndex((v) => v <= myVol) + 1;
+  if (myRank === 0) return 0;
+  return Math.round(100 * (1 - (myRank - 1) / all.length));
+}
+
 module.exports = {
   longestDailyStreak,
+  volumesByUser,
+  percentileFromVolumes,
   MEDAL_CHECKS,
   MEDAL_META,
   MEDAL_ORDER,

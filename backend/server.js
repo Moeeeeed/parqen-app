@@ -5878,44 +5878,46 @@ app.post('/api/users/check-badges', verifyToken, async (req, res) => {
 // user_badges persistence, and response shaping.
 const {
   longestDailyStreak,
+  volumesByUser,
+  percentileFromVolumes,
   buildMedalPayloads,
   newlyEarnedMedalIds,
 } = require('./services/medalService');
 
+// PostgREST returns at most 1,000 rows per request, so anything that needs "all" rows must page.
+async function fetchAllRows(makeQuery) {
+  const out = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await makeQuery().range(from, from + 999);
+    if (error) throw new Error(error.message);
+    out.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+  return out;
+}
+
 // Reusable scan: all COMPLETED trades involving userId (for medal stats).
 // completed_at is included for the Every Damn Day daily-streak calculation.
 async function fetchCompletedTradesForMedals(userId) {
-  const { data, error } = await supabaseAdmin
+  const rows = await fetchAllRows(() => supabaseAdmin
     .from('trades')
-    .select('buyer_id, seller_id, amount_usd, payment_method, completed_at, listing:listing_id(listing_type)')
+    .select('id, buyer_id, seller_id, amount_usd, payment_method, completed_at, is_test, listing:listing_id(listing_type)')
     .eq('status', 'COMPLETED')
-    .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`);
-  if (error) throw new Error(error.message);
-  return data || [];
+    .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
+    .order('id', { ascending: true }));
+  return rows.filter((t) => t.is_test !== true); // test trades never count towards medals
 }
 
 // Rank every user by their completed-trade USD volume and return this user's
 // percentile. Computed live — other users' identities/volumes stay server-side.
 async function computeVolumePercentile(userId) {
   try {
-    const { data, error } = await supabaseAdmin
+    const trades = await fetchAllRows(() => supabaseAdmin
       .from('trades')
-      .select('buyer_id, seller_id, amount_usd')
-      .eq('status', 'COMPLETED');
-    if (error || !data?.length) return 0;
-    const volByUser = {};
-    for (const t of data) {
-      const usd = parseFloat(t.amount_usd || 0);
-      if (t.buyer_id) volByUser[t.buyer_id] = (volByUser[t.buyer_id] || 0) + usd;
-      if (t.seller_id && t.seller_id !== t.buyer_id) volByUser[t.seller_id] = (volByUser[t.seller_id] || 0) + usd;
-    }
-    const myVol = volByUser[userId] || 0;
-    const allUsers = Object.keys(volByUser).length;
-    if (allUsers <= 1) return myVol > 0 ? 100 : 0;
-    const ranked = Object.values(volByUser).sort((a, b) => b - a);
-    const myRank = ranked.findIndex(v => v <= myVol) + 1;
-    if (myRank === 0) return 0;
-    return Math.round(100 * (1 - (myRank - 1) / allUsers));
+      .select('id, buyer_id, seller_id, amount_usd, is_test')
+      .eq('status', 'COMPLETED')
+      .order('id', { ascending: true }));
+    return percentileFromVolumes(volumesByUser(trades), userId);
   } catch (e) {
     console.error('[medals] percentile error:', e.message);
     return 0;
