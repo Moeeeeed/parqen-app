@@ -10795,7 +10795,22 @@ app.get('/api/referral/leaderboard', async (req, res) => {
   }
 });
 
-app.post('/api/referral/withdraw', verifyToken, requireNotBanned, authLimiter, async (req, res) => {
+// ── Payout switch ───────────────────────────────────────────────────────────
+// Referral money only moves when REFERRAL_PAYOUTS_ENABLED is exactly the text "true".
+// Unset, empty, "false", "TRUE", "1" … all mean OFF. It is read on every request (from
+// services/affiliateSummaryService.cashEnabled), so flipping it in Render needs no code
+// change. It runs BEFORE any database work: when off, nothing is read, credited or changed.
+function requireReferralPayoutsEnabled(req, res, next) {
+  if (!require('./services/affiliateSummaryService').cashEnabled()) {
+    return res.status(403).json({
+      error: 'PAYOUTS_NOT_ENABLED',
+      message: 'Affiliate payouts have not started yet.',
+    });
+  }
+  next();
+}
+
+app.post('/api/referral/withdraw', verifyToken, requireReferralPayoutsEnabled, requireNotBanned, authLimiter, async (req, res) => {
   try {
     const { data: earnings, error } = await supabaseAdmin
       .from('affiliate_earnings')
