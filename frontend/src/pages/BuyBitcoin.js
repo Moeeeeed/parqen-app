@@ -1937,6 +1937,30 @@ export default function BuyBitcoin({user}) {
 
       </div>
 
+        {/* Related SEO Guides Section */}
+<div className="mt-8 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+        Helpful Trading Guides
+    </h4>
+    <ul className="text-xs space-y-1.5 text-blue-600 dark:text-blue-400">
+        <li>
+            <a href="/blog/p2p-crypto-trading-fees" className="hover:underline">
+                → Understanding P2P Crypto Trading Fees
+            </a>
+        </li>
+        <li>
+            <a href="/blog/p2p-crypto-escrow-works" className="hover:underline">
+                → How P2P Crypto Escrow Works
+            </a>
+        </li>
+        <li>
+            <a href="/blog/p2p-trading-scams-and-how-to-avoid-themes" className="hover:underline">
+                → P2P Trading Scams & How to Stay Safe
+            </a>
+        </li>
+    </ul>
+</div>      
+
       <PRQFooter/>
 
       {modal && (
