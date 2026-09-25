@@ -176,10 +176,72 @@ function percentileFromVolumes(volByUser, userId) {
   return Math.round(100 * (1 - (myRank - 1) / all.length));
 }
 
+// ── Payment-method matching ─────────────────────────────────────────────
+// Mobile-network money: MTN, Vodafone / Telecel, AirtelTigo / Airtel, Orange, Moov, Wave, M-Pesa, T-Money.
+// (Bank apps such as Opay, Moniepoint or Paga are NOT mobile-network money and are not matched here.)
+const MOMO_RE = /momo|m-?pesa|mtn|vodafone|telecel|airtel|tigo|orange.?money|moov|t-?money|\bwave\b|mobile.?money/i;
+const BANK_RE = /bank/i;
+const isMomoPayment = (pm) => MOMO_RE.test(pm || '');
+const isBankPayment = (pm) => BANK_RE.test(pm || '');
+const isGiftCardRow = (t) => !!(t && ((t.gift_card_brand && String(t.gift_card_brand).trim()) || String(t.listing?.listing_type || '').toUpperCase().includes('GIFT_CARD')));
+
+// How medals look in the market: most prestigious first.
+const MEDAL_PRESTIGE = [
+  'top-1-club', 'the-og', 'deca-dealer', 'every-damn-day', 'momo-master',
+  'bank-transfer-boss', 'gift-card-savage', 'clean-sheet', 'no-slip-zone', 'praqen-initiate',
+];
+
+// ── When was a medal really earned? ─────────────────────────────────────
+// Used so the first-day awards carry the real date the user crossed the line (the day of
+// their 10th trade, the day their volume passed $10,000, ...) instead of "today".
+// `completed` = the user's completed real trades. Returns an ISO string, or null if it cannot tell.
+function earnedAtForMedal(medalId, completed, registeredAt, now = new Date()) {
+  const trades = (completed || [])
+    .filter((t) => t && t.completed_at && !isNaN(new Date(t.completed_at).getTime()))
+    .sort((x, y) => new Date(x.completed_at) - new Date(y.completed_at));
+  const nth = (list, n) => (list.length >= n ? list[n - 1].completed_at : null);
+  let at = null;
+  switch (medalId) {
+    case 'praqen-initiate': at = nth(trades, 10); break;
+    case 'no-slip-zone': at = nth(trades, 15); break;
+    case 'clean-sheet': at = nth(trades, 20); break;
+    case 'momo-master': at = nth(trades.filter((t) => isMomoPayment(t.payment_method)), 100); break;
+    case 'bank-transfer-boss': at = nth(trades.filter((t) => isBankPayment(t.payment_method)), 25); break;
+    case 'gift-card-savage': at = nth(trades.filter(isGiftCardRow), 10); break;
+    case 'deca-dealer': {
+      let sum = 0;
+      for (const t of trades) { sum += parseFloat(t.amount_usd || 0); if (sum >= 10000) { at = t.completed_at; break; } }
+      break;
+    }
+    case 'every-damn-day': {
+      const days = [...new Set(trades.map((t) => new Date(t.completed_at).toISOString().slice(0, 10)))].sort();
+      let run = 1;
+      if (days.length >= 30) {
+        for (let i = 1; i < days.length; i++) {
+          run = new Date(days[i] + 'T00:00:00Z') - new Date(days[i - 1] + 'T00:00:00Z') === 86400000 ? run + 1 : 1;
+          if (run >= 30) { at = days[i] + 'T23:59:59.000Z'; break; }
+        }
+      }
+      break;
+    }
+    case 'the-og': at = registeredAt ? new Date(new Date(registeredAt).getTime() + 365 * 86400000).toISOString() : null; break;
+    default: at = null;
+  }
+  if (!at) return null;
+  const d = new Date(at);
+  if (isNaN(d.getTime())) return null;
+  return (d > now ? now : d).toISOString(); // never a date in the future
+}
+
 module.exports = {
   longestDailyStreak,
   volumesByUser,
   percentileFromVolumes,
+  isMomoPayment,
+  isBankPayment,
+  isGiftCardRow,
+  MEDAL_PRESTIGE,
+  earnedAtForMedal,
   MEDAL_CHECKS,
   MEDAL_META,
   MEDAL_ORDER,

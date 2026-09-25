@@ -194,6 +194,7 @@ async function _warmListingsCache() {
 
     const userMap = {};
     usersData.forEach(u => { userMap[u.id] = u; });
+    await medalAwardService.attachMedals(Object.values(userMap)); // same medals as the live /api/listings answer
 
     // Only include listings whose seller data was successfully fetched
     const listings = rawListings
@@ -5871,142 +5872,24 @@ app.post('/api/users/check-badges', verifyToken, async (req, res) => {
 });
 
 // ============================================================
-// MEDALS — per-user achievement medals for Trader Settings → Badges & Medals
+// MEDALS — achievement medals (Trader Settings → Badges & Medals, and next to names in the market)
 // ============================================================
-// Definitions + unlock/progress logic live in services/medalService.js
-// (pure + unit-tested there); this section only wires I/O: Supabase reads,
-// user_badges persistence, and response shaping.
-const {
-  longestDailyStreak,
-  volumesByUser,
-  percentileFromVolumes,
-  buildMedalPayloads,
-  newlyEarnedMedalIds,
-} = require('./services/medalService');
+// Rules + dates live in services/medalService.js (pure, unit-tested); saving, notifying, revoking
+// and the market lookup live in services/medalAwardService.js. Everything that writes is switched
+// by MEDALS_AUTO_ENABLED (exactly "true"); until then this screen only SHOWS live progress.
+const { buildMedalPayloads } = require('./services/medalService');
+const medalAwardService = require('./services/medalAwardService');
 
-// PostgREST returns at most 1,000 rows per request, so anything that needs "all" rows must page.
-async function fetchAllRows(makeQuery) {
-  const out = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await makeQuery().range(from, from + 999);
-    if (error) throw new Error(error.message);
-    out.push(...(data || []));
-    if (!data || data.length < 1000) break;
-  }
-  return out;
-}
-
-// Reusable scan: all COMPLETED trades involving userId (for medal stats).
-// completed_at is included for the Every Damn Day daily-streak calculation.
-async function fetchCompletedTradesForMedals(userId) {
-  const rows = await fetchAllRows(() => supabaseAdmin
-    .from('trades')
-    .select('id, buyer_id, seller_id, amount_usd, payment_method, completed_at, is_test, listing:listing_id(listing_type)')
-    .eq('status', 'COMPLETED')
-    .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
-    .order('id', { ascending: true }));
-  return rows.filter((t) => t.is_test !== true); // test trades never count towards medals
-}
-
-// Rank every user by their completed-trade USD volume and return this user's
-// percentile. Computed live — other users' identities/volumes stay server-side.
-// Everyone's volume changes slowly, so it is read from the database at most once every 10 minutes
-// (reading all completed trades takes a few seconds), then shared by every medals request.
-let _medalVolumeCache = null;
-const MEDAL_VOLUME_TTL_MS = 10 * 60 * 1000;
-async function computeVolumePercentile(userId) {
-  try {
-    if (!_medalVolumeCache || Date.now() - _medalVolumeCache.ts > MEDAL_VOLUME_TTL_MS) {
-      const trades = await fetchAllRows(() => supabaseAdmin
-        .from('trades')
-        .select('id, buyer_id, seller_id, amount_usd, is_test')
-        .eq('status', 'COMPLETED')
-        .order('id', { ascending: true }));
-      _medalVolumeCache = { ts: Date.now(), vol: volumesByUser(trades) };
-    }
-    return percentileFromVolumes(_medalVolumeCache.vol, userId);
-  } catch (e) {
-    console.error('[medals] percentile error:', e.message);
-    return 0;
-  }
-}
-
-// GET /api/users/me/medals — medal unlock/progress state for the logged-in user.
-// Also persists newly-earned medals into user_badges (same unlocked_at mechanism
-// the badge system already uses) so unlock dates are stable over time. Earned
-// rows are never re-locked: once is_unlocked + unlocked_at are set they're
-// skipped on every recompute, even if the underlying metrics later change.
+// GET /api/users/me/medals — the logged-in user's medals and progress.
 app.get('/api/users/me/medals', verifyToken, async (req, res) => {
   try {
-    const userId = req.userId;
-
-    // User account data (registration date for The OG)
-    const { data: user } = await supabaseAdmin
-      .from('users').select('created_at').eq('id', userId).single();
-
-    // All completed trades involving this user (counts, volume, payment-method
-    // split, gift-card split, and completion dates for the daily streak)
-    const completedTrades = await fetchCompletedTradesForMedals(userId);
-
-    // Any trade row where this user was a party and a dispute/cancellation happened.
-    // Reuses existing status + disputed_at / cancelled_at columns — no new tracking.
-    // Note: `disputed_at` stays stamped on resolved disputes too (status moves on,
-    // the timestamp doesn't reset), so Clean Sheet checks the timestamp rather than
-    // live status — a resolved-against-you dispute still counts against the medal.
-    const [{ data: disputeRows }, { data: cancelRows }] = await Promise.all([
-      supabaseAdmin.from('trades').select('id').not('disputed_at', 'is', null).or(`buyer_id.eq.${userId},seller_id.eq.${userId}`),
-      supabaseAdmin.from('trades').select('id, cancel_reason').eq('status', 'CANCELLED').or(`buyer_id.eq.${userId},seller_id.eq.${userId}`),
-    ]);
-    // Expiry timeouts (buyer never paid) are EXPIRED in the UI, not user
-    // cancellations — don't count them against No Slip Zone.
-    const EXPIRY_REASON_RE = /expir|time limit|payment window/i;
-    const cancelledCount = (cancelRows || []).filter(t => !EXPIRY_REASON_RE.test(t.cancel_reason || '')).length;
-
-    const isMomo = pm => /momo|mpesa|vodafone|mobile.?money/i.test(pm || '');
-    const isBank = pm => /bank/i.test(pm || '');
-    const isGift = l => String(l?.listing_type || '').toUpperCase().includes('GIFT_CARD');
-
-    const stats = {
-      totalTrades: completedTrades.length,
-      totalVolumeUsd: completedTrades.reduce((s, t) => s + parseFloat(t.amount_usd || 0), 0),
-      momoTrades: completedTrades.filter(t => isMomo(t.payment_method)).length,
-      bankTrades: completedTrades.filter(t => isBank(t.payment_method)).length,
-      giftCardTrades: completedTrades.filter(t => isGift(t.listing)).length,
-      disputeCount: (disputeRows || []).length,
-      cancelledCount,
-      dailyStreak: longestDailyStreak(completedTrades),
-      registeredAt: user?.created_at || null,
-      volumePercentile: await computeVolumePercentile(userId),
-    };
-
-    // Earned dates already recorded for this user (badge_name ↔ medal id, same
-    // user_badges table the achievement badges live in).
-    const { data: badgeRows } = await supabaseAdmin
-      .from('user_badges')
-      .select('badge_name, is_unlocked, unlocked_at')
-      .eq('user_id', userId);
-    const earnedDateByMedalId = {};
-    (badgeRows || []).forEach(b => {
-      if (b.is_unlocked && b.unlocked_at) earnedDateByMedalId[b.badge_name] = b.unlocked_at;
-    });
-
-    // Persist any newly-earned medal. Already-earned ids are excluded by
-    // newlyEarnedMedalIds, so unlock records are written exactly once and
-    // never demoted.
-    const newlyEarned = newlyEarnedMedalIds(stats, Object.keys(earnedDateByMedalId));
-    for (const id of newlyEarned) {
-      const existing = (badgeRows || []).find(b => b.badge_name === id);
-      if (existing) {
-        await supabaseAdmin.from('user_badges').update({ is_unlocked: true, unlocked_at: new Date().toISOString() }).eq('user_id', userId).eq('badge_name', id);
-      } else {
-        await supabaseAdmin.from('user_badges').insert({ user_id: userId, badge_name: id, is_unlocked: true, unlocked_at: new Date().toISOString() });
-      }
-      earnedDateByMedalId[id] = new Date().toISOString();
-      console.log(`🥇 Medal EARNED: "${id}" for ${userId.slice(0, 8)}`);
-    }
-    if (newlyEarned.length) console.log(`[medals] ${newlyEarned.length} new medal(s) for ${userId.slice(0, 8)}: ${newlyEarned.join(', ')}`);
-
-    res.json({ success: true, medals: buildMedalPayloads(stats, earnedDateByMedalId) });
+    const on = medalAwardService.medalsAutoEnabled();
+    const r = await medalAwardService.evaluateUser(req.userId, { persist: on, notify: on });
+    if (!r) return res.status(404).json({ error: 'User not found.' });
+    const noStats = { totalTrades: 0, totalVolumeUsd: 0, momoTrades: 0, bankTrades: 0, giftCardTrades: 0, disputeCount: 0, cancelledCount: 0, dailyStreak: 0, registeredAt: null, volumePercentile: 0 };
+    const earnedDateById = {};
+    (r.earned || []).forEach((e) => { earnedDateById[e.id] = e.earnedAt; });
+    res.json({ success: true, medals: buildMedalPayloads(r.stats || noStats, earnedDateById) });
   } catch (error) {
     console.error('[medals] error:', error.message);
     res.status(500).json({ error: 'Failed to load medals.' });
@@ -6280,9 +6163,11 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
     delete data.totp_secret;
     delete data.two_factor_temp_secret;
 
+    const _ownMedals = ((await medalAwardService.getMedalsForUsers([data.id]).catch(() => ({})))[data.id]) || [];
     res.json({
       user: {
         ...data,
+        medals: _ownMedals,
         ...extraFields,
         ...lockFlags,
         ...levelFlags,
@@ -6399,9 +6284,10 @@ app.get('/api/users/:userId', async (req, res) => {
       }
     } catch { }
 
+    const _userMedals = ((await medalAwardService.getMedalsForUsers([data.id]).catch(() => ({})))[data.id]) || [];
     res.json({
       user: {
-        ...data, ...extraFields, referral_trade_count,
+        ...data, medals: _userMedals, ...extraFields, referral_trade_count,
         total_trades: real_total_trades,
         positive_feedback: real_positive,
         negative_feedback: real_negative,
@@ -7094,6 +6980,7 @@ app.get('/api/featured-offers', async (req, res) => {
       console.log('[featured] sellerIds:', allSellerIds.length, '| profilesResult count:', (profilesResult.data || []).length, '| err:', profilesResult.error?.message);
       (profilesResult.data || []).forEach(u => { userMap[u.id] = u; });
       (avatarResult.data || []).forEach(u => { if (userMap[u.id]) userMap[u.id].avatar_url = capAvatar(u.avatar_url); });
+      await medalAwardService.attachMedals(Object.values(userMap));
     }
 
     const enriched = listings.map(l => ({ ...l, users: userMap[l.seller_id] || {} }));
@@ -7338,6 +7225,7 @@ app.get('/api/listings', async (req, res) => {
         return res.status(503).json({ error: isTimeout ? 'Seller profiles took too long to load. Please retry.' : 'Could not load seller profiles. Please retry in a moment.' });
       }
       (usersResult.data || []).forEach(u => { userMap[u.id] = { ...u, avatar_url: capAvatar(u.avatar_url) }; });
+      await medalAwardService.attachMedals(Object.values(userMap)); // medals replace the old badge chip in the market
       walletRows = walletsResult.data || [];
       // Only a never-seized (amount_usdt === remaining_amount) LOCKED deposit counts as "secured"
       depositedSellerIds = new Set(
@@ -7535,6 +7423,8 @@ app.get('/api/listings/:id', async (req, res) => {
         }
       } catch { }
     }
+
+    await medalAwardService.attachMedals([enrichedSeller]); // medals shown next to the seller's name
 
     // Use the LIVE market price, not the listing's own bitcoin_price field, for balance-
     // sufficiency math — that field is a snapshot taken at creation time (or unused entirely
@@ -7835,6 +7725,7 @@ app.get('/api/offers', async (req, res) => {
       display_name: computeDisplayName(u),
       country: u.country || null,
     }]));
+    await medalAwardService.attachMedals(Object.values(userMap)); // medals shown next to each seller's name
 
     // Drop offers whose seller is banned or frozen (see the matching filter in
     // /api/listings). Only excluded when the status is positively known.
@@ -16160,6 +16051,10 @@ if (
     // ── Wallet-address provisioning reconciler — fills any user missing a
     //    BTC / Tron deposit address (signup provisioning is fire-and-forget).
     walletProvisioningReconciler.start();
+
+    // ── Medals: daily safety net (restricted accounts cleaned, time-based medals awarded).
+    //    Does nothing unless MEDALS_AUTO_ENABLED=true.
+    medalAwardService.startDailySweep();
   } else {
     console.log('⏸  Live mainnet services (deposit monitor, sweep, balance integrity) skipped — NODE_ENV is not "production"');
   }

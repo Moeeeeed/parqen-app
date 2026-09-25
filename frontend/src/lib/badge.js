@@ -1,4 +1,5 @@
 import React from 'react';
+import { MEDAL_INFO, pickMedals } from './medals';
 import {
   Shield, Star, TrendingUp, Briefcase, Crown,
 } from 'lucide-react';
@@ -151,25 +152,27 @@ export function SafetyBanner({ user, variant = 'profile', className = '' }) {
   );
 }
 
-export function BadgeChip({ user, badgeName, className = '', size = 'sm' }) {
-  const badge = badgeName
-    ? (TRUST_MAP[String(badgeName).toUpperCase()] || TRUST_MAP.BEGINNER)
-    : deriveBadge(user);
-  const iconSize = size === 'xs' ? 9.5 : size === 'lg' ? 14 : 11;
-
+// Market/profile chip. The old trust-level chip is hidden — medals are shown instead.
+// (The trust level itself — TRUST_MAP / deriveBadge / users.badge — is still computed and used for filters.)
+export function BadgeChip({ user, className = '', size = 'sm' }) {
+  const { shown, more } = pickMedals(user && user.medals, size === 'lg' ? 5 : 3);
+  if (!shown.length) return null;
+  const px = size === 'xs' ? 16 : size === 'lg' ? 24 : 19;
   return (
-    <span
-      className={`inline-flex items-center gap-1 font-black max-w-full min-w-0 ${className}`}
-      style={{
-        color: badge.solidColor || badge.color,
-        fontSize: size === 'xs' ? '9.5px' : size === 'lg' ? '12.5px' : '10.5px',
-        letterSpacing: '0.01em',
-        lineHeight: 1.1,
-      }}
-      title={badge.label}
-    >
-      {renderBadgeIcon(badge, iconSize)}
-      <span className="truncate min-w-0">{badge.label}</span>
+    <span className={'inline-flex items-center flex-shrink-0 ' + className} style={{ gap: 3 }} aria-label={'Medals: ' + shown.map((id) => MEDAL_INFO[id].name).join(', ')}>
+      {shown.map((id) => (
+        <img
+          key={id}
+          src={MEDAL_INFO[id].icon}
+          alt={MEDAL_INFO[id].name}
+          title={MEDAL_INFO[id].name}
+          width={px}
+          height={px}
+          loading="lazy"
+          style={{ width: px, height: px, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+        />
+      ))}
+      {more > 0 && <span style={{ fontSize: size === 'xs' ? 9.5 : 10.5, fontWeight: 900, color: '#6B7280', lineHeight: 1 }}>+{more}</span>}
     </span>
   );
 }

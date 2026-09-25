@@ -73,3 +73,21 @@ describe('medalMetaText', () => {
     expect(medalMetaText(null, 'badges')).toBeNull();
   });
 });
+
+describe('market medals (pickMedals)', () => {
+  const { pickMedals, MEDAL_INFO } = require('./medals');
+  it('has a name and picture for all 10 medals', () => {
+    expect(Object.keys(MEDAL_INFO)).toHaveLength(10);
+    Object.values(MEDAL_INFO).forEach((m) => { expect(m.name).toBeTruthy(); expect(m.icon).toMatch(/^\/.+\.jpg$/); });
+  });
+  it('shows at most 3 and counts the rest', () => {
+    const r = pickMedals(['top-1-club', 'the-og', 'deca-dealer', 'clean-sheet', 'no-slip-zone']);
+    expect(r.shown).toEqual(['top-1-club', 'the-og', 'deca-dealer']);
+    expect(r.more).toBe(2);
+  });
+  it('ignores unknown ids, repeats, and non-lists', () => {
+    expect(pickMedals(['nope', 'the-og', 'the-og']).shown).toEqual(['the-og']);
+    expect(pickMedals(undefined)).toEqual({ shown: [], more: 0, all: [] });
+    expect(pickMedals('the-og').shown).toEqual([]);
+  });
+});

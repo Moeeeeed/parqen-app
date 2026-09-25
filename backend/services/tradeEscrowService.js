@@ -941,6 +941,8 @@ class TradeEscrowService {
     // ── Award badges to both participants (fire and forget) ────────────────
     checkAndAwardBadges(tradeData.seller_id).catch(() => {});
     checkAndAwardBadges(tradeData.buyer_id).catch(() => {});
+    // ── Medals: check both participants (does nothing unless MEDALS_AUTO_ENABLED=true; never blocks the trade) ──
+    try { require('./medalAwardService').evaluateAfterTrade([tradeData.seller_id, tradeData.buyer_id]); } catch (e) { /* ignore */ }
 
     // ── Log transaction for receiver ───────────────────────────────────────
     await this.logTransaction(
