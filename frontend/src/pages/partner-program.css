@@ -527,3 +527,50 @@
 .ppx .wtxt .youtag{margin-left:6px;font-style:normal;background:#F4A422;color:#1B4332;font-size:9px;font-weight:700;padding:1px 6px;border-radius:99px}
 .ppx .btn.big{padding:12px;font-size:15px;border-radius:10px}
 @media(max-width:560px){.ppx .w4{grid-template-columns:1fr 1fr;gap:4px 12px}.ppx .wtxt small{font-size:10px}}
+
+/* ===== journey (level path) ===== */
+.ppx .jr{background:linear-gradient(135deg,#1B4332 0%,#2D6A4F 70%,#40916C 100%);color:#fff;border-radius:22px;padding:22px 22px 26px;box-shadow:0 22px 50px -22px rgba(27,67,50,.7);margin-top:14px;position:relative;overflow:hidden}
+.ppx .jr::before{content:"";position:absolute;right:-60px;top:-60px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(244,164,34,.35),transparent 70%)}
+.ppx .jr-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;position:relative}
+.ppx .jr-head h4{font-size:19px;margin-bottom:6px}
+.ppx .jr-head p{font-size:14px;color:#D4EADB;max-width:560px}
+.ppx .jr-head p b{color:#F4A422}
+.ppx .jr-now{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:14px;padding:10px 16px;text-align:left;min-width:170px}
+.ppx .jr-now small{display:block;font-size:11px;color:#B9D8C6;text-transform:uppercase;letter-spacing:.05em}
+.ppx .jr-now b{display:block;font-size:20px;color:#F4A422;line-height:1.2}
+.ppx .jr-now span{font-size:12px;color:#D4EADB}
+.ppx .jr-steps{list-style:none;display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:26px;position:relative;padding:0}
+.ppx .jr-steps::before{content:"";position:absolute;left:12%;right:12%;top:34px;height:4px;border-radius:9px;background:rgba(255,255,255,.2)}
+.ppx .jr-step{position:relative;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px;padding:0 4px}
+.ppx .jr-badge{position:relative;width:70px;height:70px;border-radius:50%;background:rgba(255,255,255,.1);border:3px solid rgba(255,255,255,.25);display:grid;place-items:center}
+.ppx .jr-check{position:absolute;right:-4px;bottom:-4px;width:24px;height:24px;border-radius:50%;background:#F4A422;color:#1B4332;font-style:normal;font-weight:800;font-size:14px;display:grid;place-items:center;border:2px solid #1B4332}
+.ppx .jr-name{font-size:17px;margin-top:8px}
+.ppx .jr-rate{background:#F4A422;color:#1B4332;font-weight:700;font-size:12px;border-radius:99px;padding:2px 10px}
+.ppx .jr-req{margin-top:8px;display:grid;gap:3px;background:rgba(255,255,255,.1);border-radius:12px;padding:8px 10px;width:100%;font-size:13px;color:#D4EADB}
+.ppx .jr-req b{color:#fff;font-size:15px}
+.ppx .jr-tag{margin-top:8px;font-style:normal;font-size:10px;font-weight:800;letter-spacing:.06em;padding:3px 10px;border-radius:99px;background:rgba(255,255,255,.14);color:#D4EADB}
+.ppx .jr-step.done .jr-badge{background:#fff;border-color:#F4A422}
+.ppx .jr-step.done .jr-tag{background:#2D9C6A;color:#fff;background:#40916C}
+.ppx .jr-step.done:has(.jr-check) .jr-tag{background:#40916C;color:#fff}
+.ppx .jr-step.next .jr-badge{background:#fff;border-color:#F4A422;box-shadow:0 0 0 6px rgba(244,164,34,.25),0 0 30px rgba(244,164,34,.55)}
+.ppx .jr-step.next .jr-tag{background:#F4A422;color:#1B4332}
+.ppx .jr-step.locked{opacity:.6}
+.ppx .jr-step.locked .jr-badge{filter:grayscale(.7)}
+.ppx .jr-step.goal .jr-badge{background:#fff;border-color:rgba(244,164,34,.7)}
+.ppx .jr-step.goal .jr-tag{background:rgba(244,164,34,.22);color:#F4A422}
+.ppx .jr-prog{width:100%;display:grid;gap:3px;margin-top:6px;text-align:left}
+.ppx .jr-bar{height:7px;background:rgba(255,255,255,.2);border-radius:9px;overflow:hidden}
+.ppx .jr-bar i{display:block;height:100%;background:#F4A422;border-radius:9px}
+.ppx .jr-prog small{font-size:11px;color:#D4EADB;margin-bottom:2px}
+@media(max-width:820px){
+  .ppx .jr{padding:18px 16px 20px}
+  .ppx .jr-steps{grid-template-columns:1fr;gap:12px;margin-top:18px}
+  .ppx .jr-steps::before{left:37px;right:auto;top:20px;bottom:20px;width:4px;height:auto}
+  .ppx .jr-step{display:grid;grid-template-columns:74px 1fr;grid-template-areas:"b n" "b r" "b q" "b p" "b t";text-align:left;justify-items:start;align-items:center;column-gap:12px;row-gap:3px}
+  .ppx .jr-badge{grid-area:b;align-self:start}
+  .ppx .jr-name{grid-area:n;margin-top:0}
+  .ppx .jr-rate{grid-area:r}
+  .ppx .jr-req{grid-area:q;grid-template-columns:1fr 1fr;margin-top:2px}
+  .ppx .jr-prog{grid-area:p}
+  .ppx .jr-tag{grid-area:t;margin-top:4px}
+}

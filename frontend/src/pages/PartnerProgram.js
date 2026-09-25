@@ -190,26 +190,46 @@ function PartnerProgram({ user }) {
           </div>
         )}
 
-        <div className="track4wrap">
-          <h4 className="lab2" style={{ margin: '0 0 4px' }}>Your journey: bring users, grow and earn your badges</h4>
-          <p className="note" style={{ margin: '0 0 14px' }}>To unlock each level you need enough active users AND enough trade volume from them. Both numbers are shown under each badge: Explorer, Builder, Titan, Ambassador.</p>
-          <div className="track4">
+        <div className="jr">
+          <div className="jr-head">
+            <div>
+              <h4>Your journey: bring users, grow and earn your badges</h4>
+              <p>To unlock a level you need <b>both</b> enough active users <b>and</b> enough trade volume from them. Your level sets your share of every trade.</p>
+            </div>
+            <div className="jr-now">
+              <small>Your level</small>
+              <b>{cur == null ? 'Log in to start' : cur < 0 ? 'Getting started' : LEVELS[cur].n}</b>
+              <span>{pct(LEVELS[shown].r)} of each trade</span>
+            </div>
+          </div>
+          <ol className="jr-steps">
             {LEVELS.map((l, i) => {
-              const fill = cur == null ? 100 : i <= cur ? 100 : i === cur + 1 ? Math.min(100, Math.round(Math.min(s.active / l.f, s.qvol / l.v) * 100)) : 0;
+              const state = cur == null ? 'goal' : i <= cur ? 'done' : i === cur + 1 ? 'next' : 'locked';
+              const pu = Math.min(100, Math.round((s.active / l.f) * 100));
+              const pv = Math.min(100, Math.round((s.qvol / l.v) * 100));
               return (
-                <React.Fragment key={l.n}>
-                  {i > 0 && <div className="seg"><i style={{ width: `${fill}%` }} /></div>}
-                  <div className={`tb${cur != null && i > cur ? ' off' : ''}${i === cur ? ' now' : ''}`}>
-                    <Badge i={i} size={56} />
-                    <span>{l.n}</span>
-                    <small>{l.f} active users<br />${l.v.toLocaleString()} volume</small>
-                    <em className="rt2" style={{ fontStyle: 'normal' }}>{pct(l.r)}</em>
-                    {i === cur && <em className="here" style={{ fontStyle: 'normal' }}>YOU ARE HERE</em>}
+                <li className={`jr-step ${state}`} key={l.n}>
+                  <div className="jr-badge">
+                    <Badge i={i} size={64} />
+                    {state === 'done' && <i className="jr-check">✓</i>}
                   </div>
-                </React.Fragment>
+                  <b className="jr-name">{l.n}</b>
+                  <span className="jr-rate">{pct(l.r)} share</span>
+                  <div className="jr-req">
+                    <span><b>{l.f}</b> active users</span>
+                    <span><b>${l.v.toLocaleString()}</b> trade volume</span>
+                  </div>
+                  {state === 'next' && (
+                    <div className="jr-prog">
+                      <div className="jr-bar"><i style={{ width: `${pu}%` }} /></div><small>{s.active}/{l.f} users</small>
+                      <div className="jr-bar"><i style={{ width: `${pv}%` }} /></div><small>{usd(s.qvol)} of {l.v.toLocaleString()}</small>
+                    </div>
+                  )}
+                  <em className="jr-tag">{state === 'done' ? (i === cur ? 'YOU ARE HERE' : 'UNLOCKED') : state === 'next' ? 'NEXT GOAL' : state === 'goal' ? 'UNLOCK WITH' : 'LOCKED'}</em>
+                </li>
               );
             })}
-          </div>
+          </ol>
         </div>
       </section>
 

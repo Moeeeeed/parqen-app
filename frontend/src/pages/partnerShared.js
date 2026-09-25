@@ -50,7 +50,7 @@ const BADGE_SHAPES = [
     <>
       <path d="M22 6h20v22l-10 8-10-8z" fill={c} stroke={c2} strokeWidth="2" strokeLinejoin="round" />
       <circle cx="32" cy="42" r="12" fill="#fff" stroke={c2} strokeWidth="3" />
-      <path d="M27 42l4 4 7-8" stroke={c2} strokeWidth="3" fill="none" strokeLinecap="round" />
+      <path d="M32 35.500l2.300 4.800 5.200.700-3.800 3.600.900 5.200-4.600-2.500-4.600 2.500.900-5.200-3.800-3.600 5.200-.700z" fill={c2} />
     </>
   ),
   (c, c2) => <path d="M38 6l-20 30h12l-4 22 22-32H36z" fill={c} stroke={c2} strokeWidth="2" strokeLinejoin="round" />,
