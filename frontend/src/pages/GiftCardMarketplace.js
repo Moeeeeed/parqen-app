@@ -1056,7 +1056,6 @@ export default function GiftCards({ user }) {
   // this windows the display rather than the network request).
   const [visibleCount, setVisibleCount] = useState(24);
   const [btcPrice, setBtcPrice] = useState(68000);
-  const [affLeaderboard, setAffLeaderboard] = useState([]);
   const [selCurrency, setSelCurrency] = useState(CURRENCIES.find(c => c.code === 'USD') || CURRENCIES[0]);
   const [selBrand, setSelBrand] = useState('All Brands');
   const [selCountry, setSelCountry] = useState(COUNTRIES[0]);
@@ -1287,17 +1286,6 @@ export default function GiftCards({ user }) {
     }
     finally { if (attempt === 1 || attempt >= 3) setLoading(false); }
   };
-
-  useEffect(() => {
-    const fetchBoard = () => {
-      axios.get(`${API_URL}/referral/leaderboard`).then(r => {
-        if (r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0, 3));
-      }).catch(() => { });
-    };
-    fetchBoard();
-    const iv = setInterval(fetchBoard, 60000);
-    return () => clearInterval(iv);
-  }, []);
 
   const getFiltered = () => {
     let list = [...listings];
@@ -1925,7 +1913,7 @@ export default function GiftCards({ user }) {
                 <p style={{ margin: 0, fontSize: 20, fontWeight: 900, color: '#fff', lineHeight: 1.2 }}>Invite friends. Earn BTC forever.</p>
                 <p style={{ margin: 0, fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 5, fontWeight: 500 }}>Earn on every trade your referrals make — for life.</p>
               </div>
-              <button onClick={() => navigate(user ? '/dashboard?tab=affiliate' : '/register')}
+              <button onClick={() => navigate('/partner-program')}
                 style={{ flexShrink: 0, padding: '12px 20px', borderRadius: 11, border: 'none', cursor: 'pointer', background: C.gold, color: C.forest, fontWeight: 900, fontSize: 13, whiteSpace: 'nowrap', boxShadow: '0 4px 16px rgba(244,164,34,0.45)' }}>
                 Get Link <ArrowRight size={14} style={{ display: 'inline', marginLeft: 4, verticalAlign: '-2px' }} />
               </button>
@@ -1958,47 +1946,6 @@ export default function GiftCards({ user }) {
             </div>
           </div>
 
-          {/* Leaderboard */}
-          {affLeaderboard.length > 0 && (
-            <div style={{ background: '#fff' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 14px 6px', background: C.mist }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <Trophy size={11} style={{ color: C.gold }} />
-                  <span style={{ fontSize: 9, fontWeight: 900, color: C.forest, textTransform: 'uppercase', letterSpacing: 0.8 }}>Top Earners</span>
-                </div>
-                <span style={{ fontSize: 9, color: C.green, fontWeight: 600, background: '#fff', borderRadius: 4, padding: '1px 6px' }}>All Time</span>
-              </div>
-              {affLeaderboard.map((u, i) => {
-                const bc = BADGE_COLORS[u.badge] || '#64748B';
-                const rankBg = i === 0 ? C.gold : i === 1 ? C.g300 : '#C08A4E';
-                const earnedUsd = ((u.earned_btc || 0) * (btcPrice || 76000));
-                return (
-                  <div key={u.username} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 14px', borderTop: `1px solid ${C.g50}` }}>
-                    <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, background: rankBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <span style={{ fontSize: 9, fontWeight: 900, color: '#fff' }}>{i + 1}</span>
-                    </div>
-                    <div style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0, background: `${bc}15`, border: `1.5px solid ${bc}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 900, color: bc }}>
-                      {(u.username || '?')[0].toUpperCase()}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ fontSize: 10, fontWeight: 800, color: '#1E293B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 80 }}>{u.username}</span>
-                        <BadgeChip user={u} badgeName={u.badge} size="xs" />
-                      </div>
-                      <span style={{ fontSize: 8, color: C.g400, fontWeight: 500 }}>{u.referrals} referral{u.referrals !== 1 ? 's' : ''} · {u.affiliate_trades} ref trade{u.affiliate_trades !== 1 ? 's' : ''}</span>
-                    </div>
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <div style={{ fontSize: 11, fontWeight: 900, color: C.gold, lineHeight: 1 }}>₿{(() => { const v = parseFloat(u.earned_btc || 0); return v > 0 && v < 0.0001 ? v.toFixed(8) : v.toFixed(5); })()}</div>
-                      <div style={{ fontSize: 8, color: C.g400, fontWeight: 500, marginTop: 1 }}>${earnedUsd >= 1000 ? (earnedUsd / 1000).toFixed(1) + 'k' : earnedUsd >= 1 ? earnedUsd.toFixed(2) : earnedUsd < 0.01 ? '<$0.01' : earnedUsd.toFixed(2)}</div>
-                    </div>
-                  </div>
-                );
-              })}
-              <div style={{ padding: '6px 14px', background: C.mist, borderTop: `1px solid ${C.g100}`, textAlign: 'center' }}>
-                <span style={{ fontSize: 9, color: C.green, fontWeight: 700 }}>Could you be next? <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => navigate('/dashboard?tab=affiliate')}>View full leaderboard →</span></span>
-              </div>
-            </div>
-          )}
 
           <p style={{ margin: 0, padding: '6px 14px 9px', textAlign: 'center', fontSize: 9, color: C.g400, fontWeight: 600, letterSpacing: 0.3, background: '#fff' }}>
             Free to join · No minimum payout · Lifetime commission

@@ -897,7 +897,6 @@ export default function SellBitcoin({user}) {
   const [loadError,    setLoadError]    = useState(false);
   const [retrying,     setRetrying]     = useState(false);
   const [btcPrice,     setBtcPrice]     = useState(68000);
-  const [affLeaderboard, setAffLeaderboard] = useState([]);
   const [selCountry,    setSelCountry]    = useState(COUNTRIES[0]);
   const [countrySearch, setCountrySearch] = useState('');
   const [selPayment,    setSelPayment]    = useState('all');
@@ -1041,11 +1040,6 @@ export default function SellBitcoin({user}) {
     };
     document.addEventListener('mousedown',h);
     return () => document.removeEventListener('mousedown',h);
-  },[]);
-  useEffect(()=>{
-    axios.get(`${API_URL}/referral/leaderboard`).then(r=>{
-      if(r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0,3));
-    }).catch(()=>{});
   },[]);
 
   const loadOffers = async (attempt = 1, force = false) => {
@@ -1662,7 +1656,7 @@ export default function SellBitcoin({user}) {
                 </div>
                 <p style={{margin:0,fontSize:16,fontWeight:900,color:'#fff',lineHeight:1.2}}>Invite friends. Earn BTC forever.</p>
               </div>
-              <button onClick={()=>navigate('/dashboard?tab=affiliate')}
+              <button onClick={()=>navigate('/partner-program')}
                 style={{flexShrink:0,padding:'10px 16px',borderRadius:10,border:'none',cursor:'pointer',background:'#F4A422',color:'#78350F',fontWeight:900,fontSize:11,whiteSpace:'nowrap',boxShadow:'0 3px 12px rgba(244,164,34,0.4)'}}>
                 Get Link <ArrowRight size={12} style={{display:'inline',marginLeft:3,verticalAlign:'-2px'}}/>
               </button>
@@ -1685,48 +1679,6 @@ export default function SellBitcoin({user}) {
             ))}
           </div>
 
-          {/* Leaderboard */}
-          {affLeaderboard.length>0&&(
-            <div style={{borderTop:'1px solid #F1F5F9'}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 14px',borderBottom:'1px solid #F1F5F9',background:'#FFFBEB'}}>
-                <div style={{display:'flex',alignItems:'center',gap:5}}>
-                  <Trophy size={11} style={{color:'#D97706'}}/>
-                  <span style={{fontSize:9,fontWeight:900,color:'#78350F',textTransform:'uppercase',letterSpacing:0.6}}>Top Earners</span>
-                </div>
-                <span style={{fontSize:9,color:'#92400E',fontWeight:600}}>All Time</span>
-              </div>
-              {affLeaderboard.map((u,i)=>{
-                const badgeColors={BEGINNER:'#D9A441',PRO:'#D97706',EXPERT:'#B45309',AMBASSADOR:'#92400E',LEGEND:'#78350F'};
-                const bc=badgeColors[u.badge]||'#64748B';
-                const rankBg = i===0?'#F4A422':i===1?'#CBD5E1':'#C08A4E';
-                const earnedUsd=((u.earned_btc||0)*(btcPrice||76000));
-                return(
-                  <div key={u.username} style={{display:'flex',alignItems:'center',gap:9,padding:'7px 14px',borderBottom:i<affLeaderboard.length-1?'1px solid #F8FAFC':'none'}}>
-                    <div style={{width:18,height:18,borderRadius:'50%',flexShrink:0,background:rankBg,display:'flex',alignItems:'center',justifyContent:'center'}}>
-                      <span style={{fontSize:9,fontWeight:900,color:'#fff'}}>{i+1}</span>
-                    </div>
-                    <div style={{width:24,height:24,borderRadius:'50%',flexShrink:0,background:`${bc}18`,border:`1.5px solid ${bc}40`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,fontWeight:900,color:bc}}>
-                      {(u.username||'?')[0].toUpperCase()}
-                    </div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
-                        <span style={{fontSize:10,fontWeight:700,color:'#1E293B',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.username}</span>
-                        <BadgeChip user={u} badgeName={u.badge} size="xs" />
-                      </div>
-                      <span style={{fontSize:8,color:'#94A3B8',fontWeight:500}}>{u.referrals} refs · {u.affiliate_trades||u.total_trades} trades</span>
-                    </div>
-                    <div style={{textAlign:'right',flexShrink:0}}>
-                      <div style={{fontSize:10,fontWeight:800,color:'#D97706'}}>₿{(()=>{const v=parseFloat(u.earned_btc||0);return v>0&&v<0.0001?v.toFixed(8):v.toFixed(5);})()}</div>
-                      <div style={{fontSize:8,color:'#94A3B8',fontWeight:500}}>${earnedUsd>=1000?(earnedUsd/1000).toFixed(1)+'k':earnedUsd>=1?earnedUsd.toFixed(2):earnedUsd<0.01?'<$0.01':earnedUsd.toFixed(2)}</div>
-                    </div>
-                  </div>
-                );
-              })}
-              <div style={{padding:'6px 14px',background:'#FFFBEB',borderTop:'1px solid #FDE68A',textAlign:'center'}}>
-                <span style={{fontSize:9,color:'#92400E',fontWeight:700}}>Could you be next?</span>
-              </div>
-            </div>
-          )}
 
           <p style={{margin:0,padding:'7px 14px 11px',textAlign:'center',fontSize:9,color:'#94A3B8',fontWeight:600}}>
             Free to join · No minimum payout · Lifetime commission

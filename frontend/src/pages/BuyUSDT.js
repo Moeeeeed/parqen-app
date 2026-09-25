@@ -927,7 +927,6 @@ export default function BuyUSDT({user}) {
   const [showAllTrades, setShowAllTrades] = useState(false);
   const [lastSynced,   setLastSynced]   = useState(null);
 
-  const [affLeaderboard, setAffLeaderboard] = useState([]);
   const [traderSearch,   setTraderSearch]   = useState('');
   const [advFilters, setAdvFilters] = useState({
     topRated: false,
@@ -1712,7 +1711,7 @@ export default function BuyUSDT({user}) {
                 <p style={{margin:0,fontSize:20,fontWeight:900,color:'#fff',lineHeight:1.2}}>Earn USDT on every referral trade.</p>
                 <p style={{margin:0,fontSize:12,color:'rgba(255,255,255,0.75)',marginTop:5,fontWeight:500}}>Share your link — your earnings are paid in USDT, for life.</p>
               </div>
-              <button onClick={()=>navigate(user ? '/dashboard?tab=affiliate' : '/register')}
+              <button onClick={()=>navigate('/partner-program')}
                 style={{flexShrink:0,padding:'12px 20px',borderRadius:11,border:'none',cursor:'pointer',background:C.gold,color:'#0F766E',fontWeight:900,fontSize:13,whiteSpace:'nowrap',boxShadow:'0 4px 16px rgba(244,164,34,0.45)'}}>
                 Get Link <ArrowRight size={14} style={{display:'inline',marginLeft:4,verticalAlign:'-2px'}}/>
               </button>
@@ -1741,48 +1740,6 @@ export default function BuyUSDT({user}) {
             </div>
           </div>
 
-          {/* Leaderboard */}
-          {affLeaderboard.length > 0 && (
-            <div style={{background:'#fff'}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 14px 6px',background:'#F0FDFA'}}>
-                <div style={{display:'flex',alignItems:'center',gap:5}}>
-                  <Trophy size={11} style={{color:'#0D9488'}}/>
-                  <span style={{fontSize:9,fontWeight:900,color:'#0F766E',textTransform:'uppercase',letterSpacing:0.8}}>Top Earners</span>
-                </div>
-                <span style={{fontSize:9,color:'#0D9488',fontWeight:600,background:'#fff',borderRadius:4,padding:'1px 6px'}}>All Time</span>
-              </div>
-              {affLeaderboard.map((u,i)=>{
-                const badgeColors={BEGINNER:'#5EEAD4',PRO:'#2DD4BF',EXPERT:'#14B8A6',AMBASSADOR:'#0D9488',LEGEND:'#0F766E'};
-                const bc = badgeColors[u.badge]||C.g500;
-                const rankBg = i===0?C.gold:i===1?C.g300:'#C08A4E';
-                const earnedUsd = parseFloat(u.earned_usdt||u.earned_btc||0);
-                return (
-                  <div key={u.username} style={{display:'flex',alignItems:'center',gap:9,padding:'7px 14px',borderTop:`1px solid ${C.g50}`}}>
-                    <div style={{width:18,height:18,borderRadius:'50%',flexShrink:0,background:rankBg,display:'flex',alignItems:'center',justifyContent:'center'}}>
-                      <span style={{fontSize:9,fontWeight:900,color:'#fff'}}>{i+1}</span>
-                    </div>
-                    <div style={{width:26,height:26,borderRadius:8,flexShrink:0,background:`${bc}15`,border:`1.5px solid ${bc}35`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:900,color:bc}}>
-                      {(u.username||'?')[0].toUpperCase()}
-                    </div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:'flex',alignItems:'center',gap:4}}>
-                        <span style={{fontSize:10,fontWeight:800,color:C.g800,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:80}}>{u.username}</span>
-                        <span style={{fontSize:7,fontWeight:900,color:bc,background:`${bc}12`,border:`1px solid ${bc}25`,borderRadius:3,padding:'1px 4px',letterSpacing:0.4,flexShrink:0,textTransform:'uppercase'}}>{u.badge||'BEGINNER'}</span>
-                      </div>
-                      <span style={{fontSize:8,color:C.g400,fontWeight:500}}>{u.referrals} referral{u.referrals !== 1 ? 's' : ''} · {u.affiliate_trades} ref trade{u.affiliate_trades !== 1 ? 's' : ''}</span>
-                    </div>
-                    <div style={{textAlign:'right',flexShrink:0}}>
-                      <div style={{fontSize:11,fontWeight:900,color:'#0D9488',lineHeight:1}}>₮{earnedUsd.toFixed(2)}</div>
-                      <div style={{fontSize:8,color:C.g400,fontWeight:500,marginTop:1}}>${earnedUsd.toFixed(2)}</div>
-                    </div>
-                  </div>
-                );
-              })}
-              <div style={{padding:'6px 14px',background:'#F0FDFA',borderTop:`1px solid ${C.g100}`,textAlign:'center'}}>
-                <span style={{fontSize:9,color:'#0D9488',fontWeight:700}}>Could you be next? <span style={{textDecoration:'underline',cursor:'pointer'}} onClick={()=>navigate('/dashboard?tab=affiliate')}>View full leaderboard →</span></span>
-              </div>
-            </div>
-          )}
 
           <p style={{margin:0,padding:'6px 14px 9px',textAlign:'center',fontSize:9,color:C.g400,fontWeight:600,letterSpacing:0.3,background:'#fff'}}>
             Free to join · No minimum payout · Lifetime commission

@@ -1569,7 +1569,7 @@ export default function SellUSDT({user}) {
         <p style={{margin:0,fontSize:20,fontWeight:900,color:'#fff',lineHeight:1.2}}>Earn USDT on every referral trade.</p>
         <p style={{margin:0,fontSize:12,color:'rgba(255,255,255,0.75)',marginTop:5,fontWeight:500}}>Share your link — your earnings are paid in USDT, for life.</p>
       </div>
-      <button onClick={()=>navigate(user ? '/dashboard?tab=affiliate' : '/register')}
+      <button onClick={()=>navigate('/partner-program')}
         style={{flexShrink:0,padding:'12px 20px',borderRadius:11,border:'none',cursor:'pointer',background:C.gold,color:'#92400E',fontWeight:900,fontSize:13,whiteSpace:'nowrap',boxShadow:'0 4px 16px rgba(244,164,34,0.45)'}}>
         Get Link <ArrowRight size={14} style={{display:'inline',marginLeft:4,verticalAlign:'-2px'}}/>
       </button>
