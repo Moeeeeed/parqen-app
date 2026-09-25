@@ -829,7 +829,7 @@ style={{background:`${color}12`}}>{React.createElement(icon, {size:15, style:{co
                   <div className="flex-1 min-w-0">
                     <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold mb-4"
                       style={{ background: `${C.gold}20`, border: `1px solid ${C.gold}35`, color: C.gold }}>
-                      <UserPlus size={12} /> Affiliate Programme
+                      <UserPlus size={12} /> Referral Program
                     </div>
                     <h2 className="text-xl md:text-3xl font-black text-white mb-2"
                       style={{ fontFamily: "'Syne',sans-serif" }}>
@@ -837,8 +837,8 @@ style={{background:`${color}12`}}>{React.createElement(icon, {size:15, style:{co
                       <span className="grad-text">Earn Bitcoin Together.</span>
                     </h2>
                     <p className="text-sm mb-5" style={{ color: 'rgba(255,255,255,.65)' }}>
-                      Share your link — earn <strong style={{ color: '#FDE68A' }}>0.1–0.3% BTC commission</strong> on
-                      every trade your referrals complete. No cap, no expiry.
+                      Share your link and <strong style={{ color: '#FDE68A' }}>earn Bitcoin</strong> when the friends
+                      you invite trade on PRAQEN. The more active friends you bring, the higher your level.
                     </p>
 
                     {/* referral link box */}
