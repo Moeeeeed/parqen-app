@@ -163,6 +163,12 @@ export default function SuggestionsPanel({ user }) {
   // agents reply from the Agent Dashboard, which sends an actual email).
   const [open, setOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
+  // Dashboard "Contact support" links open this panel.
+  useEffect(() => {
+    const h = () => { setMode('home'); setOpen(true); };
+    window.addEventListener('praqen:open-support', h);
+    return () => window.removeEventListener('praqen:open-support', h);
+  }, []);
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth < 640);
     window.addEventListener('resize', h);

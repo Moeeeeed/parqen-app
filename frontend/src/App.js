@@ -1,8 +1,7 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
-  HelpCircle, Sparkles, Disc, Bell, CreditCard, ShieldCheck,
-  TrendingUp, Info, Medal, Share2, ArrowLeftRight, ArrowRight,
+  Bell, ArrowLeftRight, ArrowRight,
   Send, MoveRight, Award, Clock,
 } from 'lucide-react';
 import { HelmetProvider } from 'react-helmet-async';
@@ -213,6 +212,23 @@ function PageLoader() {
 
 // ── API Base URL ─────────────────────────────────────────────────────────────
 export const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+
+// ── Dashboard link helpers ───────────────────────────────────────────────────
+// Leaves the app for an outside page (Discord).
+function ExternalRedirect({ to }) {
+  useEffect(() => { window.location.replace(to); }, [to]);
+  return null;
+}
+// "Contact support": go back to the dashboard and open the support panel.
+function OpenSupport() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    navigate('/dashboard', { replace: true });
+    const t = setTimeout(() => window.dispatchEvent(new Event('praqen:open-support')), 250);
+    return () => clearTimeout(t);
+  }, [navigate]);
+  return null;
+}
 
 // ── Ref Redirect ─────────────────────────────────────────────────────────────
 function RefRedirect() {
@@ -676,22 +692,23 @@ function App() {
                     <Route path="/trade/:id" element={user ? <TradeDetail user={user} /> : <Navigate to="/login" />} />
                     <Route path="/trade-chat/:id" element={user ? <TradeChat user={user} /> : <Navigate to="/login" />} />
                     <Route path="/feedback/:tradeId/:userId" element={user ? <Feedback user={user} /> : <Navigate to="/login" />} />
+                    <Route path="/feedback" element={<Navigate to="/my-trades" replace />} />
                     <Route path="/admin" element={<AdminDashboard user={user} onLogin={login} />} />
                     <Route path="/escrow/:id" element={user ? <EscrowVerification user={user} /> : <Navigate to="/login" />} />
                     <Route path="/ref/:username" element={<RefRedirect />} />
                     {/* ── Placeholder pages for dashboard tiles (Part C) ── */}
-                    <Route path="/contact" element={user ? <PlaceholderPage title="Contact Support" description="Our support team is here to help. Send us a message and we'll get back to you within 24 hours." icon={HelpCircle} overrideColor="#F59E0B" /> : <Navigate to="/login" />} />
-                    <Route path="/fees" element={user ? <PlaceholderPage title="Fees" description="Trading fees, withdrawal fees, and all cost details will appear here once the finance team publishes them." icon={Info} overrideColor="#F59E0B" /> : <Navigate to="/login" />} />
-                    <Route path="/medals" element={user ? <PlaceholderPage title="Medals" description="Badges and achievements you've earned on PRAQEN will show up here. Keep trading to collect them all." icon={Medal} overrideColor="#F4A422" /> : <Navigate to="/login" />} />
-                    <Route path="/quick-start" element={user ? <PlaceholderPage title="Quick Start" description="A step-by-step guide to get you trading in minutes. Everything you need to know about buying and selling Bitcoin on PRAQEN." icon={Sparkles} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
-                    <Route path="/trade-insights" element={user ? <PlaceholderPage title="Trade Insights" description="Analytics, trends, and insights about your trading activity will appear here." icon={TrendingUp} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
-                    <Route path="/payment-accounts" element={user ? <PlaceholderPage title="Payment Accounts" description="Manage your linked bank accounts and payment methods for P2P trading." icon={CreditCard} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
-                    <Route path="/devices" element={user ? <PlaceholderPage title="Devices" description="Manage your trusted devices and view active sessions across your account." icon={ShieldCheck} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
+                    <Route path="/contact" element={user ? <OpenSupport /> : <Navigate to="/login" />} />
+                    <Route path="/fees" element={user ? <Navigate to="/terms" replace /> : <Navigate to="/login" />} />
+                    <Route path="/medals" element={user ? <Navigate to="/trader-settings?section=badges" replace /> : <Navigate to="/login" />} />
+                    <Route path="/quick-start" element={user ? <Navigate to="/blog" replace /> : <Navigate to="/login" />} />
+                    <Route path="/trade-insights" element={user ? <Navigate to="/trader-settings?section=trade-insights" replace /> : <Navigate to="/login" />} />
+                    <Route path="/payment-accounts" element={user ? <Navigate to="/trader-settings?section=payment-accounts" replace /> : <Navigate to="/login" />} />
+                    <Route path="/devices" element={user ? <Navigate to="/settings?tab=security" replace /> : <Navigate to="/login" />} />
                     <Route path="/activity-log" element={user ? <PlaceholderPage title="Activity log" description="A timeline of your account activity — logins, trades, and security events — will appear here." icon={Clock} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
-                    <Route path="/security" element={user ? <PlaceholderPage title="Security" description="Two-factor authentication, login history, and security settings to keep your account safe." icon={ShieldCheck} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
-                    <Route path="/discord" element={user ? <PlaceholderPage title="Discord" description="Join our Discord community to chat with other traders, get support, and stay updated on new features." icon={Disc} overrideColor="#8B5CF6" /> : <Navigate to="/login" />} />
+                    <Route path="/security" element={user ? <Navigate to="/settings?tab=security" replace /> : <Navigate to="/login" />} />
+                    <Route path="/discord" element={user ? <ExternalRedirect to="https://discord.gg/V6zCZxfdy" /> : <Navigate to="/login" />} />
                     <Route path="/status" element={user ? <PlaceholderPage title="Status" description="Check the current status of PRAQEN services, including trading, withdrawals, and the website." icon={Bell} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
-                    <Route path="/invite" element={user ? <PlaceholderPage title="Invite & Earn" description="Share your referral link and earn BTC commission every time your friends trade on PRAQEN." icon={Share2} overrideColor="#8B5CF6" /> : <Navigate to="/login" />} />
+                    <Route path="/invite" element={user ? <Navigate to="/partner-program" replace /> : <Navigate to="/login" />} />
                     <Route path="/swap" element={user ? <PlaceholderPage title="Swap" description="Swap between cryptocurrencies instantly at competitive rates. Coming soon." icon={ArrowLeftRight} overrideColor="#1B4332" /> : <Navigate to="/login" />} />
                     <Route path="/receive" element={user ? <PlaceholderPage title="Receive" description="Generate a deposit address to receive Bitcoin in your PRAQEN wallet." icon={ArrowRight} overrideColor="#1B4332" /> : <Navigate to="/login" />} />
                     <Route path="/send" element={user ? <PlaceholderPage title="Send" description="Send Bitcoin to any address or trade directly with other users." icon={Send} overrideColor="#1B4332" /> : <Navigate to="/login" />} />

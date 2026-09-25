@@ -43,7 +43,7 @@ const PRODUCTS_AND_SERVICES = [
   { label: 'Contact support',   icon: HelpCircle,     route: '/contact' },
   { label: 'Gift card checker', icon: Gift,           route: '/gift-cards' },
   { label: 'Wallet',            icon: Wallet,         route: '/wallet' },
-  { label: 'Import feedback',   icon: ThumbsUp,       route: '/feedback/:tradeId/:userId' },
+  { label: 'Import feedback',   icon: ThumbsUp,       route: '/feedback' },
   { label: 'Fees',              icon: Info,           route: '/fees' },
   { label: 'Medals',            icon: Medal,          route: '/medals' },
   { label: 'Quick start',       icon: Sparkles,       route: '/quick-start' },
