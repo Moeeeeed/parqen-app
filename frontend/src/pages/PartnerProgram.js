@@ -1,12 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import { QRCodeSVG } from 'qrcode.react';
 import PropTypes from 'prop-types';
 import CountryFlag from '../components/CountryFlag';
 import SEO from '../components/SEO';
 import './partner-program.css';
-import { countryName, LEVELS, CLAIM_MIN_USD, ACTIVE_MIN_USD, Badge, pct, usd, monthlyExample, usePartnerStats } from './partnerShared';
+import {
+  countryName, LEVELS, CLAIM_MIN_USD, ACTIVE_MIN_USD, Badge, pct, usd, monthlyExample,
+  useAffiliateConfig, useAffiliateSummary, useAffiliateLeaderboard,
+} from './partnerShared';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -16,22 +18,34 @@ const PRODUCTS = [
   { icon: '🎁', name: 'Gift Card Marketplace', text: 'Buy and sell gift cards safely at fair rates.', c: '#1B4332', cs: '#F0FAF5', to: '/gift-cards' },
   { icon: '👛', name: 'PRAQEN Wallet', text: 'Deposit, hold and withdraw your crypto in one secure place.', c: '#1B4332', cs: '#DDF0E4', to: '/wallet' },
   { icon: '🛡️', name: 'Escrow Protection', text: 'Funds are held safely until both sides confirm the trade.', c: '#2D6A4F', cs: '#F0FAF5', to: '/quick-start' },
-  { icon: '🤝', name: 'Affiliate Program', text: 'Earn every time the users you bring trade.', c: '#F4A422', cs: '#FFF0CF', to: '/partner-program', isNew: true },
+  { icon: '🤝', name: 'Affiliate Program', text: 'Bring users who trade and grow with them.', c: '#F4A422', cs: '#FFF0CF', to: '/partner-program', isNew: true },
 ];
 
-const FAQ = [
-  ['What is the PRAQEN Affiliate Program?', 'A way to earn from the users you bring. Share your personal link or scan code. When the people who sign up with it trade Bitcoin or USDT on PRAQEN, you earn a share of the fee we collect on each of their trades.'],
-  ['How much can I earn as an affiliate?', 'It depends on how many users you bring and how much they trade. Use the calculator to try your own numbers.'],
-  ['How do I start earning?', 'Log in, copy your link or let someone scan your code. When the person signs up and completes a trade, your first reward appears in your dashboard.'],
-  ['What is an active user?', `A user you brought who has traded at least $${ACTIVE_MIN_USD} in total. Only active users and their trading volume count towards your level.`],
-  ['How do levels work?', 'There are four levels: Explorer, Builder, Titan and Ambassador. To unlock a level you need BOTH the number of active users AND the trade volume shown for that level. To keep a level you must stay above its (lower) keep numbers. Falling short drops you one level.'],
-  ['Can I earn from gift card trades?', 'Not yet. Right now affiliate rewards come from Bitcoin and USDT trades only.'],
-  ['Which cryptocurrencies can generate affiliate rewards?', 'Bitcoin (BTC) and USDT trades completed on PRAQEN.'],
-  ['How much commission can I earn?', 'Between 0.10% and 0.20% of each completed trade, depending on your level: Explorer 0.10%, Builder 0.12%, Titan 0.15%, Ambassador 0.20%.'],
-  ['When and how do I get paid?', `Rewards wait 3 days to make sure the trade is safe. Once your balance reaches $${CLAIM_MIN_USD}, tap Claim and it is added to your PRAQEN wallet.`],
-  ['How long do I earn from each user?', 'For 12 months from the day the user joins. After that, the rate is halved so your older users still pay you.'],
-  ['Is there a limit to how many users I can bring?', 'No. Bring as many real users as you like. Fake accounts and self-referrals are not allowed and will be removed.'],
-];
+// FAQ. While payouts are off, nothing here mentions money amounts, rewards or claiming.
+function buildFaq(cash) {
+  const list = [
+    ['What is the PRAQEN Affiliate Program?', cash
+      ? 'A way to earn from the users you bring. Share your personal link or scan code. When the people who sign up with it trade Bitcoin or USDT on PRAQEN, you earn a share of the fee we collect on each of their trades.'
+      : 'A way to grow with the users you bring. Share your personal link or scan code. When the people who sign up with it trade Bitcoin or USDT on PRAQEN, they count as your users and you move up the levels.'],
+    ['How much can I earn as an affiliate?', cash
+      ? 'It depends on how many users you bring and how much they trade. Use the calculator to try your own numbers.'
+      : 'Payouts have not started yet. When they do, your share depends on your level, and this page will show it. Until then you can bring users and unlock levels.'],
+    ['How do I start?', 'Log in, copy your link or let someone scan your code. When the person signs up and completes a trade, they count as your user and your numbers update here.'],
+    ['What is an active user?', `A user you brought who has traded at least $${ACTIVE_MIN_USD} in total. Only active users and their trading volume count towards your level.`],
+    ['How do levels work?', 'There are four levels: Explorer, Builder, Titan and Ambassador. To unlock a level you need BOTH the number of active users AND the trade volume shown for that level. To keep a level you must stay above its (lower) keep numbers. Falling short drops you one level.'],
+    ['Do gift card trades count?', 'Not yet. Right now only Bitcoin and USDT trades count towards your level.'],
+    ['Which trades count?', 'Bitcoin (BTC) and USDT trades that were completed on PRAQEN.'],
+    ['What share of each trade will I get?', 'Between 0.10% and 0.20% of each completed trade, depending on your level: Explorer 0.10%, Builder 0.12%, Titan 0.15%, Ambassador 0.20%.'],
+  ];
+  if (cash) {
+    list.push(['When and how do I get paid?', `Rewards wait 3 days to make sure the trade is safe. Once your balance reaches $${CLAIM_MIN_USD}, tap Claim and it is added to your PRAQEN wallet.`]);
+    list.push(['How long do I earn from each user?', 'For 12 months from the day the user joins. After that, the rate is halved so your older users still pay you.']);
+  } else {
+    list.push(['When do payouts start?', 'Payouts have not started yet. We will announce it here and by notification when they do.']);
+  }
+  list.push(['Is there a limit to how many users I can bring?', 'No. Bring as many real users as you like. Fake accounts and self-referrals are not allowed and will be removed.']);
+  return list;
+}
 
 const shareIcons = {
   X: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M18.2 2H21l-6.5 7.4L22 22h-6l-4.7-6.1L5.9 22H3l7-8L2.5 2h6.1l4.2 5.6zm-1 18h1.6L7.2 3.9H5.5z" /></svg>,
@@ -53,10 +67,9 @@ function shareUrl(kind, link) {
   }
 }
 
-// Leaderboard entries only say whether a photo exists; the image itself comes from the avatar endpoint.
-const photoOf = (p) => (p.has_avatar ? `${API_URL}/referral/avatar/${p.id}` : null);
+// The photo comes from the avatar endpoint. If there is none the letter shows instead.
+const photoOf = (id) => (id ? `${API_URL}/referral/avatar/${id}` : null);
 
-// Profile photo when the partner has one, otherwise their first letter.
 function Avatar({ url, name, large }) {
   const [bad, setBad] = useState(false);
   const letter = (name || '?')[0].toUpperCase();
@@ -67,29 +80,30 @@ function Avatar({ url, name, large }) {
 }
 Avatar.propTypes = { url: PropTypes.string, name: PropTypes.string, large: PropTypes.bool };
 
+const ZERO = { users_brought: 0, active_users: 0, qualified_volume_usd: 0, lifetime_volume_usd: 0 };
+
 function PartnerProgram({ user }) {
   const navigate = useNavigate();
-  const stats = usePartnerStats(user);
+  const cfg = useAffiliateConfig();
+  const summary = useAffiliateSummary(user);
+  const board = useAffiliateLeaderboard();
   const [copied, setCopied] = useState(false);
-  const [board, setBoard] = useState(null);
-  const [btcUsd, setBtcUsd] = useState(0);
   const [tab, setTab] = useState('board');
   const [q, setQ] = useState('');
 
+  const cash = cfg.cashEnabled === true;
+  const levels = cfg.levels || LEVELS;
+  const sum = summary.data;
+  const totals = (sum && sum.totals) || ZERO;
+
   const code = user?.referral_code || user?.username || '';
   const link = code ? `https://praqen.com/signup?ref=${encodeURIComponent(code)}` : '';
-  const cur = user && stats ? stats.level : null;
 
-  useEffect(() => {
-    let alive = true;
-    axios.get(`${API_URL}/referral/leaderboard`)
-      .then(({ data }) => { if (alive) setBoard(data.leaderboard || []); })
-      .catch(() => { if (alive) setBoard([]); });
-    axios.get(`${API_URL}/rates`)
-      .then(({ data }) => { if (alive && data.btcUsd) setBtcUsd(Number(data.btcUsd)); })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, []);
+  // Everything below comes straight from the server's answer.
+  // cur: null = not logged in / not loaded, -1 = no level yet, 0..3 = current level.
+  const cur = user && sum ? (sum.level ? sum.level.index : -1) : null;
+  const rateNow = sum ? sum.rate_now : levels[0].r;
+  const next = sum ? sum.next : null;
 
   const copy = () => {
     if (!link) return;
@@ -98,18 +112,13 @@ function PartnerProgram({ user }) {
     else done();
   };
 
-  const leaders = (board || []).filter((x) => x.earned_btc > 0 || x.referrals > 0).slice(0, 3);
   const matches = (r) => !q.trim() || String(r.username || '').toLowerCase().includes(q.trim().toLowerCase());
-  const s = stats || { friends: [], history: [], invitedBy: null, total: 0, active: 0, lifetimeUsd: 0, lifetimeVol: 0, qvol: 0, level: -1 };
-  const shown = cur == null ? 0 : Math.max(0, cur);
-  const nextIdx = cur == null ? null : cur + 1;
-  const nextLv = nextIdx != null && nextIdx < LEVELS.length ? LEVELS[nextIdx] : null;
-  const moreFriends = nextLv ? Math.max(0, nextLv.f - s.active) : 0;
-  const moreVolume = nextLv ? Math.max(0, nextLv.v - s.qvol) : 0;
+  const leaders = (board || []).slice(0, 3);
+  const faq = buildFaq(cash);
 
   return (
     <div className="ppx">
-      <SEO title="Affiliate Program | PRAQEN" description="Earn 0.10% to 0.20% on every Bitcoin and USDT trade the users you bring make on PRAQEN. Share your link and grow from Explorer to Ambassador." />
+      <SEO title="Affiliate Program | PRAQEN" description="Bring users who trade Bitcoin and USDT on PRAQEN and grow from Explorer to Ambassador. Share your link or scan code." />
 
       {/* HERO */}
       <section className="hero"><div className="wrap">
@@ -117,25 +126,31 @@ function PartnerProgram({ user }) {
         <div className="hb hb1"><Badge i={1} size={84} /></div>
         <span className="pill o">Built for traders across the globe</span>
         <h1 className="mega">The Affiliate Program</h1>
-        <p className="sub2">Bring users who trade and earn from every trade they make. Join the PRAQEN Affiliate Program</p>
+        <p className="sub2">Bring users who trade and grow with them. Join the PRAQEN Affiliate Program</p>
         <div className="dash"><div className="in worth">
-          <div className="wh"><div><h3>What could your network be worth?</h3><span>See how much you could earn from the users you bring</span></div><em className="chip">Monthly</em></div>
+          {cash ? (
+            <div className="wh"><div><h3>What could your network be worth?</h3><span>See how much you could earn from the users you bring</span></div><em className="chip">Monthly</em></div>
+          ) : (
+            <div className="wh"><div><h3>What does each level need?</h3><span>Bring active users and unlock a bigger share of every trade</span></div></div>
+          )}
           <div className="w4">
-            {LEVELS.map((l, i) => {
+            {levels.map((l, i) => {
               const m = monthlyExample(l);
               return (
                 <div className={`wi${i === cur ? ' mine' : ''}`} key={l.n}>
                   <Badge i={i} size={34} />
                   <div className="wtxt">
                     <span>{l.n}{i === cur && <i className="youtag">YOU</i>}</span>
-                    <b>{m < 10 ? m.toFixed(2) : `${Math.round(m)}+`} USD</b>
+                    <b>{cash ? `${m < 10 ? m.toFixed(2) : `${Math.round(m)}+`} USD` : `${pct(l.r)} share`}</b>
                     <small>{l.f} active users · ${l.v.toLocaleString()} volume</small>
                   </div>
                 </div>
               );
             })}
           </div>
-          <Link className="btn big" to="/partner-program/calculator">Calculate my earnings</Link>
+          {cash
+            ? <Link className="btn big" to="/partner-program/calculator">Calculate my earnings</Link>
+            : <a className="btn big" href="#levels">See how to level up</a>}
         </div></div>
         <div className="coin big2">₮</div>
       </div></section>
@@ -165,23 +180,23 @@ function PartnerProgram({ user }) {
               </div>
             </div>
             <div className="mecard2">
-              <div className="g2">
-                <div className="st row"><b>Your rate:</b><strong>{pct(LEVELS[shown].r)} <i>({LEVELS[shown].n})</i></strong></div>
-                <div className="st row"><b>Total users you brought:</b><strong>{s.total}</strong></div>
-                <div className="st"><small>Lifetime earnings</small><strong>{s.lifetimeUsd.toFixed(2)} USD</strong></div>
-                <div className="st"><small>Lifetime volume</small><strong>{s.lifetimeVol.toLocaleString(undefined, { maximumFractionDigits: 2 })} USD</strong></div>
-              </div>
-              <div className="claim">
-                <div><h4>Your rewards</h4><small>You can claim rewards once your balance reaches {CLAIM_MIN_USD}.00 USD</small></div>
-                <Link className="btn p" style={{ flex: 'none', minWidth: 140 }} to="/dashboard?tab=affiliate">Open rewards</Link>
-              </div>
+              {summary.loading && <p className="note" style={{ margin: 0 }}>Loading your numbers…</p>}
+              {summary.error && <p className="note" style={{ margin: 0 }}>We could not load your numbers right now. Please try again in a moment.</p>}
+              {sum && (
+                <div className="g2">
+                  <div className="st row"><b>Your share:</b><strong>{pct(rateNow)} <i>({cur >= 0 ? levels[cur].n : 'getting started'})</i></strong></div>
+                  <div className="st row"><b>Users you brought:</b><strong>{totals.users_brought}</strong></div>
+                  <div className="st row"><b>Active users:</b><strong>{totals.active_users}</strong></div>
+                  <div className="st"><small>Trade volume of your active users</small><strong>{totals.qualified_volume_usd.toLocaleString(undefined, { maximumFractionDigits: 2 })} USD</strong></div>
+                </div>
+              )}
             </div>
           </>
         ) : (
           <div className="mecard" style={{ gridTemplateColumns: '1fr' }}>
             <div>
               <h3 style={{ fontSize: 22, marginBottom: 8 }}>Get your personal affiliate link and scan code</h3>
-              <p className="or" style={{ fontWeight: 500, fontSize: 15, marginTop: 0 }}>Log in or create a free account to get your affiliate link, your scan code and your live earnings dashboard.</p>
+              <p className="or" style={{ fontWeight: 500, fontSize: 15, marginTop: 0 }}>Log in or create a free account to get your affiliate link, your scan code and your live progress dashboard.</p>
               <div className="shr" style={{ marginTop: 14 }}>
                 <Link to="/signup"><button type="button" style={{ background: '#F4A422', color: '#10281E' }}>Create free account</button></Link>
                 <Link to="/login"><button type="button">Log in</button></Link>
@@ -198,15 +213,13 @@ function PartnerProgram({ user }) {
             </div>
             <div className="jr-now">
               <small>Your level</small>
-              <b>{cur == null ? 'Log in to start' : cur < 0 ? 'Getting started' : LEVELS[cur].n}</b>
-              <span>{pct(LEVELS[shown].r)} of each trade</span>
+              <b>{cur == null ? (user ? '…' : 'Log in to start') : cur < 0 ? 'Getting started' : levels[cur].n}</b>
+              <span>{pct(rateNow)} of each trade</span>
             </div>
           </div>
           <ol className="jr-steps">
-            {LEVELS.map((l, i) => {
+            {levels.map((l, i) => {
               const state = cur == null ? 'goal' : i <= cur ? 'done' : i === cur + 1 ? 'next' : 'locked';
-              const pu = Math.min(100, Math.round((s.active / l.f) * 100));
-              const pv = Math.min(100, Math.round((s.qvol / l.v) * 100));
               return (
                 <li className={`jr-step ${state}`} key={l.n}>
                   <div className="jr-badge">
@@ -219,10 +232,10 @@ function PartnerProgram({ user }) {
                     <span><b>{l.f}</b> active users</span>
                     <span><b>${l.v.toLocaleString()}</b> trade volume</span>
                   </div>
-                  {state === 'next' && (
+                  {state === 'next' && next && (
                     <div className="jr-prog">
-                      <div className="jr-bar"><i style={{ width: `${pu}%` }} /></div><small>{s.active}/{l.f} users</small>
-                      <div className="jr-bar"><i style={{ width: `${pv}%` }} /></div><small>{usd(s.qvol)} of {l.v.toLocaleString()}</small>
+                      <div className="jr-bar"><i style={{ width: `${Math.round(next.users_progress * 100)}%` }} /></div><small>{totals.active_users}/{l.f} users</small>
+                      <div className="jr-bar"><i style={{ width: `${Math.round(next.volume_progress * 100)}%` }} /></div><small>{usd(totals.qualified_volume_usd)} of {l.v.toLocaleString()}</small>
                     </div>
                   )}
                   <em className="jr-tag">{state === 'done' ? (i === cur ? 'YOU ARE HERE' : 'UNLOCKED') : state === 'next' ? 'NEXT GOAL' : state === 'goal' ? 'UNLOCK WITH' : 'LOCKED'}</em>
@@ -234,7 +247,7 @@ function PartnerProgram({ user }) {
       </section>
 
       {/* STATUS */}
-      <section className="wrap sect">
+      <section className="wrap sect" id="levels">
         <h4 className="lab2">Your status</h4>
         <div className="explain">
           <b>How the Affiliate Program works</b>
@@ -243,7 +256,7 @@ function PartnerProgram({ user }) {
             <li>People who sign up with it are <b>your users</b>.</li>
             <li>A user becomes <b>active</b> after trading at least ${ACTIVE_MIN_USD} in total.</li>
             <li>To unlock a higher level you need <b>both</b>: enough <b>active users</b> and enough <b>trade volume</b> from them.</li>
-            <li>Every trade they make pays you a share of PRAQEN's fee. The higher your level, the bigger your share.</li>
+            <li>Every trade they make gives you a share of PRAQEN's fee. The higher your level, the bigger your share.</li>
           </ol>
         </div>
 
@@ -251,7 +264,7 @@ function PartnerProgram({ user }) {
           <table>
             <thead><tr><th>Level</th><th>Active users needed</th><th>Trade volume needed</th><th>Your share</th></tr></thead>
             <tbody>
-              {LEVELS.map((l, i) => (
+              {levels.map((l, i) => (
                 <tr key={l.n} className={i === cur ? 'me' : ''}>
                   <td><span className="gl"><Badge i={i} size={26} /> {l.n}</span></td>
                   <td>{l.f}</td>
@@ -264,19 +277,19 @@ function PartnerProgram({ user }) {
           <p className="note">Numbers are lifetime totals from your active users. You need both the active users and the volume to unlock a level.</p>
         </div>
 
-        {user && (
+        {user && sum && (
           <div className="nextcard">
-            {nextLv ? (
+            {next ? (
               <>
-                <div className="nh"><Badge i={nextIdx} size={36} /><div><small>Your next level</small><b>{nextLv.n} · {pct(nextLv.r)}</b></div></div>
+                <div className="nh"><Badge i={next.index} size={36} /><div><small>Your next level</small><b>{next.name} · {pct(next.rate)}</b></div></div>
                 <div className="bars">
-                  <div className="bar2"><div className="bl"><span>Active users</span><b>{s.active} / {nextLv.f}</b></div><div className="track"><i style={{ width: `${Math.min(100, (s.active / nextLv.f) * 100)}%` }} /></div></div>
-                  <div className="bar2"><div className="bl"><span>Trade volume</span><b>{usd(s.qvol)} / {nextLv.v.toLocaleString()} USD</b></div><div className="track"><i style={{ width: `${Math.min(100, (s.qvol / nextLv.v) * 100)}%` }} /></div></div>
+                  <div className="bar2"><div className="bl"><span>Active users</span><b>{totals.active_users} / {next.need_users}</b></div><div className="track"><i style={{ width: `${Math.round(next.users_progress * 100)}%` }} /></div></div>
+                  <div className="bar2"><div className="bl"><span>Trade volume</span><b>{usd(totals.qualified_volume_usd)} / {next.need_volume.toLocaleString()} USD</b></div><div className="track"><i style={{ width: `${Math.round(next.volume_progress * 100)}%` }} /></div></div>
                 </div>
                 <p className="need">
-                  {moreFriends > 0 || moreVolume > 0
-                    ? <>To unlock <b>{nextLv.n}</b> you still need {moreFriends > 0 && <b>{moreFriends} more active user{moreFriends === 1 ? '' : 's'}</b>}{moreFriends > 0 && moreVolume > 0 && ' and '}{moreVolume > 0 && <b>{usd(moreVolume)} more volume</b>}.</>
-                    : <>You have both numbers for <b>{nextLv.n}</b>. It unlocks automatically.</>}
+                  {next.users_missing > 0 || next.volume_missing > 0
+                    ? <>To unlock <b>{next.name}</b> you still need {next.users_missing > 0 && <b>{next.users_missing} more active user{next.users_missing === 1 ? '' : 's'}</b>}{next.users_missing > 0 && next.volume_missing > 0 && ' and '}{next.volume_missing > 0 && <b>{usd(next.volume_missing)} more volume</b>}.</>
+                    : <>You have both numbers for <b>{next.name}</b>. It unlocks automatically.</>}
                 </p>
               </>
             ) : (
@@ -286,21 +299,21 @@ function PartnerProgram({ user }) {
         )}
 
         <div className="lvl">
-          {LEVELS.map((l, i) => {
+          {levels.map((l, i) => {
             const here = i === cur;
             const unlocked = cur != null && i <= cur;
             return (
               <details className={`lr${here ? ' cur' : ''}`} key={l.n} open={here || (cur != null && i === cur + 1) || (cur == null && i === 0)}>
                 <summary>
                   <span className="ln"><Badge i={i} size={40} /><b>{l.n} · {pct(l.r)}</b>{here && <em className="yah">YOU ARE HERE</em>}{unlocked && !here && <em className="yah ok">UNLOCKED</em>}</span>
-                  <span className="lm">Unlock — active users: {s.active} / {l.f}<br />Unlock — trade volume: {usd(s.qvol).replace(' USD', '')} / {l.v.toLocaleString()} USD</span>
+                  <span className="lm">Unlock — active users: {totals.active_users} / {l.f}<br />Unlock — trade volume: {usd(totals.qualified_volume_usd).replace(' USD', '')} / {l.v.toLocaleString()} USD</span>
                   <span className="pl" />
                 </summary>
                 <div className="bd3">
                   <div className="box">
                     <h5>TO UNLOCK</h5>
-                    <div className="mrow"><span>Active users</span><b className={s.active >= l.f ? 'ok' : ''}>{s.active} / {l.f}</b></div>
-                    <div className="mrow"><span>Trade volume (lifetime)</span><b className={s.qvol >= l.v ? 'ok' : ''}>{usd(s.qvol)} / {l.v.toLocaleString()} USD</b></div>
+                    <div className="mrow"><span>Active users</span><b className={totals.active_users >= l.f ? 'ok' : ''}>{totals.active_users} / {l.f}</b></div>
+                    <div className="mrow"><span>Trade volume (lifetime)</span><b className={totals.qualified_volume_usd >= l.v ? 'ok' : ''}>{usd(totals.qualified_volume_usd)} / {l.v.toLocaleString()} USD</b></div>
                     <p className="small">Active user = someone you brought who has traded at least {ACTIVE_MIN_USD} USD in total. Trade volume is what your active users have traded. You need both numbers to unlock.</p>
                   </div>
                   <div className="box">
@@ -310,9 +323,9 @@ function PartnerProgram({ user }) {
                     <p className="small">After you unlock, stay at or above these numbers to keep the level. Falling short drops you one level. Keep numbers are lower than unlock numbers.</p>
                   </div>
                   <div className="box">
-                    <h5>PAYOUT</h5>
-                    <div className="mrow"><span>Your share of each trade your users make</span><b>{pct(l.r)}</b></div>
-                    <p className="small">Example: one of your users trades $100, PRAQEN's fee is about $1.00, and you get ${(l.r).toFixed(2)}. PRAQEN keeps ${(1 - l.r).toFixed(2)}.</p>
+                    <h5>{cash ? 'PAYOUT' : 'YOUR SHARE'}</h5>
+                    <div className="mrow"><span>Share of each trade your users make</span><b>{pct(l.r)}</b></div>
+                    {cash && <p className="small">Example: one of your users trades $100, PRAQEN's fee is about $1.00, and you get ${(l.r).toFixed(2)}. PRAQEN keeps ${(1 - l.r).toFixed(2)}.</p>}
                   </div>
                   <div className="box">
                     <h5>WHAT YOU GET</h5>
@@ -323,10 +336,10 @@ function PartnerProgram({ user }) {
             );
           })}
         </div>
-        {user && (
+        {user && sum && (
           <div className="tot">
-            <div className="st row"><b>Total users you brought</b><strong>{s.total}</strong></div>
-            <div className="st row"><b>Active users</b><strong>{s.active}</strong></div>
+            <div className="st row"><b>Users you brought</b><strong>{totals.users_brought}</strong></div>
+            <div className="st row"><b>Active users</b><strong>{totals.active_users}</strong></div>
           </div>
         )}
       </section>
@@ -338,99 +351,68 @@ function PartnerProgram({ user }) {
           <div className="lbtop">
             <div className="tabs">
               <button type="button" className={tab === 'board' ? 'on' : ''} onClick={() => setTab('board')}>Leaderboard</button>
-              {user && <button type="button" className={tab === 'earn' ? 'on' : ''} onClick={() => setTab('earn')}>My earnings</button>}
-              {user && <button type="button" className={tab === 'friends' ? 'on' : ''} onClick={() => setTab('friends')}>My users{s.friends && s.friends.length ? ` (${s.friends.length})` : ''}</button>}
+              {user && <button type="button" className={tab === 'users' ? 'on' : ''} onClick={() => setTab('users')}>My users{sum && sum.users.length ? ` (${sum.users.length})` : ''}</button>}
             </div>
             <input className="srch" type="search" placeholder="Search affiliates" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search affiliates" />
           </div>
 
-          {user && s.invitedBy && (
+          {user && sum && sum.invited_by && (
             <div className="invby">
               <span>You were invited by</span>
-              <Link to={`/profile/${encodeURIComponent(s.invitedBy.username)}`} className="plink"><Avatar url={s.invitedBy.avatar_url} name={s.invitedBy.username} />@{s.invitedBy.username}</Link>
-              {s.invitedBy.country && <span className="ctry"><CountryFlag countryCode={s.invitedBy.country} style={{ width: 18, height: 13 }} /> {countryName(s.invitedBy.country)}</span>}
+              <Link to={`/profile/${encodeURIComponent(sum.invited_by.username)}`} className="plink"><Avatar url={photoOf(sum.invited_by.id)} name={sum.invited_by.username} />@{sum.invited_by.username}</Link>
+              {sum.invited_by.country && <span className="ctry"><CountryFlag countryCode={sum.invited_by.country} style={{ width: 18, height: 13 }} /> {countryName(sum.invited_by.country)}</span>}
             </div>
           )}
 
           {tab === 'board' && (
             <div className="tbl">
-              <div className="tr th"><span>Affiliates</span><span>Ranking</span><span>Users brought</span><span>Lifetime earnings (USD)</span><span>Trades by their users</span></div>
+              <div className="tr th"><span>Affiliates</span><span>Ranking</span><span>Users brought</span><span>Active users</span><span>Trade volume (USD)</span></div>
               {board === null && <p className="note" style={{ padding: 14 }}>Loading…</p>}
-              {board && board.length === 0 && <p className="note" style={{ padding: 14 }}>No partners on the board yet. Be the first!</p>}
+              {board && board.length === 0 && <p className="note" style={{ padding: 14 }}>No affiliates on the board yet. Be the first to bring an active user!</p>}
               {(board || []).filter(matches).map((b) => (
                 <div className="tr" key={b.id}>
                   <span className="pp">
-                    <Avatar url={photoOf(b)} name={b.username} />
+                    <Avatar url={photoOf(b.id)} name={b.username} />
                     <span>
                       <Link className="plink" to={`/profile/${encodeURIComponent(b.username)}`}>{b.username}</Link>
-                      <small>{b.country && <><CountryFlag countryCode={b.country} style={{ width: 16, height: 12 }} /> {countryName(b.country)} · </>}{b.badge}</small>
+                      <small>{b.country && <><CountryFlag countryCode={b.country} style={{ width: 16, height: 12 }} /> {countryName(b.country)}</>}{b.country && b.level ? ' · ' : ''}{b.level || ''}</small>
                     </span>
                   </span>
                   <span data-l="Ranking">{b.rank}</span>
-                  <span data-l="Users brought">{b.referrals}</span>
-                  <span data-l="Lifetime earnings">{btcUsd ? `${(Number(b.earned_btc) * btcUsd).toFixed(2)} USD` : `${Number(b.earned_btc).toFixed(6)} BTC`}</span>
-                  <span data-l="Trades by their users">{b.affiliate_trades}</span>
+                  <span data-l="Users brought">{b.users_brought}</span>
+                  <span data-l="Active users">{b.active_users}</span>
+                  <span data-l="Trade volume">{Math.round(b.qualified_volume_usd).toLocaleString()} USD</span>
                 </div>
               ))}
             </div>
           )}
 
-          {tab === 'friends' && user && (
+          {tab === 'users' && user && (
             <div className="tbl">
-              <div className="tr th f6"><span>My users</span><span>Trades</span><span>Joined</span><span>Current month earnings (USD)</span><span>Lifetime earnings (USD)</span><span>Invited by</span></div>
-              {stats === null && <p className="note" style={{ padding: 14 }}>Loading…</p>}
-              {stats && stats.friends.length === 0 && (
+              <div className="tr th f6"><span>My users</span><span>Trades</span><span>Trade volume (USD)</span><span>Joined</span><span>Status</span><span>Invited by</span></div>
+              {summary.loading && <p className="note" style={{ padding: 14 }}>Loading…</p>}
+              {sum && sum.users.length === 0 && (
                 <p className="note" style={{ padding: 14 }}>You have not brought any users yet. Share your link or scan code above and they will show here.</p>
               )}
-              {stats && stats.friends.filter(matches).map((f) => (
-                <div className="tr f6" key={f.id || f.username}>
+              {sum && sum.users.filter(matches).map((f) => (
+                <div className="tr f6" key={f.id}>
                   <span className="pp">
-                    <Avatar url={f.avatar_url} name={f.username} />
+                    <Avatar url={photoOf(f.id)} name={f.username} />
                     <span>
                       <Link className="plink" to={`/profile/${encodeURIComponent(f.username)}`}>{f.username}</Link>
                       <small>{f.country ? <><CountryFlag countryCode={f.country} style={{ width: 16, height: 12 }} /> {countryName(f.country)}</> : 'Country not set'}</small>
                     </span>
                   </span>
                   <span data-l="Trades">{f.trades}</span>
+                  <span data-l="Trade volume">{f.volume_usd.toLocaleString(undefined, { maximumFractionDigits: 2 })} USD</span>
                   <span data-l="Joined">{f.joined ? new Date(f.joined).toLocaleDateString() : '-'}</span>
-                  <span data-l="This month">{f.monthUsd.toFixed(2)} USD</span>
-                  <span data-l="Lifetime">{f.lifetimeUsd.toFixed(2)} USD</span>
+                  <span data-l="Status">{f.active ? 'Active' : `Not active yet (needs ${ACTIVE_MIN_USD} USD traded)`}</span>
                   <span data-l="Invited by">You</span>
                 </div>
               ))}
             </div>
           )}
-          {tab === 'earn' && user && (
-            <>
-              <div className="earnbar">
-                <div><small>Active users</small><b>{s.active}</b></div>
-                <div><small>Total earned</small><b>{s.lifetimeUsd.toFixed(2)} USD</b></div>
-                <div><small>Earnings this month</small><b>{(s.history || []).filter((h) => new Date(h.date) >= new Date(new Date().getFullYear(), new Date().getMonth(), 1)).reduce((a, h) => a + h.usd, 0).toFixed(2)} USD</b></div>
-              </div>
-              <div className="tbl">
-                <div className="tr th e4"><span>Partner</span><span>Type</span><span>Amount</span><span>Date</span></div>
-                {stats === null && <p className="note" style={{ padding: 14 }}>Loading…</p>}
-                {stats && s.history.length === 0 && (
-                  <p className="note" style={{ padding: 14 }}>No earnings yet. You earn every time a user you brought completes a trade.</p>
-                )}
-                {stats && s.history.filter(matches).map((h) => (
-                  <div className="tr e4" key={h.id || h.date + h.username}>
-                    <span className="pp">
-                      <Avatar url={h.avatar_url} name={h.username} />
-                      <span>
-                        <Link className="plink" to={`/profile/${encodeURIComponent(h.username)}`}>{h.username}</Link>
-                        <small>{h.country ? <><CountryFlag countryCode={h.country} style={{ width: 16, height: 12 }} /> {countryName(h.country)}</> : 'User'}</small>
-                      </span>
-                    </span>
-                    <span data-l="Type">Revenue Share</span>
-                    <span data-l="Amount">{h.btc.toFixed(7)} BTC <em className="usdnote">({h.usd.toFixed(2)} USD)</em></span>
-                    <span data-l="Date">{h.date ? new Date(h.date).toLocaleString() : '-'}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-          <p className="note" style={{ padding: '0 6px' }}>Tap a name to see their profile. Earnings are shown in USD at the price of each trade.</p>
+          <p className="note" style={{ padding: '0 6px' }}>Tap a name to see their profile. The board is ranked by active users, then by their trade volume.</p>
         </div>
       </section>
 
@@ -441,24 +423,23 @@ function PartnerProgram({ user }) {
         {leaders.length > 0 ? (
           <div className="hof">
             {leaders.map((h, i) => {
-              const lvl = Math.max(0, LEVELS.reduce((a, l, k) => (h.referrals >= l.f ? k : a), 0));
-              const usdOf = (btc) => (btcUsd ? `${(Number(btc || 0) * btcUsd).toFixed(2)} USD` : `${Number(btc || 0).toFixed(6)} BTC`);
+              const lvl = h.level ? Math.max(0, levels.findIndex((l) => l.n === h.level)) : 0;
               return (
                 <div className="hc" key={h.id}>
                   <div className="rankchip">#{i + 1}</div>
                   <div className="hh">
-                    <Avatar url={photoOf(h)} name={h.username} large />
+                    <Avatar url={photoOf(h.id)} name={h.username} large />
                     <div>
                       <b>@{h.username}</b>
                       <small>{h.country ? <><CountryFlag countryCode={h.country} style={{ width: 16, height: 12 }} /> {countryName(h.country)}</> : 'PRAQEN affiliate'}</small>
                     </div>
                     <Link className="pf" to={`/profile/${encodeURIComponent(h.username)}`}>Profile</Link>
                   </div>
-                  <p>Brought {h.referrals} user{h.referrals === 1 ? '' : 's'} who completed {h.affiliate_trades} trade{h.affiliate_trades === 1 ? '' : 's'} on PRAQEN.</p>
-                  <div className="lvtag"><Badge i={lvl} size={22} /> {LEVELS[lvl].n} level</div>
-                  <div className="st row"><small>Lifetime earnings</small><strong>{usdOf(h.earned_btc)}</strong></div>
-                  <div className="st row"><small>Earnings this month</small><strong>{usdOf(h.month_btc)}</strong></div>
-                  <div className="st row"><small>Network growth</small><strong>{h.referrals} users</strong></div>
+                  <p>Brought {h.users_brought} user{h.users_brought === 1 ? '' : 's'}, {h.active_users} of them active traders.</p>
+                  {h.level && <div className="lvtag"><Badge i={lvl} size={22} /> {h.level} level</div>}
+                  <div className="st row"><small>Active users</small><strong>{h.active_users}</strong></div>
+                  <div className="st row"><small>Users brought</small><strong>{h.users_brought}</strong></div>
+                  <div className="st row"><small>Trade volume</small><strong>{Math.round(h.qualified_volume_usd).toLocaleString()} USD</strong></div>
                 </div>
               );
             })}
@@ -468,7 +449,7 @@ function PartnerProgram({ user }) {
             <div className="hc" style={{ textAlign: 'center', alignItems: 'center' }}>
               <Badge i={3} size={64} />
               <p style={{ fontSize: 18 }}>Our top affiliates will appear here. Yours could be the first name.</p>
-              <Link className="btn p" to="/partner-program/calculator">See what you could earn</Link>
+              <a className="btn p" href="#levels">See how to level up</a>
             </div>
           </div>
         )}
@@ -478,7 +459,7 @@ function PartnerProgram({ user }) {
       <section className="wrap sect ctr">
         <h2 className="h2b big">Frequently asked questions</h2>
         <div className="faq">
-          {FAQ.map(([q, a]) => (<details key={q}><summary>{q}</summary><p>{a}</p></details>))}
+          {faq.map(([qq, a]) => (<details key={qq}><summary>{qq}</summary><p>{a}</p></details>))}
         </div>
       </section>
 
@@ -496,13 +477,13 @@ function PartnerProgram({ user }) {
       </section>
 
       <div className="wrap"><div className="cta">
-        <h2>Ready to start earning?</h2>
-        <p>It takes one minute. Share your link, bring users who trade, and earn from every trade they make.</p>
+        <h2>Ready to start?</h2>
+        <p>It takes one minute. Share your link and bring users who trade.</p>
         {user
           ? <a className="btn" href="#my-link">Copy my link</a>
           : <Link className="btn" to="/signup">Become a PRAQEN Affiliate</Link>}
       </div></div>
-      <footer>Estimates are examples only. Actual earnings depend on completed trades. Affiliate Program terms apply.</footer>
+      <footer>{cash ? 'Estimates are examples only. Actual earnings depend on completed trades. ' : ''}Affiliate Program terms apply.</footer>
     </div>
   );
 }

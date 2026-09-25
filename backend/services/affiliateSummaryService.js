@@ -211,4 +211,109 @@ async function getAffiliateSummary(supabase, affiliateId, { cashEnabled = false 
   };
 }
 
-module.exports = { LEVELS, ACTIVE_MIN_USD, levelIndexFor, tradeQualifies, aggregate, getAffiliateSummary };
+// ── Payout switch ─────────────────────────────────────────────────────────
+// Money features stay OFF unless REFERRAL_PAYOUTS_ENABLED is exactly "true".
+function cashEnabled() {
+  return process.env.REFERRAL_PAYOUTS_ENABLED === 'true';
+}
+
+// Public program rules (no user data). The page reads these instead of hard-coding them.
+function getPublicConfig() {
+  return {
+    cash_enabled: cashEnabled(),
+    active_min_usd: ACTIVE_MIN_USD,
+    levels: LEVELS.map((l, i) => ({ index: i, ...l })),
+  };
+}
+
+// ── Public leaderboard: ranked by ACTIVE USERS (never by money) ───────────
+// One pass over all referred users and all qualifying trades, then the same
+// per-affiliate rules as getAffiliateSummary. Cached for a few minutes.
+let _lbCache = null;
+const LB_TTL_MS = 5 * 60 * 1000;
+
+// One retry for a passing network hiccup, and if the database still cannot be reached the
+// last good list is served instead of an error (the board is not money, so slightly old is fine).
+async function getLeaderboard(supabase, { limit = 10, now = Date.now(), retryDelayMs = 400 } = {}) {
+  if (_lbCache && now - _lbCache.ts < LB_TTL_MS && _lbCache.limit === limit) return _lbCache.data;
+  try {
+    try {
+      return await _buildLeaderboard(supabase, { limit, now });
+    } catch (first) {
+      await new Promise((r) => setTimeout(r, retryDelayMs));
+      return await _buildLeaderboard(supabase, { limit, now });
+    }
+  } catch (err) {
+    if (_lbCache && _lbCache.limit === limit) return _lbCache.data;
+    throw err;
+  }
+}
+
+async function _buildLeaderboard(supabase, { limit, now }) {
+
+  const referredRows = await fetchAll(() => supabase.from('users').select('id, referred_by').not('referred_by', 'is', null));
+  const byAff = new Map();
+  const affOf = new Map();
+  referredRows.forEach((u) => {
+    if (!byAff.has(u.referred_by)) byAff.set(u.referred_by, []);
+    byAff.get(u.referred_by).push(u.id);
+    affOf.set(u.id, u.referred_by);
+  });
+
+  const trades = await fetchAll(() => supabase
+    .from('trades')
+    .select('id, status, currency, amount_usd, fee_status, dispute_resolution, gift_card_brand, is_test, listing_id, buyer_id, seller_id')
+    .eq('status', 'COMPLETED')
+    .eq('fee_status', 'COLLECTED')
+    .in('currency', ['BTC', 'USDT']));
+
+  const listingIds = [...new Set(trades.map((t) => t.listing_id).filter(Boolean))];
+  const giftListingIds = new Set();
+  for (const ids of chunks(listingIds, 200)) {
+    const { data, error } = await supabase.from('listings').select('id, listing_type').in('id', ids);
+    if (error) throw new Error(error.message);
+    (data || []).forEach((l) => { if (String(l.listing_type || '').toUpperCase().includes('GIFT_CARD')) giftListingIds.add(l.id); });
+  }
+
+  // group trades by the affiliate(s) of each party
+  const tradesByAff = new Map();
+  for (const t of trades) {
+    const affs = new Set([affOf.get(t.buyer_id), affOf.get(t.seller_id)].filter(Boolean));
+    affs.forEach((a) => { if (!tradesByAff.has(a)) tradesByAff.set(a, []); tradesByAff.get(a).push(t); });
+  }
+
+  const rows = [];
+  byAff.forEach((referredIds, affiliateId) => {
+    const agg = aggregate({ affiliateId, referredIds, trades: tradesByAff.get(affiliateId) || [], giftListingIds });
+    const active = agg.active.size;
+    if (active < 1) return; // the board lists people who actually brought traders
+    const q = round2(agg.qualifiedVolume);
+    const lvl = levelIndexFor(active, q);
+    rows.push({ id: affiliateId, users_brought: referredIds.length, active_users: active, qualified_volume_usd: q, level: lvl >= 0 ? LEVELS[lvl].name : null });
+  });
+  rows.sort((a, b) => b.active_users - a.active_users || b.qualified_volume_usd - a.qualified_volume_usd || b.users_brought - a.users_brought);
+  const top = rows.slice(0, limit);
+
+  const profiles = new Map();
+  if (top.length) {
+    const { data, error } = await supabase.from('users').select('id, username, country').in('id', top.map((r) => r.id));
+    if (error) throw new Error(error.message);
+    (data || []).forEach((u) => profiles.set(u.id, u));
+  }
+  const data = top.map((r, i) => ({
+    rank: i + 1,
+    id: r.id,
+    username: (profiles.get(r.id) || {}).username || 'Affiliate',
+    country: (profiles.get(r.id) || {}).country || null,
+    level: r.level,
+    users_brought: r.users_brought,
+    active_users: r.active_users,
+    qualified_volume_usd: r.qualified_volume_usd,
+  }));
+  _lbCache = { ts: now, limit, data };
+  return data;
+}
+function _clearLeaderboardCache() { _lbCache = null; }
+
+module.exports = { LEVELS, ACTIVE_MIN_USD, levelIndexFor, tradeQualifies, aggregate, getAffiliateSummary, cashEnabled, getPublicConfig, getLeaderboard, _clearLeaderboardCache };
+

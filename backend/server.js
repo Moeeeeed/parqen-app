@@ -11052,12 +11052,31 @@ const affiliateSummaryService = require('./services/affiliateSummaryService');
 app.get('/api/affiliate/summary', verifyToken, async (req, res) => {
   try {
     const summary = await affiliateSummaryService.getAffiliateSummary(supabaseAdmin, req.userId, {
-      cashEnabled: process.env.REFERRAL_PAYOUTS_ENABLED === 'true',
+      cashEnabled: affiliateSummaryService.cashEnabled(),
     });
     res.json({ success: true, ...summary });
   } catch (e) {
     console.error('[affiliate/summary]', e.message);
     res.status(500).json({ error: 'Could not load affiliate summary' });
+  }
+});
+
+// Public program rules + the payout switch (no user data). Lets the page, for visitors too,
+// know whether money features are on without hard-coding it.
+app.get('/api/affiliate/config', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=60');
+  res.json({ success: true, ...affiliateSummaryService.getPublicConfig() });
+});
+
+// Public leaderboard ranked by ACTIVE USERS (then trade volume). No earnings, no money.
+app.get('/api/affiliate/leaderboard', async (req, res) => {
+  try {
+    const leaderboard = await affiliateSummaryService.getLeaderboard(supabaseAdmin, { limit: 10 });
+    res.set('Cache-Control', 'public, max-age=120');
+    res.json({ success: true, leaderboard });
+  } catch (e) {
+    console.error('[affiliate/leaderboard]', e.message);
+    res.status(500).json({ error: 'Could not load leaderboard' });
   }
 });
 

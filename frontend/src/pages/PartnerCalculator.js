@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import SEO from '../components/SEO';
 import './partner-program.css';
-import { LEVELS, pct, money } from './partnerShared';
+import { LEVELS, ACTIVE_MIN_USD, Badge, pct, money, useAffiliateConfig } from './partnerShared';
 
 const GOALS = [10, 50, 100, 500];
 
@@ -35,7 +35,7 @@ function Control({ title, hint, value, onChange, min, max, sliderMax, step = 1, 
   );
 }
 
-export default function PartnerCalculator() {
+function CalculatorBody({ levels }) {
   const [type, setType] = useState('btc');
   const [lv, setLv] = useState(1);
   const [period, setPeriod] = useState('m');
@@ -43,7 +43,7 @@ export default function PartnerCalculator() {
   const [avg, setAvg] = useState(250);
   const [trades, setTrades] = useState(5);
 
-  const l = LEVELS[lv];
+  const l = levels[lv];
   const volume = friends * avg * trades;
   const monthly = (volume * l.r) / 100;
   const yearly = monthly * 12;
@@ -83,7 +83,7 @@ export default function PartnerCalculator() {
               <h2>Choose your affiliate level</h2>
               <p className="d">Your level goes up as you bring more active users and more trade volume. Pick one to see what it pays.</p>
               <div className="lvs">
-                {LEVELS.map((x, i) => (
+                {levels.map((x, i) => (
                   <button type="button" key={x.n} className={`lb${lv === i ? ' on' : ''}`} onClick={() => setLv(i)}>
                     <small>Level {i + 1}</small><b>{x.n}</b><span>{pct(x.r)}</span><em>{x.f} active users<br />${x.v.toLocaleString()} trade volume</em>
                   </button>
@@ -151,6 +151,45 @@ export default function PartnerCalculator() {
             </section>
           </aside>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// While payouts are off the calculator would only show money amounts, so it shows the level rules instead.
+export default function PartnerCalculator() {
+  const cfg = useAffiliateConfig();
+  const levels = cfg.levels || LEVELS;
+  if (!cfg.loaded) {
+    return (<div className="ppx cpage"><div className="wrap"><div className="chead"><p>Loading…</p></div></div></div>);
+  }
+  if (cfg.cashEnabled) return <CalculatorBody levels={levels} />;
+  return (
+    <div className="ppx cpage">
+      <SEO title="Affiliate Program levels | PRAQEN" description="See what you need to reach each Affiliate Program level: active users and trade volume." />
+      <div className="wrap">
+        <div className="chead">
+          <span className="pill">Affiliate Program</span>
+          <h1>The earnings calculator opens when payouts go live</h1>
+          <p>Until then, here is what each level needs. Bring active users and unlock a bigger share of every trade.</p>
+        </div>
+        <div className="glance" style={{ marginBottom: 24 }}>
+          <table>
+            <thead><tr><th>Level</th><th>Active users needed</th><th>Trade volume needed</th><th>Your share</th></tr></thead>
+            <tbody>
+              {levels.map((l, i) => (
+                <tr key={l.n}>
+                  <td><span className="gl"><Badge i={i} size={26} /> {l.n}</span></td>
+                  <td>{l.f}</td>
+                  <td>${l.v.toLocaleString()}</td>
+                  <td>{pct(l.r)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="note">An active user is someone you brought who has traded at least ${ACTIVE_MIN_USD} in total. You need both the active users and the volume to unlock a level.</p>
+        </div>
+        <p style={{ marginBottom: 60 }}><Link className="btn p" to="/partner-program" style={{ display: 'inline-block', flex: 'none' }}>Back to the Affiliate Program</Link></p>
       </div>
     </div>
   );
