@@ -100,7 +100,7 @@ describe('affiliate level pill (pickAffiliateLevel)', () => {
   });
   it('resolves a known level id', () => {
     expect(pickAffiliateLevel({ id: 'affiliate-explorer' })).toMatchObject({ id: 'affiliate-explorer', name: 'Explorer' });
-    expect(pickAffiliateLevel({ id: 'affiliate-ambassador' })).toMatchObject({ name: 'Ambassador' });
+    expect(pickAffiliateLevel({ id: 'affiliate-legendary' })).toMatchObject({ name: 'Legendary' });
   });
   it('returns null for missing/unknown/malformed input', () => {
     expect(pickAffiliateLevel(null)).toBeNull();

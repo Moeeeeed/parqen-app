@@ -11177,7 +11177,7 @@ app.get('/api/affiliate/summary', verifyToken, async (req, res) => {
     const summary = await affiliateSummaryService.getAffiliateSummary(supabaseAdmin, req.userId, {
       cashEnabled: affiliateSummaryService.cashEnabled(),
     });
-    // Auto-award/notify Affiliate Program level badges (Explorer/Builder/Titan/Ambassador) —
+    // Auto-award/notify Affiliate Program level badges (Explorer/Builder/Titan/Legendary) —
     // does nothing unless AFFILIATE_LEVELS_AUTO_ENABLED=true; opening this screen is also
     // when the after-trade hook can't catch a level someone already qualified for earlier.
     const on = affiliateLevelAwardService.autoEnabled();

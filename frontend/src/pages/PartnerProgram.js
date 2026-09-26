@@ -32,10 +32,10 @@ function buildFaq(cash) {
       : 'Payouts have not started yet. When they do, your share depends on your level, and this page will show it. Until then you can bring users and unlock levels.'],
     ['How do I start?', 'Log in, copy your link or let someone scan your code. When the person signs up and completes a trade, they count as your user and your numbers update here.'],
     ['What is an active user?', `A user you brought who has traded at least $${ACTIVE_MIN_USD} in total. Only active users and their trading volume count towards your level.`],
-    ['How do levels work?', 'There are four levels: Explorer, Builder, Titan and Ambassador. To unlock a level you need BOTH the number of active users AND the trade volume shown for that level. To keep a level you must stay above its (lower) keep numbers. Falling short drops you one level.'],
+    ['How do levels work?', 'There are four levels: Explorer, Builder, Titan and Legendary. To unlock a level you need BOTH the number of active users AND the trade volume shown for that level. To keep a level you must stay above its (lower) keep numbers. Falling short drops you one level.'],
     ['Do gift card trades count?', 'Not yet. Right now only Bitcoin and USDT trades count towards your level.'],
     ['Which trades count?', 'Bitcoin (BTC) and USDT trades that were completed on PRAQEN.'],
-    ['What share of each trade will I get?', 'Between 0.10% and 0.20% of each completed trade, depending on your level: Explorer 0.10%, Builder 0.12%, Titan 0.15%, Ambassador 0.20%.'],
+    ['What share of each trade will I get?', 'A share of the trading fee PRAQEN collects on your users’ trades — never an extra charge to them. Between 10% and 40% of that fee, depending on your level: Explorer 10%, Builder 20%, Titan 30%, Legendary 40%.'],
   ];
   if (cash) {
     list.push(['When and how do I get paid?', `Rewards wait 3 days to make sure the trade is safe. Once your balance reaches $${CLAIM_MIN_USD}, tap Claim and it is added to your PRAQEN wallet.`]);
@@ -131,7 +131,7 @@ function PartnerProgram({ user }) {
           <div className="wh"><div><h3>What could your network be worth?</h3><span>{cash ? 'See how much you could earn from the users you bring' : 'Try the calculator to see an estimate. What each level needs is shown below.'}</span></div>{cash && <em className="chip">Monthly</em>}</div>
           <div className="w4">
             {levels.map((l, i) => {
-              const m = monthlyExample(l);
+              const m = monthlyExample(l, cfg.feeRate);
               return (
                 <div className={`wi${i === cur ? ' mine' : ''}`} key={l.n}>
                   <Badge i={i} size={34} />
@@ -204,12 +204,12 @@ function PartnerProgram({ user }) {
           <div className="jr-head">
             <div>
               <h4>Your journey: bring users, grow and earn your badges</h4>
-              <p>To unlock a level you need <b>both</b> enough active users <b>and</b> enough trade volume from them. Your level sets your share of every trade.</p>
+              <p>To unlock a level you need <b>both</b> enough active users <b>and</b> enough trade volume from them. Your level sets your share of PRAQEN's fee on every trade.</p>
             </div>
             <div className="jr-now">
               <small>Your level</small>
               <b>{cur == null ? (user ? '…' : 'Log in to start') : cur < 0 ? 'Getting started' : levels[cur].n}</b>
-              <span>{pct(rateNow)} of each trade</span>
+              <span>{pct(rateNow)} of PRAQEN's fee</span>
             </div>
           </div>
           <ol className="jr-steps">
@@ -319,8 +319,14 @@ function PartnerProgram({ user }) {
                   </div>
                   <div className="box">
                     <h5>{cash ? 'PAYOUT' : 'YOUR SHARE'}</h5>
-                    <div className="mrow"><span>Share of each trade your users make</span><b>{pct(l.r)}</b></div>
-                    {cash && <p className="small">Example: one of your users trades $100, PRAQEN's fee is about $1.00, and you get ${(l.r).toFixed(2)}. PRAQEN keeps ${(1 - l.r).toFixed(2)}.</p>}
+                    <div className="mrow"><span>Share of PRAQEN's fee on your users' trades</span><b>{pct(l.r)}</b></div>
+                    {cash && (() => {
+                      const exampleFee = 100 * cfg.feeRate;
+                      const yourCut = exampleFee * l.r;
+                      return (
+                        <p className="small">Example: one of your users trades $100, PRAQEN's fee is ${exampleFee.toFixed(2)}, and you get ${yourCut.toFixed(2)} ({pct(l.r)} of that fee). PRAQEN keeps ${(exampleFee - yourCut).toFixed(2)}. Your user never pays extra.</p>
+                      );
+                    })()}
                   </div>
                   <div className="box">
                     <h5>WHAT YOU GET</h5>

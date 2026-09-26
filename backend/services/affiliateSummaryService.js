@@ -9,12 +9,19 @@
 
 // Levels. `users` / `volume` = numbers needed to UNLOCK. `keepUsers` / `keepVolume`
 // = numbers needed to KEEP the level once unlocked (enforced later, by the engine).
-// `rate` is the % of each trade value. Keep in step with frontend/src/pages/partnerShared.js.
+// `rate` is the affiliate's share of PRAQEN's own trading fee on their users'
+// trades (NOT a % of the trade's own value) — e.g. rate 0.10 means the affiliate
+// gets 10% of whatever fee PRAQEN earns on that trade, funded from PRAQEN's cut,
+// never an extra charge to the trader. The live platform fee itself lives in
+// tradeEscrowService.js (FEE_RATE) — see getPublicConfig() below, which reads it
+// from there instead of duplicating the number here (a prior fee-rate duplicate
+// drifting out of sync already caused a real incident, see tradeEscrowService.js).
+// Keep in step with frontend/src/pages/partnerShared.js.
 const LEVELS = [
-  { name: 'Explorer',   rate: 0.10, users: 5,  volume: 50,    keepUsers: 3,  keepVolume: 25 },
-  { name: 'Builder',    rate: 0.12, users: 10, volume: 1000,  keepUsers: 5,  keepVolume: 500 },
-  { name: 'Titan',      rate: 0.15, users: 20, volume: 10000, keepUsers: 10, keepVolume: 5000 },
-  { name: 'Ambassador', rate: 0.20, users: 50, volume: 50000, keepUsers: 25, keepVolume: 25000 },
+  { name: 'Explorer',   rate: 0.10, users: 5,  volume: 50,    keepUsers: 3,  keepVolume: 50 },
+  { name: 'Builder',    rate: 0.20, users: 15, volume: 5000,  keepUsers: 8,  keepVolume: 1000 },
+  { name: 'Titan',      rate: 0.30, users: 50, volume: 10000, keepUsers: 25, keepVolume: 3000 },
+  { name: 'Legendary',  rate: 0.40, users: 80, volume: 70000, keepUsers: 40, keepVolume: 20000 },
 ];
 
 // A brought user is "active" once their own lifetime trade volume reaches this.
@@ -219,9 +226,15 @@ function cashEnabled() {
 
 // Public program rules (no user data). The page reads these instead of hard-coding them.
 function getPublicConfig() {
+  // Lazy require — tradeEscrowService is the single source of truth for the
+  // platform fee rate (see the LEVELS comment above); avoids a second
+  // hardcoded copy on the frontend that could drift out of sync.
+  let feeRate = 0.02; // crypto P2P fallback, matches tradeEscrowService's FEE_RATE
+  try { feeRate = require('./tradeEscrowService').feeRateFor(false); } catch (_) { /* keep fallback */ }
   return {
     cash_enabled: cashEnabled(),
     active_min_usd: ACTIVE_MIN_USD,
+    fee_rate: feeRate,
     levels: LEVELS.map((l, i) => ({ index: i, ...l })),
   };
 }

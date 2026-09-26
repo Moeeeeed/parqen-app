@@ -63,10 +63,8 @@ beforeEach(() => { pushes.length = 0; delete process.env.AFFILIATE_LEVELS_AUTO_E
 
 describe('level computation (via the real, existing affiliateSummaryService — not reimplemented)', () => {
   it('needs BOTH the active-user count AND the volume for a level, not just one', async () => {
-    // 8 active referred users (each with real qualifying volume), but total volume only $200 —
-    // clears Builder's user count (10? no — 8 < 10) ... use a case that isolates volume vs users:
-    // 6 active users (clears Explorer's 5, not Builder's 10), $3,000 volume (clears both Explorer's
-    // and Builder's volume) — must land on Explorer, not Builder, because of the user count alone.
+    // 6 active users (clears Explorer's 5, not Builder's 15), $3,000 volume (clears Explorer's
+    // $50, not Builder's $5,000 either) — must land on Explorer, not Builder.
     const referred = Array.from({ length: 6 }, (_, i) => mkUser('u' + i, { referred_by: AFF }));
     const trades = referred.map((u, i) => trade('t' + i, u.id, 'outside-' + i, 500)); // $500 each, 6*500=3000
     const db = fakeDb({ users: [mkUser(AFF), ...referred], trades, listings: [], user_badges: [] });
@@ -119,8 +117,8 @@ describe('automatic award', () => {
   });
 
   it('jumping straight to Titan in one check still earns Explorer and Builder along the way (cumulative)', async () => {
-    const referred = Array.from({ length: 20 }, (_, i) => mkUser('u' + i, { referred_by: AFF }));
-    const trades = referred.map((u, i) => trade('t' + i, u.id, 'x' + i, 600)); // 20 active, $12,000 total
+    const referred = Array.from({ length: 50 }, (_, i) => mkUser('u' + i, { referred_by: AFF }));
+    const trades = referred.map((u, i) => trade('t' + i, u.id, 'x' + i, 200)); // 50 active, $10,000 total
     const db = fakeDb({ users: [mkUser(AFF), ...referred], trades, listings: [], user_badges: [], notifications: [] });
     const r = await award.evaluateUser(AFF, { persist: true, notify: true, supabase: db, pushFn });
     assert.strictEqual(r.level.name, 'Titan');

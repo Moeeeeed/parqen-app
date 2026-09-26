@@ -1,5 +1,5 @@
 // services/affiliateLevelAwardService.js — automatic Affiliate Program level badges
-// (Explorer / Builder / Titan / Ambassador).
+// (Explorer / Builder / Titan / Legendary).
 //
 // The LEVEL itself is always computed live and read-only by affiliateSummaryService
 // (straight from users.referred_by + trades — never stale). This service's only job is
@@ -21,14 +21,14 @@ const defaultSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
 
-// Index-aligned with affiliateSummaryService.LEVELS (Explorer, Builder, Titan, Ambassador).
-const LEVEL_BADGE_IDS = ['affiliate-explorer', 'affiliate-builder', 'affiliate-titan', 'affiliate-ambassador'];
+// Index-aligned with affiliateSummaryService.LEVELS (Explorer, Builder, Titan, Legendary).
+const LEVEL_BADGE_IDS = ['affiliate-explorer', 'affiliate-builder', 'affiliate-titan', 'affiliate-legendary'];
 
 const LEVEL_MESSAGE = [
   { emoji: '🧭', line: 'Your link is bringing in real traders — you\'re officially an Explorer.' },
   { emoji: '🚀', line: 'You leveled up to Builder — your network is growing fast.' },
   { emoji: '🏆', line: 'Titan status. Your network is one of the biggest on PRAQEN.' },
-  { emoji: '👑', line: 'Ambassador. The very top of the Affiliate Program — very few traders ever reach this.' },
+  { emoji: '👑', line: 'Legendary. The very top of the Affiliate Program — very few traders ever reach this.' },
 ];
 
 function autoEnabled() {

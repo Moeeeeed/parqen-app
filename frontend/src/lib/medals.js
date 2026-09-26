@@ -59,7 +59,7 @@ export function pickMedals(ids, max = 3) {
   return { shown: known.slice(0, max), more: Math.max(0, known.length - max), all: known };
 }
 
-// ── Affiliate Program level (Explorer / Builder / Titan / Ambassador) ────────────────
+// ── Affiliate Program level (Explorer / Builder / Titan / Legendary) ────────────────
 // A completely different kind of badge from medals above: medals are earned from a
 // user's OWN trading; a level is earned from the people THEY brought onto PRAQEN.
 // Shown as a small text pill, on purpose visually different from the round medal
@@ -69,7 +69,7 @@ export const AFFILIATE_LEVEL_INFO = {
   'affiliate-explorer':   { name: 'Explorer',   color: '#2D6A4F', bg: '#EAF3EE' },
   'affiliate-builder':    { name: 'Builder',    color: '#2D6A4F', bg: '#DDEEE4' },
   'affiliate-titan':      { name: 'Titan',      color: '#8A5A0A', bg: '#FFF1D6' },
-  'affiliate-ambassador': { name: 'Ambassador', color: '#FFFFFF', bg: '#1B4332' },
+  'affiliate-legendary':  { name: 'Legendary',  color: '#FFFFFF', bg: '#1B4332' },
 };
 
 // `level` = the {id} shape the server sends as user.affiliateLevel, or null/undefined.
