@@ -19,6 +19,7 @@ import ActiveTradeCard from '../components/ActiveTradeCard';
 import { getCachedActiveTrades, setCachedActiveTrades, isGiftCardTrade } from '../utils/activeTradesCache';
 import PRQFooter from '../components/PRQFooter';
 import GettingStartedSteps from '../components/GettingStartedSteps';
+import CoinIcon from '../components/CoinIcon';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -358,7 +359,7 @@ function OfferCard({listing, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLi
         {/* Col 2: Price + Range */}
         <div className="flex flex-col flex-1 min-w-[200px]">
           <div className="flex items-center gap-1.5">
-            <div className="w-[18px] h-[18px] rounded-full bg-[#F7931A] text-white flex items-center justify-center text-[10px] font-black shadow-sm">₿</div>
+            <CoinIcon coin="BTC" size={18} />
             <span className="font-black text-[16px] text-gray-900">{fmt(rateLocal,2)} {cur}</span>
             <span className="px-1.5 py-0.5 rounded text-[11px] font-black tracking-wide" style={{backgroundColor:marginBg,color:'#fff'}}>
               {margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}
@@ -380,7 +381,7 @@ function OfferCard({listing, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLi
         <div className="flex items-center gap-3 flex-shrink-0">
           <button onClick={onViewBuyer} className="w-10 h-10 rounded-full border border-gray-200 flex items-center justify-center bg-gray-50 text-gray-600 hover:bg-gray-100 transition shadow-sm"><Info size={18}/></button>
           <button onClick={onSell} className="h-10 px-6 rounded-full bg-[#F4A422] text-white font-black text-[15px] flex items-center gap-1.5 shadow-md hover:bg-[#D4891A] active:scale-95 transition">
-            Sell <div className="w-[18px] h-[18px] rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[11px]">₿</div>
+            Sell <CoinIcon coin="BTC" size={22} ring />
           </button>
         </div>
       </div>
@@ -412,7 +413,7 @@ function OfferCard({listing, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLi
         <div className="bg-gray-50 mt-1 px-4 py-3 flex items-center justify-between gap-2 border-t border-gray-100">
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <div className="w-4 h-4 rounded-full bg-[#F7931A] text-white flex items-center justify-center text-[9px] font-black shadow-sm">₿</div>
+              <CoinIcon coin="BTC" size={16} />
               <span className="font-black text-[15px] text-gray-900 truncate">{fmt(rateLocal,2)} {cur}</span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide" style={{backgroundColor:marginBg,color:'#fff'}}>{margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}</span>
             </div>
@@ -421,7 +422,7 @@ function OfferCard({listing, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLi
           <div className="flex items-center gap-2 flex-shrink-0">
             <button onClick={onViewBuyer} className="w-9 h-9 rounded-full border border-gray-300 flex items-center justify-center bg-white text-gray-700 hover:bg-gray-100 transition shadow-sm"><Info size={16}/></button>
             <button onClick={onSell} className="h-9 px-4 rounded-full bg-[#F4A422] text-white font-black text-[15px] flex items-center gap-1.5 shadow-md hover:bg-[#D4891A] active:scale-95 transition">
-              Sell <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[10px]">₿</div>
+              Sell <CoinIcon coin="BTC" size={20} ring />
             </button>
           </div>
         </div>
@@ -1234,7 +1235,7 @@ export default function SellBitcoin({user}) {
               <span>1 USD = {fmt(usdRate, 2)} {cur}</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px] font-black">₿</span>
+              <CoinIcon coin="BTC" size={16} />
               <span>1 BTC = {fmt(btcPrice * usdRate, 1)} {cur}</span>
             </div>
           </div>
@@ -1267,12 +1268,12 @@ export default function SellBitcoin({user}) {
                 >
                   {selectedCrypto === 'BTC' ? (
                     <>
-                      <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px] font-bold">₿</span>
+                      <CoinIcon coin="BTC" size={16} />
                       <span>BTC</span>
                     </>
                   ) : selectedCrypto === 'USDT' ? (
                     <>
-                      <span className="w-4 h-4 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-[10px] font-bold">₮</span>
+                      <CoinIcon coin="USDT" size={16} />
                       <span>USDT</span>
                     </>
                   ) : (
@@ -1300,14 +1301,14 @@ export default function SellBitcoin({user}) {
                         onClick={() => { setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); navigate('/sell-bitcoin', { state: { selectedCrypto: 'BTC' } }); }}
                         className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-black transition border-t border-gray-100 ${selectedCrypto === 'BTC' ? 'bg-amber-50 text-amber-700' : 'text-gray-800 hover:bg-gray-50'}`}
                       >
-                        <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px]">₿</span>
+                        <CoinIcon coin="BTC" size={16} />
                         <span>Bitcoin</span>
                       </button>
                       <button
                         onClick={() => { setSelectedCrypto('USDT'); setShowAllCryptoMenu(false); navigate('/sell-usdt', { state: { selectedCrypto: 'USDT' } }); }}
                         className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-black transition border-t border-gray-100 ${selectedCrypto === 'USDT' ? 'bg-teal-50 text-teal-700' : 'text-gray-800 hover:bg-gray-50'}`}
                       >
-                        <span className="w-4 h-4 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-[10px]">₮</span>
+                        <CoinIcon coin="USDT" size={16} />
                         <span>Tether</span>
                       </button>
                     </div>
@@ -1374,9 +1375,9 @@ export default function SellBitcoin({user}) {
                 className="h-[36px] sm:h-[40px] px-2 sm:px-3 rounded-xl border bg-gray-50 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-black text-gray-800 hover:bg-gray-100 transition"
                 style={{borderColor: C.g200}}>
                 {selectedCrypto === 'BTC' ? (
-                  <><span className="w-5 h-5 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px]">₿</span> BTC</>
+                  <><CoinIcon coin="BTC" size={20} /> BTC</>
                 ) : selectedCrypto === 'USDT' ? (
-                  <><span className="w-5 h-5 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-[10px]">₮</span> USDT</>
+                  <><CoinIcon coin="USDT" size={20} /> USDT</>
                 ) : (
                   <><Coins size={15} className="text-amber-600" /> All Cryptos</>
                 )}
@@ -1393,12 +1394,12 @@ export default function SellBitcoin({user}) {
                     </button>
                     <button onClick={()=>{setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); navigate('/sell-bitcoin', { state: { selectedCrypto: 'BTC' } });}}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${selectedCrypto === 'BTC' ? 'bg-amber-50/80' : 'hover:bg-gray-50'}`} style={{borderColor:C.g100}}>
-                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#F7931A,#e8830a)'}}>₿</span>
+                      <CoinIcon coin="BTC" size={28} />
                       <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">Bitcoin</span></span>
                     </button>
                     <button onClick={()=>{setSelectedCrypto('USDT'); setShowAllCryptoMenu(false); navigate('/sell-usdt', { state: { selectedCrypto: 'USDT' } });}}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${selectedCrypto === 'USDT' ? 'bg-amber-50/80' : 'hover:bg-gray-50'}`} style={{borderColor:C.g100}}>
-                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#0F766E,#14B8A6)'}}>₮</span>
+                      <CoinIcon coin="USDT" size={28} />
                       <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">Tether</span></span>
                     </button>
                   </div>
