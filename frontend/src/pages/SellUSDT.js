@@ -794,7 +794,7 @@ function BuyerModal({buyer, listing, onClose, onTrade, usdtPriceUSD}) {
           <button onClick={onTrade}
             className="flex-1 py-3 rounded-2xl text-white text-sm font-black flex items-center justify-center gap-2 shadow-md"
             style={{background:`linear-gradient(135deg,${C.sell},${C.gold})`}}>
-            <span className="font-black">₮</span> Sell USDT
+            <CoinIcon coin="USDT" size={20} ring /> Sell USDT
           </button>
         </div>
       </div>
@@ -1093,10 +1093,11 @@ export default function SellUSDT({user}) {
       navigate('/login?message=Please log in to start trading');
       return;
     }
-    const listing = offers.find(l => l.id === id);
-    if (listing) {
-      setModal({ type: 'buyer', buyer: listing.users, listing });
-    }
+    // Was opening the same buyer-info modal the ⓘ button already opens (onViewBuyer below) —
+    // clicking "Sell" here, or the "Sell USDT" button inside that modal (which also calls
+    // handleSell), just showed the identical panel again with nothing new, so the trade never
+    // actually started. Matches SellBitcoin.js's handleSell: go straight to the listing.
+    navigate(`/listing/${id}`);
   };
 
   const cur = selCurrency.code;

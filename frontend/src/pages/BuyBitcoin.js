@@ -309,8 +309,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
   const cur       = listing.currency || 'GHS';
   const sym       = listing.currency_symbol || CUR_SYM[cur] || '₵';
   const assetLabel = (listing.asset || listing.crypto_asset || 'BTC').toUpperCase();
-  const assetIcon = assetLabel === 'USDT' ? '₮' : '₿';
-  const assetIconBg = assetLabel === 'USDT' ? 'bg-[#0F766E]' : 'bg-[#F7931A]';
+  const assetCoin = assetLabel === 'USDT' ? 'USDT' : 'BTC';
 
   const usdRate   = USD_RATES[cur] || 1;
   const rateLocal = getRateUSD(listing, btcPriceUSD) * usdRate;
@@ -375,7 +374,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
         {/* Col 2: Price + Range */}
         <div className="flex flex-col flex-1 min-w-[200px]">
           <div className="flex items-center gap-1.5">
-            <div className={`w-[18px] h-[18px] rounded-full ${assetIconBg} text-white flex items-center justify-center text-[10px] font-black shadow-sm`}>{assetIcon}</div>
+            <CoinIcon coin={assetCoin} size={18} />
             <span className="font-black text-[16px] text-gray-900">{fmt(rateLocal,2)} {cur}</span>
             <span className="px-1.5 py-0.5 rounded text-[11px] font-black tracking-wide" style={{backgroundColor:margin<0?'#10B981':margin>0?'#EF4444':'#64748B',color:'#fff'}}>
               {margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}
@@ -397,7 +396,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
         <div className="flex items-center gap-3 flex-shrink-0">
           <button onClick={onViewSeller} className="w-10 h-10 rounded-full border border-gray-200 flex items-center justify-center bg-gray-50 text-gray-600 hover:bg-gray-100 transition shadow-sm"><Info size={18}/></button>
           <button onClick={onBuy} className="h-10 px-6 rounded-full bg-[#10B981] text-white font-black text-[15px] flex items-center gap-1.5 shadow-md hover:bg-emerald-600 active:scale-95 transition">
-            Buy <div className="w-[18px] h-[18px] rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[11px]">{assetIcon}</div>
+            Buy <CoinIcon coin={assetCoin} size={22} ring />
           </button>
         </div>
       </div>
@@ -429,7 +428,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
         <div className="bg-gray-50 mt-1 px-4 py-3 flex items-center justify-between gap-2 border-t border-gray-100">
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <div className={`w-4 h-4 rounded-full ${assetIconBg} text-white flex items-center justify-center text-[9px] font-black shadow-sm`}>{assetIcon}</div>
+              <CoinIcon coin={assetCoin} size={16} />
               <span className="font-black text-[15px] text-gray-900 truncate">{fmt(rateLocal,2)} {cur}</span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide" style={{backgroundColor:margin<0?'#10B981':margin>0?'#EF4444':'#64748B',color:'#fff'}}>{margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}</span>
             </div>
@@ -438,7 +437,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
           <div className="flex items-center gap-2 flex-shrink-0">
             <button onClick={onViewSeller} className="w-9 h-9 rounded-full border border-gray-300 flex items-center justify-center bg-white text-gray-700 hover:bg-gray-100 transition shadow-sm"><Info size={16}/></button>
             <button onClick={onBuy} className="h-9 px-4 rounded-full bg-[#10B981] text-white font-black text-[15px] flex items-center gap-1.5 shadow-md hover:bg-emerald-600 active:scale-95 transition">
-              Buy <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[10px]">{assetIcon}</div>
+              Buy <CoinIcon coin={assetCoin} size={20} ring />
             </button>
           </div>
         </div>
