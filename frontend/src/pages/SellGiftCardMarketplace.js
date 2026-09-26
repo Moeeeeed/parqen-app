@@ -230,8 +230,7 @@ const GC_BRAND_GROUPS = [
   { cat: null, color: null, items: ['All Brands'] },
   {
     cat: '🛍️ Shopping', color: '#10B981', items: [
-      'Amazon', 'Amazon (US)', 'Amazon (UK)', 'Amazon (CA)', 'Amazon (AU)', 'Amazon (DE)',
-      'eBay', 'Walmart', 'Target', 'Best Buy', 'GameStop',
+      'Amazon', 'eBay', 'Walmart', 'Target', 'Best Buy', 'GameStop',
       'IKEA', 'H&M', 'Zara', 'ASOS', 'Shein', 'Temu',
       'Foot Locker', 'Nike Gift Card', 'Adidas', 'Old Navy',
       'Home Depot', "Macy's", 'Nordstrom', 'Sephora', 'Bath & Body Works',
@@ -240,7 +239,7 @@ const GC_BRAND_GROUPS = [
   },
   {
     cat: '📱 Tech', color: '#3B82F6', items: [
-      'Apple / iTunes', 'iTunes Denmark', 'Google Play', 'Microsoft / Xbox Store',
+      'Apple / iTunes', 'Google Play', 'Microsoft / Xbox Store',
     ]
   },
   {
@@ -282,6 +281,30 @@ const GC_BRAND_GROUPS = [
 // Flat list used by filter logic
 const GC_BRANDS = GC_BRAND_GROUPS.flatMap(g => g.items);
 
+const matchesBrand = (l, targetBrand) => {
+  if (!targetBrand || targetBrand === 'All Brands' || targetBrand === 'All Cards') return true;
+
+  const b1 = String(l.gift_card_brand || l.giftCardBrand || l.card_brand || '').toLowerCase();
+  const b2 = String(l.payment_method || '').toLowerCase();
+  const b3 = String(l.description || l.title || l.listing_terms || l.trade_instructions || '').toLowerCase();
+  const combined = `${b1} ${b2} ${b3}`.trim();
+
+  const target = targetBrand.toLowerCase().trim();
+
+  if (target.includes('/')) {
+    const parts = target.split('/').map(p => p.trim()).filter(Boolean);
+    return parts.some(p => combined.includes(p));
+  }
+
+  const cleanTarget = target.replace(/\b(gift card|gc|voucher|store|card)\b/gi, '').trim();
+
+  if (cleanTarget.length >= 2) {
+    if (combined.includes(cleanTarget)) return true;
+  }
+
+  return combined.includes(target);
+};
+
 const GC_FACE_VALUES = [10, 20, 25, 50, 100, 200, 500, 1000];
 
 const fmt = (n, d = 0) => new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: d }).format(n || 0);
@@ -308,15 +331,20 @@ const getLastSeen = (u) => {
 // fix. Gift cards trade against both BTC and USDT (see the crypto filter below) — a
 // USDT-asset listing priced at 'market' must use the ~$1 USDT peg, not the BTC
 // rate, or its amounts come out ~88,000x too high.
+const isUsdtAsset = (l) => {
+  if (!l) return false;
+  const a = String(l.asset || l.crypto_asset || l.currency_crypto || '').toUpperCase();
+  return a === 'USDT' || a === 'TETHER' || a.includes('USDT') || a.includes('TETHER');
+};
 const getRateLocal = (l, btcPrice, usdRate) => {
-  const isUsdt = (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'USDT';
+  const isUsdt = isUsdtAsset(l);
   if (l.pricing_type === 'fixed') {
     const s = parseFloat(l.bitcoin_price || 0);
     if (s > (isUsdt ? 0.01 : 100)) return s;
   }
   return (isUsdt ? 1 : btcPrice) * (1 + parseFloat(l.margin || 0) / 100) * usdRate;
 };
-const getBrand = (l) => l.gift_card_brand || l.giftCardBrand || l.card_brand || 'Gift Card';
+const getBrand = (l) => l.gift_card_brand || l.giftCardBrand || l.card_brand || l.payment_method || 'Gift Card';
 const getFaceVal = (l) => { const v = l.face_value || l.card_value || l.amount_usd; return v ? parseFloat(v) : null; };
 const getCardRange = (l) => {
   let arr = l.card_values || l.face_values || l.accepted_denominations || l.denominations || l.card_denominations;
@@ -412,7 +440,7 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType, liv
   const cur = listing.currency || 'USD';
   const sym = listing.currency_symbol || CUR_SYM[cur] || '$';
   const usdRate = USD_RATES[cur] || 1;
-  const isUsdtCard = (listing.asset || listing.crypto_asset || 'BTC').toUpperCase() === 'USDT';
+  const isUsdtCard = isUsdtAsset(listing);
   const spotPriceUSD = isUsdtCard ? 1 : btcPriceUSD;
   const rateLocal = getRateLocal(listing, btcPriceUSD, usdRate);
   const rateUSD = usdRate > 0 ? rateLocal / usdRate : rateLocal;
@@ -1211,9 +1239,9 @@ export default function SellGiftCardMarketplace({ user }) {
   useEffect(() => {
     const h = e => {
       if (currencyRef.current && !currencyRef.current.contains(e.target)) { setShowCurrency(false); setCurrencySearch(''); }
-      if (brandRef.current && !brandRef.current.contains(e.target)) { setShowBrand(false); setBrandSearch(''); }
-      if (countryRef.current && !countryRef.current.contains(e.target)) { setShowCountry(false); setCountrySearch(''); }
-      if (cryptoRef.current && !cryptoRef.current.contains(e.target)) { setShowCryptoMenu(false); }
+      if (brandRef.current && !brandRef.current.contains(e.target) && !e.target.closest?.('.brand-dropdown-container')) { setShowBrand(false); setBrandSearch(''); }
+      if (countryRef.current && !countryRef.current.contains(e.target) && !e.target.closest?.('.country-dropdown-container')) { setShowCountry(false); setCountrySearch(''); }
+      if (cryptoRef.current && !cryptoRef.current.contains(e.target) && !e.target.closest?.('.crypto-dropdown-container')) { setShowCryptoMenu(false); }
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
@@ -1311,10 +1339,15 @@ export default function SellGiftCardMarketplace({ user }) {
       list = list.filter(l => l.listing_type === 'SELL_GIFT_CARD');
     }
 
-    if (cryptoFilter === 'BTC') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'BTC');
-    if (cryptoFilter === 'USDT') list = list.filter(l => (l.asset || l.crypto_asset || 'BTC').toUpperCase() === 'USDT');
-    if (selCurrency && selCurrency.code) list = list.filter(l => (l.currency || 'USD').toUpperCase() === selCurrency.code);
-    if (selBrand !== 'All Brands') list = list.filter(l => (getBrand(l) || '').toLowerCase().includes(selBrand.toLowerCase()));
+    if (cryptoFilter === 'BTC') {
+      list = list.filter(l => !isUsdtAsset(l));
+    } else if (cryptoFilter === 'USDT') {
+      list = list.filter(l => isUsdtAsset(l));
+    }
+
+    if (selBrand !== 'All Brands') {
+      list = list.filter(l => matchesBrand(l, selBrand));
+    }
     const amt = parseFloat(amountInput);
     if (!isNaN(amt) && amt > 0) list = list.filter(l => {
       const range = getCardRange(l);
@@ -1341,10 +1374,11 @@ export default function SellGiftCardMarketplace({ user }) {
     if (sortBy === 'rating') list.sort((a, b) => (b.users?.average_rating || 0) - (a.users?.average_rating || 0));
     if (sortBy === 'trades') list.sort((a, b) => getTrades(b.users) - getTrades(a.users));
 
-    // One offer per seller per payment method
+    // One offer per seller per card brand
     const seen = new Set();
     list = list.filter(l => {
-      const key = `${l.seller_id}:${String(l.payment_method || '').toLowerCase().trim()}`;
+      const brandKey = String(l.gift_card_brand || l.giftCardBrand || l.card_brand || l.payment_method || '').toLowerCase().trim();
+      const key = `${l.seller_id}:${brandKey}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -1409,7 +1443,7 @@ export default function SellGiftCardMarketplace({ user }) {
           <div className="flex items-center justify-between">
             <h1 className="text-2xl sm:text-3xl font-black" style={{ color: C.g800 }}>
               {gcMode === 'buy' ? 'Buy' : 'Sell'} <span style={{ color: cryptoFilter === 'USDT' ? '#0F766E' : '#F4A422' }}>
-                {cryptoFilter === 'ALL' ? 'Crypto' : cryptoFilter === 'USDT' ? 'USDT' : 'BTC'}
+                {cryptoFilter === 'ALL' ? 'All Crypto' : cryptoFilter === 'USDT' ? 'USDT' : 'BTC'}
               </span>
               {selBrand !== 'All Brands' && (
                 <span className="font-bold" style={{ color: '#F4A422' }}> with {selBrand}</span>
@@ -1454,7 +1488,7 @@ export default function SellGiftCardMarketplace({ user }) {
               </div>
 
               {/* Crypto / Asset Dropdown Selector */}
-              <div className="relative">
+              <div className="relative crypto-dropdown-container" ref={e => { cryptoRef.current = e; }}>
                 <button
                   onClick={() => setShowCryptoMenu(v => !v)}
                   className="h-9 px-3 rounded-xl bg-gray-50 border border-gray-200 flex items-center gap-1.5 text-xs font-black text-gray-800 hover:bg-gray-100 transition"
@@ -1472,7 +1506,7 @@ export default function SellGiftCardMarketplace({ user }) {
                   ) : (
                     <>
                       <Coins size={14} className="text-[#F4A422]" />
-                      <span>All Cryptos</span>
+                      <span>All Crypto</span>
                     </>
                   )}
                   <ChevronDown size={13} className="text-gray-400" />
@@ -1481,14 +1515,13 @@ export default function SellGiftCardMarketplace({ user }) {
                 {/* Menu Overlay for Mobile */}
                 {showCryptoMenu && (
                   <div className="absolute right-0 top-full mt-1.5 w-48 rounded-2xl border border-gray-200 shadow-xl overflow-hidden z-50 bg-white">
-                    <div className="fixed inset-0 z-40" onClick={() => setShowCryptoMenu(false)} />
                     <div className="relative z-50 py-1">
                       <button
                         onClick={() => { setCryptoFilter('ALL'); setShowCryptoMenu(false); }}
                         className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-xs font-black text-gray-800 hover:bg-gray-50"
                       >
                         <Coins size={16} className="text-[#F4A422]" />
-                        <span>All Cryptos</span>
+                        <span>All Crypto</span>
                       </button>
                       <button
                         onClick={() => { setCryptoFilter('BTC'); setShowCryptoMenu(false); }}
@@ -1502,7 +1535,7 @@ export default function SellGiftCardMarketplace({ user }) {
                         className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-xs font-black text-gray-800 hover:bg-gray-50 border-t border-gray-100"
                       >
                         <span className="w-5 h-5 rounded-full bg-teal-500 text-white flex items-center justify-center text-[10px]">₮</span>
-                        <span>Tether</span>
+                        <span>Tether (USDT)</span>
                       </button>
                     </div>
                   </div>
@@ -1521,13 +1554,57 @@ export default function SellGiftCardMarketplace({ user }) {
             {/* Bottom Row: Brand Dropdown (Left) & Amount Input with Currency (Right) */}
             <div className="grid grid-cols-2 gap-2 pt-0.5">
               {/* Brand Button */}
-              <button
-                onClick={() => { setShowBrand(!showBrand); setBrandSearch(''); }}
-                className="h-9 px-3 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-between text-xs font-bold text-gray-800 hover:bg-gray-100 transition overflow-hidden"
-              >
-                <span className="truncate">{selBrand === 'All Brands' ? 'All Cards' : selBrand}</span>
-                <ChevronDown size={13} className="text-gray-400 shrink-0 ml-1" />
-              </button>
+              <div className="relative brand-dropdown-container" ref={e => { brandRef.current = e; }}>
+                <button
+                  onClick={() => { setShowBrand(!showBrand); setBrandSearch(''); }}
+                  className="w-full h-9 px-3 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-between text-xs font-bold text-gray-800 hover:bg-gray-100 transition overflow-hidden"
+                >
+                  <span className="truncate">{selBrand === 'All Brands' ? 'All Cards' : selBrand}</span>
+                  <ChevronDown size={13} className="text-gray-400 shrink-0 ml-1" />
+                </button>
+
+                {showBrand && (
+                  <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-2xl z-50 border overflow-hidden"
+                    style={{ borderColor: C.g100, minWidth: '220px' }}>
+                    <div className="px-2 py-2 border-b sticky top-0 bg-white z-40" style={{ borderColor: C.g100 }}>
+                      <input type="text" placeholder="Search card brand..." value={brandSearch}
+                        onChange={e => setBrandSearch(e.target.value)} onClick={e => e.stopPropagation()}
+                        className="w-full px-2.5 py-1.5 rounded-lg focus:outline-none"
+                        style={{ border: `1.5px solid ${C.g200}`, color: C.g800, backgroundColor: C.g50, fontSize: '14px' }} />
+                    </div>
+                    <div style={{ maxHeight: 240, overflowY: 'auto' }} className="relative z-30">
+                      {brandSearch.trim() ? (
+                        GC_BRANDS.filter(b => b.toLowerCase().includes(brandSearch.toLowerCase())).map(b => (
+                          <button key={b} onClick={() => { setSelBrand(b); setShowBrand(false); setBrandSearch(''); }}
+                            className="w-full flex items-center justify-between px-3 py-2.5 text-xs hover:bg-gray-50 border-b last:border-0 transition text-left"
+                            style={{ borderColor: C.g50, backgroundColor: selBrand === b ? `${C.forest}08` : 'transparent' }}>
+                            <span className="font-semibold" style={{ color: C.g800 }}>{b === 'All Brands' ? 'All Cards' : b}</span>
+                            {selBrand === b && <CheckCircle size={11} style={{ color: C.green }} />}
+                          </button>
+                        ))
+                      ) : (
+                        GC_BRAND_GROUPS.map(group => (
+                          <div key={group.cat || 'all'}>
+                            {group.cat && (
+                              <div className="px-3 py-1.5 sticky top-0" style={{ backgroundColor: '#F8FAFC', borderBottom: `1px solid ${C.g100}` }}>
+                                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: group.color || C.g500 }}>{group.cat}</span>
+                              </div>
+                            )}
+                            {group.items.map(b => (
+                              <button key={b} onClick={() => { setSelBrand(b); setShowBrand(false); setBrandSearch(''); }}
+                                className="w-full flex items-center justify-between px-3 py-2.5 text-xs hover:bg-gray-50 border-b last:border-0 transition text-left"
+                                style={{ borderColor: C.g50, backgroundColor: selBrand === b ? `${C.forest}08` : 'transparent' }}>
+                                <span className="font-semibold" style={{ color: C.g800 }}>{b === 'All Brands' ? 'All Cards' : b}</span>
+                                {selBrand === b && <CheckCircle size={11} style={{ color: C.green }} />}
+                              </button>
+                            ))}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Amount Input with Currency Badge */}
               <div className="h-9 px-2.5 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-between gap-1">
@@ -1548,7 +1625,7 @@ export default function SellGiftCardMarketplace({ user }) {
             </div>
           </div>
 
-          {/* ══ 2. DESKTOP CONTROL CARD (UNTOUCHED FOR DESKTOP) ════════════════════════════════════ */}
+          {/* ══ 2. DESKTOP CONTROL CARD ════════════════════════════════════ */}
           <div className="hidden sm:flex mt-4 bg-white rounded-2xl border p-2 sm:p-3 shadow-sm flex-wrap items-center gap-2 sm:gap-3" style={{ borderColor: C.g200 }}>
 
             {/* Toggle Pill (Buy/Sell) */}
@@ -1564,7 +1641,7 @@ export default function SellGiftCardMarketplace({ user }) {
             </div>
 
             {/* Crypto Dropdown */}
-            <div className="relative shrink-0" ref={cryptoRef}>
+            <div className="relative shrink-0 crypto-dropdown-container" ref={e => { cryptoRef.current = e; }}>
               <button onClick={() => setShowCryptoMenu(v => !v)}
                 className="h-[36px] sm:h-[40px] px-2 sm:px-3 rounded-xl border bg-gray-50 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-black text-gray-800 hover:bg-gray-100 transition"
                 style={{ borderColor: C.g200 }}>
@@ -1573,18 +1650,17 @@ export default function SellGiftCardMarketplace({ user }) {
                 ) : cryptoFilter === 'USDT' ? (
                   <><span className="w-5 h-5 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-[10px]">₮</span> USDT</>
                 ) : (
-                  <><Coins size={15} className="text-emerald-600" /> All Cryptos</>
+                  <><Coins size={15} className="text-emerald-600" /> All Crypto</>
                 )}
                 <ChevronDown size={14} className="text-gray-400" />
               </button>
               {showCryptoMenu && (
                 <div className="absolute left-0 top-full mt-1.5 w-48 sm:w-56 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white" style={{ borderColor: C.g200 }}>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowCryptoMenu(false)} />
                   <div className="relative z-50">
                     <button onClick={() => { setCryptoFilter('ALL'); setShowCryptoMenu(false); }}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition ${cryptoFilter === 'ALL' ? 'bg-emerald-50/80' : 'hover:bg-gray-50'}`}>
                       <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{ background: 'linear-gradient(135deg,#0D9488,#14B8A6)' }}><Coins size={14} /></span>
-                      <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">All Cryptos</span></span>
+                      <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">All Crypto</span></span>
                     </button>
                     <button onClick={() => { setCryptoFilter('BTC'); setShowCryptoMenu(false); }}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${cryptoFilter === 'BTC' ? 'bg-amber-50/80' : 'hover:bg-gray-50'}`} style={{ borderColor: C.g100 }}>
@@ -1594,7 +1670,7 @@ export default function SellGiftCardMarketplace({ user }) {
                     <button onClick={() => { setCryptoFilter('USDT'); setShowCryptoMenu(false); }}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${cryptoFilter === 'USDT' ? 'bg-teal-50/80' : 'hover:bg-gray-50'}`} style={{ borderColor: C.g100 }}>
                       <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{ background: 'linear-gradient(135deg,#0F766E,#14B8A6)' }}>₮</span>
-                      <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">Tether</span></span>
+                      <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">Tether (USDT)</span></span>
                     </button>
                   </div>
                 </div>
@@ -1602,7 +1678,7 @@ export default function SellGiftCardMarketplace({ user }) {
             </div>
 
             {/* Brand Dropdown (Replaces Payment Method) */}
-            <div className="relative shrink-0 flex-1 sm:flex-none sm:w-40" ref={brandRef}>
+            <div className="relative shrink-0 flex-1 sm:flex-none sm:w-40 brand-dropdown-container" ref={e => { brandRef.current = e; }}>
               <span className="absolute -top-2 left-3 px-1 bg-white text-[9px] font-black text-emerald-600 tracking-wider uppercase z-10">BRAND</span>
               <button
                 onClick={() => { setShowBrand(!showBrand); setBrandSearch(''); }}

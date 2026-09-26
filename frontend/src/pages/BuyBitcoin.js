@@ -307,6 +307,10 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
   const margin    = parseFloat(listing.margin||0);
   const cur       = listing.currency || 'GHS';
   const sym       = listing.currency_symbol || CUR_SYM[cur] || '₵';
+  const assetLabel = (listing.asset || listing.crypto_asset || 'BTC').toUpperCase();
+  const assetIcon = assetLabel === 'USDT' ? '₮' : '₿';
+  const assetIconBg = assetLabel === 'USDT' ? 'bg-[#0F766E]' : 'bg-[#F7931A]';
+
   const usdRate   = USD_RATES[cur] || 1;
   const rateLocal = getRateUSD(listing, btcPriceUSD) * usdRate;
 
@@ -370,7 +374,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
         {/* Col 2: Price + Range */}
         <div className="flex flex-col flex-1 min-w-[200px]">
           <div className="flex items-center gap-1.5">
-            <div className="w-[18px] h-[18px] rounded-full bg-[#F7931A] text-white flex items-center justify-center text-[10px] font-black shadow-sm">₿</div>
+            <div className={`w-[18px] h-[18px] rounded-full ${assetIconBg} text-white flex items-center justify-center text-[10px] font-black shadow-sm`}>{assetIcon}</div>
             <span className="font-black text-[16px] text-gray-900">{fmt(rateLocal,2)} {cur}</span>
             <span className="px-1.5 py-0.5 rounded text-[11px] font-black tracking-wide" style={{backgroundColor:margin<0?'#10B981':margin>0?'#EF4444':'#64748B',color:'#fff'}}>
               {margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}
@@ -385,14 +389,14 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
         </div>
         {/* Col 4: Receive */}
         <div className="flex flex-col w-[160px] flex-shrink-0">
-          <span className="text-[12px] font-bold text-gray-500 mb-0.5">Receive (BTC)</span>
+          <span className="text-[12px] font-bold text-gray-500 mb-0.5">Receive ({assetLabel})</span>
           <span className="text-[15px] font-black text-gray-900">{fmt(fiatEquiv,2)} {cur}</span>
         </div>
         {/* Col 5: Actions */}
         <div className="flex items-center gap-3 flex-shrink-0">
           <button onClick={onViewSeller} className="w-10 h-10 rounded-full border border-gray-200 flex items-center justify-center bg-gray-50 text-gray-600 hover:bg-gray-100 transition shadow-sm"><Info size={18}/></button>
           <button onClick={onBuy} className="h-10 px-6 rounded-full bg-[#10B981] text-white font-black text-[15px] flex items-center gap-1.5 shadow-md hover:bg-emerald-600 active:scale-95 transition">
-            Buy <div className="w-[18px] h-[18px] rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[11px]">₿</div>
+            Buy <div className="w-[18px] h-[18px] rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[11px]">{assetIcon}</div>
           </button>
         </div>
       </div>
@@ -419,12 +423,12 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
         </div>
         <div className="px-4 py-2 flex items-center justify-between">
           <div className="flex flex-col"><span className="text-xs font-bold text-gray-600 mb-0.5">Pay {pmLabel}</span><span className="text-lg font-black text-gray-900">{fmt(examplePay,2)} {cur}</span></div>
-          <div className="flex flex-col text-right"><span className="text-xs font-bold text-gray-600 mb-0.5">Receive (BTC)</span><span className="text-lg font-black text-gray-900">{fmt(fiatEquiv,2)} {cur}</span></div>
+          <div className="flex flex-col text-right"><span className="text-xs font-bold text-gray-600 mb-0.5">Receive ({assetLabel})</span><span className="text-lg font-black text-gray-900">{fmt(fiatEquiv,2)} {cur}</span></div>
         </div>
         <div className="bg-gray-50 mt-1 px-4 py-3 flex items-center justify-between gap-2 border-t border-gray-100">
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <div className="w-4 h-4 rounded-full bg-[#F7931A] text-white flex items-center justify-center text-[9px] font-black shadow-sm">₿</div>
+              <div className={`w-4 h-4 rounded-full ${assetIconBg} text-white flex items-center justify-center text-[9px] font-black shadow-sm`}>{assetIcon}</div>
               <span className="font-black text-[15px] text-gray-900 truncate">{fmt(rateLocal,2)} {cur}</span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide" style={{backgroundColor:margin<0?'#10B981':margin>0?'#EF4444':'#64748B',color:'#fff'}}>{margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}</span>
             </div>
@@ -433,7 +437,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
           <div className="flex items-center gap-2 flex-shrink-0">
             <button onClick={onViewSeller} className="w-9 h-9 rounded-full border border-gray-300 flex items-center justify-center bg-white text-gray-700 hover:bg-gray-100 transition shadow-sm"><Info size={16}/></button>
             <button onClick={onBuy} className="h-9 px-4 rounded-full bg-[#10B981] text-white font-black text-[15px] flex items-center gap-1.5 shadow-md hover:bg-emerald-600 active:scale-95 transition">
-              Buy <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[10px]">₿</div>
+              Buy <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[10px]">{assetIcon}</div>
             </button>
           </div>
         </div>
@@ -1331,8 +1335,8 @@ export default function BuyBitcoin({user}) {
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl sm:text-3xl font-black" style={{color:C.g800}}>
-              Buy <span style={{color: selectedCrypto === 'USDT' ? '#0F766E' : '#10B981'}}>
-                {selectedCrypto === 'ALL' ? 'Crypto' : selectedCrypto === 'USDT' ? 'Tether (USDT)' : 'Bitcoin (BTC)'}
+              Buy <span style={{color: (!selectedCrypto || selectedCrypto === 'ALL') ? '#0D9488' : selectedCrypto === 'USDT' ? '#0F766E' : '#10B981'}}>
+                {(!selectedCrypto || selectedCrypto === 'ALL') ? 'All Crypto' : selectedCrypto === 'USDT' ? 'Tether (USDT)' : 'Bitcoin (BTC)'}
               </span>
               {selPayment !== 'all' && (
                 <span className="font-bold" style={{color: '#10B981'}}> with {selPmInfo?.label || selPayment}</span>
@@ -1393,7 +1397,7 @@ export default function BuyBitcoin({user}) {
                   ) : (
                     <>
                       <Coins size={14} className="text-emerald-600" />
-                      <span>All Cryptos</span>
+                      <span>All Crypto</span>
                     </>
                   )}
                   <ChevronDown size={13} className="text-gray-400" />
@@ -1409,7 +1413,7 @@ export default function BuyBitcoin({user}) {
                         className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-black transition ${!selectedCrypto ? 'bg-emerald-50 text-emerald-700' : 'text-gray-800 hover:bg-gray-50'}`}
                       >
                         <Coins size={15} className="text-emerald-600" />
-                        <span>All Cryptos</span>
+                        <span>All Crypto</span>
                       </button>
                       <button
                         onClick={() => { setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); navigate('/buy-bitcoin', { state: { selectedCrypto: 'BTC' } }); }}
@@ -1493,7 +1497,7 @@ export default function BuyBitcoin({user}) {
                 ) : selectedCrypto === 'USDT' ? (
                   <><span className="w-5 h-5 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-[10px]">₮</span> USDT</>
                 ) : (
-                  <><Coins size={15} className="text-emerald-600" /> All Cryptos</>
+                  <><Coins size={15} className="text-emerald-600" /> All Crypto</>
                 )}
                 <ChevronDown size={14} className="text-gray-400" />
               </button>
@@ -1504,7 +1508,7 @@ export default function BuyBitcoin({user}) {
                     <button onClick={()=>{setSelectedCrypto(null); setShowAllCryptoMenu(false); navigate('/buy-bitcoin', { state: { selectedCrypto: null } });}}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition ${!selectedCrypto ? 'bg-emerald-50/80' : 'hover:bg-gray-50'}`}>
                       <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#0D9488,#14B8A6)'}}><Coins size={14} /></span>
-                      <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">All Cryptos</span></span>
+                      <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">All Crypto</span></span>
                     </button>
                     <button onClick={()=>{setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); navigate('/buy-bitcoin', { state: { selectedCrypto: 'BTC' } });}}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${selectedCrypto === 'BTC' ? 'bg-amber-50/80' : 'hover:bg-gray-50'}`} style={{borderColor:C.g100}}>

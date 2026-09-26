@@ -1116,8 +1116,8 @@ export default function SellUSDT({user}) {
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl sm:text-3xl font-black" style={{color:C.g800}}>
-              Sell <span style={{color: selectedCrypto === 'BTC' ? '#F7931A' : '#D97706'}}>
-                {selectedCrypto === 'ALL' ? 'Crypto' : selectedCrypto === 'BTC' ? 'Bitcoin (BTC)' : 'Tether (USDT)'}
+              Sell <span style={{color: (!selectedCrypto || selectedCrypto === 'ALL') ? '#0D9488' : selectedCrypto === 'BTC' ? '#F7931A' : '#D97706'}}>
+                {(!selectedCrypto || selectedCrypto === 'ALL') ? 'All Crypto' : selectedCrypto === 'BTC' ? 'Bitcoin (BTC)' : 'Tether (USDT)'}
               </span>
               {selPayment !== 'all' && (
                 <span className="font-bold" style={{color: '#D97706'}}> for {selPmInfo?.label || selPayment}</span>
@@ -1178,7 +1178,7 @@ export default function SellUSDT({user}) {
                   ) : (
                     <>
                       <Coins size={14} className="text-amber-500" />
-                      <span>All Cryptos</span>
+                      <span>All Crypto</span>
                     </>
                   )}
                   <ChevronDown size={13} className="text-gray-400" />
@@ -1194,7 +1194,7 @@ export default function SellUSDT({user}) {
                         className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-xs font-black text-gray-800 hover:bg-gray-50"
                       >
                         <Coins size={16} className="text-amber-500" />
-                        <span>All Cryptos</span>
+                        <span>All Crypto</span>
                       </button>
                       <button
                         onClick={() => { setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); navigate('/sell-bitcoin', { state: { selectedCrypto: 'BTC' } }); }}
@@ -1278,7 +1278,7 @@ export default function SellUSDT({user}) {
                 ) : selectedCrypto === 'USDT' ? (
                   <><span className="w-5 h-5 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-[10px]">₮</span> USDT</>
                 ) : (
-                  <><Coins size={15} className="text-amber-600" /> All Cryptos</>
+                  <><Coins size={15} className="text-amber-600" /> All Crypto</>
                 )}
                 <ChevronDown size={14} className="text-gray-400" />
               </button>
@@ -1289,7 +1289,7 @@ export default function SellUSDT({user}) {
                     <button onClick={()=>{setSelectedCrypto(null); setShowAllCryptoMenu(false); navigate('/sell-usdt', { state: { selectedCrypto: null } });}}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition ${!selectedCrypto ? 'bg-amber-50/80' : 'hover:bg-gray-50'}`}>
                       <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#D97706,#B45309)'}}><Coins size={14} /></span>
-                      <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">All Cryptos</span></span>
+                      <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">All Crypto</span></span>
                     </button>
                     <button onClick={()=>{setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); navigate('/sell-bitcoin', { state: { selectedCrypto: 'BTC' } });}}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${selectedCrypto === 'BTC' ? 'bg-amber-50/80' : 'hover:bg-gray-50'}`} style={{borderColor:C.g100}}>
