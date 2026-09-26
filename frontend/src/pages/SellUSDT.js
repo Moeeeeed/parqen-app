@@ -1037,11 +1037,12 @@ export default function SellUSDT({user}) {
     } else if (selectedCrypto === 'USDT') {
       if (l.asset !== 'USDT') return false;
     }
-    const cur = (l.currency || 'USD').toUpperCase();
+    let cur = (l.fiat_currency || l.local_currency || l.currency || 'USD').toUpperCase();
+    if (['BTC', 'USDT', '₿', '₮', '$'].includes(cur)) cur = 'USD';
     const pm  = (l.payment_method || '').toLowerCase();
     const offerCountry = (l.country_code || l.country || '').toUpperCase();
     if (selCountry.code !== 'ALL' && offerCountry !== '' && offerCountry !== selCountry.code) return false;
-    if (cur !== selCurrency.code) return false;
+    if (cur !== selCurrency.code.toUpperCase()) return false;
     if (selPayment !== 'all' && pm !== selPayment && !pm.includes(selPayment)) return false;
     if (traderSearch && !getDisplayName(l.users).toLowerCase().includes(traderSearch.toLowerCase())) return false;
     if (sellAmt && parseFloat(sellAmt) > 0) {

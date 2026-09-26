@@ -219,7 +219,7 @@ const FOREIGN_CURRENCY_CODES = [
   'NZD', 'JPY', 'HKD', 'PLN', 'BRL', 'MXN'
 ];
 
-const GC_FILTER_CURRENCIES = CURRENCIES.filter(c => FOREIGN_CURRENCY_CODES.includes(c.code));
+const GC_FILTER_CURRENCIES = [...CURRENCIES];
 
 const PAYMENT_OPTIONS = [
   'All Payments', 'MTN Mobile Money', 'Vodafone Cash', 'AirtelTigo Money',
@@ -1091,7 +1091,7 @@ export default function GiftCards({ user }) {
   // this windows the display rather than the network request).
   const [visibleCount, setVisibleCount] = useState(24);
   const [btcPrice, setBtcPrice] = useState(68000);
-  const [selCurrency, setSelCurrency] = useState(CURRENCIES.find(c => c.code === 'USD') || CURRENCIES[0]);
+  const [selCurrency, setSelCurrency] = useState(GC_FILTER_CURRENCIES[0]);
   const [selBrand, setSelBrand] = useState('All Brands');
   const [selCountry, setSelCountry] = useState(COUNTRIES[0]);
   const [amountInput, setAmountInput] = useState('');
@@ -1340,6 +1340,21 @@ export default function GiftCards({ user }) {
       list = list.filter(l => isUsdtAsset(l));
     }
 
+    if (selCurrency && selCurrency.code) {
+      const targetCur = selCurrency.code.toUpperCase();
+      list = list.filter(l => {
+        let cur = l.fiat_currency || l.local_currency || l.currency;
+        const str = String(cur || '').toUpperCase();
+        if (cur && !['BTC', 'USDT', '₿', '₮', '$'].includes(str)) {
+          return str === targetCur;
+        }
+        const text = `${l.payment_method || ''} ${l.gift_card_brand || ''} ${l.card_type || ''} ${l.description || ''}`.toUpperCase();
+        const matches = text.match(/\b(CAD|EUR|GBP|USD|AUD|GHS|NGN|KES|ZAR|BRL|MXN|JPY|HKD|CHF|NOK|SEK|DKK|PLN|NZD|SGD)\b/);
+        const detected = matches ? matches[1] : 'USD';
+        return detected === targetCur;
+      });
+    }
+
     if (selBrand !== 'All Brands') {
       list = list.filter(l => matchesBrand(l, selBrand));
     }
@@ -1347,8 +1362,9 @@ export default function GiftCards({ user }) {
     if (!isNaN(amt) && amt > 0) list = list.filter(l => {
       const range = getCardRange(l);
       if (!range) return true;
-      if (range[0]?.isRange) return amt >= range[0].min && amt <= range[0].max;
-      return range.some(v => Math.abs(v - amt) < 0.01);
+      const minVal = range[0]?.isRange ? range[0].min : Math.min(...range);
+      const maxVal = range[0]?.isRange ? range[0].max : Math.max(...range);
+      return amt >= (minVal * 0.85) && amt <= (maxVal * 1.15);
     });
     // l.country_code / l.users?.country_code never come back from /api/listings — the
     // listings select only returns `country`, and the users select doesn't include a
@@ -1394,8 +1410,8 @@ export default function GiftCards({ user }) {
   };
 
   const filtered = getFiltered();
-  const cur = selCurrency.code || 'GHS';
-  const sym = selCurrency.symbol || '₵';
+  const cur = selCurrency?.code || 'USD';
+  const sym = selCurrency?.symbol || '$';
   const usdRate = USD_RATES[cur] || 1;
   const btcLocal = btcPrice * usdRate;
   const onlineCnt = listings.filter(l => (Date.now() - new Date(l.users?.last_seen_at || l.users?.last_login || 0)) / 1000 < 300).length;
@@ -1415,7 +1431,7 @@ export default function GiftCards({ user }) {
   const fastResponderListingId = activeTraderIsLive ? null : (rankedByTrades[0]?.id || null);
   const featuredListingId = activeTraderIsLive ? activeTraderListingId : fastResponderListingId;
   const featuredBadgeType = activeTraderIsLive ? 'active_trader' : 'fast_responder';
-  const hasFilters = amountInput.trim() !== '' || selBrand !== 'All Brands' || selCountry.code !== 'ALL' || traderSearch.trim() !== '' || sortBy !== 'rate_low';
+  const hasFilters = amountInput.trim() !== '' || selBrand !== 'All Brands' || selCountry.code !== 'ALL' || (selCurrency && selCurrency.code) || traderSearch.trim() !== '' || sortBy !== 'rate_low';
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: C.g100, fontFamily: "'DM Sans',sans-serif" }}>
@@ -2032,7 +2048,7 @@ export default function GiftCards({ user }) {
 
       {/* ══ NOONES CURRENCY MODAL ════════════════════════════════════ */}
       {showCurrency && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
+        <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
           <div className="w-full md:max-w-md bg-white h-[85vh] md:h-full rounded-t-2xl md:rounded-none flex flex-col p-4 overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3 mb-4" style={{ borderColor: C.g200 }}>
               <h3 className="text-lg font-black text-gray-900">Currency</h3>
@@ -2115,6 +2131,21 @@ export default function GiftCards({ user }) {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Currency Selection */}
+              <div>
+                <span className="text-sm font-bold text-gray-700 block mb-2">Currency</span>
+                <button
+                  onClick={() => { setShowFilters(false); setShowCurrency(true); }}
+                  className="w-full flex items-center justify-between px-3 py-3 rounded-xl border bg-gray-50 text-sm font-bold text-gray-700 hover:bg-gray-100 transition"
+                  style={{ borderColor: C.g200 }}>
+                  <div className="flex items-center gap-2">
+                    <span className="font-black">{selCurrency.code}</span>
+                    <span className="text-gray-500 font-normal">{selCurrency.name}</span>
+                  </div>
+                  <ChevronDown size={16} className="text-gray-400" />
+                </button>
               </div>
 
               {/* Search Trader */}

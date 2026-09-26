@@ -219,7 +219,7 @@ const FOREIGN_CURRENCY_CODES = [
   'NZD', 'JPY', 'HKD', 'PLN', 'BRL', 'MXN'
 ];
 
-const GC_FILTER_CURRENCIES = CURRENCIES.filter(c => FOREIGN_CURRENCY_CODES.includes(c.code));
+const GC_FILTER_CURRENCIES = [{ code: 'ALL', name: 'All Currencies', symbol: '' }, ...CURRENCIES];
 
 const PAYMENT_OPTIONS = [
   'All Payments', 'MTN Mobile Money', 'Vodafone Cash', 'AirtelTigo Money',
@@ -1334,6 +1334,21 @@ export default function SellGiftCardMarketplace({ user }) {
       list = list.filter(l => isUsdtAsset(l));
     }
 
+    if (selCurrency && selCurrency.code && selCurrency.code !== 'ALL') {
+      const targetCur = selCurrency.code.toUpperCase();
+      list = list.filter(l => {
+        let cur = l.fiat_currency || l.local_currency || l.currency;
+        const str = String(cur || '').toUpperCase();
+        if (cur && !['BTC', 'USDT', '₿', '₮', '$'].includes(str)) {
+          return str === targetCur;
+        }
+        const text = `${l.payment_method || ''} ${l.gift_card_brand || ''} ${l.card_type || ''} ${l.description || ''}`.toUpperCase();
+        const matches = text.match(/\b(CAD|EUR|GBP|USD|AUD|GHS|NGN|KES|ZAR|BRL|MXN|JPY|HKD|CHF|NOK|SEK|DKK|PLN|NZD|SGD)\b/);
+        const detected = matches ? matches[1] : 'USD';
+        return detected === targetCur;
+      });
+    }
+
     if (selBrand !== 'All Brands') {
       list = list.filter(l => matchesBrand(l, selBrand));
     }
@@ -1409,7 +1424,7 @@ export default function SellGiftCardMarketplace({ user }) {
   const fastResponderListingId = activeTraderIsLive ? null : (rankedByTrades[0]?.id || null);
   const featuredListingId = activeTraderIsLive ? activeTraderListingId : fastResponderListingId;
   const featuredBadgeType = activeTraderIsLive ? 'active_trader' : 'fast_responder';
-  const hasFilters = amountInput.trim() !== '' || selBrand !== 'All Brands' || selCountry.code !== 'ALL' || traderSearch.trim() !== '' || sortBy !== 'rate_low';
+  const hasFilters = amountInput.trim() !== '' || selBrand !== 'All Brands' || selCountry.code !== 'ALL' || selCurrency.code !== 'USD' || traderSearch.trim() !== '' || sortBy !== 'rate_low';
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: C.g100, fontFamily: "'DM Sans',sans-serif" }}>
@@ -2026,7 +2041,7 @@ export default function SellGiftCardMarketplace({ user }) {
 
       {/* ══ NOONES CURRENCY MODAL ════════════════════════════════════ */}
       {showCurrency && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
+        <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
           <div className="w-full md:max-w-md bg-white h-[85vh] md:h-full rounded-t-2xl md:rounded-none flex flex-col p-4 overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3 mb-4" style={{ borderColor: C.g200 }}>
               <h3 className="text-lg font-black text-gray-900">Currency</h3>

@@ -228,19 +228,44 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
     || 'GHS';
   const cleanCur = String(rawCur).toUpperCase();
 
-  const fiatNum   = parseFloat(trade.amount_local || trade.fiat_amount || trade.amount_fiat || trade.amount_usd || trade.amount || 0);
-  const cryptoNum = parseFloat(trade.amount_btc || trade.amount_usdt || trade.crypto_amount || trade.amount_crypto || trade.btc_amount || trade.usdt_amount || 0);
+  const fiatPayNum  = parseFloat(trade.amount_local || trade.fiat_amount || trade.amount_fiat || trade.amount_usd || trade.amount || 0);
+  let fiatRecvNum   = parseFloat(trade.amount_receive_usd || trade.receive_amount || 0);
 
-  const fmtFiat   = `${fiatNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${cleanCur}`;
-  const fmtCrypto = fmtBtc(cryptoNum, isUsdt);
+  if (!fiatRecvNum || fiatRecvNum === fiatPayNum) {
+    const margin = parseFloat(trade.listing?.margin || 0);
+    if (margin !== 0) {
+      fiatRecvNum = fiatPayNum * (1 - (margin / 100));
+    } else {
+      fiatRecvNum = fiatPayNum * 0.95;
+    }
+  }
+
+  const cryptoNum   = parseFloat(trade.amount_btc || trade.amount_usdt || trade.crypto_amount || trade.amount_crypto || trade.btc_amount || trade.usdt_amount || 0);
+
+  const fmtPayFiat  = `${fiatPayNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${cleanCur}`;
+  const fmtRecvFiat = `${fiatRecvNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${cleanCur}`;
+  const fmtCrypto   = fmtBtc(cryptoNum, isUsdt);
 
   const rawPm = trade.listing?.payment_method || trade.payment_method || trade.pay_method || 'Mobile Money';
   const pmName = formatPaymentMethod(rawPm);
 
-  const payTitle   = isBuyer ? `Pay ${pmName}` : `Pay (${assetTag})`;
-  const payVal     = isBuyer ? fmtFiat : fmtCrypto;
-  const recvTitle  = isBuyer ? `Receive (${assetTag})` : `Receive ${pmName}`;
-  const recvVal    = isBuyer ? fmtCrypto : fmtFiat;
+  let payTitle, payVal, paySubVal, recvTitle, recvVal, recvSubVal;
+
+  if (isBuyer) {
+    payTitle   = `Pay ${pmName}`;
+    payVal     = fmtPayFiat;
+    paySubVal  = null;
+    recvTitle  = `Receive (${assetTag})`;
+    recvVal    = fmtCrypto;
+    recvSubVal = `≈ ${fmtRecvFiat}`;
+  } else {
+    payTitle   = `Pay (${assetTag})`;
+    payVal     = fmtCrypto;
+    paySubVal  = `≈ ${fmtPayFiat}`;
+    recvTitle  = `Receive ${pmName}`;
+    recvVal    = fmtRecvFiat;
+    recvSubVal = null;
+  }
 
   const pos       = parseInt(cp.positive_feedback || 0);
   const neg       = parseInt(cp.negative_feedback || 0);
@@ -298,14 +323,16 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
         </div>
 
         {/* Middle Row: Pay Amount & Receive Amount */}
-        <div className="grid grid-cols-2 gap-4 py-2 border-t border-gray-100">
+        <div className="grid grid-cols-2 gap-1.5 sm:gap-4 py-2 border-t border-gray-100">
           <div className="min-w-0">
-            <span className="text-xs font-bold text-gray-500 block mb-0.5 whitespace-nowrap truncate">{payTitle}</span>
+            <span className="text-[9px] min-[380px]:text-[10px] sm:text-xs font-bold text-gray-500 block mb-0.5 whitespace-nowrap leading-tight overflow-visible tracking-tight">{payTitle}</span>
             <span className="text-base sm:text-lg font-black text-gray-900 block truncate">{payVal}</span>
+            {paySubVal && <span className="text-xs font-semibold text-gray-400 block truncate mt-0.5">{paySubVal}</span>}
           </div>
-          <div className="text-right min-w-0">
-            <span className="text-xs font-bold text-gray-500 block mb-0.5 whitespace-nowrap truncate">{recvTitle}</span>
+          <div className="text-right min-w-0 flex flex-col items-end">
+            <span className="text-[9px] min-[380px]:text-[10px] sm:text-xs font-bold text-gray-500 block mb-0.5 whitespace-nowrap leading-tight overflow-visible tracking-tight">{recvTitle}</span>
             <span className="text-base sm:text-lg font-black text-gray-900 block truncate">{recvVal}</span>
+            {recvSubVal && <span className="text-xs font-semibold text-gray-400 block truncate mt-0.5">{recvSubVal}</span>}
           </div>
         </div>
 
