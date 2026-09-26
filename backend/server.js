@@ -5574,6 +5574,11 @@ app.post('/api/kyc/upload', express.json({ limit: '25mb' }), verifyToken, async 
 
     // Try Supabase Storage upload (bucket: kyc-documents) — see withUploadTimeout() above
     // for why this can only fail-fast on the response, not actually cancel the upload.
+    // Each upload runs in its OWN try/catch — previously all three shared one
+    // try block, so a crash processing the OPTIONAL back-of-ID image (skipped
+    // by nearly every submitter) aborted before the front image's URL was ever
+    // read back AND before the selfie was even attempted, even though the
+    // front image had already finished uploading to storage moments earlier.
     try {
       const { error: idErr } = await withUploadTimeout(
         supabaseAdmin.storage
@@ -5581,23 +5586,35 @@ app.post('/api/kyc/upload', express.json({ limit: '25mb' }), verifyToken, async 
           .upload(`${userId}/id_front_${timestamp}.jpg`, toBuffer(idImage), { contentType: 'image/jpeg', upsert: true }),
         25000, 'ID front'
       );
-
-      const { error: idBackErr } = await withUploadTimeout(
-        supabaseAdmin.storage
-          .from('kyc-documents')
-          .upload(`${userId}/id_back_${timestamp}.jpg`, toBuffer(idImageBack), { contentType: 'image/jpeg', upsert: true }),
-        25000, 'ID back'
-      );
-
       if (!idErr) {
         const { data: { publicUrl } } = supabaseAdmin.storage.from('kyc-documents').getPublicUrl(`${userId}/id_front_${timestamp}.jpg`);
         idUrl = publicUrl;
       }
-      if (!idBackErr) {
-        const { data: { publicUrl } } = supabaseAdmin.storage.from('kyc-documents').getPublicUrl(`${userId}/id_back_${timestamp}.jpg`);
-        idBackUrl = publicUrl;
-      }
+    } catch (idFrontErr) {
+      console.warn('[kyc/upload] ID front upload failed:', idFrontErr.message);
+    }
 
+    // idImageBack is intentionally optional (passports have no back side, and
+    // the UI marks it optional for every ID type) — only attempt this upload
+    // when a back image was actually sent.
+    if (idImageBack) {
+      try {
+        const { error: idBackErr } = await withUploadTimeout(
+          supabaseAdmin.storage
+            .from('kyc-documents')
+            .upload(`${userId}/id_back_${timestamp}.jpg`, toBuffer(idImageBack), { contentType: 'image/jpeg', upsert: true }),
+          25000, 'ID back'
+        );
+        if (!idBackErr) {
+          const { data: { publicUrl } } = supabaseAdmin.storage.from('kyc-documents').getPublicUrl(`${userId}/id_back_${timestamp}.jpg`);
+          idBackUrl = publicUrl;
+        }
+      } catch (idBackErr) {
+        console.warn('[kyc/upload] ID back upload failed:', idBackErr.message);
+      }
+    }
+
+    try {
       const { error: selfieErr } = await withUploadTimeout(
         supabaseAdmin.storage
           .from('kyc-documents')
@@ -5608,8 +5625,8 @@ app.post('/api/kyc/upload', express.json({ limit: '25mb' }), verifyToken, async 
         const { data: { publicUrl } } = supabaseAdmin.storage.from('kyc-documents').getPublicUrl(`${userId}/selfie_${timestamp}.jpg`);
         selfieUrl = publicUrl;
       }
-    } catch (storageErr) {
-      console.warn('[kyc/upload] Storage upload failed (bucket may not exist):', storageErr.message);
+    } catch (selfieErr) {
+      console.warn('[kyc/upload] Selfie upload failed:', selfieErr.message);
     }
 
     // Always mark user as pending regardless of storage success
