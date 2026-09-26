@@ -18,6 +18,7 @@ import ActiveTradeCard from '../components/ActiveTradeCard';
 import { getCachedActiveTrades, setCachedActiveTrades, isGiftCardTrade } from '../utils/activeTradesCache';
 import PRQFooter from '../components/PRQFooter';
 import GettingStartedSteps from '../components/GettingStartedSteps';
+import CoinIcon from '../components/CoinIcon';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -966,7 +967,6 @@ export default function BuyBitcoin({user}) {
   const [userBtcBalance, setUserBtcBalance] = useState(0);
   const [lastSynced,   setLastSynced]   = useState(null);
 
-  const [affLeaderboard, setAffLeaderboard] = useState([]);
   const [traderSearch,   setTraderSearch]   = useState('');
   const [advFilters, setAdvFilters] = useState({
     topRated: false,
@@ -1108,17 +1108,6 @@ export default function BuyBitcoin({user}) {
     const iv = setInterval(() => fetchOnlineStatus(), 30000);
     return () => clearInterval(iv);
   }, [listings.length > 0]); // re-run when listings first populate
-
-  useEffect(() => {
-    const fetchBoard = () => {
-      axios.get(`${API_URL}/referral/leaderboard`).then(r => {
-        if (r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0, 3));
-      }).catch(() => {});
-    };
-    fetchBoard();
-    const iv = setInterval(fetchBoard, 60000);
-    return () => clearInterval(iv);
-  }, []);
 
   // Auto-detect user location by IP — sets COUNTRY only, not currency.
   // Currency stays at USD (shows all offers) until the user manually picks one.
@@ -1353,7 +1342,7 @@ export default function BuyBitcoin({user}) {
               <span>1 USD = {fmt(usdRate, 2)} {cur}</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px] font-black">₿</span>
+              <CoinIcon coin="BTC" size={16} />
               <span>1 BTC = {fmt(btcPrice * usdRate, 1)} {cur}</span>
             </div>
           </div>
@@ -1386,12 +1375,12 @@ export default function BuyBitcoin({user}) {
                 >
                   {selectedCrypto === 'BTC' ? (
                     <>
-                      <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px] font-bold">₿</span>
+                      <CoinIcon coin="BTC" size={16} />
                       <span>BTC</span>
                     </>
                   ) : selectedCrypto === 'USDT' ? (
                     <>
-                      <span className="w-4 h-4 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-[10px] font-bold">₮</span>
+                      <CoinIcon coin="USDT" size={16} />
                       <span>USDT</span>
                     </>
                   ) : (
@@ -1419,14 +1408,14 @@ export default function BuyBitcoin({user}) {
                         onClick={() => { setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); navigate('/buy-bitcoin', { state: { selectedCrypto: 'BTC' } }); }}
                         className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-black transition border-t border-gray-100 ${selectedCrypto === 'BTC' ? 'bg-amber-50 text-amber-700' : 'text-gray-800 hover:bg-gray-50'}`}
                       >
-                        <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px]">₿</span>
+                        <CoinIcon coin="BTC" size={16} />
                         <span>Bitcoin</span>
                       </button>
                       <button
                         onClick={() => { setSelectedCrypto('USDT'); setShowAllCryptoMenu(false); navigate('/buy-usdt', { state: { selectedCrypto: 'USDT' } }); }}
                         className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-black transition border-t border-gray-100 ${selectedCrypto === 'USDT' ? 'bg-teal-50 text-teal-700' : 'text-gray-800 hover:bg-gray-50'}`}
                       >
-                        <span className="w-4 h-4 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-[10px]">₮</span>
+                        <CoinIcon coin="USDT" size={16} />
                         <span>Tether</span>
                       </button>
                     </div>
@@ -1493,9 +1482,9 @@ export default function BuyBitcoin({user}) {
                 className="h-[36px] sm:h-[40px] px-2 sm:px-3 rounded-xl border bg-gray-50 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-black text-gray-800 hover:bg-gray-100 transition"
                 style={{borderColor: C.g200}}>
                 {selectedCrypto === 'BTC' ? (
-                  <><span className="w-5 h-5 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px]">₿</span> BTC</>
+                  <><CoinIcon coin="BTC" size={20} /> BTC</>
                 ) : selectedCrypto === 'USDT' ? (
-                  <><span className="w-5 h-5 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-[10px]">₮</span> USDT</>
+                  <><CoinIcon coin="USDT" size={20} /> USDT</>
                 ) : (
                   <><Coins size={15} className="text-emerald-600" /> All Crypto</>
                 )}
@@ -1512,12 +1501,12 @@ export default function BuyBitcoin({user}) {
                     </button>
                     <button onClick={()=>{setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); navigate('/buy-bitcoin', { state: { selectedCrypto: 'BTC' } });}}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${selectedCrypto === 'BTC' ? 'bg-amber-50/80' : 'hover:bg-gray-50'}`} style={{borderColor:C.g100}}>
-                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#F7931A,#e8830a)'}}>₿</span>
+                      <CoinIcon coin="BTC" size={28} />
                       <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">Bitcoin</span></span>
                     </button>
                     <button onClick={()=>{setSelectedCrypto('USDT'); setShowAllCryptoMenu(false); navigate('/buy-usdt', { state: { selectedCrypto: 'USDT' } });}}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${selectedCrypto === 'USDT' ? 'bg-teal-50/80' : 'hover:bg-gray-50'}`} style={{borderColor:C.g100}}>
-                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#0F766E,#14B8A6)'}}>₮</span>
+                      <CoinIcon coin="USDT" size={28} />
                       <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">Tether</span></span>
                     </button>
                   </div>
@@ -2024,96 +2013,57 @@ export default function BuyBitcoin({user}) {
               <div>
                 <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:8}}>
                   <span style={{display:'flex',alignItems:'center',gap:4,fontSize:11,fontWeight:900,color:C.forest,background:C.gold,borderRadius:6,padding:'3px 9px',letterSpacing:0.5,textTransform:'uppercase'}}>
-                    <Bitcoin size={11}/>Affiliate
+                    <Bitcoin size={11}/>Referral Program
                   </span>
                   <span style={{display:'flex',alignItems:'center',gap:4,fontSize:9,fontWeight:700,color:'#fff',background:'rgba(255,255,255,0.15)',borderRadius:5,padding:'2px 8px'}}>
                     <span style={{width:6,height:6,borderRadius:'50%',background:'#6EE7B7',display:'inline-block'}}/>LIVE
                   </span>
                 </div>
-                <p style={{margin:0,fontSize:20,fontWeight:900,color:'#fff',lineHeight:1.2}}>Invite friends. Earn BTC forever.</p>
-                <p style={{margin:0,fontSize:12,color:'rgba(255,255,255,0.7)',marginTop:5,fontWeight:500}}>Earn on every trade your referrals make — for life.</p>
+                <p style={{margin:0,fontSize:20,fontWeight:900,color:'#fff',lineHeight:1.2}}>Invite friends. Earn Bitcoin together.</p>
+                <p style={{margin:0,fontSize:12,color:'rgba(255,255,255,0.7)',marginTop:5,fontWeight:500}}>Earn when the friends you invite trade on PRAQEN.</p>
               </div>
-              <button onClick={()=>navigate(user ? '/dashboard?tab=affiliate' : '/register')}
+              <button onClick={()=>navigate('/partner-program')}
                 style={{flexShrink:0,padding:'12px 20px',borderRadius:11,border:'none',cursor:'pointer',background:C.gold,color:C.forest,fontWeight:900,fontSize:13,whiteSpace:'nowrap',boxShadow:'0 4px 16px rgba(244,164,34,0.45)'}}>
                 Get Link <ArrowRight size={14} style={{display:'inline',marginLeft:4,verticalAlign:'-2px'}}/>
               </button>
             </div>
           </div>
 
-          {/* Commission tiers — single brand-color progression (mint → gold), not a rainbow */}
-          <div style={{padding:'12px 16px',background:'#fff',borderBottom:`1px solid ${C.g100}`}}>
-            <p style={{margin:'0 0 8px',fontSize:10,fontWeight:800,color:C.g500,textTransform:'uppercase',letterSpacing:0.8}}>Commission Tiers</p>
-            <div style={{position:'relative'}}>
-              <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:2}}>
-                {[
-                  {refs:'0–9',   rate:'0.20%', c:C.mint},
-                  {refs:'10–24', rate:'0.25%', c:C.green},
-                  {refs:'25–49', rate:'0.35%', c:C.forest},
-                  {refs:'50–99', rate:'0.40%', c:'#B8811A'},
-                  {refs:'100+',  rate:'0.50%', c:C.gold},
-                ].map(t=>(
-                  <div key={t.refs} style={{flex:'0 0 auto',background:`${t.c}0D`,border:`1.5px solid ${t.c}30`,borderRadius:10,padding:'9px 12px',textAlign:'center',minWidth:58}}>
-                    <div style={{fontSize:14,fontWeight:900,color:t.c,lineHeight:1}}>{t.rate}</div>
-                    <div style={{fontSize:9,color:C.g400,fontWeight:600,marginTop:3,lineHeight:1}}>{t.refs} refs</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{
-                position:'absolute',top:0,right:0,bottom:2,width:24,
-                background:'linear-gradient(to right, transparent, #ffffff)',
-                pointerEvents:'none',
-              }}/>
-            </div>
+          <div style={{padding:'10px 14px',background:'#fff',textAlign:'center'}}>
+            <span onClick={()=>navigate('/partner-program')} style={{fontSize:11,fontWeight:700,color:'#1B4332',cursor:'pointer',textDecoration:'underline'}}>See the Referral Program page for current rates →</span>
           </div>
 
-          {/* Leaderboard */}
-          {affLeaderboard.length > 0 && (
-            <div style={{background:'#fff'}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 14px 6px',background:C.mist}}>
-                <div style={{display:'flex',alignItems:'center',gap:5}}>
-                  <Trophy size={11} style={{color:C.gold}}/>
-                  <span style={{fontSize:9,fontWeight:900,color:C.forest,textTransform:'uppercase',letterSpacing:0.8}}>Top Earners</span>
-                </div>
-                <span style={{fontSize:9,color:C.green,fontWeight:600,background:'#fff',borderRadius:4,padding:'1px 6px'}}>All Time</span>
-              </div>
-              {affLeaderboard.map((u,i)=>{
-                const bc = BADGE_COLORS[u.badge] || '#64748B';
-                const rankBg = i===0?C.gold:i===1?C.g300:'#C08A4E';
-                const earnedUsd = ((u.earned_btc||0)*(btcPrice||76000));
-                return (
-                  <div key={u.username} style={{display:'flex',alignItems:'center',gap:9,padding:'7px 14px',borderTop:`1px solid ${C.g50}`}}>
-                    <div style={{width:18,height:18,borderRadius:'50%',flexShrink:0,background:rankBg,display:'flex',alignItems:'center',justifyContent:'center'}}>
-                      <span style={{fontSize:9,fontWeight:900,color:'#fff'}}>{i+1}</span>
-                    </div>
-                    <div style={{width:26,height:26,borderRadius:8,flexShrink:0,background:`${bc}15`,border:`1.5px solid ${bc}35`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:900,color:bc}}>
-                      {(u.username||'?')[0].toUpperCase()}
-                    </div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:'flex',alignItems:'center',gap:4}}>
-<span style={{fontSize:10,fontWeight:800,color:'#1E293B',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:80}}>{u.username}</span>
-                        <BadgeChip user={u} badgeName={u.badge} size="xs" />
-                      </div>
-                      <span style={{fontSize:8,color:C.g400,fontWeight:500}}>{u.referrals} referral{u.referrals !== 1 ? 's' : ''} · {u.affiliate_trades} ref trade{u.affiliate_trades !== 1 ? 's' : ''}</span>
-                    </div>
-                    <div style={{textAlign:'right',flexShrink:0}}>
-                      <div style={{fontSize:11,fontWeight:900,color:C.gold,lineHeight:1}}>₿{(()=>{const v=parseFloat(u.earned_btc||0);return v>0&&v<0.0001?v.toFixed(8):v.toFixed(5);})()}</div>
-                      <div style={{fontSize:8,color:C.g400,fontWeight:500,marginTop:1}}>${earnedUsd>=1000?(earnedUsd/1000).toFixed(1)+'k':earnedUsd>=1?earnedUsd.toFixed(2):earnedUsd<0.01?'<$0.01':earnedUsd.toFixed(2)}</div>
-                    </div>
-                  </div>
-                );
-              })}
-              <div style={{padding:'6px 14px',background:C.mist,borderTop:`1px solid ${C.g100}`,textAlign:'center'}}>
-                <span style={{fontSize:9,color:C.green,fontWeight:700}}>Could you be next? <span style={{textDecoration:'underline',cursor:'pointer'}} onClick={()=>navigate('/dashboard?tab=affiliate')}>View full leaderboard →</span></span>
-              </div>
-            </div>
-          )}
 
           <p style={{margin:0,padding:'6px 14px 9px',textAlign:'center',fontSize:9,color:C.g400,fontWeight:600,letterSpacing:0.3,background:'#fff'}}>
-            Free to join · No minimum payout · Lifetime commission
+            Free to join
           </p>
         </div>
 
       </div>
+
+        {/* Related SEO Guides Section */}
+<div className="mt-8 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+        Helpful Trading Guides
+    </h4>
+    <ul className="text-xs space-y-1.5 text-blue-600 dark:text-blue-400">
+        <li>
+            <a href="/blog/p2p-crypto-trading-fees" className="hover:underline">
+                → Understanding P2P Crypto Trading Fees
+            </a>
+        </li>
+        <li>
+            <a href="/blog/p2p-crypto-escrow-works" className="hover:underline">
+                → How P2P Crypto Escrow Works
+            </a>
+        </li>
+        <li>
+            <a href="/blog/p2p-trading-scams-and-how-to-avoid-themes" className="hover:underline">
+                → P2P Trading Scams & How to Stay Safe
+            </a>
+        </li>
+    </ul>
+</div>      
 
       <PRQFooter/>
 

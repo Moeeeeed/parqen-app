@@ -194,6 +194,7 @@ async function _warmListingsCache() {
 
     const userMap = {};
     usersData.forEach(u => { userMap[u.id] = u; });
+    await medalAwardService.attachMedals(Object.values(userMap)); // same medals as the live /api/listings answer
 
     // Only include listings whose seller data was successfully fetched
     const listings = rawListings
@@ -1460,6 +1461,114 @@ async function notifyModerators(tradeId, trade, reason) {
   console.log(`✅ Notified ${ids.length} moderators about dispute on trade ${tradeId}`);
 }
 
+// ============================================================
+// DISPUTE CHAT SYSTEM MESSAGES
+// Both automatic dispute messages are stored as regular SYSTEM rows in the
+// `messages` table (sender_id/recipient_id null) — the exact same shape every
+// other trade-chat system message uses — so they render in the shared chat for
+// BOTH parties, persist in chat history, and arrive via the chat's normal
+// polling. No separate messaging mechanism.
+// ============================================================
+
+// MESSAGE 1 — posted the moment a dispute is opened. Dynamic parts: the
+// disputer's username and the reason they selected/typed. Everything after the
+// reason is fixed text — do not reword without team sign-off.
+function disputeOpenedChatText(disputerUsername, reasonText) {
+  // The reason is free text typed by one trader and appears inside a SYSTEM-styled message
+  // the other trader will read as official. Flatten it to one line, cap it, and quote it as
+  // the user's own words so it cannot masquerade as moderator/platform instructions.
+  const reason = String(reasonText || 'User opened a dispute')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200) || 'User opened a dispute';
+  return [
+    `A dispute has been started by ${disputerUsername}. The reason given by the user is: "${reason}"`,
+    '',
+    'Disputes are processed in live queue and a moderator will join the trade chat when available. Decision for the award of escrowed cryptocurrency is based on following of offer terms, trading activity, provided proof of payment and the information request by a moderator during the trade.',
+    '',
+    'While waiting for a moderator to join you can summarize what happened and present all possible proof to support your claim.',
+  ].join('\n');
+}
+
+// MESSAGE 2 — posted 15 minutes after the dispute opened (see
+// runDisputeProofFollowUps) if it is still unresolved. Static compliance text
+// addressing both parties by username — do not reword without team sign-off.
+function disputeProofChatText(sellerUsername, buyerUsername) {
+  return [
+    `@${sellerUsername} and @${buyerUsername}`,
+    '',
+    'This trade is now in dispute and both parties are required to provide new video proof of their claims. Please include the following:',
+    '• A video recording showing you navigating to your account details and then displaying the transaction history for the last 10 days. Buyer must also show the detailed receipt of the payment',
+    "• A video recording where you call your financial institution's support and have them confirm the status of the payment",
+    '• A video recording where you chat with live support and have them confirm the status of the payment',
+    '',
+    'NOTE: We must hear/see details such as Account name, Account no., Date of transfer, Amount, and Status of transaction in the recording. Also, do not send screenshots or old proof. Dispute resolution can take up to 48 hours.',
+  ].join('\n');
+}
+
+// Shared insert for both messages. sender_id and recipient_id stay null so the
+// message is visible to BOTH parties and every chat surface reads it as SYSTEM.
+async function postDisputeChatMessage(tradeId, text) {
+  const { error } = await supabaseAdmin.from('messages').insert([{
+    trade_id: tradeId,
+    sender_id: null,
+    recipient_id: null,
+    message_text: text,
+    message_type: 'SYSTEM',
+    sender_role: 'system',
+    created_at: new Date(),
+  }]);
+  if (error) console.error('[disputeChat] system message insert failed:', error.message);
+  return !error;
+}
+
+// 15-minute follow-up (MESSAGE 2). Runs on the same pattern as the
+// expired-trades cron — a 60-second interval that queries the DB instead of
+// holding in-memory timers, so it survives server restarts. Idempotent per
+// dispute: a trade only gets the follow-up if no proof-request message exists
+// AFTER its disputed_at, so re-opened disputes (fresh disputed_at) get a fresh
+// window and resolved disputes (status no longer DISPUTED) never fire.
+async function runDisputeProofFollowUps() {
+  try {
+    const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    // 48h age cap (matches the stated dispute-resolution SLA): prevents the very
+    // first cron pass after deploy from dropping proof requests into long-open
+    // disputes moderators have been working for days.
+    const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const { data: due, error } = await supabaseAdmin.from('trades')
+      .select('id, buyer_id, seller_id, disputed_at, dispute_reason')
+      .eq('status', 'DISPUTED')
+      .lt('disputed_at', fifteenMinAgo)
+      .gt('disputed_at', twoDaysAgo);
+    if (error || !due || due.length === 0) return;
+
+    // Auto-escalated disputes (accountEnforcement) are opened by the system,
+    // not by a trade party, and already carry their own explanatory message —
+    // the buyer/seller proof request doesn't apply to them.
+    const candidates = due.filter(t => !/^Auto-escalated:/i.test(t.dispute_reason || ''));
+
+    for (const t of candidates) {
+      // Already asked for proof since this dispute was opened? Then never again
+      // for this dispute window.
+      const { count } = await supabaseAdmin.from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('trade_id', t.id)
+        .gte('created_at', t.disputed_at)
+        .ilike('message_text', '%provide new video proof%');
+      if (count > 0) continue;
+
+      const partyIds = [t.buyer_id, t.seller_id].filter(Boolean);
+      const { data: partyUsers } = await supabaseAdmin.from('users').select('id, username').in('id', partyIds);
+      const usernameOf = (uid) => (partyUsers || []).find(u => String(u.id) === String(uid))?.username || 'Trader';
+
+      const posted = await postDisputeChatMessage(t.id, disputeProofChatText(usernameOf(t.seller_id), usernameOf(t.buyer_id)));
+      if (posted) console.log(`✅ [disputeChat] 15-min proof request posted to trade ${t.id.slice(0, 8)}`);
+    }
+  } catch (err) {
+    console.error('[disputeChat] follow-up cron error:', err.message);
+  }
+}
+
 async function createNotification(userId, type, title, message, action, extra = {}) {
   try {
     const hasExtra = extra && (extra.actor_id || extra.direction || extra.trade_id);
@@ -1884,6 +1993,41 @@ async function requireEmailVerified(req, res, next) {
 
 app.get('/api/health', (req, res) => res.json({ status: 'OK', time: new Date() }));
 
+// GET /api/status — public, read-only service status for the Status page (cached 30s).
+// Each part is checked for real: the API answers (this reply), the database answers a query, trading can
+// read the live offers, and the withdrawal switches (SENDS_DISABLED / USDT_SENDS_DISABLED) are read as-is.
+let _statusCache = null;
+app.get('/api/status', async (req, res) => {
+  try {
+    if (_statusCache && Date.now() - _statusCache.ts < 30000) return res.json(_statusCache.body);
+    const timed = async (fn) => {
+      const t0 = Date.now();
+      try { const r = await fn(); return { ok: !r?.error, ms: Date.now() - t0 }; } catch (e) { return { ok: false, ms: Date.now() - t0 }; }
+    };
+    const [db, offers] = await Promise.all([
+      timed(() => supabaseAdmin.from('users').select('id').limit(1)),
+      timed(() => supabaseAdmin.from('listings').select('id').eq('status', 'ACTIVE').limit(1)),
+    ]);
+    const level = (ok, ms) => (!ok ? 'down' : ms > 3000 ? 'degraded' : 'operational');
+    const btcSends = process.env.SENDS_DISABLED === 'true';
+    const usdtSends = btcSends || process.env.USDT_SENDS_DISABLED === 'true';
+    const components = [
+      { key: 'api', name: 'PRAQEN API', status: 'operational' },
+      { key: 'database', name: 'Accounts & data', status: level(db.ok, db.ms) },
+      { key: 'trading', name: 'P2P trading & offers', status: level(offers.ok, offers.ms) },
+      { key: 'btc_withdrawals', name: 'Bitcoin withdrawals', status: btcSends ? 'maintenance' : level(db.ok, db.ms) },
+      { key: 'usdt_withdrawals', name: 'USDT withdrawals', status: usdtSends ? 'maintenance' : level(db.ok, db.ms) },
+    ];
+    const rank = { operational: 0, degraded: 1, maintenance: 1, down: 2 };
+    const worst = components.reduce((w, c) => (rank[c.status] > rank[w] ? c.status : w), 'operational');
+    const body = { success: true, overall: worst, checked_at: new Date().toISOString(), components };
+    _statusCache = { ts: Date.now(), body };
+    res.json(body);
+  } catch (e) {
+    res.status(500).json({ success: false, overall: 'down', error: 'Status check failed.' });
+  }
+});
+
 // ── Geo-detect endpoint (proxies ipapi.co to avoid client-side CORS) ────────
 app.get('/api/geo/detect', async (req, res) => {
   try {
@@ -2059,10 +2203,10 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
         const normalizedRef = referralCode.toLowerCase().trim();
         const { data: referrer } = await supabaseAdmin
           .from('users')
-          .select('id')
+          .select('id, account_status')
           .eq('referral_code', normalizedRef)
           .maybeSingle();
-        if (referrer) {
+        if (referrer && !['banned', 'frozen', 'suspended'].includes(String(referrer.account_status || '').toLowerCase())) {
           referrerId = referrer.id;
         }
       }
@@ -2134,7 +2278,7 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
             const { data: ref } = await supabaseAdmin.from('users').select('total_referrals').eq('id', referrerId).single();
             const newCount = (ref?.total_referrals || 0) + 1;
             await supabaseAdmin.from('users').update({ total_referrals: newCount }).eq('id', referrerId);
-            notifyUserReferral(referrerId, newUser.username).catch(() => { });
+            await createNotification(referrerId, 'referral', '🎉 New Referral!', `${newUser.username} just joined PRAQEN via your affiliate link.`, '/partner-program');
           } catch (refErr) {
             console.error('[Google Auth] Referrer update failed:', refErr.message);
           }
@@ -2230,8 +2374,11 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     if (referralCode) {
       const normalized = referralCode.toLowerCase().trim();
       const { data: referrer } = await supabaseAdmin
-        .from('users').select('id').eq('referral_code', normalized).maybeSingle();
-      if (referrer) {
+        .from('users').select('id, account_status').eq('referral_code', normalized).maybeSingle();
+      if (referrer && ['banned', 'frozen', 'suspended'].includes(String(referrer.account_status || '').toLowerCase())) {
+        // A restricted account must not collect new referrals. Signup still goes ahead, just without a referrer.
+        console.log(`[Register] Referral ignored: referrer ${referrer.id} is ${referrer.account_status}`);
+      } else if (referrer) {
         referrerId = referrer.id;
         console.log(`[Register] Referral matched: code=${normalized} → referrer=${referrerId}`);
       } else {
@@ -2382,8 +2529,8 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
             referrerId,
             'referral',
             '🎉 New Referral!',
-            `${username} just joined PRAQEN via your referral link — you now have ${newCount} referral${newCount !== 1 ? 's' : ''}!`,
-            '/dashboard?tab=affiliate'
+            `${username} just joined PRAQEN via your affiliate link.`,
+            '/partner-program'
           );
         } catch (e) {
           console.error('[Register] Referral count update failed:', e.message);
@@ -5762,6 +5909,31 @@ app.post('/api/users/check-badges', verifyToken, async (req, res) => {
   }
 });
 
+// ============================================================
+// MEDALS — achievement medals (Trader Settings → Badges & Medals, and next to names in the market)
+// ============================================================
+// Rules + dates live in services/medalService.js (pure, unit-tested); saving, notifying, revoking
+// and the market lookup live in services/medalAwardService.js. Everything that writes is switched
+// by MEDALS_AUTO_ENABLED (exactly "true"); until then this screen only SHOWS live progress.
+const { buildMedalPayloads } = require('./services/medalService');
+const medalAwardService = require('./services/medalAwardService');
+
+// GET /api/users/me/medals — the logged-in user's medals and progress.
+app.get('/api/users/me/medals', verifyToken, async (req, res) => {
+  try {
+    const on = medalAwardService.medalsAutoEnabled();
+    const r = await medalAwardService.evaluateUser(req.userId, { persist: on, notify: on });
+    if (!r) return res.status(404).json({ error: 'User not found.' });
+    const noStats = { totalTrades: 0, totalVolumeUsd: 0, momoTrades: 0, bankTrades: 0, giftCardTrades: 0, disputeCount: 0, cancelledCount: 0, dailyStreak: 0, registeredAt: null, volumePercentile: 0 };
+    const earnedDateById = {};
+    (r.earned || []).forEach((e) => { earnedDateById[e.id] = e.earnedAt; });
+    res.json({ success: true, medals: buildMedalPayloads(r.stats || noStats, earnedDateById) });
+  } catch (error) {
+    console.error('[medals] error:', error.message);
+    res.status(500).json({ error: 'Failed to load medals.' });
+  }
+});
+
 app.post('/api/users/heartbeat', verifyToken, async (req, res) => {
   try {
     await supabaseAdmin.from('users')
@@ -6029,9 +6201,11 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
     delete data.totp_secret;
     delete data.two_factor_temp_secret;
 
+    const _ownMedals = ((await medalAwardService.getMedalsForUsers([data.id]).catch(() => ({})))[data.id]) || [];
     res.json({
       user: {
         ...data,
+        medals: _ownMedals,
         ...extraFields,
         ...lockFlags,
         ...levelFlags,
@@ -6148,9 +6322,10 @@ app.get('/api/users/:userId', async (req, res) => {
       }
     } catch { }
 
+    const _userMedals = ((await medalAwardService.getMedalsForUsers([data.id]).catch(() => ({})))[data.id]) || [];
     res.json({
       user: {
-        ...data, ...extraFields, referral_trade_count,
+        ...data, medals: _userMedals, ...extraFields, referral_trade_count,
         total_trades: real_total_trades,
         positive_feedback: real_positive,
         negative_feedback: real_negative,
@@ -6843,6 +7018,7 @@ app.get('/api/featured-offers', async (req, res) => {
       console.log('[featured] sellerIds:', allSellerIds.length, '| profilesResult count:', (profilesResult.data || []).length, '| err:', profilesResult.error?.message);
       (profilesResult.data || []).forEach(u => { userMap[u.id] = u; });
       (avatarResult.data || []).forEach(u => { if (userMap[u.id]) userMap[u.id].avatar_url = capAvatar(u.avatar_url); });
+      await medalAwardService.attachMedals(Object.values(userMap));
     }
 
     const enriched = listings.map(l => ({ ...l, users: userMap[l.seller_id] || {} }));
@@ -7087,6 +7263,7 @@ app.get('/api/listings', async (req, res) => {
         return res.status(503).json({ error: isTimeout ? 'Seller profiles took too long to load. Please retry.' : 'Could not load seller profiles. Please retry in a moment.' });
       }
       (usersResult.data || []).forEach(u => { userMap[u.id] = { ...u, avatar_url: capAvatar(u.avatar_url) }; });
+      await medalAwardService.attachMedals(Object.values(userMap)); // medals replace the old badge chip in the market
       walletRows = walletsResult.data || [];
       // Only a never-seized (amount_usdt === remaining_amount) LOCKED deposit counts as "secured"
       depositedSellerIds = new Set(
@@ -7284,6 +7461,8 @@ app.get('/api/listings/:id', async (req, res) => {
         }
       } catch { }
     }
+
+    await medalAwardService.attachMedals([enrichedSeller]); // medals shown next to the seller's name
 
     // Use the LIVE market price, not the listing's own bitcoin_price field, for balance-
     // sufficiency math — that field is a snapshot taken at creation time (or unused entirely
@@ -7584,6 +7763,7 @@ app.get('/api/offers', async (req, res) => {
       display_name: computeDisplayName(u),
       country: u.country || null,
     }]));
+    await medalAwardService.attachMedals(Object.values(userMap)); // medals shown next to each seller's name
 
     // Drop offers whose seller is banned or frozen (see the matching filter in
     // /api/listings). Only excluded when the status is positively known.
@@ -9689,6 +9869,20 @@ app.post('/api/trades/:id/dispute', tradeLimiter, verifyToken, requireNotBanned,
     res.json({ success: true, trade: data });
 
     setImmediate(async () => {
+      // Fetch both parties once — usernames for the chat message, emails below
+      const [buyerRes, sellerRes] = await Promise.allSettled([
+        supabaseAdmin.from('users').select('id, email, username').eq('id', trade.buyer_id).single(),
+        supabaseAdmin.from('users').select('id, email, username').eq('id', trade.seller_id).single(),
+      ]);
+      const buyerUser = buyerRes.value?.data;
+      const sellerUser = sellerRes.value?.data;
+
+      // MESSAGE 1 — instant shared trade-chat system message naming the
+      // disputer and their reason, visible to BOTH buyer and seller.
+      const disputerUser = String(req.userId) === String(trade.seller_id) ? sellerUser : buyerUser;
+      postDisputeChatMessage(req.params.id, disputeOpenedChatText(disputerUser?.username || 'Trader', reason))
+        .catch(e => console.error('[disputeChat] message 1 failed:', e.message));
+
       // In-app notifications and system message
       await createNotification(trade.seller_id, 'support', '⚠️ Dispute Opened', `Dispute opened for trade #${req.params.id.slice(0, 8)}. Moderator will review.`, `/trade/${req.params.id}`);
       await createNotification(trade.buyer_id, 'support', '⚠️ Dispute Opened', `Dispute opened for trade #${req.params.id.slice(0, 8)}. Please provide evidence.`, `/trade/${req.params.id}`);
@@ -9699,15 +9893,6 @@ app.post('/api/trades/:id/dispute', tradeLimiter, verifyToken, requireNotBanned,
       const disputeRef = `#${String(req.params.id).slice(0,8).toUpperCase()}`;
       sendTelegramAlert(trade.buyer_id, `🚨 Dispute opened on trade ${disputeRef}. Reason: ${(reason || 'User opened a dispute').slice(0, 100)}. A moderator will review.`).catch(() => {});
       sendTelegramAlert(trade.seller_id, `🚨 Dispute opened on trade ${disputeRef}. Reason: ${(reason || 'User opened a dispute').slice(0, 100)}. A moderator will review.`).catch(() => {});
-      supabaseAdmin.from('messages').insert([{ trade_id: req.params.id, sender_id: null, recipient_id: null, message_text: `🚨 DISPUTE OPENED — Reason: ${reason || 'User opened a dispute'}. Moderators notified.`, message_type: 'SYSTEM', sender_role: 'system', created_at: new Date() }]).then(null, () => { });
-
-      // Email both parties — fetch their user records in parallel
-      const [buyerRes, sellerRes] = await Promise.allSettled([
-        supabaseAdmin.from('users').select('id, email, username').eq('id', trade.buyer_id).single(),
-        supabaseAdmin.from('users').select('id, email, username').eq('id', trade.seller_id).single(),
-      ]);
-      const buyerUser = buyerRes.value?.data;
-      const sellerUser = sellerRes.value?.data;
       if (buyerUser?.email)
         emailService.sendDisputeOpenedEmail(buyerUser, trade, reason).catch(e => console.error('[dispute] buyer email failed:', e.message));
       if (sellerUser?.email)
@@ -10292,6 +10477,151 @@ app.post('/api/trades/:id/feedback', verifyToken, async (req, res) => {
   }
 });
 
+// Edit existing feedback for a trade (author-only, ONE edit per review).
+//
+// Safety rules (deliberate):
+//  * The rating may only move WITHIN its sentiment bucket — positive (4–5), neutral (3) or
+//    negative (1–2), the same buckets POST /feedback uses to bump positive_feedback /
+//    negative_feedback. Moving between buckets would require lowering a stat counter, which
+//    the protect_user_stats trigger blocks and the praqen_update_feedback RPC (not deployed)
+//    would be needed for; a raise-only fallback would count one review twice. The comment
+//    can always be edited.
+//  * The one-edit rule needs reviews.edited (database/2026-09-24_add_edited_to_reviews.sql).
+//    If that column is missing the edit is REFUSED rather than silently allowing unlimited edits.
+//  * The reviewee's average_rating is recomputed from their reviews after every edit.
+const feedbackBucket = r => (r >= 4 ? 'positive' : r <= 2 ? 'negative' : 'neutral');
+app.put('/api/trades/:id/feedback', verifyToken, async (req, res) => {
+  try {
+    const { rating, comment } = req.body;
+    const ratingVal = parseInt(rating);
+    if (!ratingVal || ratingVal < 1 || ratingVal > 5) return res.status(400).json({ error: 'Rating must be 1–5' });
+    const cleanComment = String(comment || '').slice(0, 1000);
+    const { data: existing } = await supabaseAdmin
+      .from('reviews')
+      .select('*')
+      .eq('trade_id', req.params.id)
+      .eq('reviewer_id', req.userId)
+      .maybeSingle();
+    if (!existing) return res.status(404).json({ error: 'No feedback found for this trade' });
+    if (!('edited' in existing)) {
+      return res.status(503).json({ error: 'Feedback editing is not available yet. Please try again later.' });
+    }
+    if (existing.edited) return res.status(400).json({ error: 'Feedback has already been edited and can only be edited once' });
+    if (feedbackBucket(existing.rating) !== feedbackBucket(ratingVal)) {
+      return res.status(400).json({ error: 'You can adjust your rating within the same category (positive 4–5, neutral 3, negative 1–2) and edit your comment. Changing between categories is not allowed.' });
+    }
+
+    const { data: updated, error } = await supabaseAdmin
+      .from('reviews')
+      .update({ rating: ratingVal, comment: cleanComment, edited: true })
+      .eq('id', existing.id)
+      .eq('edited', false)
+      .select()
+      .single();
+    if (error) return res.status(400).json({ error: error.message });
+
+    // Keep the displayed average in step with the review rows. Best-effort: a failure here
+    // must not undo an edit that already saved.
+    try {
+      const { data: all } = await supabaseAdmin.from('reviews').select('rating').eq('reviewee_id', existing.reviewee_id);
+      if (all && all.length) {
+        const avg = parseFloat((all.reduce((sum, r) => sum + (parseInt(r.rating) || 0), 0) / all.length).toFixed(2));
+        await supabaseAdmin.from('users').update({ average_rating: avg }).eq('id', existing.reviewee_id);
+      }
+    } catch (avgErr) {
+      console.warn('[feedback-edit] average_rating recompute failed:', avgErr.message);
+    }
+    res.json({ success: true, review: updated });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================
+// CONTACTS — minimal add-only feature (owner_user_id ← contact_user_id).
+// Backs the "Add to Contacts" action on the completed-trade screen.
+// No contacts list/management surface exists yet (deliberately out of scope).
+// ============================================================
+
+// Idempotent add: re-adding an existing pair is a success no-op, never an error.
+app.post('/api/contacts', verifyToken, async (req, res) => {
+  try {
+    const { contact_user_id: contactId } = req.body || {};
+    if (!contactId) return res.status(400).json({ error: 'contact_user_id is required' });
+    if (contactId === req.userId) return res.status(400).json({ error: 'You cannot add yourself as a contact' });
+    // Only people you have actually traded with can be added — stops arbitrary user IDs being
+    // stored (and keeps the raw database error text out of the response for bad IDs).
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(contactId))) {
+      return res.status(400).json({ error: 'Invalid contact' });
+    }
+    const { data: sharedTrade } = await supabaseAdmin
+      .from('trades')
+      .select('id')
+      .or(`and(buyer_id.eq.${req.userId},seller_id.eq.${contactId}),and(buyer_id.eq.${contactId},seller_id.eq.${req.userId})`)
+      .limit(1)
+      .maybeSingle();
+    if (!sharedTrade) return res.status(403).json({ error: 'You can only add people you have traded with' });
+
+    const { data: exists } = await supabaseAdmin
+      .from('contacts')
+      .select('*')
+      .eq('owner_user_id', req.userId)
+      .eq('contact_user_id', contactId)
+      .maybeSingle();
+    if (exists) return res.json({ success: true, added: false, contact: exists });
+
+    const { data: contact, error } = await supabaseAdmin
+      .from('contacts')
+      .insert([{ owner_user_id: req.userId, contact_user_id: contactId }])
+      .select()
+      .single();
+    if (error) {
+      // 23505 = unique(owner,contact) — a concurrent insert won the race; treat
+      // it as the same idempotent no-op.
+      if (error.code === '23505') {
+        const { data: contact2 } = await supabaseAdmin
+          .from('contacts')
+          .select('*')
+          .eq('owner_user_id', req.userId)
+          .eq('contact_user_id', contactId)
+          .maybeSingle();
+        return res.json({ success: true, added: false, contact: contact2 || null });
+      }
+      // 42P01 = table missing — migration not yet run in this environment.
+      if (error.code === '42P01') {
+        return res.status(500).json({ error: 'contacts table is missing — run database/2026-09-24_create_contacts_table.sql in the Supabase SQL Editor' });
+      }
+      return res.status(400).json({ error: error.message });
+    }
+    res.json({ success: true, added: true, contact });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Lookup used to restore the "Added" state on reload. Scoped to the pairs
+// relevant to a single screen (max 20 ids). Missing table degrades to an
+// empty result so the UI just shows the add link.
+app.get('/api/contacts/check', verifyToken, async (req, res) => {
+  try {
+    const ids = String(req.query.contact_user_ids || '')
+      .split(',').map(s => s.trim()).filter(Boolean).slice(0, 20);
+    if (!ids.length) return res.json({ contact_user_ids: [] });
+    const { data, error } = await supabaseAdmin
+      .from('contacts')
+      .select('contact_user_id')
+      .eq('owner_user_id', req.userId)
+      .in('contact_user_id', ids);
+    if (error) {
+      if (error.code === '42P01') return res.json({ contact_user_ids: [] });
+      return res.status(400).json({ error: error.message });
+    }
+    res.json({ contact_user_ids: (data || []).map(r => r.contact_user_id) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ============================================================
 // AFFILIATE
 // ============================================================
@@ -10446,19 +10776,45 @@ app.get('/api/referral/earnings', verifyToken, async (req, res) => {
   }
 });
 
-// Public leaderboard — top 10 referrers using the most accurate data source for each metric
+// Public profile photo for referral leaderboard / Hall of Fame. Many photos are stored inline as
+// data URLs (30-450KB), which would bloat the list response, so the list only says whether a photo
+// exists and the browser fetches (and caches) the image from here. Raster types only (no SVG).
+app.get('/api/referral/avatar/:id', async (req, res) => {
+  try {
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(404).end();
+    const { data } = await supabaseAdmin.from('users').select('avatar_url').eq('id', req.params.id).maybeSingle();
+    const url = data?.avatar_url;
+    if (!url) return res.status(404).end();
+    if (/^https:\/\//i.test(url)) return res.redirect(302, url);
+    const m = /^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/i.exec(url);
+    if (!m) return res.status(404).end();
+    res.set('Content-Type', 'image/' + m[1].toLowerCase().replace('jpg', 'jpeg'));
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.send(Buffer.from(m[2], 'base64'));
+  } catch (e) {
+    res.status(404).end();
+  }
+});
+
+// Public leaderboard — top 10 referrers, ranked by referral earnings.
+// DISPLAY ONLY: the ranking uses earnings, but NO money amounts are returned (people see who ranks, never what anyone earned).
 app.get('/api/referral/leaderboard', async (req, res) => {
   try {
     // Step 1: earnings from affiliate_earnings (authoritative for BTC earned)
     const { data: earningsRows } = await supabaseAdmin
       .from('affiliate_earnings')
-      .select('referrer_id, commission_btc');
+      .select('referrer_id, commission_btc, created_at');
 
     const earningsMap = {};
+    const monthMap = {};
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
     const allReferrerIds = new Set();
     (earningsRows || []).forEach(e => {
       const rid = e.referrer_id;
       earningsMap[rid] = (earningsMap[rid] || 0) + parseFloat(e.commission_btc || 0);
+      if (e.created_at && new Date(e.created_at) >= monthStart) monthMap[rid] = (monthMap[rid] || 0) + parseFloat(e.commission_btc || 0);
       allReferrerIds.add(rid);
     });
 
@@ -10486,7 +10842,7 @@ app.get('/api/referral/leaderboard', async (req, res) => {
     // Step 3: fetch referrer profiles + their cached total_referrals counter
     const { data: referrerUsers } = await supabaseAdmin
       .from('users')
-      .select('id, username, badge, total_referrals')
+      .select('id, username, badge, total_referrals, country, avatar_url')
       .in('id', [...allReferrerIds]);
 
     const userMap = {};
@@ -10502,8 +10858,8 @@ app.get('/api/referral/leaderboard', async (req, res) => {
         return {
           id: rid,
           username: userMap[rid]?.username || 'Trader',
-          badge: userMap[rid]?.badge || 'BEGINNER',
-          earned_btc: parseFloat((earningsMap[rid] || 0).toFixed(8)),
+          badge: userMap[rid]?.badge || 'BEGINNER', country: userMap[rid]?.country || null, has_avatar: !!userMap[rid]?.avatar_url,
+          _rankBtc: parseFloat((earningsMap[rid] || 0).toFixed(8)), // used for sorting only, removed below
           // Take the larger value — cached counter may include old signups
           // that predate the referred_by field being saved reliably
           referrals: Math.max(actualRefs, cachedRefs),
@@ -10511,9 +10867,9 @@ app.get('/api/referral/leaderboard', async (req, res) => {
           affiliate_trades: tradeCountMap[rid] || 0,
         };
       })
-      .sort((a, b) => b.earned_btc - a.earned_btc || b.referrals - a.referrals)
+      .sort((a, b) => b._rankBtc - a._rankBtc || b.referrals - a.referrals)
       .slice(0, 10)
-      .map((u, i) => ({ ...u, rank: i + 1 }));
+      .map(({ _rankBtc, ...u }, i) => ({ ...u, rank: i + 1 })); // amounts never leave the server
 
     res.json({ success: true, leaderboard });
   } catch (err) {
@@ -10521,7 +10877,22 @@ app.get('/api/referral/leaderboard', async (req, res) => {
   }
 });
 
-app.post('/api/referral/withdraw', verifyToken, requireNotBanned, authLimiter, async (req, res) => {
+// ── Payout switch ───────────────────────────────────────────────────────────
+// Referral money only moves when REFERRAL_PAYOUTS_ENABLED is exactly the text "true".
+// Unset, empty, "false", "TRUE", "1" … all mean OFF. It is read on every request (from
+// services/affiliateSummaryService.cashEnabled), so flipping it in Render needs no code
+// change. It runs BEFORE any database work: when off, nothing is read, credited or changed.
+function requireReferralPayoutsEnabled(req, res, next) {
+  if (!require('./services/affiliateSummaryService').cashEnabled()) {
+    return res.status(403).json({
+      error: 'PAYOUTS_NOT_ENABLED',
+      message: 'Affiliate payouts have not started yet.',
+    });
+  }
+  next();
+}
+
+app.post('/api/referral/withdraw', verifyToken, requireReferralPayoutsEnabled, requireNotBanned, authLimiter, async (req, res) => {
   try {
     const { data: earnings, error } = await supabaseAdmin
       .from('affiliate_earnings')
@@ -10766,6 +11137,43 @@ app.get('/api/my-referrals', verifyToken, async (req, res) => {
   } catch (e) {
     console.error('[my-referrals]', e.message);
     res.json({ referrals: [] });
+  }
+});
+
+// ── Affiliate summary (READ ONLY) ───────────────────────────────────────────
+// Users the caller brought, how many are active, their trade volume, and the level
+// that unlocks. Computed from users.referred_by + trades only. Writes nothing and
+// moves no money. cash_enabled mirrors REFERRAL_PAYOUTS_ENABLED (default OFF) so the
+// page can hide money fields while payouts are not live.
+const affiliateSummaryService = require('./services/affiliateSummaryService');
+app.get('/api/affiliate/summary', verifyToken, async (req, res) => {
+  try {
+    const summary = await affiliateSummaryService.getAffiliateSummary(supabaseAdmin, req.userId, {
+      cashEnabled: affiliateSummaryService.cashEnabled(),
+    });
+    res.json({ success: true, ...summary });
+  } catch (e) {
+    console.error('[affiliate/summary]', e.message);
+    res.status(500).json({ error: 'Could not load affiliate summary' });
+  }
+});
+
+// Public program rules + the payout switch (no user data). Lets the page, for visitors too,
+// know whether money features are on without hard-coding it.
+app.get('/api/affiliate/config', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=60');
+  res.json({ success: true, ...affiliateSummaryService.getPublicConfig() });
+});
+
+// Public leaderboard ranked by ACTIVE USERS (then trade volume). No earnings, no money.
+app.get('/api/affiliate/leaderboard', async (req, res) => {
+  try {
+    const leaderboard = await affiliateSummaryService.getLeaderboard(supabaseAdmin, { limit: 10 });
+    res.set('Cache-Control', 'public, max-age=120');
+    res.json({ success: true, leaderboard });
+  } catch (e) {
+    console.error('[affiliate/leaderboard]', e.message);
+    res.status(500).json({ error: 'Could not load leaderboard' });
   }
 });
 
@@ -11116,9 +11524,10 @@ app.get('/api/admin/audit-log', verifyToken, async (req, res) => {
 });
 
 // GET /api/admin/stats — full platform overview
-app.get('/api/admin/stats', verifyToken, async (req, res) => {
+// Shared by the admin-only route and its Team-portal twin below — same data, different gate.
+async function handleStaffStats(req, res, gate) {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await gate(req, res); if (!admin) return;
     const [usersR, tradesR, listingsR, profitsR, disputesR, kycR] = await Promise.allSettled([
       supabaseAdmin.from('users').select('id, created_at, account_status, is_email_verified, is_id_verified, badge, country', { count: 'exact' }),
       supabaseAdmin.from('trades').select('id, status, amount_usd, amount_btc, created_at', { count: 'exact' }),
@@ -11181,7 +11590,9 @@ app.get('/api/admin/stats', verifyToken, async (req, res) => {
       tradeDays,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
-});
+}
+app.get('/api/admin/stats', verifyToken, (req, res) => handleStaffStats(req, res, requireAdmin));          // real admin only
+app.get('/api/team/stats', verifyToken, (req, res) => handleStaffStats(req, res, requireTeam));    // admin or moderator (Team page)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADMIN MONITORING & ALERTS API
@@ -11357,9 +11768,10 @@ app.post('/api/admin/monitoring/test-alert', verifyToken, async (req, res) => {
 });
 
 // GET /api/admin/users — all users with search/filter/pagination
-app.get('/api/admin/users', verifyToken, async (req, res) => {
+// Shared by the admin-only route and its Team-portal twin below — same data, different gate.
+async function handleStaffUsersList(req, res, gate) {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await gate(req, res); if (!admin) return;
     const {
       search = '', status = '', country = '', page = 1, limit = 50,
       joinedFrom = '', joinedTo = '', sort = 'created_at', sortDir = 'desc',
@@ -11412,7 +11824,9 @@ app.get('/api/admin/users', verifyToken, async (req, res) => {
     const users = (data || []).map(u => ({ ...u, phone_country: phoneToCountryCode(u.phone) }));
     res.json({ users, total: count || 0, page: parseInt(page), limit: parseInt(limit) });
   } catch (e) { res.status(500).json({ error: e.message }); }
-});
+}
+app.get('/api/admin/users', verifyToken, (req, res) => handleStaffUsersList(req, res, requireAdmin));          // real admin only
+app.get('/api/team/users', verifyToken, (req, res) => handleStaffUsersList(req, res, requireTeam));    // admin or moderator (Team page)
 
 // GET /api/admin/users/:id/detail — one-click lookup for the Team Portal's Users tab
 // (also read by the Admin Panel's Users tab alongside /wallet-detail below). Read-only,
@@ -11424,9 +11838,10 @@ app.get('/api/admin/users', verifyToken, async (req, res) => {
 // can lag, so trust a fresh count/sum instead of the cached column). Deliberately does
 // NOT include wallet balance, withdrawal history, or funding-source detail — that's the
 // separate CEO-only audit on ceo-withdrawals (or /wallet-detail below for full admins).
-app.get('/api/admin/users/:id/detail', verifyToken, async (req, res) => {
+// Shared by the admin-only route and its Team-portal twin below — same data, different gate.
+async function handleStaffUserDetail(req, res, gate) {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await gate(req, res); if (!admin) return;
     const { id } = req.params;
 
     const { data: user, error } = await supabaseAdmin.from('users').select(
@@ -11483,7 +11898,9 @@ app.get('/api/admin/users/:id/detail', verifyToken, async (req, res) => {
     console.error('[GET /api/admin/users/:id/detail]', error.message);
     res.status(500).json({ error: 'Failed to load user details: ' + error.message });
   }
-});
+}
+app.get('/api/admin/users/:id/detail', verifyToken, (req, res) => handleStaffUserDetail(req, res, requireAdmin));          // real admin only
+app.get('/api/team/users/:id/detail', verifyToken, (req, res) => handleStaffUserDetail(req, res, requireTeam));    // admin or moderator (Team page)
 
 // GET /api/admin/users/:id/wallet-detail — the "more powerful" view for the Admin Panel's
 // Users tab: current wallet balance and full send-out (withdrawal) history. Deliberately
@@ -11665,6 +12082,53 @@ app.get('/api/admin/users/:id/wallet-transactions', verifyToken, async (req, res
   } catch (e) {
     console.error('[GET /api/admin/users/:id/wallet-transactions]', e.message);
     res.status(500).json({ error: 'Failed to load wallet ledger: ' + e.message });
+  }
+});
+
+// GET /api/users/me/activity — the logged-in user's OWN timeline (read-only): account, sign-ins we keep,
+// trades, offers, reviews. No balances, addresses, or other people's private details.
+app.get('/api/users/me/activity', verifyToken, async (req, res) => {
+  try {
+    const id = req.userId;
+    const { data: u } = await supabaseAdmin.from('users')
+      .select('created_at, last_login, kyc_status, kyc_submitted_at').eq('id', id).maybeSingle();
+    if (!u) return res.status(404).json({ error: 'User not found' });
+
+    const [tradesR, listingsR, revOutR, revInR] = await Promise.all([
+      supabaseAdmin.from('trades')
+        .select('id, trade_ref, status, amount_usd, buyer_id, seller_id, created_at, completed_at, disputed_at, is_test')
+        .or(`buyer_id.eq.${id},seller_id.eq.${id}`).order('created_at', { ascending: false }).limit(60),
+      supabaseAdmin.from('listings').select('id, listing_type, asset, status, created_at')
+        .eq('seller_id', id).order('created_at', { ascending: false }).limit(30),
+      supabaseAdmin.from('reviews').select('id, rating, created_at').eq('reviewer_id', id).order('created_at', { ascending: false }).limit(20),
+      supabaseAdmin.from('reviews').select('id, rating, created_at').eq('reviewee_id', id).order('created_at', { ascending: false }).limit(20),
+    ]);
+
+    const events = [];
+    if (u.created_at) events.push({ type: 'account', at: u.created_at, label: 'Account created' });
+    if (u.kyc_submitted_at) events.push({ type: 'security', at: u.kyc_submitted_at, label: 'Identity verification submitted' });
+    if (u.last_login) events.push({ type: 'login', at: u.last_login, label: 'Most recent sign-in' });
+    (tradesR.data || []).filter((t) => t.is_test !== true).forEach((t) => {
+      const ref = t.trade_ref || String(t.id).slice(0, 8);
+      const side = t.buyer_id === id ? 'Buying' : 'Selling';
+      const amt = t.amount_usd != null ? ` · $${Number(t.amount_usd).toFixed(2)}` : '';
+      const st = String(t.status || '').toUpperCase();
+      events.push({ type: 'trade', at: t.created_at, label: `${side} trade ${ref} started${amt}`, ref: t.id });
+      if (t.disputed_at) events.push({ type: 'security', at: t.disputed_at, label: `Dispute opened on trade ${ref}`, ref: t.id });
+      if (st === 'COMPLETED' && t.completed_at) events.push({ type: 'trade', at: t.completed_at, label: `Trade ${ref} completed${amt}`, ref: t.id });
+      else if (st === 'CANCELLED') events.push({ type: 'trade', at: t.completed_at || t.created_at, label: `Trade ${ref} was cancelled`, ref: t.id, noTime: !t.completed_at });
+    });
+    (listingsR.data || []).forEach((l) => events.push({
+      type: 'offer', at: l.created_at,
+      label: `${String(l.listing_type || '').includes('BUY') ? 'Buy' : 'Sell'} offer created (${l.asset || 'BTC'}) · ${l.status}`, ref: l.id,
+    }));
+    (revOutR.data || []).forEach((r) => events.push({ type: 'review', at: r.created_at, label: `You left a ${r.rating}★ review`, ref: r.id }));
+    (revInR.data || []).forEach((r) => events.push({ type: 'review', at: r.created_at, label: `You received a ${r.rating}★ review`, ref: r.id }));
+    events.sort((a, b) => new Date(b.at) - new Date(a.at));
+    res.json({ success: true, lastLogin: u.last_login || null, events: events.slice(0, 100) });
+  } catch (e) {
+    console.error('[GET /api/users/me/activity]', e.message);
+    res.status(500).json({ error: 'Failed to load your activity.' });
   }
 });
 
@@ -12958,9 +13422,10 @@ app.get('/api/admin/reports', verifyToken, async (req, res) => {
 });
 
 // GET /api/admin/reviews — all platform reviews/feedback
-app.get('/api/admin/reviews', verifyToken, async (req, res) => {
+// Shared by the admin-only route and its Team-portal twin below — same data, different gate.
+async function handleStaffReviews(req, res, gate) {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await gate(req, res); if (!admin) return;
     const { page = 1, limit = 30, rating = '' } = req.query;
     let query = supabaseAdmin.from('reviews')
       .select('*, reviewer:reviewer_id(id, username, average_rating), reviewee:reviewee_id(id, username, total_trades)', { count: 'exact' })
@@ -12971,12 +13436,15 @@ app.get('/api/admin/reviews', verifyToken, async (req, res) => {
     if (error) return res.status(400).json({ error: error.message });
     res.json({ reviews: data || [], total: count || 0 });
   } catch (e) { res.status(500).json({ error: e.message }); }
-});
+}
+app.get('/api/admin/reviews', verifyToken, (req, res) => handleStaffReviews(req, res, requireAdmin));          // real admin only
+app.get('/api/team/reviews', verifyToken, (req, res) => handleStaffReviews(req, res, requireTeam));    // admin or moderator (Team page)
 
 // GET /api/admin/top-traders — users sorted by volume/trades
-app.get('/api/admin/top-traders', verifyToken, async (req, res) => {
+// Shared by the admin-only route and its Team-portal twin below — same data, different gate.
+async function handleStaffTopTraders(req, res, gate) {
   try {
-    const admin = await requireAdmin(req, res); if (!admin) return;
+    const admin = await gate(req, res); if (!admin) return;
     const { sort = 'trades', limit = 30 } = req.query;
 
     // Fetch users sorted by trade count first
@@ -13013,7 +13481,9 @@ app.get('/api/admin/top-traders', verifyToken, async (req, res) => {
 
     res.json({ traders: traders.slice(0, parseInt(limit)) });
   } catch (e) { res.status(500).json({ error: e.message }); }
-});
+}
+app.get('/api/admin/top-traders', verifyToken, (req, res) => handleStaffTopTraders(req, res, requireAdmin));          // real admin only
+app.get('/api/team/top-traders', verifyToken, (req, res) => handleStaffTopTraders(req, res, requireTeam));    // admin or moderator (Team page)
 
 // GET /api/admin/activity — recent user activity logs
 app.get('/api/admin/activity', verifyToken, async (req, res) => {
@@ -15744,6 +16214,10 @@ if (
     // ── Wallet-address provisioning reconciler — fills any user missing a
     //    BTC / Tron deposit address (signup provisioning is fire-and-forget).
     walletProvisioningReconciler.start();
+
+    // ── Medals: daily safety net (restricted accounts cleaned, time-based medals awarded).
+    //    Does nothing unless MEDALS_AUTO_ENABLED=true.
+    medalAwardService.startDailySweep();
   } else {
     console.log('⏸  Live mainnet services (deposit monitor, sweep, balance integrity) skipped — NODE_ENV is not "production"');
   }
@@ -15761,6 +16235,14 @@ if (
   _runExpiredTrades();
   setInterval(_runExpiredTrades, 60 * 1000);
   console.log('⏱  Expired trade cron: checks every 60 seconds — BTC auto-refunded to seller on expiry');
+
+  // ── Dispute follow-up: post the 15-minute proof-request message ──────────
+  // Runs every 60s and picks up trades that crossed the 15-minute mark while
+  // the server was offline, so restarts never lose a follow-up.
+  const _runDisputeFollowUps = () => runDisputeProofFollowUps().catch(err => console.error('[disputeChat] cron error:', err.message));
+  _runDisputeFollowUps();
+  setInterval(_runDisputeFollowUps, 60 * 1000);
+  console.log('⏱  Dispute follow-up cron: checks every 60 seconds — posts 15-min proof-request message to still-open disputes');
 });
 
 module.exports = app;

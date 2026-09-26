@@ -67,6 +67,17 @@ const LINK_COLUMNS = [
       { label: 'Local Fiat Trading', to: '/buy-bitcoin' },
     ],
   },
+   {
+        heading: 'Guides',
+        links: [
+            { label: 'Buy Bitcoin in Ghana (MoMo)', to: '/blog/how-to-buy-bitcoin-in-ghana-mobile-money' },
+            { label: 'Sell Bitcoin in Nigeria', to: '/blog/how-to-sell-bitcoin-instantly-in-nigeria' },
+            { label: 'Understanding P2P Fees', to: '/blog/p2p-crypto-trading-fees' },
+            { label: 'Top P2P Payment Methods', to: '/blog/p2p-crypto-payment-methods-south-africa-uganda' },
+            { label: 'How P2P Escrow Works', to: '/blog/p2p-crypto-escrow-works' },
+            { label: 'P2P Trading Scams & Safety', to: '/blog/p2p-trading-scams-and-how-to-avoid-themes' },
+        ],
+    },
   {
     heading: 'Account',
     links: [

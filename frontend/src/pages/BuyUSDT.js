@@ -18,6 +18,7 @@ import { BadgeChip, BADGE_COLORS } from '../lib/badge';
 import ActiveTradeCard from '../components/ActiveTradeCard';
 import { getCachedActiveTrades, setCachedActiveTrades, isGiftCardTrade } from '../utils/activeTradesCache';
 import PRQFooter from '../components/PRQFooter';
+import CoinIcon from '../components/CoinIcon';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -370,7 +371,7 @@ function OfferCard({listing, usdtPriceUSD, onViewSeller, onBuy, liked, onToggleL
         {/* Col 2: Price + Range */}
         <div className="flex flex-col flex-1 min-w-[200px]">
           <div className="flex items-center gap-1.5">
-            <div className="w-[18px] h-[18px] rounded-full bg-[#26A17B] text-white flex items-center justify-center text-[10px] font-black shadow-sm">₮</div>
+            <CoinIcon coin="USDT" size={18} />
             <span className="font-black text-[16px] text-gray-900">{fmt(rateLocal,2)} {cur}</span>
             <span className="px-1.5 py-0.5 rounded text-[11px] font-black tracking-wide" style={{backgroundColor:margin<0?'#10B981':margin>0?'#EF4444':'#64748B',color:'#fff'}}>
               {margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}
@@ -392,7 +393,7 @@ function OfferCard({listing, usdtPriceUSD, onViewSeller, onBuy, liked, onToggleL
         <div className="flex items-center gap-3 flex-shrink-0">
           <button onClick={onViewSeller} className="w-10 h-10 rounded-full border border-gray-200 flex items-center justify-center bg-gray-50 text-gray-600 hover:bg-gray-100 transition shadow-sm"><Info size={18}/></button>
           <button onClick={onBuy} className="h-10 px-6 rounded-full bg-[#10B981] text-white font-black text-[15px] flex items-center gap-1.5 shadow-md hover:bg-emerald-600 active:scale-95 transition">
-            Buy <div className="w-[18px] h-[18px] rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[11px]">₮</div>
+            Buy <CoinIcon coin="USDT" size={22} ring />
           </button>
         </div>
       </div>
@@ -424,7 +425,7 @@ function OfferCard({listing, usdtPriceUSD, onViewSeller, onBuy, liked, onToggleL
         <div className="bg-gray-50 mt-1 px-4 py-3 flex items-center justify-between gap-2 border-t border-gray-100">
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <div className="w-4 h-4 rounded-full bg-[#26A17B] text-white flex items-center justify-center text-[9px] font-black shadow-sm">₮</div>
+              <CoinIcon coin="USDT" size={16} />
               <span className="font-black text-[15px] text-gray-900 truncate">{fmt(rateLocal,2)} {cur}</span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide" style={{backgroundColor:margin<0?'#10B981':margin>0?'#EF4444':'#64748B',color:'#fff'}}>{margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}</span>
             </div>
@@ -433,7 +434,7 @@ function OfferCard({listing, usdtPriceUSD, onViewSeller, onBuy, liked, onToggleL
           <div className="flex items-center gap-2 flex-shrink-0">
             <button onClick={onViewSeller} className="w-9 h-9 rounded-full border border-gray-300 flex items-center justify-center bg-white text-gray-700 hover:bg-gray-100 transition shadow-sm"><Info size={16}/></button>
             <button onClick={onBuy} className="h-9 px-4 rounded-full bg-[#10B981] text-white font-black text-[15px] flex items-center gap-1.5 shadow-md hover:bg-emerald-600 active:scale-95 transition">
-              Buy <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[10px]">₮</div>
+              Buy <CoinIcon coin="USDT" size={20} ring />
             </button>
           </div>
         </div>
@@ -927,7 +928,6 @@ export default function BuyUSDT({user}) {
   const [showAllTrades, setShowAllTrades] = useState(false);
   const [lastSynced,   setLastSynced]   = useState(null);
 
-  const [affLeaderboard, setAffLeaderboard] = useState([]);
   const [traderSearch,   setTraderSearch]   = useState('');
   const [advFilters, setAdvFilters] = useState({
     topRated: false,
@@ -1273,7 +1273,7 @@ export default function BuyUSDT({user}) {
               <span>1 USD = {fmt(usdRate, 2)} {cur}</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-[10px] font-black">₮</span>
+              <CoinIcon coin="USDT" size={16} />
               <span>1 USDT ≈ $1.00 USD</span>
             </div>
           </div>
@@ -1306,12 +1306,12 @@ export default function BuyUSDT({user}) {
                 >
                   {selectedCrypto === 'BTC' ? (
                     <>
-                      <span className="w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px] font-bold">₿</span>
+                      <CoinIcon coin="BTC" size={16} />
                       <span>BTC</span>
                     </>
                   ) : selectedCrypto === 'USDT' ? (
                     <>
-                      <span className="w-4 h-4 rounded-full bg-teal-500 text-white flex items-center justify-center text-[10px] font-bold">₮</span>
+                      <CoinIcon coin="USDT" size={16} />
                       <span>USDT</span>
                     </>
                   ) : (
@@ -1339,14 +1339,14 @@ export default function BuyUSDT({user}) {
                         onClick={() => { setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); navigate('/buy-bitcoin', { state: { selectedCrypto: 'BTC' } }); }}
                         className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-xs font-black text-gray-800 hover:bg-gray-50 border-t border-gray-100"
                       >
-                        <span className="w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px]">₿</span>
+                        <CoinIcon coin="BTC" size={20} />
                         <span>Bitcoin</span>
                       </button>
                       <button
                         onClick={() => { setSelectedCrypto('USDT'); setShowAllCryptoMenu(false); navigate('/buy-usdt', { state: { selectedCrypto: 'USDT' } }); }}
                         className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-xs font-black text-gray-800 hover:bg-gray-50 border-t border-gray-100"
                       >
-                        <span className="w-5 h-5 rounded-full bg-teal-500 text-white flex items-center justify-center text-[10px]">₮</span>
+                        <CoinIcon coin="USDT" size={20} />
                         <span>Tether</span>
                       </button>
                     </div>
@@ -1413,9 +1413,9 @@ export default function BuyUSDT({user}) {
                 className="h-[36px] sm:h-[40px] px-2 sm:px-3 rounded-xl border bg-gray-50 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-black text-gray-800 hover:bg-gray-100 transition"
                 style={{borderColor: C.g200}}>
                 {selectedCrypto === 'BTC' ? (
-                  <><span className="w-5 h-5 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px]">₿</span> BTC</>
+                  <><CoinIcon coin="BTC" size={20} /> BTC</>
                 ) : selectedCrypto === 'USDT' ? (
-                  <><span className="w-5 h-5 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-[10px]">₮</span> USDT</>
+                  <><CoinIcon coin="USDT" size={20} /> USDT</>
                 ) : (
                   <><Coins size={15} className="text-[#0D9488]" /> All Crypto</>
                 )}
@@ -1432,12 +1432,12 @@ export default function BuyUSDT({user}) {
                     </button>
                     <button onClick={()=>{setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); navigate('/buy-bitcoin', { state: { selectedCrypto: 'BTC' } });}}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${selectedCrypto === 'BTC' ? 'bg-amber-50/80' : 'hover:bg-gray-50'}`} style={{borderColor:C.g100}}>
-                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#F7931A,#e8830a)'}}>₿</span>
+                      <CoinIcon coin="BTC" size={28} />
                       <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">Bitcoin</span></span>
                     </button>
                     <button onClick={()=>{setSelectedCrypto('USDT'); setShowAllCryptoMenu(false); navigate('/buy-usdt', { state: { selectedCrypto: 'USDT' } });}}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${selectedCrypto === 'USDT' ? 'bg-teal-50/80' : 'hover:bg-gray-50'}`} style={{borderColor:C.g100}}>
-                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#0F766E,#14B8A6)'}}>₮</span>
+                      <CoinIcon coin="USDT" size={28} />
                       <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">Tether</span></span>
                     </button>
                   </div>
@@ -1703,89 +1703,29 @@ export default function BuyUSDT({user}) {
               <div>
                 <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:8}}>
                   <span style={{display:'flex',alignItems:'center',gap:4,fontSize:11,fontWeight:900,color:'#0F766E',background:C.gold,borderRadius:6,padding:'3px 9px',letterSpacing:0.5,textTransform:'uppercase'}}>
-                    ₮ USDT Affiliate
+                    ₮ USDT Referral Program
                   </span>
                   <span style={{display:'flex',alignItems:'center',gap:4,fontSize:9,fontWeight:700,color:'#fff',background:'rgba(255,255,255,0.15)',borderRadius:5,padding:'2px 8px'}}>
                     <span style={{width:6,height:6,borderRadius:'50%',background:'#6EE7B7',display:'inline-block'}}/>LIVE
                   </span>
                 </div>
-                <p style={{margin:0,fontSize:20,fontWeight:900,color:'#fff',lineHeight:1.2}}>Earn USDT on every referral trade.</p>
-                <p style={{margin:0,fontSize:12,color:'rgba(255,255,255,0.75)',marginTop:5,fontWeight:500}}>Share your link — your earnings are paid in USDT, for life.</p>
+                <p style={{margin:0,fontSize:20,fontWeight:900,color:'#fff',lineHeight:1.2}}>Invite friends. Earn together.</p>
+                <p style={{margin:0,fontSize:12,color:'rgba(255,255,255,0.75)',marginTop:5,fontWeight:500}}>Share your link and earn when the friends you invite trade.</p>
               </div>
-              <button onClick={()=>navigate(user ? '/dashboard?tab=affiliate' : '/register')}
+              <button onClick={()=>navigate('/partner-program')}
                 style={{flexShrink:0,padding:'12px 20px',borderRadius:11,border:'none',cursor:'pointer',background:C.gold,color:'#0F766E',fontWeight:900,fontSize:13,whiteSpace:'nowrap',boxShadow:'0 4px 16px rgba(244,164,34,0.45)'}}>
                 Get Link <ArrowRight size={14} style={{display:'inline',marginLeft:4,verticalAlign:'-2px'}}/>
               </button>
             </div>
           </div>
 
-          {/* Commission tiers — single teal-family progression */}
-          <div style={{padding:'12px 16px',background:'#fff',borderBottom:`1px solid ${C.g100}`}}>
-            <p style={{margin:'0 0 8px',fontSize:10,fontWeight:800,color:C.g500,textTransform:'uppercase',letterSpacing:0.8}}>Commission Tiers</p>
-            <div style={{position:'relative'}}>
-              <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:2}}>
-                {[
-                  {refs:'0–9',   rate:'0.20%', c:'#5EEAD4'},
-                  {refs:'10–24', rate:'0.25%', c:'#2DD4BF'},
-                  {refs:'25–49', rate:'0.35%', c:'#14B8A6'},
-                  {refs:'50–99', rate:'0.40%', c:'#0D9488'},
-                  {refs:'100+',  rate:'0.50%', c:'#0F766E'},
-                ].map(t=>(
-                  <div key={t.refs} style={{flex:'0 0 auto',background:`${t.c}0D`,border:`1.5px solid ${t.c}30`,borderRadius:10,padding:'9px 12px',textAlign:'center',minWidth:58}}>
-                    <div style={{fontSize:14,fontWeight:900,color:t.c,lineHeight:1}}>{t.rate}</div>
-                    <div style={{fontSize:9,color:C.g400,fontWeight:600,marginTop:3,lineHeight:1}}>{t.refs} refs</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{position:'absolute',top:0,right:0,bottom:2,width:24,background:'linear-gradient(to right, transparent, #ffffff)',pointerEvents:'none'}}/>
-            </div>
+          <div style={{padding:'10px 14px',background:'#fff',textAlign:'center'}}>
+            <span onClick={()=>navigate('/partner-program')} style={{fontSize:11,fontWeight:700,color:'#1B4332',cursor:'pointer',textDecoration:'underline'}}>See the Referral Program page for current rates →</span>
           </div>
 
-          {/* Leaderboard */}
-          {affLeaderboard.length > 0 && (
-            <div style={{background:'#fff'}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 14px 6px',background:'#F0FDFA'}}>
-                <div style={{display:'flex',alignItems:'center',gap:5}}>
-                  <Trophy size={11} style={{color:'#0D9488'}}/>
-                  <span style={{fontSize:9,fontWeight:900,color:'#0F766E',textTransform:'uppercase',letterSpacing:0.8}}>Top Earners</span>
-                </div>
-                <span style={{fontSize:9,color:'#0D9488',fontWeight:600,background:'#fff',borderRadius:4,padding:'1px 6px'}}>All Time</span>
-              </div>
-              {affLeaderboard.map((u,i)=>{
-                const badgeColors={BEGINNER:'#5EEAD4',PRO:'#2DD4BF',EXPERT:'#14B8A6',AMBASSADOR:'#0D9488',LEGEND:'#0F766E'};
-                const bc = badgeColors[u.badge]||C.g500;
-                const rankBg = i===0?C.gold:i===1?C.g300:'#C08A4E';
-                const earnedUsd = parseFloat(u.earned_usdt||u.earned_btc||0);
-                return (
-                  <div key={u.username} style={{display:'flex',alignItems:'center',gap:9,padding:'7px 14px',borderTop:`1px solid ${C.g50}`}}>
-                    <div style={{width:18,height:18,borderRadius:'50%',flexShrink:0,background:rankBg,display:'flex',alignItems:'center',justifyContent:'center'}}>
-                      <span style={{fontSize:9,fontWeight:900,color:'#fff'}}>{i+1}</span>
-                    </div>
-                    <div style={{width:26,height:26,borderRadius:8,flexShrink:0,background:`${bc}15`,border:`1.5px solid ${bc}35`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:900,color:bc}}>
-                      {(u.username||'?')[0].toUpperCase()}
-                    </div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:'flex',alignItems:'center',gap:4}}>
-                        <span style={{fontSize:10,fontWeight:800,color:C.g800,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:80}}>{u.username}</span>
-                        <span style={{fontSize:7,fontWeight:900,color:bc,background:`${bc}12`,border:`1px solid ${bc}25`,borderRadius:3,padding:'1px 4px',letterSpacing:0.4,flexShrink:0,textTransform:'uppercase'}}>{u.badge||'BEGINNER'}</span>
-                      </div>
-                      <span style={{fontSize:8,color:C.g400,fontWeight:500}}>{u.referrals} referral{u.referrals !== 1 ? 's' : ''} · {u.affiliate_trades} ref trade{u.affiliate_trades !== 1 ? 's' : ''}</span>
-                    </div>
-                    <div style={{textAlign:'right',flexShrink:0}}>
-                      <div style={{fontSize:11,fontWeight:900,color:'#0D9488',lineHeight:1}}>₮{earnedUsd.toFixed(2)}</div>
-                      <div style={{fontSize:8,color:C.g400,fontWeight:500,marginTop:1}}>${earnedUsd.toFixed(2)}</div>
-                    </div>
-                  </div>
-                );
-              })}
-              <div style={{padding:'6px 14px',background:'#F0FDFA',borderTop:`1px solid ${C.g100}`,textAlign:'center'}}>
-                <span style={{fontSize:9,color:'#0D9488',fontWeight:700}}>Could you be next? <span style={{textDecoration:'underline',cursor:'pointer'}} onClick={()=>navigate('/dashboard?tab=affiliate')}>View full leaderboard →</span></span>
-              </div>
-            </div>
-          )}
 
           <p style={{margin:0,padding:'6px 14px 9px',textAlign:'center',fontSize:9,color:C.g400,fontWeight:600,letterSpacing:0.3,background:'#fff'}}>
-            Free to join · No minimum payout · Lifetime commission
+            Free to join
           </p>
         </div>
 

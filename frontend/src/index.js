@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 import * as serviceWorkerRegistration from './serviceWorkerRegistration';
+import { captureReferralFromUrl } from './utils/referral';
 
 // Safely handle benign third-party rejections (Google GSI / OneSignal / Extension scripts)
 if (typeof window !== 'undefined') {
@@ -21,6 +22,10 @@ if (typeof window !== 'undefined') {
     }
   });
 }
+
+// Remember an affiliate link (?ref=code) the moment someone lands, on any page,
+// so the code is still there when they get to the signup form.
+if (typeof window !== 'undefined') captureReferralFromUrl(window.location.search);
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(

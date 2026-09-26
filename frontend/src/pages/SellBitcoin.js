@@ -19,6 +19,7 @@ import ActiveTradeCard from '../components/ActiveTradeCard';
 import { getCachedActiveTrades, setCachedActiveTrades, isGiftCardTrade } from '../utils/activeTradesCache';
 import PRQFooter from '../components/PRQFooter';
 import GettingStartedSteps from '../components/GettingStartedSteps';
+import CoinIcon from '../components/CoinIcon';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -358,7 +359,7 @@ function OfferCard({listing, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLi
         {/* Col 2: Price + Range */}
         <div className="flex flex-col flex-1 min-w-[200px]">
           <div className="flex items-center gap-1.5">
-            <div className="w-[18px] h-[18px] rounded-full bg-[#F7931A] text-white flex items-center justify-center text-[10px] font-black shadow-sm">₿</div>
+            <CoinIcon coin="BTC" size={18} />
             <span className="font-black text-[16px] text-gray-900">{fmt(rateLocal,2)} {cur}</span>
             <span className="px-1.5 py-0.5 rounded text-[11px] font-black tracking-wide" style={{backgroundColor:marginBg,color:'#fff'}}>
               {margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}
@@ -380,7 +381,7 @@ function OfferCard({listing, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLi
         <div className="flex items-center gap-3 flex-shrink-0">
           <button onClick={onViewBuyer} className="w-10 h-10 rounded-full border border-gray-200 flex items-center justify-center bg-gray-50 text-gray-600 hover:bg-gray-100 transition shadow-sm"><Info size={18}/></button>
           <button onClick={onSell} className="h-10 px-6 rounded-full bg-[#F4A422] text-white font-black text-[15px] flex items-center gap-1.5 shadow-md hover:bg-[#D4891A] active:scale-95 transition">
-            Sell <div className="w-[18px] h-[18px] rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[11px]">₿</div>
+            Sell <CoinIcon coin="BTC" size={22} ring />
           </button>
         </div>
       </div>
@@ -412,7 +413,7 @@ function OfferCard({listing, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLi
         <div className="bg-gray-50 mt-1 px-4 py-3 flex items-center justify-between gap-2 border-t border-gray-100">
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <div className="w-4 h-4 rounded-full bg-[#F7931A] text-white flex items-center justify-center text-[9px] font-black shadow-sm">₿</div>
+              <CoinIcon coin="BTC" size={16} />
               <span className="font-black text-[15px] text-gray-900 truncate">{fmt(rateLocal,2)} {cur}</span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide" style={{backgroundColor:marginBg,color:'#fff'}}>{margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}</span>
             </div>
@@ -421,7 +422,7 @@ function OfferCard({listing, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLi
           <div className="flex items-center gap-2 flex-shrink-0">
             <button onClick={onViewBuyer} className="w-9 h-9 rounded-full border border-gray-300 flex items-center justify-center bg-white text-gray-700 hover:bg-gray-100 transition shadow-sm"><Info size={16}/></button>
             <button onClick={onSell} className="h-9 px-4 rounded-full bg-[#F4A422] text-white font-black text-[15px] flex items-center gap-1.5 shadow-md hover:bg-[#D4891A] active:scale-95 transition">
-              Sell <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[10px]">₿</div>
+              Sell <CoinIcon coin="BTC" size={20} ring />
             </button>
           </div>
         </div>
@@ -897,7 +898,6 @@ export default function SellBitcoin({user}) {
   const [loadError,    setLoadError]    = useState(false);
   const [retrying,     setRetrying]     = useState(false);
   const [btcPrice,     setBtcPrice]     = useState(68000);
-  const [affLeaderboard, setAffLeaderboard] = useState([]);
   const [selCountry,    setSelCountry]    = useState(COUNTRIES[0]);
   const [countrySearch, setCountrySearch] = useState('');
   const [selPayment,    setSelPayment]    = useState('all');
@@ -1041,11 +1041,6 @@ export default function SellBitcoin({user}) {
     };
     document.addEventListener('mousedown',h);
     return () => document.removeEventListener('mousedown',h);
-  },[]);
-  useEffect(()=>{
-    axios.get(`${API_URL}/referral/leaderboard`).then(r=>{
-      if(r.data?.leaderboard) setAffLeaderboard(r.data.leaderboard.slice(0,3));
-    }).catch(()=>{});
   },[]);
 
   const loadOffers = async (attempt = 1, force = false) => {
@@ -1240,7 +1235,7 @@ export default function SellBitcoin({user}) {
               <span>1 USD = {fmt(usdRate, 2)} {cur}</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px] font-black">₿</span>
+              <CoinIcon coin="BTC" size={16} />
               <span>1 BTC = {fmt(btcPrice * usdRate, 1)} {cur}</span>
             </div>
           </div>
@@ -1273,12 +1268,12 @@ export default function SellBitcoin({user}) {
                 >
                   {selectedCrypto === 'BTC' ? (
                     <>
-                      <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px] font-bold">₿</span>
+                      <CoinIcon coin="BTC" size={16} />
                       <span>BTC</span>
                     </>
                   ) : selectedCrypto === 'USDT' ? (
                     <>
-                      <span className="w-4 h-4 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-[10px] font-bold">₮</span>
+                      <CoinIcon coin="USDT" size={16} />
                       <span>USDT</span>
                     </>
                   ) : (
@@ -1306,14 +1301,14 @@ export default function SellBitcoin({user}) {
                         onClick={() => { setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); navigate('/sell-bitcoin', { state: { selectedCrypto: 'BTC' } }); }}
                         className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-black transition border-t border-gray-100 ${selectedCrypto === 'BTC' ? 'bg-amber-50 text-amber-700' : 'text-gray-800 hover:bg-gray-50'}`}
                       >
-                        <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px]">₿</span>
+                        <CoinIcon coin="BTC" size={16} />
                         <span>Bitcoin</span>
                       </button>
                       <button
                         onClick={() => { setSelectedCrypto('USDT'); setShowAllCryptoMenu(false); navigate('/sell-usdt', { state: { selectedCrypto: 'USDT' } }); }}
                         className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-black transition border-t border-gray-100 ${selectedCrypto === 'USDT' ? 'bg-teal-50 text-teal-700' : 'text-gray-800 hover:bg-gray-50'}`}
                       >
-                        <span className="w-4 h-4 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-[10px]">₮</span>
+                        <CoinIcon coin="USDT" size={16} />
                         <span>Tether</span>
                       </button>
                     </div>
@@ -1380,9 +1375,9 @@ export default function SellBitcoin({user}) {
                 className="h-[36px] sm:h-[40px] px-2 sm:px-3 rounded-xl border bg-gray-50 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-black text-gray-800 hover:bg-gray-100 transition"
                 style={{borderColor: C.g200}}>
                 {selectedCrypto === 'BTC' ? (
-                  <><span className="w-5 h-5 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px]">₿</span> BTC</>
+                  <><CoinIcon coin="BTC" size={20} /> BTC</>
                 ) : selectedCrypto === 'USDT' ? (
-                  <><span className="w-5 h-5 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center text-[10px]">₮</span> USDT</>
+                  <><CoinIcon coin="USDT" size={20} /> USDT</>
                 ) : (
                   <><Coins size={15} className="text-amber-600" /> All Crypto</>
                 )}
@@ -1399,12 +1394,12 @@ export default function SellBitcoin({user}) {
                     </button>
                     <button onClick={()=>{setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); navigate('/sell-bitcoin', { state: { selectedCrypto: 'BTC' } });}}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${selectedCrypto === 'BTC' ? 'bg-amber-50/80' : 'hover:bg-gray-50'}`} style={{borderColor:C.g100}}>
-                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#F7931A,#e8830a)'}}>₿</span>
+                      <CoinIcon coin="BTC" size={28} />
                       <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">Bitcoin</span></span>
                     </button>
                     <button onClick={()=>{setSelectedCrypto('USDT'); setShowAllCryptoMenu(false); navigate('/sell-usdt', { state: { selectedCrypto: 'USDT' } });}}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${selectedCrypto === 'USDT' ? 'bg-amber-50/80' : 'hover:bg-gray-50'}`} style={{borderColor:C.g100}}>
-                      <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#0F766E,#14B8A6)'}}>₮</span>
+                      <CoinIcon coin="USDT" size={28} />
                       <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">Tether</span></span>
                     </button>
                   </div>
@@ -1656,80 +1651,26 @@ export default function SellBitcoin({user}) {
               <div>
                 <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
                   <span style={{display:'flex',alignItems:'center',gap:3,fontSize:10,fontWeight:900,color:'#78350F',background:'#F4A422',borderRadius:5,padding:'2px 8px',letterSpacing:0.4,textTransform:'uppercase'}}>
-                    <Bitcoin size={10}/>Affiliate
+                    <Bitcoin size={10}/>Referral Program
                   </span>
                   <span style={{fontSize:9,color:'rgba(255,255,255,0.65)',fontWeight:500}}>Earn on every referral trade</span>
                 </div>
-                <p style={{margin:0,fontSize:16,fontWeight:900,color:'#fff',lineHeight:1.2}}>Invite friends. Earn BTC forever.</p>
+                <p style={{margin:0,fontSize:16,fontWeight:900,color:'#fff',lineHeight:1.2}}>Invite friends. Earn Bitcoin together.</p>
               </div>
-              <button onClick={()=>navigate('/dashboard?tab=affiliate')}
+              <button onClick={()=>navigate('/partner-program')}
                 style={{flexShrink:0,padding:'10px 16px',borderRadius:10,border:'none',cursor:'pointer',background:'#F4A422',color:'#78350F',fontWeight:900,fontSize:11,whiteSpace:'nowrap',boxShadow:'0 3px 12px rgba(244,164,34,0.4)'}}>
                 Get Link <ArrowRight size={12} style={{display:'inline',marginLeft:3,verticalAlign:'-2px'}}/>
               </button>
             </div>
           </div>
 
-          {/* Commission tiers — single amber-family progression, not a rainbow */}
-          <div style={{display:'flex',gap:6,padding:'11px 14px',overflowX:'auto',background:'#fff'}}>
-            {[
-              {refs:'0–9',   rate:'0.20%', c:'#D9A441'},
-              {refs:'10–24', rate:'0.25%', c:'#D97706'},
-              {refs:'25–49', rate:'0.35%', c:'#B45309'},
-              {refs:'50–99', rate:'0.40%', c:'#92400E'},
-              {refs:'100+',  rate:'0.50%', c:'#78350F'},
-            ].map(t=>(
-              <div key={t.refs} style={{flex:'0 0 auto',background:`${t.c}0D`,border:`1.5px solid ${t.c}30`,borderRadius:9,padding:'7px 10px',textAlign:'center',minWidth:52}}>
-                <div style={{fontSize:13,fontWeight:900,color:t.c,lineHeight:1}}>{t.rate}</div>
-                <div style={{fontSize:8,color:'#94A3B8',fontWeight:600,marginTop:2}}>{t.refs} refs</div>
-              </div>
-            ))}
+          <div style={{padding:'10px 14px',background:'#fff',textAlign:'center'}}>
+            <span onClick={()=>navigate('/partner-program')} style={{fontSize:11,fontWeight:700,color:'#1B4332',cursor:'pointer',textDecoration:'underline'}}>See the Referral Program page for current rates →</span>
           </div>
 
-          {/* Leaderboard */}
-          {affLeaderboard.length>0&&(
-            <div style={{borderTop:'1px solid #F1F5F9'}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 14px',borderBottom:'1px solid #F1F5F9',background:'#FFFBEB'}}>
-                <div style={{display:'flex',alignItems:'center',gap:5}}>
-                  <Trophy size={11} style={{color:'#D97706'}}/>
-                  <span style={{fontSize:9,fontWeight:900,color:'#78350F',textTransform:'uppercase',letterSpacing:0.6}}>Top Earners</span>
-                </div>
-                <span style={{fontSize:9,color:'#92400E',fontWeight:600}}>All Time</span>
-              </div>
-              {affLeaderboard.map((u,i)=>{
-                const badgeColors={BEGINNER:'#D9A441',PRO:'#D97706',EXPERT:'#B45309',AMBASSADOR:'#92400E',LEGEND:'#78350F'};
-                const bc=badgeColors[u.badge]||'#64748B';
-                const rankBg = i===0?'#F4A422':i===1?'#CBD5E1':'#C08A4E';
-                const earnedUsd=((u.earned_btc||0)*(btcPrice||76000));
-                return(
-                  <div key={u.username} style={{display:'flex',alignItems:'center',gap:9,padding:'7px 14px',borderBottom:i<affLeaderboard.length-1?'1px solid #F8FAFC':'none'}}>
-                    <div style={{width:18,height:18,borderRadius:'50%',flexShrink:0,background:rankBg,display:'flex',alignItems:'center',justifyContent:'center'}}>
-                      <span style={{fontSize:9,fontWeight:900,color:'#fff'}}>{i+1}</span>
-                    </div>
-                    <div style={{width:24,height:24,borderRadius:'50%',flexShrink:0,background:`${bc}18`,border:`1.5px solid ${bc}40`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,fontWeight:900,color:bc}}>
-                      {(u.username||'?')[0].toUpperCase()}
-                    </div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
-                        <span style={{fontSize:10,fontWeight:700,color:'#1E293B',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.username}</span>
-                        <BadgeChip user={u} badgeName={u.badge} size="xs" />
-                      </div>
-                      <span style={{fontSize:8,color:'#94A3B8',fontWeight:500}}>{u.referrals} refs · {u.affiliate_trades||u.total_trades} trades</span>
-                    </div>
-                    <div style={{textAlign:'right',flexShrink:0}}>
-                      <div style={{fontSize:10,fontWeight:800,color:'#D97706'}}>₿{(()=>{const v=parseFloat(u.earned_btc||0);return v>0&&v<0.0001?v.toFixed(8):v.toFixed(5);})()}</div>
-                      <div style={{fontSize:8,color:'#94A3B8',fontWeight:500}}>${earnedUsd>=1000?(earnedUsd/1000).toFixed(1)+'k':earnedUsd>=1?earnedUsd.toFixed(2):earnedUsd<0.01?'<$0.01':earnedUsd.toFixed(2)}</div>
-                    </div>
-                  </div>
-                );
-              })}
-              <div style={{padding:'6px 14px',background:'#FFFBEB',borderTop:'1px solid #FDE68A',textAlign:'center'}}>
-                <span style={{fontSize:9,color:'#92400E',fontWeight:700}}>Could you be next?</span>
-              </div>
-            </div>
-          )}
 
           <p style={{margin:0,padding:'7px 14px 11px',textAlign:'center',fontSize:9,color:'#94A3B8',fontWeight:600}}>
-            Free to join · No minimum payout · Lifetime commission
+            Free to join
           </p>
         </div>
 
@@ -1969,7 +1910,31 @@ export default function SellBitcoin({user}) {
           </div>
         </div>
       )}
+        {/* Related SEO Guides Section */}
+            <div className="mt-8 mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    Helpful Trading Guides
+                </h4>
+                <ul className="text-xs space-y-1.5 text-blue-600 dark:text-blue-400">
+                    <li>
+                        <a href="/blog/p2p-crypto-trading-fees" className="hover:underline">
+                            → Understanding P2P Crypto Trading Fees
+                        </a>
+                    </li>
+                    <li>
+                        <a href="/blog/p2p-crypto-escrow-works" className="hover:underline">
+                            → How P2P Crypto Escrow Works
+                        </a>
+                    </li>
+                    <li>
+                        <a href="/blog/p2p-trading-scams-and-how-to-avoid-themes" className="hover:underline">
+                            → P2P Trading Scams & How to Stay Safe
+                        </a>
+                    </li>
+                </ul>
+            </div>
 
+        
       <PRQFooter/>
 
       {modal && (
