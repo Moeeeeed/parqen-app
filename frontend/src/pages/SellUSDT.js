@@ -1560,14 +1560,14 @@ export default function SellUSDT({user}) {
       <div>
         <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:8}}>
           <span style={{display:'flex',alignItems:'center',gap:4,fontSize:11,fontWeight:900,color:'#92400E',background:C.gold,borderRadius:6,padding:'3px 9px',letterSpacing:0.5,textTransform:'uppercase'}}>
-            ₮ USDT Affiliate
+            ₮ USDT Referral Program
           </span>
           <span style={{display:'flex',alignItems:'center',gap:4,fontSize:9,fontWeight:700,color:'#fff',background:'rgba(255,255,255,0.15)',borderRadius:5,padding:'2px 8px'}}>
             <span style={{width:6,height:6,borderRadius:'50%',background:'#6EE7B7',display:'inline-block'}}/>LIVE
           </span>
         </div>
-        <p style={{margin:0,fontSize:20,fontWeight:900,color:'#fff',lineHeight:1.2}}>Earn USDT on every referral trade.</p>
-        <p style={{margin:0,fontSize:12,color:'rgba(255,255,255,0.75)',marginTop:5,fontWeight:500}}>Share your link — your earnings are paid in USDT, for life.</p>
+        <p style={{margin:0,fontSize:20,fontWeight:900,color:'#fff',lineHeight:1.2}}>Invite friends. Earn together.</p>
+        <p style={{margin:0,fontSize:12,color:'rgba(255,255,255,0.75)',marginTop:5,fontWeight:500}}>Share your link and earn when the friends you invite trade.</p>
       </div>
       <button onClick={()=>navigate('/partner-program')}
         style={{flexShrink:0,padding:'12px 20px',borderRadius:11,border:'none',cursor:'pointer',background:C.gold,color:'#92400E',fontWeight:900,fontSize:13,whiteSpace:'nowrap',boxShadow:'0 4px 16px rgba(244,164,34,0.45)'}}>
@@ -1576,30 +1576,12 @@ export default function SellUSDT({user}) {
     </div>
   </div>
 
-  {/* Commission tiers — single amber-family progression */}
-  <div style={{padding:'12px 16px',background:'#fff',borderBottom:`1px solid ${C.g100}`}}>
-    <p style={{margin:'0 0 8px',fontSize:10,fontWeight:800,color:C.g500,textTransform:'uppercase',letterSpacing:0.8}}>Commission Tiers</p>
-    <div style={{position:'relative'}}>
-      <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:2}}>
-        {[
-          {refs:'0–9',   rate:'0.20%', c:'#FCD34D'},
-          {refs:'10–24', rate:'0.25%', c:'#F59E0B'},
-          {refs:'25–49', rate:'0.35%', c:'#D97706'},
-          {refs:'50–99', rate:'0.40%', c:'#B45309'},
-          {refs:'100+',  rate:'0.50%', c:'#92400E'},
-        ].map(t=>(
-          <div key={t.refs} style={{flex:'0 0 auto',background:`${t.c}0D`,border:`1.5px solid ${t.c}30`,borderRadius:10,padding:'9px 12px',textAlign:'center',minWidth:58}}>
-            <div style={{fontSize:14,fontWeight:900,color:t.c,lineHeight:1}}>{t.rate}</div>
-            <div style={{fontSize:9,color:C.g400,fontWeight:600,marginTop:3,lineHeight:1}}>{t.refs} refs</div>
-          </div>
-        ))}
-      </div>
-      <div style={{position:'absolute',top:0,right:0,bottom:2,width:24,background:'linear-gradient(to right, transparent, #ffffff)',pointerEvents:'none'}}/>
-    </div>
+  <div style={{padding:'10px 14px',background:'#fff',textAlign:'center'}}>
+    <span onClick={()=>navigate('/partner-program')} style={{fontSize:11,fontWeight:700,color:'#1B4332',cursor:'pointer',textDecoration:'underline'}}>See the Referral Program page for current rates →</span>
   </div>
 
   <div style={{padding:'10px 16px',textAlign:'center',background:'#fff'}}>
-    <p style={{margin:0,fontSize:10,color:C.g400,fontWeight:600}}>Free to join · No minimum payout · Lifetime commission</p>
+    <p style={{margin:0,fontSize:10,color:C.g400,fontWeight:600}}>Free to join</p>
   </div>
 </div>
 

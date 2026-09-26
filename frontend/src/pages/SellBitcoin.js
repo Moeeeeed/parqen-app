@@ -1650,11 +1650,11 @@ export default function SellBitcoin({user}) {
               <div>
                 <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
                   <span style={{display:'flex',alignItems:'center',gap:3,fontSize:10,fontWeight:900,color:'#78350F',background:'#F4A422',borderRadius:5,padding:'2px 8px',letterSpacing:0.4,textTransform:'uppercase'}}>
-                    <Bitcoin size={10}/>Affiliate
+                    <Bitcoin size={10}/>Referral Program
                   </span>
                   <span style={{fontSize:9,color:'rgba(255,255,255,0.65)',fontWeight:500}}>Earn on every referral trade</span>
                 </div>
-                <p style={{margin:0,fontSize:16,fontWeight:900,color:'#fff',lineHeight:1.2}}>Invite friends. Earn BTC forever.</p>
+                <p style={{margin:0,fontSize:16,fontWeight:900,color:'#fff',lineHeight:1.2}}>Invite friends. Earn Bitcoin together.</p>
               </div>
               <button onClick={()=>navigate('/partner-program')}
                 style={{flexShrink:0,padding:'10px 16px',borderRadius:10,border:'none',cursor:'pointer',background:'#F4A422',color:'#78350F',fontWeight:900,fontSize:11,whiteSpace:'nowrap',boxShadow:'0 3px 12px rgba(244,164,34,0.4)'}}>
@@ -1663,25 +1663,13 @@ export default function SellBitcoin({user}) {
             </div>
           </div>
 
-          {/* Commission tiers — single amber-family progression, not a rainbow */}
-          <div style={{display:'flex',gap:6,padding:'11px 14px',overflowX:'auto',background:'#fff'}}>
-            {[
-              {refs:'0–9',   rate:'0.20%', c:'#D9A441'},
-              {refs:'10–24', rate:'0.25%', c:'#D97706'},
-              {refs:'25–49', rate:'0.35%', c:'#B45309'},
-              {refs:'50–99', rate:'0.40%', c:'#92400E'},
-              {refs:'100+',  rate:'0.50%', c:'#78350F'},
-            ].map(t=>(
-              <div key={t.refs} style={{flex:'0 0 auto',background:`${t.c}0D`,border:`1.5px solid ${t.c}30`,borderRadius:9,padding:'7px 10px',textAlign:'center',minWidth:52}}>
-                <div style={{fontSize:13,fontWeight:900,color:t.c,lineHeight:1}}>{t.rate}</div>
-                <div style={{fontSize:8,color:'#94A3B8',fontWeight:600,marginTop:2}}>{t.refs} refs</div>
-              </div>
-            ))}
+          <div style={{padding:'10px 14px',background:'#fff',textAlign:'center'}}>
+            <span onClick={()=>navigate('/partner-program')} style={{fontSize:11,fontWeight:700,color:'#1B4332',cursor:'pointer',textDecoration:'underline'}}>See the Referral Program page for current rates →</span>
           </div>
 
 
           <p style={{margin:0,padding:'7px 14px 11px',textAlign:'center',fontSize:9,color:'#94A3B8',fontWeight:600}}>
-            Free to join · No minimum payout · Lifetime commission
+            Free to join
           </p>
         </div>
 

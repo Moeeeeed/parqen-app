@@ -10763,7 +10763,8 @@ app.get('/api/referral/avatar/:id', async (req, res) => {
   }
 });
 
-// Public leaderboard — top 10 referrers using the most accurate data source for each metric
+// Public leaderboard — top 10 referrers, ranked by referral earnings.
+// DISPLAY ONLY: the ranking uses earnings, but NO money amounts are returned (people see who ranks, never what anyone earned).
 app.get('/api/referral/leaderboard', async (req, res) => {
   try {
     // Step 1: earnings from affiliate_earnings (authoritative for BTC earned)
@@ -10823,7 +10824,7 @@ app.get('/api/referral/leaderboard', async (req, res) => {
           id: rid,
           username: userMap[rid]?.username || 'Trader',
           badge: userMap[rid]?.badge || 'BEGINNER', country: userMap[rid]?.country || null, has_avatar: !!userMap[rid]?.avatar_url,
-          earned_btc: parseFloat((earningsMap[rid] || 0).toFixed(8)), month_btc: parseFloat((monthMap[rid] || 0).toFixed(8)),
+          _rankBtc: parseFloat((earningsMap[rid] || 0).toFixed(8)), // used for sorting only, removed below
           // Take the larger value — cached counter may include old signups
           // that predate the referred_by field being saved reliably
           referrals: Math.max(actualRefs, cachedRefs),
@@ -10831,9 +10832,9 @@ app.get('/api/referral/leaderboard', async (req, res) => {
           affiliate_trades: tradeCountMap[rid] || 0,
         };
       })
-      .sort((a, b) => b.earned_btc - a.earned_btc || b.referrals - a.referrals)
+      .sort((a, b) => b._rankBtc - a._rankBtc || b.referrals - a.referrals)
       .slice(0, 10)
-      .map((u, i) => ({ ...u, rank: i + 1 }));
+      .map(({ _rankBtc, ...u }, i) => ({ ...u, rank: i + 1 })); // amounts never leave the server
 
     res.json({ success: true, leaderboard });
   } catch (err) {
