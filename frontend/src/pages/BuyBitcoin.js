@@ -1593,18 +1593,18 @@ export default function BuyBitcoin({user}) {
 
       {/* ══ 3. NOONES FILTER DRAWER MODAL ════════════════════════════════════ */}
       {showFilters && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex justify-end transition-opacity">
-          <div className="w-full max-w-md bg-white h-full flex flex-col justify-between p-4 overflow-y-auto animate-slideLeft">
-            <div className="space-y-6">
+        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex justify-end transition-opacity" onClick={e => e.target === e.currentTarget && setShowFilters(false)}>
+          <div className="w-full max-w-md bg-white h-full flex flex-col justify-between p-4 overflow-y-auto overscroll-contain animate-slideLeft pb-20 sm:pb-6" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="space-y-6 pb-4">
               <div className="flex items-center justify-between border-b pb-3" style={{borderColor:C.g200}}>
                 <h3 className="text-lg font-black text-gray-900">Filters</h3>
-                <button onClick={() => setShowFilters(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500">
+                <button onClick={() => setShowFilters(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition">
                   <X size={18} />
                 </button>
               </div>
 
               {/* Country selection row */}
-              <div className="flex items-center justify-between py-2 border-b" style={{borderColor:C.g100}}>
+              <div className="flex items-center justify-between py-2 border-b country-dropdown-container relative z-10" style={{borderColor:C.g100}}>
                 <span className="text-sm font-bold text-gray-700">Country</span>
                 <button
                   onClick={() => setShowCountry(true)}
@@ -1650,11 +1650,11 @@ export default function BuyBitcoin({user}) {
               </div>
             </div>
 
-            <div className="pt-6 border-t space-y-2" style={{borderColor:C.g200}}>
+            <div className="pt-4 border-t space-y-2 sticky bottom-0 bg-white z-40 pb-2" style={{borderColor:C.g200}}>
               <button
                 onClick={() => setShowFilters(false)}
-                className="w-full py-3.5 rounded-xl bg-emerald-500 text-white font-black text-sm shadow-md hover:bg-emerald-600 transition">
-                Apply
+                className="w-full py-3.5 rounded-xl bg-emerald-500 text-white font-black text-sm shadow-md hover:bg-emerald-600 active:scale-95 transition">
+                Apply Filters
               </button>
             </div>
           </div>
@@ -1663,7 +1663,7 @@ export default function BuyBitcoin({user}) {
 
       {/* ══ 5. NOONES CURRENCY MODAL ════════════════════════════════════ */}
       {showCurrency && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
+        <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
           <div className="w-full md:max-w-md bg-white h-[85vh] md:h-full rounded-t-2xl md:rounded-none flex flex-col p-4 overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3 mb-4" style={{borderColor:C.g200}}>
               <h3 className="text-lg font-black text-gray-900">Currency</h3>
@@ -1704,7 +1704,7 @@ export default function BuyBitcoin({user}) {
 
       {/* ══ 6. NOONES COUNTRY MODAL ════════════════════════════════════ */}
       {showCountry && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-2xl max-h-[80vh] flex flex-col p-4 overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3 mb-4" style={{borderColor:C.g200}}>
               <h3 className="text-lg font-black text-gray-900">Country</h3>
@@ -1759,7 +1759,7 @@ export default function BuyBitcoin({user}) {
 
       {/* ══ 4. NOONES PAYMENT METHOD MODAL (WITH FULL PRAQEN PAYMENT OPTIONS) ════════════════════════════════════ */}
       {showPayment && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
+        <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
           <div className="w-full md:max-w-md bg-white h-[85vh] md:h-full rounded-t-2xl md:rounded-none flex flex-col justify-between p-4 overflow-y-auto">
             <div className="space-y-4">
               <div className="flex items-center justify-between border-b pb-3" style={{borderColor:C.g200}}>

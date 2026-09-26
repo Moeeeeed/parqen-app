@@ -2066,9 +2066,9 @@ export default function SellGiftCardMarketplace({ user }) {
 
       {/* ══ NOONES FILTER DRAWER MODAL ════════════════════════════════════ */}
       {showFilters && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex justify-end transition-opacity">
-          <div className="w-full max-w-md bg-white h-full flex flex-col justify-between p-4 overflow-y-auto animate-slideLeft">
-            <div className="space-y-6">
+        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex justify-end transition-opacity" onClick={e => e.target === e.currentTarget && setShowFilters(false)}>
+          <div className="w-full max-w-md bg-white h-full flex flex-col justify-between p-4 overflow-y-auto overscroll-contain animate-slideLeft pb-20 sm:pb-6" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="space-y-6 pb-4">
               <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: C.g200 }}>
                 <h3 className="text-lg font-black text-gray-900">Filters</h3>
                 <button onClick={() => setShowFilters(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition">
@@ -2077,7 +2077,7 @@ export default function SellGiftCardMarketplace({ user }) {
               </div>
 
               {/* Country Selection */}
-              <div>
+              <div className="relative country-dropdown-container">
                 <span className="text-sm font-bold text-gray-700 block mb-2">Location</span>
                 <button
                   onClick={() => setShowCountry(!showCountry)}
@@ -2090,14 +2090,14 @@ export default function SellGiftCardMarketplace({ user }) {
                   <ChevronDown size={16} className="text-gray-400" />
                 </button>
                 {showCountry && (
-                  <div className="mt-2 rounded-xl border overflow-hidden" style={{ borderColor: C.g100 }}>
-                    <div className="p-2 border-b bg-gray-50" style={{ borderColor: C.g100 }}>
+                  <div className="mt-2 rounded-xl border overflow-hidden relative z-50 shadow-lg" style={{ borderColor: C.g100 }}>
+                    <div className="p-2 border-b bg-gray-50 sticky top-0 z-10" style={{ borderColor: C.g100 }}>
                       <input type="text" placeholder="Search country…"
                         value={countrySearch} onChange={e => setCountrySearch(e.target.value)}
-                        className="w-full px-3 py-1.5 font-semibold rounded-lg border focus:outline-none"
+                        className="w-full px-3 py-2 font-semibold rounded-lg border focus:outline-none bg-white"
                         style={{ borderColor: C.g200, color: C.g800, fontSize: '14px' }} />
                     </div>
-                    <div className="overflow-y-auto max-h-56 bg-white">
+                    <div className="overflow-y-auto max-h-60 bg-white" style={{ WebkitOverflowScrolling: 'touch' }}>
                       {COUNTRIES.filter(c => !countrySearch.toLowerCase() || c.name.toLowerCase().includes(countrySearch.toLowerCase())).map(c => (
                         <button key={c.code} onClick={() => { setSelCountry(c); setShowCountry(false); setCountrySearch(''); }}
                           className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50 border-b last:border-0 transition"
@@ -2145,11 +2145,11 @@ export default function SellGiftCardMarketplace({ user }) {
 
             </div>
 
-            <div className="pt-6 border-t space-y-2" style={{ borderColor: C.g200 }}>
+            <div className="pt-4 border-t space-y-2 sticky bottom-0 bg-white z-40 pb-2" style={{ borderColor: C.g200 }}>
               <button
                 onClick={() => setShowFilters(false)}
-                className="w-full py-3.5 rounded-xl bg-[#10B981] text-white font-black text-sm shadow-md transition">
-                Apply
+                className="w-full py-3.5 rounded-xl bg-[#10B981] text-white font-black text-sm shadow-md transition hover:bg-emerald-600 active:scale-95">
+                Apply Filters
               </button>
             </div>
           </div>
