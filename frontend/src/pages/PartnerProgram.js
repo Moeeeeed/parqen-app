@@ -128,11 +128,7 @@ function PartnerProgram({ user }) {
         <h1 className="mega">The Affiliate Program</h1>
         <p className="sub2">Bring users who trade and grow with them. Join the PRAQEN Affiliate Program</p>
         <div className="dash"><div className="in worth">
-          {cash ? (
-            <div className="wh"><div><h3>What could your network be worth?</h3><span>See how much you could earn from the users you bring</span></div><em className="chip">Monthly</em></div>
-          ) : (
-            <div className="wh"><div><h3>What does each level need?</h3><span>Bring active users and unlock a bigger share of every trade</span></div></div>
-          )}
+          <div className="wh"><div><h3>What could your network be worth?</h3><span>{cash ? 'See how much you could earn from the users you bring' : 'Try the calculator to see an estimate. What each level needs is shown below.'}</span></div>{cash && <em className="chip">Monthly</em>}</div>
           <div className="w4">
             {levels.map((l, i) => {
               const m = monthlyExample(l);
@@ -148,9 +144,8 @@ function PartnerProgram({ user }) {
               );
             })}
           </div>
-          {cash
-            ? <Link className="btn big" to="/partner-program/calculator">Calculate my earnings</Link>
-            : <a className="btn big" href="#levels">See how to level up</a>}
+          <Link className="btn big" to="/partner-program/calculator">Calculate my earnings</Link>
+          {!cash && <p style={{ textAlign: 'center', margin: '10px 0 0', fontSize: 13 }}><a href="#levels" style={{ color: 'inherit', textDecoration: 'underline' }}>See how to level up</a></p>}
         </div></div>
         <div className="coin big2">₮</div>
       </div></section>

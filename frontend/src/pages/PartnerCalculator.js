@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import SEO from '../components/SEO';
 import './partner-program.css';
-import { LEVELS, ACTIVE_MIN_USD, Badge, pct, money, useAffiliateConfig } from './partnerShared';
+import { LEVELS, pct, money, useAffiliateConfig } from './partnerShared';
 
 const GOALS = [10, 50, 100, 500];
 
@@ -35,7 +35,7 @@ function Control({ title, hint, value, onChange, min, max, sliderMax, step = 1, 
   );
 }
 
-function CalculatorBody({ levels }) {
+function CalculatorBody({ levels, preview }) {
   const [type, setType] = useState('btc');
   const [lv, setLv] = useState(1);
   const [period, setPeriod] = useState('m');
@@ -59,6 +59,11 @@ function CalculatorBody({ levels }) {
           <h1>See what your users could earn you</h1>
           <p>Answer 3 quick steps and see how much you could earn when the users you bring trade on PRAQEN.</p>
         </div>
+        {preview && (
+          <div className="note" role="note" style={{ background: '#FFF6E2', border: '1px solid #F1D08A', color: '#744805', borderRadius: 14, padding: '12px 16px', margin: '0 0 14px', fontSize: 14 }}>
+            <strong>Payouts have not started yet.</strong> This calculator only gives estimates so you can plan. Nothing is being paid out today, and real earnings depend on completed trades.
+          </div>
+        )}
         <div className="mob"><small>Projected monthly earnings</small><b>{money(monthly)}</b></div>
 
         <div className="calc">
@@ -156,41 +161,12 @@ function CalculatorBody({ levels }) {
   );
 }
 
-// While payouts are off the calculator would only show money amounts, so it shows the level rules instead.
+// The calculator is always available. While payouts are off it shows a notice that the numbers are estimates only.
 export default function PartnerCalculator() {
   const cfg = useAffiliateConfig();
   const levels = cfg.levels || LEVELS;
   if (!cfg.loaded) {
     return (<div className="ppx cpage"><div className="wrap"><div className="chead"><p>Loading…</p></div></div></div>);
   }
-  if (cfg.cashEnabled) return <CalculatorBody levels={levels} />;
-  return (
-    <div className="ppx cpage">
-      <SEO title="Affiliate Program levels | PRAQEN" description="See what you need to reach each Affiliate Program level: active users and trade volume." />
-      <div className="wrap">
-        <div className="chead">
-          <span className="pill">Affiliate Program</span>
-          <h1>The earnings calculator opens when payouts go live</h1>
-          <p>Until then, here is what each level needs. Bring active users and unlock a bigger share of every trade.</p>
-        </div>
-        <div className="glance" style={{ marginBottom: 24 }}>
-          <table>
-            <thead><tr><th>Level</th><th>Active users needed</th><th>Trade volume needed</th><th>Your share</th></tr></thead>
-            <tbody>
-              {levels.map((l, i) => (
-                <tr key={l.n}>
-                  <td><span className="gl"><Badge i={i} size={26} /> {l.n}</span></td>
-                  <td>{l.f}</td>
-                  <td>${l.v.toLocaleString()}</td>
-                  <td>{pct(l.r)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="note">An active user is someone you brought who has traded at least ${ACTIVE_MIN_USD} in total. You need both the active users and the volume to unlock a level.</p>
-        </div>
-        <p style={{ marginBottom: 60 }}><Link className="btn p" to="/partner-program" style={{ display: 'inline-block', flex: 'none' }}>Back to the Affiliate Program</Link></p>
-      </div>
-    </div>
-  );
+  return <CalculatorBody levels={levels} preview={!cfg.cashEnabled} />;
 }
