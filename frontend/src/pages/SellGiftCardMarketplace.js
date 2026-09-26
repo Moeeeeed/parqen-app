@@ -1238,10 +1238,10 @@ export default function SellGiftCardMarketplace({ user }) {
   }, [user, listings]);
   useEffect(() => {
     const h = e => {
-      if (currencyRef.current && !currencyRef.current.contains(e.target)) { setShowCurrency(false); setCurrencySearch(''); }
-      if (brandRef.current && !brandRef.current.contains(e.target) && !e.target.closest?.('.brand-dropdown-container')) { setShowBrand(false); setBrandSearch(''); }
-      if (countryRef.current && !countryRef.current.contains(e.target) && !e.target.closest?.('.country-dropdown-container')) { setShowCountry(false); setCountrySearch(''); }
-      if (cryptoRef.current && !cryptoRef.current.contains(e.target) && !e.target.closest?.('.crypto-dropdown-container')) { setShowCryptoMenu(false); }
+      if (!e.target.closest?.('.currency-dropdown-container')) { setShowCurrency(false); setCurrencySearch(''); }
+      if (!e.target.closest?.('.brand-dropdown-container')) { setShowBrand(false); setBrandSearch(''); }
+      if (!e.target.closest?.('.country-dropdown-container')) { setShowCountry(false); setCountrySearch(''); }
+      if (!e.target.closest?.('.crypto-dropdown-container')) { setShowCryptoMenu(false); }
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
