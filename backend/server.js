@@ -1993,6 +1993,41 @@ async function requireEmailVerified(req, res, next) {
 
 app.get('/api/health', (req, res) => res.json({ status: 'OK', time: new Date() }));
 
+// GET /api/status — public, read-only service status for the Status page (cached 30s).
+// Each part is checked for real: the API answers (this reply), the database answers a query, trading can
+// read the live offers, and the withdrawal switches (SENDS_DISABLED / USDT_SENDS_DISABLED) are read as-is.
+let _statusCache = null;
+app.get('/api/status', async (req, res) => {
+  try {
+    if (_statusCache && Date.now() - _statusCache.ts < 30000) return res.json(_statusCache.body);
+    const timed = async (fn) => {
+      const t0 = Date.now();
+      try { const r = await fn(); return { ok: !r?.error, ms: Date.now() - t0 }; } catch (e) { return { ok: false, ms: Date.now() - t0 }; }
+    };
+    const [db, offers] = await Promise.all([
+      timed(() => supabaseAdmin.from('users').select('id').limit(1)),
+      timed(() => supabaseAdmin.from('listings').select('id').eq('status', 'ACTIVE').limit(1)),
+    ]);
+    const level = (ok, ms) => (!ok ? 'down' : ms > 3000 ? 'degraded' : 'operational');
+    const btcSends = process.env.SENDS_DISABLED === 'true';
+    const usdtSends = btcSends || process.env.USDT_SENDS_DISABLED === 'true';
+    const components = [
+      { key: 'api', name: 'PRAQEN API', status: 'operational' },
+      { key: 'database', name: 'Accounts & data', status: level(db.ok, db.ms) },
+      { key: 'trading', name: 'P2P trading & offers', status: level(offers.ok, offers.ms) },
+      { key: 'btc_withdrawals', name: 'Bitcoin withdrawals', status: btcSends ? 'maintenance' : level(db.ok, db.ms) },
+      { key: 'usdt_withdrawals', name: 'USDT withdrawals', status: usdtSends ? 'maintenance' : level(db.ok, db.ms) },
+    ];
+    const rank = { operational: 0, degraded: 1, maintenance: 1, down: 2 };
+    const worst = components.reduce((w, c) => (rank[c.status] > rank[w] ? c.status : w), 'operational');
+    const body = { success: true, overall: worst, checked_at: new Date().toISOString(), components };
+    _statusCache = { ts: Date.now(), body };
+    res.json(body);
+  } catch (e) {
+    res.status(500).json({ success: false, overall: 'down', error: 'Status check failed.' });
+  }
+});
+
 // ── Geo-detect endpoint (proxies ipapi.co to avoid client-side CORS) ────────
 app.get('/api/geo/detect', async (req, res) => {
   try {
@@ -12047,6 +12082,53 @@ app.get('/api/admin/users/:id/wallet-transactions', verifyToken, async (req, res
   } catch (e) {
     console.error('[GET /api/admin/users/:id/wallet-transactions]', e.message);
     res.status(500).json({ error: 'Failed to load wallet ledger: ' + e.message });
+  }
+});
+
+// GET /api/users/me/activity — the logged-in user's OWN timeline (read-only): account, sign-ins we keep,
+// trades, offers, reviews. No balances, addresses, or other people's private details.
+app.get('/api/users/me/activity', verifyToken, async (req, res) => {
+  try {
+    const id = req.userId;
+    const { data: u } = await supabaseAdmin.from('users')
+      .select('created_at, last_login, kyc_status, kyc_submitted_at').eq('id', id).maybeSingle();
+    if (!u) return res.status(404).json({ error: 'User not found' });
+
+    const [tradesR, listingsR, revOutR, revInR] = await Promise.all([
+      supabaseAdmin.from('trades')
+        .select('id, trade_ref, status, amount_usd, buyer_id, seller_id, created_at, completed_at, disputed_at, is_test')
+        .or(`buyer_id.eq.${id},seller_id.eq.${id}`).order('created_at', { ascending: false }).limit(60),
+      supabaseAdmin.from('listings').select('id, listing_type, asset, status, created_at')
+        .eq('seller_id', id).order('created_at', { ascending: false }).limit(30),
+      supabaseAdmin.from('reviews').select('id, rating, created_at').eq('reviewer_id', id).order('created_at', { ascending: false }).limit(20),
+      supabaseAdmin.from('reviews').select('id, rating, created_at').eq('reviewee_id', id).order('created_at', { ascending: false }).limit(20),
+    ]);
+
+    const events = [];
+    if (u.created_at) events.push({ type: 'account', at: u.created_at, label: 'Account created' });
+    if (u.kyc_submitted_at) events.push({ type: 'security', at: u.kyc_submitted_at, label: 'Identity verification submitted' });
+    if (u.last_login) events.push({ type: 'login', at: u.last_login, label: 'Most recent sign-in' });
+    (tradesR.data || []).filter((t) => t.is_test !== true).forEach((t) => {
+      const ref = t.trade_ref || String(t.id).slice(0, 8);
+      const side = t.buyer_id === id ? 'Buying' : 'Selling';
+      const amt = t.amount_usd != null ? ` · $${Number(t.amount_usd).toFixed(2)}` : '';
+      const st = String(t.status || '').toUpperCase();
+      events.push({ type: 'trade', at: t.created_at, label: `${side} trade ${ref} started${amt}`, ref: t.id });
+      if (t.disputed_at) events.push({ type: 'security', at: t.disputed_at, label: `Dispute opened on trade ${ref}`, ref: t.id });
+      if (st === 'COMPLETED' && t.completed_at) events.push({ type: 'trade', at: t.completed_at, label: `Trade ${ref} completed${amt}`, ref: t.id });
+      else if (st === 'CANCELLED') events.push({ type: 'trade', at: t.completed_at || t.created_at, label: `Trade ${ref} was cancelled`, ref: t.id, noTime: !t.completed_at });
+    });
+    (listingsR.data || []).forEach((l) => events.push({
+      type: 'offer', at: l.created_at,
+      label: `${String(l.listing_type || '').includes('BUY') ? 'Buy' : 'Sell'} offer created (${l.asset || 'BTC'}) · ${l.status}`, ref: l.id,
+    }));
+    (revOutR.data || []).forEach((r) => events.push({ type: 'review', at: r.created_at, label: `You left a ${r.rating}★ review`, ref: r.id }));
+    (revInR.data || []).forEach((r) => events.push({ type: 'review', at: r.created_at, label: `You received a ${r.rating}★ review`, ref: r.id }));
+    events.sort((a, b) => new Date(b.at) - new Date(a.at));
+    res.json({ success: true, lastLogin: u.last_login || null, events: events.slice(0, 100) });
+  } catch (e) {
+    console.error('[GET /api/users/me/activity]', e.message);
+    res.status(500).json({ error: 'Failed to load your activity.' });
   }
 });
 

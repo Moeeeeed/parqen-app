@@ -179,6 +179,8 @@ const EmailConfirmation = lazyRetry(() => import('./pages/EmailConfirmation'));
 const CheckEmail = lazyRetry(() => import('./pages/CheckEmail'));
 // eslint-disable-next-line import/first
 const PlaceholderPage = lazyRetry(() => import('./pages/PlaceholderPage'));
+const ActivityLog = lazyRetry(() => import('./pages/ActivityLog'));
+const StatusPage = lazyRetry(() => import('./pages/StatusPage'));
 // eslint-disable-next-line import/first
 const PartnerProgram = lazyRetry(() => import('./pages/PartnerProgram'));
 // eslint-disable-next-line import/first
@@ -708,10 +710,10 @@ function App() {
                     <Route path="/trade-insights" element={user ? <Navigate to="/trader-settings?section=trade-insights" replace /> : <Navigate to="/login" />} />
                     <Route path="/payment-accounts" element={user ? <Navigate to="/settings?tab=payment" replace /> : <Navigate to="/login" />} />
                     <Route path="/devices" element={user ? <Navigate to="/settings?tab=security" replace /> : <Navigate to="/login" />} />
-                    <Route path="/activity-log" element={user ? <PlaceholderPage title="Activity log" description="A timeline of your account activity — logins, trades, and security events — will appear here." icon={Clock} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
+                    <Route path="/activity-log" element={user ? <ActivityLog /> : <Navigate to="/login" />} />
                     <Route path="/security" element={user ? <Navigate to="/settings?tab=security" replace /> : <Navigate to="/login" />} />
                     <Route path="/discord" element={user ? <ExternalRedirect to="https://discord.gg/V6zCZxfdy" /> : <Navigate to="/login" />} />
-                    <Route path="/status" element={user ? <PlaceholderPage title="Status" description="Check the current status of PRAQEN services, including trading, withdrawals, and the website." icon={Bell} overrideColor="#3B82F6" /> : <Navigate to="/login" />} />
+                    <Route path="/status" element={<StatusPage />} />
                     <Route path="/invite" element={user ? <Navigate to="/partner-program" replace /> : <Navigate to="/login" />} />
                     <Route path="/swap" element={user ? <PlaceholderPage title="Swap" description="Swap between cryptocurrencies instantly at competitive rates. Coming soon." icon={ArrowLeftRight} overrideColor="#1B4332" /> : <Navigate to="/login" />} />
                     <Route path="/receive" element={user ? <PlaceholderPage title="Receive" description="Generate a deposit address to receive Bitcoin in your PRAQEN wallet." icon={ArrowRight} overrideColor="#1B4332" /> : <Navigate to="/login" />} />
