@@ -1,5 +1,5 @@
 import React from 'react';
-import { MEDAL_INFO, pickMedals } from './medals';
+import { MEDAL_INFO, pickMedals, pickAffiliateLevel } from './medals';
 import {
   Shield, Star, TrendingUp, Briefcase, Crown,
 } from 'lucide-react';
@@ -156,10 +156,27 @@ export function SafetyBanner({ user, variant = 'profile', className = '' }) {
 // (The trust level itself — TRUST_MAP / deriveBadge / users.badge — is still computed and used for filters.)
 export function BadgeChip({ user, className = '', size = 'sm' }) {
   const { shown, more } = pickMedals(user && user.medals, size === 'lg' ? 5 : 3);
-  if (!shown.length) return null;
+  const level = pickAffiliateLevel(user && user.affiliateLevel);
+  if (!shown.length && !level) return null;
   const px = size === 'xs' ? 16 : size === 'lg' ? 24 : 19;
+  const labelParts = [];
+  if (level) labelParts.push('Affiliate level: ' + level.name);
+  if (shown.length) labelParts.push('Medals: ' + shown.map((id) => MEDAL_INFO[id].name).join(', '));
   return (
-    <span className={'inline-flex items-center flex-shrink-0 ' + className} style={{ gap: 3 }} aria-label={'Medals: ' + shown.map((id) => MEDAL_INFO[id].name).join(', ')}>
+    <span className={'inline-flex items-center flex-shrink-0 ' + className} style={{ gap: 3 }} aria-label={labelParts.join(' · ')}>
+      {level && (
+        <span
+          title={`PRAQEN Affiliate — ${level.name} level`}
+          style={{
+            flexShrink: 0, fontSize: size === 'xs' ? 8.5 : 9.5, fontWeight: 900, lineHeight: 1,
+            letterSpacing: '0.02em', color: level.color, background: level.bg,
+            border: `1px solid ${level.color}30`, borderRadius: 999,
+            padding: size === 'xs' ? '2px 6px' : '2.5px 7px',
+          }}
+        >
+          {level.name}
+        </span>
+      )}
       {shown.map((id) => (
         <img
           key={id}

@@ -91,3 +91,21 @@ describe('market medals (pickMedals)', () => {
     expect(pickMedals('the-og').shown).toEqual([]);
   });
 });
+
+describe('affiliate level pill (pickAffiliateLevel)', () => {
+  const { pickAffiliateLevel, AFFILIATE_LEVEL_INFO } = require('./medals');
+  it('has a name and colour for all 4 levels', () => {
+    expect(Object.keys(AFFILIATE_LEVEL_INFO)).toHaveLength(4);
+    Object.values(AFFILIATE_LEVEL_INFO).forEach((l) => { expect(l.name).toBeTruthy(); expect(l.color).toMatch(/^#/); });
+  });
+  it('resolves a known level id', () => {
+    expect(pickAffiliateLevel({ id: 'affiliate-explorer' })).toMatchObject({ id: 'affiliate-explorer', name: 'Explorer' });
+    expect(pickAffiliateLevel({ id: 'affiliate-ambassador' })).toMatchObject({ name: 'Ambassador' });
+  });
+  it('returns null for missing/unknown/malformed input', () => {
+    expect(pickAffiliateLevel(null)).toBeNull();
+    expect(pickAffiliateLevel(undefined)).toBeNull();
+    expect(pickAffiliateLevel({ id: 'not-a-real-level' })).toBeNull();
+    expect(pickAffiliateLevel({})).toBeNull();
+  });
+});
