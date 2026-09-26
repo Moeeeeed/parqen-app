@@ -26,26 +26,56 @@ function getMyId() {
 }
 
 function timeAgo(dateStr) {
-  if (!dateStr) return 'Under a minute ago';
+  if (!dateStr) return '1m ago';
   const diffSecs = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (diffSecs < 60) return 'Under a minute ago';
+  if (diffSecs < 60) return '1m ago';
   const mins = Math.floor(diffSecs / 60);
-  if (mins < 60) return `${mins} minute${mins > 1 ? 's' : ''} ago`;
+  if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} hour${hrs > 1 ? 's' : ''} ago`;
+  if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
-  return `${days} day${days > 1 ? 's' : ''} ago`;
+  return `${days}d ago`;
 }
 
 function formatPaymentMethod(pm) {
   if (!pm) return 'Payment Method';
-  const p = String(pm).toLowerCase();
-  if (p.includes('mtn')) return 'MTN Mobile Money';
-  if (p.includes('vodafone')) return 'Vodafone Cash';
-  if (p.includes('mpesa') || p.includes('m-pesa')) return 'M-Pesa';
-  if (p.includes('bank')) return 'Bank Transfer';
-  if (p.includes('paypal')) return 'PayPal';
-  return pm.charAt(0).toUpperCase() + pm.slice(1);
+  const str = String(pm).trim();
+  const lower = str.toLowerCase();
+
+  const MAP = {
+    mtn_momo: 'MTN Mobile Money',
+    mtmmomo: 'MTN Mobile Money',
+    mtn_mobile_money: 'MTN Mobile Money',
+    mtn: 'MTN Mobile Money',
+    vodafone: 'Vodafone Cash',
+    vodafone_cash: 'Vodafone Cash',
+    vodafonecash: 'Vodafone Cash',
+    airteltigo: 'AirtelTigo Money',
+    airteltigo_money: 'AirtelTigo Money',
+    mpesa: 'M-Pesa',
+    'm-pesa': 'M-Pesa',
+    m_pesa: 'M-Pesa',
+    bank_transfer: 'Bank Transfer',
+    banktransfer: 'Bank Transfer',
+    chipper: 'Chipper Cash',
+    chipper_cash: 'Chipper Cash',
+    opay: 'OPay',
+    palmpay: 'PalmPay',
+    kuda: 'Kuda Bank',
+    wave: 'Wave',
+    orange_money: 'Orange Money',
+    orangemoney: 'Orange Money',
+    telecel: 'Telecel Cash',
+  };
+
+  if (MAP[lower]) return MAP[lower];
+  if (lower.includes('mtn')) return 'MTN Mobile Money';
+  if (lower.includes('vodafone')) return 'Vodafone Cash';
+  if (lower.includes('airtel')) return 'AirtelTigo Money';
+  if (lower.includes('mpesa') || lower.includes('m-pesa')) return 'M-Pesa';
+  if (lower.includes('bank')) return 'Bank Transfer';
+
+  return str.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 function fmtLocal(cur, amount) {
@@ -56,7 +86,7 @@ function fmtLocal(cur, amount) {
 }
 
 function fmtBtc(amount, isUsdt) {
-  if (!amount || isNaN(parseFloat(amount))) return null;
+  if (!amount || isNaN(parseFloat(amount))) return isUsdt ? '0.00 USDT' : '0.000000 BTC';
   const num = parseFloat(amount);
   if (isUsdt) return `${num.toFixed(2)} USDT`;
   return `${num.toFixed(6)} BTC`;
@@ -187,34 +217,30 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
   const cfg = STATUS_CFG[trade.status] || STATUS_CFG.CREATED;
 
   const listingType = trade.listing?.listing_type || trade.listing_type || trade.trade_type || '';
-  const isUsdt       = listingType.includes('USDT') || (trade.crypto_currency || '').toUpperCase() === 'USDT';
+  const isUsdt       = listingType.includes('USDT') || (trade.crypto_currency || trade.currency || '').toUpperCase() === 'USDT' || (trade.amount_usdt && parseFloat(trade.amount_usdt) > 0);
   const assetTag     = isUsdt ? 'USDT' : 'BTC';
 
-  const rawCur   = trade.currency || trade.local_currency || trade.listing?.currency;
-  const cleanCur = (!rawCur || ['BTC','USDT','₿','₮','$'].includes(rawCur)) ? 'USD' : String(rawCur).toUpperCase();
+  const rawCur   = trade.fiat_currency
+    || trade.listing?.fiat_currency
+    || trade.local_currency
+    || (trade.currency && !['BTC','USDT','₿','₮','$'].includes(trade.currency) ? trade.currency : null)
+    || trade.listing?.currency
+    || 'GHS';
+  const cleanCur = String(rawCur).toUpperCase();
 
-  const payNum   = parseFloat(trade.amount_local || trade.amount_usd || trade.fiat_amount || 0);
-  let recvNum    = parseFloat(trade.amount_receive_usd || trade.receive_amount || 0);
+  const fiatNum   = parseFloat(trade.amount_local || trade.fiat_amount || trade.amount_fiat || trade.amount_usd || trade.amount || 0);
+  const cryptoNum = parseFloat(trade.amount_btc || trade.amount_usdt || trade.crypto_amount || trade.amount_crypto || trade.btc_amount || trade.usdt_amount || 0);
 
-  if (!recvNum || recvNum === payNum) {
-    const margin = parseFloat(trade.listing?.margin || 0);
-    if (margin !== 0) {
-      recvNum = payNum * (1 - (margin / 100));
-    } else {
-      recvNum = payNum * 0.95;
-    }
-  }
+  const fmtFiat   = `${fiatNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${cleanCur}`;
+  const fmtCrypto = fmtBtc(cryptoNum, isUsdt);
 
-  const fmtPay  = `${payNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${cleanCur}`;
-  const fmtRecv = `${recvNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${cleanCur}`;
-
-  const rawPm = trade.listing?.payment_method || trade.payment_method || 'Mobile Money';
+  const rawPm = trade.listing?.payment_method || trade.payment_method || trade.pay_method || 'Mobile Money';
   const pmName = formatPaymentMethod(rawPm);
 
   const payTitle   = isBuyer ? `Pay ${pmName}` : `Pay (${assetTag})`;
-  const payVal     = isBuyer ? fmtPay : fmtRecv;
+  const payVal     = isBuyer ? fmtFiat : fmtCrypto;
   const recvTitle  = isBuyer ? `Receive (${assetTag})` : `Receive ${pmName}`;
-  const recvVal    = isBuyer ? fmtRecv : fmtPay;
+  const recvVal    = isBuyer ? fmtCrypto : fmtFiat;
 
   const pos       = parseInt(cp.positive_feedback || 0);
   const neg       = parseInt(cp.negative_feedback || 0);
@@ -273,13 +299,13 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
 
         {/* Middle Row: Pay Amount & Receive Amount */}
         <div className="grid grid-cols-2 gap-4 py-2 border-t border-gray-100">
-          <div>
-            <span className="text-xs font-bold text-gray-500 block mb-0.5">{payTitle}</span>
-            <span className="text-lg font-black text-gray-900 block truncate">{payVal}</span>
+          <div className="min-w-0">
+            <span className="text-xs font-bold text-gray-500 block mb-0.5 whitespace-nowrap truncate">{payTitle}</span>
+            <span className="text-base sm:text-lg font-black text-gray-900 block truncate">{payVal}</span>
           </div>
-          <div className="text-right">
-            <span className="text-xs font-bold text-gray-500 block mb-0.5">{recvTitle}</span>
-            <span className="text-lg font-black text-gray-900 block truncate">{recvVal}</span>
+          <div className="text-right min-w-0">
+            <span className="text-xs font-bold text-gray-500 block mb-0.5 whitespace-nowrap truncate">{recvTitle}</span>
+            <span className="text-base sm:text-lg font-black text-gray-900 block truncate">{recvVal}</span>
           </div>
         </div>
 

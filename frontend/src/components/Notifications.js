@@ -89,6 +89,47 @@ export function resolveCountryCode(entity) {
 
 
 
+export function formatPaymentMethod(pm) {
+  if (!pm) return 'Payment Method';
+  const str = String(pm).trim();
+  const lower = str.toLowerCase();
+
+  const MAP = {
+    mtn_momo: 'MTN Mobile Money',
+    mtmmomo: 'MTN Mobile Money',
+    mtn_mobile_money: 'MTN Mobile Money',
+    mtn: 'MTN Mobile Money',
+    vodafone: 'Vodafone Cash',
+    vodafone_cash: 'Vodafone Cash',
+    vodafonecash: 'Vodafone Cash',
+    airteltigo: 'AirtelTigo Money',
+    airteltigo_money: 'AirtelTigo Money',
+    mpesa: 'M-Pesa',
+    'm-pesa': 'M-Pesa',
+    m_pesa: 'M-Pesa',
+    bank_transfer: 'Bank Transfer',
+    banktransfer: 'Bank Transfer',
+    chipper: 'Chipper Cash',
+    chipper_cash: 'Chipper Cash',
+    opay: 'OPay',
+    palmpay: 'PalmPay',
+    kuda: 'Kuda Bank',
+    wave: 'Wave',
+    orange_money: 'Orange Money',
+    orangemoney: 'Orange Money',
+    telecel: 'Telecel Cash',
+  };
+
+  if (MAP[lower]) return MAP[lower];
+  if (lower.includes('mtn')) return 'MTN Mobile Money';
+  if (lower.includes('vodafone')) return 'Vodafone Cash';
+  if (lower.includes('airtel')) return 'AirtelTigo Money';
+  if (lower.includes('mpesa') || lower.includes('m-pesa')) return 'M-Pesa';
+  if (lower.includes('bank')) return 'Bank Transfer';
+
+  return str.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 const fmt    = n => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(n || 0);
 const fmtBtc = n => parseFloat(n || 0).toFixed(6);
 
@@ -403,9 +444,10 @@ function TradeNotifCard({ n, trade, userId, onNavigate, isChat = false }) {
   const btcRaw   = parseFloat(trade.amount_btc || 0);
   const btcStr   = btcRaw.toFixed(8);
   const gcBrand  = resolveGiftCardBrand(n, trade);
-  const pm       = (gcBrand && gcBrand.toLowerCase() !== 'bitcoin' && gcBrand.toLowerCase() !== 'gift card')
+  const rawPm    = (gcBrand && gcBrand.toLowerCase() !== 'bitcoin' && gcBrand.toLowerCase() !== 'gift card')
     ? gcBrand
     : (trade.payment_method && trade.payment_method !== 'Gift Card' ? trade.payment_method : (gcBrand || 'Gift Card'));
+  const pm       = formatPaymentMethod(rawPm);
   const st         = (trade.status || '').toUpperCase();
   const status     = getStatusStyle(st, trade.cancel_reason);
   const dateStr    = tradeTimeStr(trade.created_at || n.created_at);
@@ -664,9 +706,10 @@ function BasicCard({ n, userId, onNavigate }) {
     // Only trust the "via …" capture if it looks like a real method/brand —
     // never a currency amount like "10 USD" or "kr50 DKK"
     const pmViaOk = pmViaRaw && isSaneBrandText(pmViaRaw);
-    const parsedPm = (basicGcBrand && basicGcBrand.toLowerCase() !== 'bitcoin' && basicGcBrand.toLowerCase() !== 'gift card')
+    const rawParsedPm = (basicGcBrand && basicGcBrand.toLowerCase() !== 'bitcoin' && basicGcBrand.toLowerCase() !== 'gift card')
       ? basicGcBrand
       : (n.payment_method && n.payment_method !== 'Gift Card' ? n.payment_method : (pmViaOk ? pmViaRaw : (basicGcBrand || 'Gift Card')));
+    const parsedPm = formatPaymentMethod(rawParsedPm);
 
     // BTC amount (₿ prefix in message)
     const btcM = msg.match(/[₿]([\d.]+)/);
