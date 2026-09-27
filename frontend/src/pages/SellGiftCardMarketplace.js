@@ -1115,7 +1115,7 @@ export default function SellGiftCardMarketplace({ user }) {
   // this windows the display rather than the network request).
   const [visibleCount, setVisibleCount] = useState(24);
   const [btcPrice, setBtcPrice] = useState(68000);
-  const [selCurrency, setSelCurrency] = useState(GC_FILTER_CURRENCIES[0]);
+  const [selCurrency, setSelCurrency] = useState(GC_FILTER_CURRENCIES.find(c => c.code === 'USD') || GC_FILTER_CURRENCIES[0]);
   const [selBrand, setSelBrand] = useState('All Brands');
   const [selCountry, setSelCountry] = useState(COUNTRIES[0]);
   const [amountInput, setAmountInput] = useState('');
