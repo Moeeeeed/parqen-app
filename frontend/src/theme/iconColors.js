@@ -26,6 +26,7 @@ const ACCENT_BY_LABEL = {
   'p2p trading': BRAND_ORANGE,
   'trades': BRAND_ORANGE,
   'trade insights': BRAND_ORANGE,
+  'trade': BRAND_ORANGE,
   // Wallet / money movement → green family
   'wallet': BRAND_GREEN,
   'receive': BRAND_GREEN,
@@ -33,6 +34,8 @@ const ACCENT_BY_LABEL = {
   'transfer': BRAND_GREEN,
   'swap': BRAND_GREEN,
   'launch hub': BRAND_GREEN,
+  'main': BRAND_GREEN,
+  'home': BRAND_GREEN,
   'payment accounts': FOREST,
   // Rewards / growth → gold & amber
   'medals': BRAND_ORANGE,
@@ -47,6 +50,7 @@ const ACCENT_BY_LABEL = {
   'contact support': BLUE,
   'import feedback': BLUE,
   'status': BLUE,
+  'support': BLUE,
   // Account & security → indigo/purple
   'account settings': INDIGO,
   'devices': INDIGO,

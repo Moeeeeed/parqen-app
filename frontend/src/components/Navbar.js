@@ -11,6 +11,7 @@ import {
   Menu, Search, X, Home, ArrowRightLeft, Globe, Award,
   HelpCircle, MessageCircle, CreditCard, Users,
 } from 'lucide-react';
+import iconColorFor from '../theme/iconColors';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -25,6 +26,20 @@ const C = {
 
 const fmt    = (n, d = 2) => new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: d }).format(n || 0);
 const fmtBtc = (n)        => parseFloat(n || 0).toFixed(4);
+
+// Colored icon badge for the mobile hamburger menu — reuses the same brand
+// palette as the dashboard icon tiles so both surfaces feel consistent.
+function MenuIconBadge({ label, icon: Icon, size = 18, badgeSize = 34 }) {
+  const color = iconColorFor(label);
+  return (
+    <div style={{
+      width: badgeSize, height: badgeSize, borderRadius: '50%', background: `${color}18`,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    }}>
+      <Icon size={size} color={color} />
+    </div>
+  );
+}
 
 export default function Navbar({ user, onLogout }) {
   const navigate   = useNavigate();
@@ -598,11 +613,21 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
 
             {/* Menu items */}
             <div style={{ flex: 1, overflowY: 'auto' }}>
-              {/* Main */}
+              {/* Home */}
               <Link to="/dashboard" onClick={() => setMobileMenuOpen(false)}
                 style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', textDecoration: 'none', borderBottom: `1px solid ${C.g100}` }}>
-                <Home size={18} color={C.g500} />
-                <span style={{ fontSize: 14, fontWeight: 700, color: C.g800 }}>Main</span>
+                <MenuIconBadge label="home" icon={Home} />
+                <span style={{ fontSize: 14, fontWeight: 700, color: C.g800 }}>Home</span>
+              </Link>
+
+              {/* My offers — promoted to a top-level, one-tap item */}
+              <Link to="/my-listings" onClick={() => setMobileMenuOpen(false)}
+                style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', textDecoration: 'none', borderBottom: `1px solid ${C.g100}` }}>
+                <MenuIconBadge label="my offers" icon={Tag} />
+                <div>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: C.g800 }}>My offers</span>
+                  <p style={{ margin: '2px 0 0', fontSize: 11, color: C.g400 }}>Check and manage your offers</p>
+                </div>
               </Link>
 
               {/* Trade — expandable */}
@@ -610,14 +635,14 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
                 <button
                   onClick={() => setExpandedSections(p => ({ ...p, trade: !p.trade }))}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', background: 'none', border: 'none', borderBottom: `1px solid ${C.g100}`, cursor: 'pointer', textAlign: 'left' }}>
-                  <TrendingUp size={18} color={C.g500} />
+                  <MenuIconBadge label="trade" icon={TrendingUp} />
                   <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: C.g800 }}>Trade</span>
                   <ChevronDown size={16} color={C.g400} style={{ transform: expandedSections.trade ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                 </button>
                 {expandedSections.trade && (
                   <div style={{ background: C.g50 }}>
                     <Link to="/buy-bitcoin" onClick={() => setMobileMenuOpen(false)}
-                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px 12px 48px', textDecoration: 'none', borderBottom: `1px solid ${C.g100}` }}>
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px 12px 48px', textDecoration: 'none' }}>
                       <ShoppingCart size={16} color={C.green} />
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -625,14 +650,6 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
                           <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 99, background: '#DCFCE7', color: '#16A34A' }}>LOW FEES</span>
                         </div>
                         <p style={{ margin: '2px 0 0', fontSize: 11, color: C.g400 }}>Trade OTC bank and Mobile money</p>
-                      </div>
-                    </Link>
-                    <Link to="/my-listings" onClick={() => setMobileMenuOpen(false)}
-                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px 12px 48px', textDecoration: 'none' }}>
-                      <Tag size={16} color={C.g500} />
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: C.g800 }}>My offers</span>
-                        <p style={{ margin: '2px 0 0', fontSize: 11, color: C.g400 }}>View your created offers</p>
                       </div>
                     </Link>
                   </div>
@@ -644,7 +661,7 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
                 <button
                   onClick={() => setExpandedSections(p => ({ ...p, wallet: !p.wallet }))}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', background: 'none', border: 'none', borderBottom: `1px solid ${C.g100}`, cursor: 'pointer', textAlign: 'left' }}>
-                  <Wallet size={18} color={C.g500} />
+                  <MenuIconBadge label="wallet" icon={Wallet} />
                   <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: C.g800 }}>Wallet</span>
                   <ChevronDown size={16} color={C.g400} style={{ transform: expandedSections.wallet ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                 </button>
@@ -685,7 +702,7 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
               {/* Affiliate program */}
               <Link to="/partner-program" onClick={() => setMobileMenuOpen(false)}
                 style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', textDecoration: 'none', borderBottom: `1px solid ${C.g100}` }}>
-                <Users size={18} color={C.g500} />
+                <MenuIconBadge label="affiliate program" icon={Users} />
                 <div>
                   <span style={{ fontSize: 14, fontWeight: 700, color: C.g800 }}>Affiliate Program</span>
                   <span style={{
@@ -701,7 +718,7 @@ useEffect(() => { setLocalUser(user?.id ? user : null); }, [user?.id]);
                 <button
                   onClick={() => setExpandedSections(p => ({ ...p, support: !p.support }))}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', background: 'none', border: 'none', borderBottom: `1px solid ${C.g100}`, cursor: 'pointer', textAlign: 'left' }}>
-                  <HelpCircle size={18} color={C.g500} />
+                  <MenuIconBadge label="support" icon={HelpCircle} />
                   <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: C.g800 }}>Support</span>
                   <ChevronDown size={16} color={C.g400} style={{ transform: expandedSections.support ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                 </button>
