@@ -36,9 +36,11 @@ async function recordForTrade(tradeData) {
     const usd = Number(amount_usd);
     if (!(usd > 0)) return;
 
+    let listingType = '';
     if (listingId) {
       const { data: listing } = await supabaseAdmin.from('listings').select('listing_type').eq('id', listingId).maybeSingle();
-      if (listing && String(listing.listing_type || '').toUpperCase().includes('GIFT_CARD')) return;
+      listingType = String(listing?.listing_type || '').toUpperCase();
+      if (listingType.includes('GIFT_CARD')) return;
     }
 
     const participantIds = [buyerId, sellerId].filter(Boolean);
@@ -60,7 +62,10 @@ async function recordForTrade(tradeData) {
 
     // tradeEscrowService is the single source of truth for the platform fee rate
     // (see affiliateSummaryService's LEVELS comment) — never a second hardcoded copy.
-    const feeRate = require('./tradeEscrowService').feeRateFor(false); // gift-card trades already excluded above
+    // Gift-card trades already excluded above; listingType picks between the
+    // Buy Bitcoin page rate (SELL listings, 2%) and the Sell Bitcoin page rate
+    // (BUY listings, 3%) so the commission always matches what was really charged.
+    const feeRate = require('./tradeEscrowService').feeRateFor(listingType);
     const platformFeeUsd = Number((usd * feeRate).toFixed(2));
     if (platformFeeUsd <= 0) return;
 

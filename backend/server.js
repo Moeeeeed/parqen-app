@@ -1147,12 +1147,13 @@ function encryptCode(code, key = 'mock-encryption-key') {
 
 // Platform fee for a crypto P2P trade — a rough pre-escrow estimate; the
 // authoritative per-trade fee is written by lockFundsInEscrow. Delegates to
-// tradeEscrowService.feeRateFor() (the single source of truth for both rates)
+// tradeEscrowService.feeRateFor() (the single source of truth for all rates)
 // instead of hardcoding its own copy — two independent copies drifting out of
 // sync is exactly what caused escrow release to briefly charge 2%/3% against
-// trades quoted 0.5%/1% on 2026-09-11/12.
-function calculateFee(btcAmount, isGiftCard = false) {
-  return (parseFloat(btcAmount) * tradeEscrowService.feeRateFor(isGiftCard)).toFixed(8);
+// trades quoted 0.5%/1% on 2026-09-11/12. `listingType` is the raw
+// listing_type string ('SELL_BITCOIN', 'BUY_USDT', 'SELL_GIFT_CARD', …).
+function calculateFee(btcAmount, listingType = false) {
+  return (parseFloat(btcAmount) * tradeEscrowService.feeRateFor(listingType)).toFixed(8);
 }
 
 // PUBLIC-facing trade-count display override. The trades themselves are real and
@@ -9053,10 +9054,10 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
     // The trade OPENER always brings what the creator wants (cash, MTN, or a gift card).
     // Backend infers roles from listing_type — never trusts frontend trade_type.
     // Computed here (moved up from its original spot below) so the fee estimate
-    // right below uses the correct gift-card-aware rate instead of always
+    // right below uses the correct listing-type-aware rate instead of always
     // assuming the plain-BTC rate.
     const listingTypeUpper = (listing.listing_type || '').toUpperCase();
-    const fee = calculateFee(parsedAmountBtc, listingTypeUpper.includes('GIFT_CARD'));
+    const fee = calculateFee(parsedAmountBtc, listingTypeUpper);
 
     let buyerId, sellerId, btcProviderId, resolvedType;
 
@@ -9188,12 +9189,11 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
     // lockFundsInEscrow re-derives and overwrites platform_fee_btc/usdt, but
     // platform_fee_usd is set here and never touched again — so it must use the
     // right rate too. Pulled from tradeEscrowService.feeRateFor() (the single
-    // source of truth for both rates) rather than a separate hardcoded copy —
+    // source of truth for all rates) rather than a separate hardcoded copy —
     // two independent copies drifting out of sync is exactly what caused
     // escrow release to briefly charge 2%/3% against trades quoted 0.5%/1%
     // on 2026-09-11/12.
-    const isGiftCardTrade = listingTypeUpper.includes('GIFT_CARD');
-    const tradeFeeRate = tradeEscrowService.feeRateFor(isGiftCardTrade);
+    const tradeFeeRate = tradeEscrowService.feeRateFor(listingTypeUpper);
     const verifiedFee = parseFloat((verifiedAmountBtc * tradeFeeRate).toFixed(8));
     const tradeRef = 'PRAQ-' + require('crypto').randomBytes(4).toString('hex').toUpperCase();
 
@@ -9211,7 +9211,7 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
     const availableBtc = isUsdtTrade
       ? parseFloat(providerWallet?.balance_usdt || 0)
       : parseFloat(providerWallet?.balance_btc || 0);
-    const requiredProviderBtc = await tradeEscrowService.requiredProviderBalance(verifiedAmountBtc, isGiftCardTrade);
+    const requiredProviderBtc = await tradeEscrowService.requiredProviderBalance(verifiedAmountBtc, listingTypeUpper);
     if (availableBtc < requiredProviderBtc) {
       const isOwnBalance = btcProviderId === req.userId;
       // Auto-pause the offer if the balance problem is on the offer creator's side

@@ -17,8 +17,14 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
 );
 
-const FEE_RATE            = 0.02;   // crypto P2P trades (Buy/Sell BTC & USDT) — 2%
-const GIFT_CARD_FEE_RATE  = 0.03;   // gift-card trades — 3%
+// Trading fee, by which page/listing type the trade comes from — set 2026-09-27:
+//   Buy Bitcoin page  (SELL/SELL_BITCOIN/SELL_USDT listings) -> FEE_RATE (2%)
+//   Sell Bitcoin page (BUY/BUY_BITCOIN/BUY_USDT listings)    -> BUY_LISTING_FEE_RATE (3%) —
+//     this page carries ~97% of real trade volume, so this is the highest-impact rate here.
+//   Gift card trades (any *_GIFT_CARD listing)                -> GIFT_CARD_FEE_RATE (4%)
+const FEE_RATE            = 0.02;   // Buy Bitcoin page (SELL listings) — 2%
+const BUY_LISTING_FEE_RATE = 0.03;  // Sell Bitcoin page (BUY listings) — 3%
+const GIFT_CARD_FEE_RATE  = 0.04;   // gift-card trades — 4%
 const COMPANY_WALLET_ID   = '14762cd0-d3b2-474f-acab-fe0071961e9a';
 const COMPANY_BTC_ADDRESS = 'bc1qd8z3zdn2e3eul6y8nmcyjvgle3yzv8ttvsjp49';
 
@@ -226,27 +232,37 @@ class TradeEscrowService {
     return FEE_MODEL === 'additive' && await this._feeModelColumnReady();
   }
 
-  feeRateFor(isGiftCard) {
-    return isGiftCard ? GIFT_CARD_FEE_RATE : FEE_RATE;
+  // Accepts either a raw listing_type string ('SELL', 'BUY_GIFT_CARD', etc.) or,
+  // for backward compatibility, the old boolean (true = gift card, false = the
+  // plain 2% rate) — some callers (affiliateSummaryService's public config
+  // display) aren't tied to a real trade and still just want a representative
+  // default, so `false`/`undefined`/an unrecognized string all fall through to
+  // FEE_RATE.
+  feeRateFor(listingType) {
+    if (listingType === true) return GIFT_CARD_FEE_RATE;
+    const t = String(listingType || '').toUpperCase();
+    if (t.includes('GIFT_CARD')) return GIFT_CARD_FEE_RATE;
+    if (t.startsWith('BUY')) return BUY_LISTING_FEE_RATE;
+    return FEE_RATE;
   }
 
-  // Look up whether a trade's listing is a gift-card listing (fee is 3% vs 2%).
-  async _isGiftCardTrade(tradeId) {
+  // Look up a trade's listing_type ('SELL_BITCOIN', 'BUY_USDT', 'SELL_GIFT_CARD', …).
+  async _listingTypeForTrade(tradeId) {
     const { data: t } = await supabaseAdmin
       .from('trades').select('listing_id').eq('id', tradeId).maybeSingle();
-    if (!t?.listing_id) return false;
+    if (!t?.listing_id) return '';
     const { data: l } = await supabaseAdmin
       .from('listings').select('listing_type').eq('id', t.listing_id).maybeSingle();
-    return String(l?.listing_type || '').toUpperCase().includes('GIFT_CARD');
+    return String(l?.listing_type || '').toUpperCase();
   }
 
   // What a BTC provider must have available to open a trade of `amount` in the
   // listing's asset. Used by the pre-check in server.js POST /api/trades so it
   // stays in lock-step with lockFundsInEscrow across the migration window.
-  async requiredProviderBalance(amount, isGiftCard = false) {
+  async requiredProviderBalance(amount, listingType = false) {
     const a = parseFloat(amount) || 0;
     if (!(await this._additiveActive())) return a;
-    return a * (1 + this.feeRateFor(isGiftCard));
+    return a * (1 + this.feeRateFor(listingType));
   }
 
   // ── Helper: send in-app notification ───────────────────────────────────────
@@ -325,8 +341,8 @@ class TradeEscrowService {
     // inclusive: provider locks `amount`; receiver gets (amount - fee).
     //            reserve = amount. (Legacy — also the fallback until the
     //            trades.fee_model column exists.)
-    const isGiftCard = await this._isGiftCardTrade(tradeId);
-    const feeRate    = this.feeRateFor(isGiftCard);
+    const listingType = await this._listingTypeForTrade(tradeId);
+    const feeRate      = this.feeRateFor(listingType);
     const additive   = await this._additiveActive();
     const feeAmount  = parseFloat((parsedAmount * feeRate).toFixed(dec));
     const reserve    = additive
@@ -664,7 +680,7 @@ class TradeEscrowService {
     const amount      = isUsdt
       ? parseFloat(tradeData.amount_usdt || tradeData.escrow_amount || 0)
       : parseFloat(tradeData.amount_btc);
-    const feeRate     = this.feeRateFor(isGiftCardTrade); // 2% / 3% — same rate reserved at lock time
+    const feeRate     = this.feeRateFor(listingType); // 2% / 3% / 4% — same rate reserved at lock time
     const platformFee = parseFloat((amount * feeRate).toFixed(isUsdt ? 6 : 8));
 
     // Fee model was pinned at lock time. additive → the provider locked
@@ -683,7 +699,7 @@ class TradeEscrowService {
     // silently release funds with a missing/malformed company fee (e.g. NaN
     // propagating from a corrupt `amount`, or a future edit changing feeRate
     // to something outside the two approved rates).
-    const expectedFeeRate = this.feeRateFor(isGiftCardTrade);
+    const expectedFeeRate = this.feeRateFor(listingType);
     if (!Number.isFinite(platformFee) || platformFee < 0 || feeRate !== expectedFeeRate) {
       throw new Error(`Fee validation failed before release — trade ${tradeId.slice(0, 8)}: platformFee=${platformFee}, feeRate=${feeRate}, expected=${expectedFeeRate}. Release blocked.`);
     }
