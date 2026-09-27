@@ -721,7 +721,7 @@ function App() {
                     <Route path="/devices" element={user ? <Navigate to="/settings?tab=security" replace /> : <Navigate to="/login" />} />
                     <Route path="/activity-log" element={user ? <ActivityLog /> : <Navigate to="/login" />} />
                     <Route path="/security" element={user ? <Navigate to="/settings?tab=security" replace /> : <Navigate to="/login" />} />
-                    <Route path="/discord" element={user ? <ExternalRedirect to="https://discord.gg/V6zCZxfdy" /> : <Navigate to="/login" />} />
+                    <Route path="/discord" element={user ? <ExternalRedirect to="https://discord.com/invite/V6zCZxfdy" /> : <Navigate to="/login" />} />
                     <Route path="/status" element={<StatusPage />} />
                     <Route path="/invite" element={user ? <Navigate to="/partner-program" replace /> : <Navigate to="/login" />} />
                     <Route path="/swap" element={user ? <PlaceholderPage title="Swap" description="Swap between cryptocurrencies instantly at competitive rates. Coming soon." icon={ArrowLeftRight} overrideColor="#1B4332" /> : <Navigate to="/login" />} />
