@@ -269,11 +269,20 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
     || 'USD';
   const cleanCur = String(rawCur).toUpperCase();
 
-  const fiatNum   = parseFloat(trade.amount_local || trade.fiat_amount || trade.amount_fiat || trade.amount_usd || trade.amount || 0);
-  const cryptoNum = parseFloat(trade.amount_btc || trade.amount_usdt || trade.crypto_amount || trade.amount_crypto || trade.btc_amount || trade.usdt_amount || 0);
+  const fiatPayNum  = parseFloat(trade.amount_local || trade.fiat_amount || trade.amount_fiat || trade.amount_usd || trade.amount || 0);
+  let fiatRecvNum   = parseFloat(trade.amount_receive_usd || trade.receive_amount || 0);
 
-  const fmtFiat   = `${fiatNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${cleanCur}`;
-  const fmtCrypto = fmtBtc(cryptoNum, isUsdt);
+  if (!fiatRecvNum || fiatRecvNum === fiatPayNum) {
+    const margin = parseFloat(trade.listing?.margin || 0);
+    if (margin !== 0) {
+      fiatRecvNum = fiatPayNum * (1 - (margin / 100));
+    } else {
+      fiatRecvNum = fiatPayNum * 0.95;
+    }
+  }
+
+  const fmtPayFiat  = `${fiatPayNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${cleanCur}`;
+  const fmtRecvFiat = `${fiatRecvNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${cleanCur}`;
 
   const rawPm = trade.listing?.payment_method || trade.payment_method || trade.pay_method || 'Payment Method';
   const pmName = formatPaymentMethod(rawPm);
@@ -286,20 +295,18 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
     const isBuyGcListing = listingType.toUpperCase().includes('BUY_GIFT_CARD');
     if (isBuyGcListing) {
       payTitle  = isBuyer ? `Pay ${brandName}` : `Pay ${assetTag}`;
-      payVal    = isBuyer ? fmtFiat : fmtCrypto;
       recvTitle = isBuyer ? `Receive ${assetTag}` : `Receive ${brandName}`;
-      recvVal   = isBuyer ? fmtCrypto : fmtFiat;
     } else {
       payTitle  = isBuyer ? `Pay ${assetTag}` : `Pay ${brandName}`;
-      payVal    = isBuyer ? fmtCrypto : fmtFiat;
       recvTitle = isBuyer ? `Receive ${brandName}` : `Receive ${assetTag}`;
-      recvVal   = isBuyer ? fmtFiat : fmtCrypto;
     }
+    payVal  = isBuyer ? fmtPayFiat : fmtRecvFiat;
+    recvVal = isBuyer ? fmtRecvFiat : fmtPayFiat;
   } else {
     payTitle  = isBuyer ? `Pay ${pmName}` : `Pay ${assetTag}`;
-    payVal    = isBuyer ? fmtFiat : fmtCrypto;
     recvTitle = isBuyer ? `Receive ${assetTag}` : `Receive ${pmName}`;
-    recvVal   = isBuyer ? fmtCrypto : fmtFiat;
+    payVal  = isBuyer ? fmtPayFiat : fmtRecvFiat;
+    recvVal = isBuyer ? fmtRecvFiat : fmtPayFiat;
   }
 
   const pos         = parseInt(cp.positive_feedback || 0);
