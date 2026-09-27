@@ -31,7 +31,7 @@ export const VISITABLE_ROUTES = [
   { route: '/dashboard',         label: 'Launch hub',        icon: 'Bitcoin' },
   { route: '/my-trades',        label: 'Trades',            icon: 'ArrowLeftRight' },
   // Rewards hub
-  { route: '/partner-program',   label: 'Partner program',   icon: 'Award' },
+  { route: '/partner-program',   label: 'Affiliate program', icon: 'Award' },
   // Placeholder pages
   { route: '/send',              label: 'Send',              icon: 'Send' },
   { route: '/receive',           label: 'Receive',           icon: 'ArrowRight' },

@@ -192,11 +192,19 @@ export default function Dashboard({ user }) {
   // ── Wallet balance + BTC price ───────────────────────────────────────────────
   const [walletBalance, setWalletBalance] = useState(0);
   const [refreshedBalance, setRefreshedBalance] = useState(() => walletBalance);
+  const [usdtBalance, setUsdtBalance] = useState(0);
   const [showBalance, setShowBalance] = useState(true);
   const [btcPrice, setBtcPrice] = useState(0);
-  const [ghsRate, setGhsRate] = useState(0);
+  const [ghsRate, setGhsRate] = useState(0); // BTC→GHS spot rate (Coinbase has no direct USD→GHS pair)
   const [loading, setLoading] = useState(true);
-  const ghsBalance = walletBalance * ghsRate;
+  // Total portfolio value in USD — BTC valued at the live price PLUS USDT
+  // (≈$1 each, same convention as the Wallet page) — so USDT holdings are
+  // never invisible from the dashboard summary.
+  const totalUsd = (walletBalance * btcPrice) + usdtBalance;
+  // ghsRate is per-BTC; derive a per-USD rate from it (ghsRate / btcPrice) so the
+  // GHS figure reflects the COMBINED BTC+USDT total, not BTC alone.
+  const usdToGhsRate = btcPrice > 0 ? (ghsRate / btcPrice) : 0;
+  const ghsBalance = totalUsd * usdToGhsRate;
 
   const fetchWalletBalance = async () => {
     try {
@@ -209,6 +217,20 @@ export default function Dashboard({ user }) {
       setWalletBalance(bal);
       setRefreshedBalance(bal);
       localStorage.setItem('praqen_btc_balance', bal.toString());
+      return bal;
+    } catch { /* silent */ }
+    return null;
+  };
+
+  const fetchUsdtBalance = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return null;
+      const res = await axios.get(`${API_URL}/wallet/usdt`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const bal = parseFloat(res.data?.balance_usdt || 0);
+      setUsdtBalance(bal);
       return bal;
     } catch { /* silent */ }
     return null;
@@ -240,9 +262,7 @@ export default function Dashboard({ user }) {
   useEffect(() => {
     if (!user) return;
     const init = async () => {
-      await fetchWalletBalance();
-      await fetchBtcPrice();
-      await fetchGhsRate();
+      await Promise.all([fetchWalletBalance(), fetchUsdtBalance(), fetchBtcPrice(), fetchGhsRate()]);
       setLoading(false);
     };
     init();
@@ -278,6 +298,8 @@ export default function Dashboard({ user }) {
         <DashboardDesktop
           user={displayUser}
           walletBalance={walletBalance}
+          usdtBalance={usdtBalance}
+          btcPrice={btcPrice}
           ghsRate={ghsRate}
           showBalance={showBalance}
           onToggleBalance={() => setShowBalance(!showBalance)}
@@ -314,6 +336,11 @@ export default function Dashboard({ user }) {
                 <p className="text-2xl font-black" style={{ color: C.forest }}>
                   {showBalance ? `GHS ₵${fmt(ghsBalance, 2)}` : '******' }
                 </p>
+                {showBalance && (
+                  <p className="text-xs font-bold mt-0.5" style={{ color: C.g500 }}>
+                    ≈ ${fmt(totalUsd, 2)} USD
+                  </p>
+                )}
               </div>
               <button
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-white text-xs font-black border"
@@ -546,7 +573,7 @@ export default function Dashboard({ user }) {
             <div className="flex flex-col items-center gap-3">
               <Tile
                 icon={Award}
-                label="Partner program"
+                label="Affiliate program"
                 route="/partner-program"
                 onClick={() => navigate('/partner-program')}
               />

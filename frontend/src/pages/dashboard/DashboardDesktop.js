@@ -104,6 +104,8 @@ const PRAQUE_NEWS = [
 export default function DashboardDesktop({
   user,
   walletBalance,
+  usdtBalance,
+  btcPrice,
   ghsRate,
   showBalance,
   onToggleBalance,
@@ -115,7 +117,11 @@ export default function DashboardDesktop({
 
   const [activeTab, setActiveTab] = useState('/dashboard');
 
-  const ghsBalance = walletBalance * ghsRate;
+  // Combined BTC + USDT value so USDT holdings are never invisible from the
+  // dashboard summary — same convention as the mobile layout and Wallet page.
+  const totalUsd = (walletBalance * (btcPrice || 0)) + (usdtBalance || 0);
+  const usdToGhsRate = btcPrice > 0 ? (ghsRate / btcPrice) : 0;
+  const ghsBalance = totalUsd * usdToGhsRate;
   const go = (route) => { if (route) navigate(route); };
 
   const TABS = [
@@ -196,7 +202,7 @@ export default function DashboardDesktop({
           <Section divider={false}>
             <IconGrid
               title="Rewards hub"
-              items={[{ label: 'Partner program', icon: Award, route: '/partner-program' }]}
+              items={[{ label: 'Affiliate program', icon: Award, route: '/partner-program' }]}
               onItemClick={({ route }) => go(route)}
             />
           </Section>
@@ -210,6 +216,7 @@ export default function DashboardDesktop({
       >
         <WalletBalanceCard
           ghsBalance={ghsBalance}
+          totalUsd={totalUsd}
           showBalance={showBalance}
           onToggleBalance={onToggleBalance}
         />

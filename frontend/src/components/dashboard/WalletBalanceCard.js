@@ -27,7 +27,7 @@ const MENU_ITEMS = [
  *  - three-dot (⋯) menu at top-right opening a dropdown with
  *    Receive / Send / Transfer / Swap (no Visa card)
  */
-export default function WalletBalanceCard({ ghsBalance, showBalance, onToggleBalance }) {
+export default function WalletBalanceCard({ ghsBalance, totalUsd, showBalance, onToggleBalance }) {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -123,6 +123,11 @@ export default function WalletBalanceCard({ ghsBalance, showBalance, onToggleBal
         </p>
         <Info size={13} style={{ color: C.g400 }} />
       </div>
+      {showBalance && (
+        <p className="text-xs font-bold mt-1" style={{ color: C.g500 }}>
+          ≈ ${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalUsd || 0)} USD
+        </p>
+      )}
     </div>
   );
 }
