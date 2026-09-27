@@ -6594,7 +6594,7 @@ app.get('/api/users/:userId/shared-trades', verifyToken, async (req, res) => {
       .limit(100);
 
     if (error) return res.status(400).json({ error: error.message });
-    res.json({ trades: data || [], total: (data || []).length });
+    res.json({ trades: capTradeAvatars(data), total: (data || []).length });
   } catch (err) {
     console.error('[shared-trades] error:', err.message);
     res.status(500).json({ error: 'Failed to load trade history.' });
@@ -6726,7 +6726,7 @@ app.get('/api/users/:userId/reviews', async (req, res) => {
         reviewer: {
           id: r.reviewer_id,
           username: profile.username || null,
-          avatar_url: profile.avatar_url || null,
+          avatar_url: capAvatar(profile.avatar_url),
           country: profile.country || null,
         },
         trade: {
@@ -11057,12 +11057,12 @@ app.get('/api/notifications', verifyToken, async (req, res) => {
       const { data: trades, error: tradeErr } = await supabaseAdmin
         .from('trades').select(tradeSelect).in('id', uniqUUIDs);
       if (tradeErr) console.error('[Notifications] trade UUID fetch error:', tradeErr.message);
-      (trades || []).forEach(t => { tradeMap[t.id] = t; });
+      capTradeAvatars(trades).forEach(t => { tradeMap[t.id] = t; });
     }
     if (uniqRefs.length > 0) {
       const { data: trades2 } = await supabaseAdmin
         .from('trades').select(tradeSelect).in('trade_ref', uniqRefs);
-      (trades2 || []).forEach(t => { tradeMap[t.id] = t; if (t.trade_ref) tradeMap[t.trade_ref] = t; });
+      capTradeAvatars(trades2).forEach(t => { tradeMap[t.id] = t; if (t.trade_ref) tradeMap[t.trade_ref] = t; });
     }
 
     // Extract unique actor IDs — from /profile/<uuid> URLs AND data.actor_id field
@@ -11078,7 +11078,7 @@ app.get('/api/notifications', verifyToken, async (req, res) => {
         .from('users')
         .select('id, username, full_name, avatar_url, country')
         .in('id', actorIds);
-      (actors || []).forEach(u => { actorMap[u.id] = u; });
+      (actors || []).forEach(u => { actorMap[u.id] = { ...u, avatar_url: capAvatar(u.avatar_url) }; });
     }
 
     const enhanced = (notifs || []).map(n => {
