@@ -3199,7 +3199,16 @@ export default function WalletPage({ user }) {
     init();
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Auto-poll every 15 s while the tab is visible ─────────────────────────
+  // ── Auto-poll every 60 s while the tab is visible ─────────────────────────
+  // This is a backstop only — the Supabase Realtime subscription right below
+  // already delivers instant updates (and its own loadTradeParties() refresh)
+  // the moment a real wallet event happens, so this poll no longer needs to
+  // re-fetch /api/my-trades on every tick just to keep counterparty names
+  // fresh: that was the single heaviest, most frequent payload on this page
+  // (up to 50 trades, each with full buyer+seller profile joins), re-sent
+  // every 15s even when nothing had changed. Slowed 15s -> 60s and dropped
+  // that second call for the same reason — bandwidth cost, not correctness;
+  // Realtime already covers the "something actually happened" case instantly.
   const prevBalRef = useRef(null);
   useEffect(() => {
     if (!user) return;
@@ -3225,12 +3234,8 @@ export default function WalletPage({ user }) {
         setLockedBtc(r.data.locked_btc || 0);
         setTransactions(r.data.transactions || []);
         if (r.data.btc_price && r.data.btc_price > 0) setBtcPrice(p => p > 0 ? p : r.data.btc_price);
-        // Keep the trade counterparty map fresh alongside the wallet
-        axios.get(`${API_URL}/my-trades?page=1&limit=50`, { headers: authH() })
-          .then(r2 => setTradeParties(buildTradePartyMap(r2.data.trades, user?.id)))
-          .catch(() => {});
       } catch { /* silent — avoid toast spam on network blip */ }
-    }, 15000);
+    }, 60000);
     return () => clearInterval(poll);
   }, [user]);
 
