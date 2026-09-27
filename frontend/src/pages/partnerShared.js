@@ -40,8 +40,8 @@ export function countryName(raw) {
 
 // r is a 0-1 fraction (0.10 = 10%) — display as a whole-number percent.
 export const pct = (r) => `${Math.round(r * 100)}%`;
-export const money = (v) => `$${v > 0 && v < 10 ? v.toFixed(2) : Math.round(v).toLocaleString()}`;
-export const usd = (n) => `${Math.round(n).toLocaleString()} USD`;
+export const money = (v) => { const n = Number(v) || 0; return `$${n > 0 && n < 10 ? n.toFixed(2) : Math.round(n).toLocaleString()}`; };
+export const usd = (n) => `${Math.round(Number(n) || 0).toLocaleString()} USD`;
 
 // Example monthly amount for a level: example volume × PRAQEN's fee rate ×
 // the affiliate's share of that fee. Only ever shown when payouts are on.
