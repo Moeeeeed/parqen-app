@@ -276,21 +276,14 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
   // Real numbers only — no guessing. fiatNum comes straight from the trade's own
   // fiat field; cryptoNum from its own BTC/USDT field. Never derive one from the
   // other (a margin-based guess here previously showed a fabricated number under
-  // a "Receive (BTC)"-style label — see commit 263d1dc).
-  const fiatPayNum  = parseFloat(trade.amount_local || trade.fiat_amount || trade.amount_fiat || trade.amount_usd || trade.amount || 0);
-  let fiatRecvNum   = parseFloat(trade.amount_receive_usd || trade.receive_amount || 0);
+  // a "Receive (BTC)"-style label — see commit 263d1dc, reverted and re-fixed
+  // twice since in PR #137 and #139 — this file keeps getting rebased from a
+  // stale local copy that predates the fix).
+  const fiatNum   = parseFloat(trade.amount_local || trade.fiat_amount || trade.amount_fiat || trade.amount_usd || trade.amount || 0);
+  const cryptoNum = parseFloat(trade.amount_btc || trade.amount_usdt || trade.crypto_amount || trade.amount_crypto || trade.btc_amount || trade.usdt_amount || 0);
 
-  if (!fiatRecvNum || fiatRecvNum === fiatPayNum) {
-    const margin = parseFloat(trade.listing?.margin || 0);
-    if (margin !== 0) {
-      fiatRecvNum = fiatPayNum * (1 - (margin / 100));
-    } else {
-      fiatRecvNum = fiatPayNum * 0.95;
-    }
-  }
-
-  const fmtPayFiat  = `${fiatPayNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${cleanCur}`;
-  const fmtRecvFiat = `${fiatRecvNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${cleanCur}`;
+  const fmtFiat   = `${fiatNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${cleanCur}`;
+  const fmtCrypto = fmtBtc(cryptoNum, isUsdt);
 
   const rawPm = trade.listing?.payment_method || trade.payment_method || trade.pay_method || 'Payment Method';
   const pmName = formatPaymentMethod(rawPm);
@@ -303,18 +296,20 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
     const isBuyGcListing = listingType.toUpperCase().includes('BUY_GIFT_CARD');
     if (isBuyGcListing) {
       payTitle  = isBuyer ? `Pay ${brandName}` : `Pay ${assetTag}`;
+      payVal    = isBuyer ? fmtFiat : fmtCrypto;
       recvTitle = isBuyer ? `Receive ${assetTag}` : `Receive ${brandName}`;
+      recvVal   = isBuyer ? fmtCrypto : fmtFiat;
     } else {
       payTitle  = isBuyer ? `Pay ${assetTag}` : `Pay ${brandName}`;
+      payVal    = isBuyer ? fmtCrypto : fmtFiat;
       recvTitle = isBuyer ? `Receive ${brandName}` : `Receive ${assetTag}`;
+      recvVal   = isBuyer ? fmtFiat : fmtCrypto;
     }
-    payVal  = isBuyer ? fmtPayFiat : fmtRecvFiat;
-    recvVal = isBuyer ? fmtRecvFiat : fmtPayFiat;
   } else {
     payTitle  = isBuyer ? `Pay ${pmName}` : `Pay ${assetTag}`;
+    payVal    = isBuyer ? fmtFiat : fmtCrypto;
     recvTitle = isBuyer ? `Receive ${assetTag}` : `Receive ${pmName}`;
-    payVal  = isBuyer ? fmtPayFiat : fmtRecvFiat;
-    recvVal = isBuyer ? fmtRecvFiat : fmtPayFiat;
+    recvVal   = isBuyer ? fmtCrypto : fmtFiat;
   }
 
   const pos         = parseInt(cp.positive_feedback || 0);
