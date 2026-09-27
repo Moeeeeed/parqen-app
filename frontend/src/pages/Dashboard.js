@@ -334,11 +334,11 @@ export default function Dashboard({ user }) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-2xl font-black" style={{ color: C.forest }}>
-                  {showBalance ? `GHS ₵${fmt(ghsBalance, 2)}` : '******' }
+                  {showBalance ? `$${fmt(totalUsd, 2)} USD` : '******' }
                 </p>
                 {showBalance && (
                   <p className="text-xs font-bold mt-0.5" style={{ color: C.g500 }}>
-                    ≈ ${fmt(totalUsd, 2)} USD
+                    ≈ GHS ₵{fmt(ghsBalance, 2)}
                   </p>
                 )}
               </div>

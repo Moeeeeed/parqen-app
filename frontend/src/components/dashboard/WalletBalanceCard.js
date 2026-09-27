@@ -119,13 +119,13 @@ export default function WalletBalanceCard({ ghsBalance, totalUsd, showBalance, o
       {/* Amount + info icon */}
       <div className="flex items-center gap-1.5">
         <p className="text-2xl font-extrabold" style={{ color: C.forest }}>
-          {showBalance ? `GHS ₵${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(ghsBalance || 0)}` : 'GHS ******'}
+          {showBalance ? `$${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalUsd || 0)} USD` : '******'}
         </p>
         <Info size={13} style={{ color: C.g400 }} />
       </div>
       {showBalance && (
         <p className="text-xs font-bold mt-1" style={{ color: C.g500 }}>
-          ≈ ${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalUsd || 0)} USD
+          ≈ GHS ₵{new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(ghsBalance || 0)}
         </p>
       )}
     </div>
