@@ -1207,8 +1207,11 @@ export default function BuyBitcoin({user}) {
       const offerCountry = (l.country_code || l.country || '').toUpperCase();
       return offerCountry === '' || offerCountry === selCountry.code;
     });
-    // Only filter by currency when user explicitly picks a non-USD currency
-    list = list.filter(l => (l.currency || l.fiat_currency || 'USD').toUpperCase() === selCurrency.code);
+    list = list.filter(l => {
+      let cur = (l.fiat_currency || l.local_currency || l.currency || 'USD').toUpperCase();
+      if (['BTC', 'USDT', '₿', '₮', '$'].includes(cur)) cur = 'USD';
+      return cur === selCurrency.code.toUpperCase();
+    });
     if (selPayment !== 'all') list = list.filter(l => String(l.payment_method || '').toLowerCase().includes(selPayment));
     if (buyAmt && parseFloat(buyAmt) > 0) {
       const amtUsd = parseFloat(buyAmt) / (USD_RATES[selCurrency.code] || 1);

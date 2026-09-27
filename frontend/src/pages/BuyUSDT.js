@@ -1156,7 +1156,8 @@ export default function BuyUSDT({user}) {
     } else if (selectedCrypto === 'USDT') {
       if (l.asset !== 'USDT') return false;
     }
-    const cur = (l.currency || 'USD').toUpperCase();
+    let cur = (l.fiat_currency || l.local_currency || l.currency || 'USD').toUpperCase();
+    if (['BTC', 'USDT', '₿', '₮', '$'].includes(cur)) cur = 'USD';
     const pm  = (l.payment_method || '').toLowerCase();
     
     let list = [l];
@@ -1203,7 +1204,7 @@ export default function BuyUSDT({user}) {
 
     const offerCountry = (l.country_code || l.country || '').toUpperCase();
     if (selCountry.code !== 'ALL' && offerCountry !== '' && offerCountry !== selCountry.code) return false;
-    if (selCurrency.code !== 'USD' && cur !== selCurrency.code) return false;
+    if (cur !== selCurrency.code.toUpperCase()) return false;
     if (selPayment !== 'all' && pm !== selPayment && !pm.includes(selPayment) && !(selPayment === 'all')) return false;
     if (buyAmt && parseFloat(buyAmt) > 0) {
       const amt = parseFloat(buyAmt);
