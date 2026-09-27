@@ -5,15 +5,26 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 // Display text and colours for the four levels. The NUMBERS the page shows for a
 // user (users brought, active users, volume, level) always come from the server
-// (/affiliate/summary). The unlock/keep numbers and shares come from
-// /affiliate/config when it loads; the values below are only the fallback so the
-// page still renders if that request fails.
+// (/affiliate/summary). The unlock/keep numbers, shares and the platform fee rate
+// come from /affiliate/config when it loads; the values below are only the
+// fallback so the page still renders if that request fails.
+//
+// `r` (rate) is the affiliate's share of PRAQEN's own trading fee on their
+// users' trades — e.g. r: 0.10 means 10% of whatever fee PRAQEN earns on that
+// trade, NOT 10% of the trade's own value. See DEFAULT_FEE_RATE below.
 export const LEVELS = [
-  { n: 'Explorer',   r: 0.10, c: '#B7D9C4', f: 5,  v: 50,    kf: 3,  kv: 25,    ex: { f: 5,  t: 3, z: 60 },  get: ['0.10% of every trade your users make', 'Your personal link and scan code', 'Live progress dashboard'], bonus: ['Explorer badge'] },
-  { n: 'Builder',    r: 0.12, c: '#2D6A4F', f: 10, v: 1000,  kf: 5,  kv: 500,   ex: { f: 10, t: 3, z: 100 }, get: ['0.12% of every trade your users make', 'Builder badge on your profile'], bonus: ['Priority support'] },
-  { n: 'Titan',      r: 0.15, c: '#F4A422', f: 20, v: 10000, kf: 10, kv: 5000,  ex: { f: 20, t: 4, z: 200 }, get: ['0.15% of every trade your users make', 'Titan badge', 'Early access to new features'], bonus: ['Featured on the leaderboard'] },
-  { n: 'Ambassador', r: 0.20, c: '#1B4332', f: 50, v: 50000, kf: 25, kv: 25000, ex: { f: 50, t: 5, z: 250 }, get: ['0.20% of every trade your users make', 'Ambassador badge', 'Direct line to the PRAQEN team'], bonus: ['Hall of Fame spot', 'Invites to PRAQEN events'] },
+  { n: 'Explorer',  r: 0.10, c: '#B7D9C4', f: 5,  v: 50,    kf: 3,  kv: 50,    ex: { f: 5,  t: 3, z: 60 },  get: ['10% of PRAQEN\'s fee on every trade your users make', 'Your personal link and scan code', 'Live progress dashboard'], bonus: ['Explorer badge'] },
+  { n: 'Builder',   r: 0.20, c: '#2D6A4F', f: 15, v: 5000,  kf: 8,  kv: 1000,  ex: { f: 15, t: 3, z: 100 }, get: ['20% of PRAQEN\'s fee on every trade your users make', 'Builder badge on your profile'], bonus: ['Priority support'] },
+  { n: 'Titan',     r: 0.30, c: '#F4A422', f: 50, v: 10000, kf: 25, kv: 3000,  ex: { f: 50, t: 4, z: 200 }, get: ['30% of PRAQEN\'s fee on every trade your users make', 'Titan badge', 'Early access to new features'], bonus: ['Featured on the leaderboard'] },
+  { n: 'Legendary', r: 0.40, c: '#1B4332', f: 80, v: 70000, kf: 40, kv: 20000, ex: { f: 80, t: 5, z: 250 }, get: ['40% of PRAQEN\'s fee on every trade your users make', 'Legendary badge', 'Direct line to the PRAQEN team'], bonus: ['Hall of Fame spot', 'Invites to PRAQEN events'] },
 ];
+
+// Platform trading fee (2% on BTC/USDT P2P trades) — mirrors tradeEscrowService.js's
+// FEE_RATE on the backend. Only used before /affiliate/config has loaded; the live
+// value always comes from the server (see useAffiliateConfig), so this can never
+// drift into an actual wrong payout — worst case it's a few seconds of a slightly
+// stale calculator estimate.
+export const DEFAULT_FEE_RATE = 0.02;
 
 export const ACTIVE_MIN_USD = 20;
 export const CLAIM_MIN_USD = 10;
@@ -27,13 +38,15 @@ export function countryName(raw) {
   return v;
 }
 
-export const pct = (r) => `${r.toFixed(2)}%`;
+// r is a 0-1 fraction (0.10 = 10%) — display as a whole-number percent.
+export const pct = (r) => `${Math.round(r * 100)}%`;
 export const money = (v) => `$${v > 0 && v < 10 ? v.toFixed(2) : Math.round(v).toLocaleString()}`;
 export const usd = (n) => `${Math.round(n).toLocaleString()} USD`;
 
-// Example monthly amount for a level. Only ever shown when payouts are on.
-export function monthlyExample(l) {
-  return (l.ex.f * l.ex.t * l.ex.z * l.r) / 100;
+// Example monthly amount for a level: example volume × PRAQEN's fee rate ×
+// the affiliate's share of that fee. Only ever shown when payouts are on.
+export function monthlyExample(l, feeRate = DEFAULT_FEE_RATE) {
+  return l.ex.f * l.ex.t * l.ex.z * feeRate * l.r;
 }
 
 // Server rules (name/rate/users/volume/keep) laid over the local display text.
@@ -84,15 +97,20 @@ export function Badge({ i, size = 40 }) {
 // Public program rules + the payout switch. Anything that goes wrong means
 // "payouts off", the safe default.
 export function useAffiliateConfig() {
-  const [cfg, setCfg] = useState({ loaded: false, cashEnabled: false, levels: LEVELS });
+  const [cfg, setCfg] = useState({ loaded: false, cashEnabled: false, levels: LEVELS, feeRate: DEFAULT_FEE_RATE });
   useEffect(() => {
     let alive = true;
     axios.get(`${API_URL}/affiliate/config`, { timeout: 10000 })
       .then(({ data }) => {
         if (!alive) return;
-        setCfg({ loaded: true, cashEnabled: data && data.cash_enabled === true, levels: mergeLevels(data && data.levels) });
+        setCfg({
+          loaded: true,
+          cashEnabled: data && data.cash_enabled === true,
+          levels: mergeLevels(data && data.levels),
+          feeRate: typeof (data && data.fee_rate) === 'number' ? data.fee_rate : DEFAULT_FEE_RATE,
+        });
       })
-      .catch(() => { if (alive) setCfg({ loaded: true, cashEnabled: false, levels: LEVELS }); });
+      .catch(() => { if (alive) setCfg({ loaded: true, cashEnabled: false, levels: LEVELS, feeRate: DEFAULT_FEE_RATE }); });
     return () => { alive = false; };
   }, []);
   return cfg;

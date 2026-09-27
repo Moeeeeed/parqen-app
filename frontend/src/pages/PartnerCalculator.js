@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import SEO from '../components/SEO';
 import './partner-program.css';
-import { LEVELS, pct, money, useAffiliateConfig } from './partnerShared';
+import { LEVELS, pct, money, useAffiliateConfig, DEFAULT_FEE_RATE } from './partnerShared';
 
 const GOALS = [10, 50, 100, 500];
 
@@ -35,7 +35,7 @@ function Control({ title, hint, value, onChange, min, max, sliderMax, step = 1, 
   );
 }
 
-function CalculatorBody({ levels, preview }) {
+function CalculatorBody({ levels, preview, feeRate }) {
   const [type, setType] = useState('btc');
   const [lv, setLv] = useState(1);
   const [period, setPeriod] = useState('m');
@@ -45,7 +45,8 @@ function CalculatorBody({ levels, preview }) {
 
   const l = levels[lv];
   const volume = friends * avg * trades;
-  const monthly = (volume * l.r) / 100;
+  // Earnings = trade volume × PRAQEN's trading fee × the affiliate's share of that fee.
+  const monthly = volume * feeRate * l.r;
   const yearly = monthly * 12;
   const next = GOALS.find((g) => monthly < g) || GOALS[GOALS.length - 1];
   const nextPct = Math.min((monthly / next) * 100, 100);
@@ -75,7 +76,7 @@ function CalculatorBody({ levels, preview }) {
               <div className="acts">
                 {TYPES.map((t) => (
                   <button type="button" key={t.key} className={`act${type === t.key ? ' on' : ''}`} onClick={() => setType(t.key)}>
-                    <div className="top"><div className="ic" style={{ background: t.bg }}>{t.icon}</div><span className="rp">${l.r.toFixed(2)} / $100</span></div>
+                    <div className="top"><div className="ic" style={{ background: t.bg }}>{t.icon}</div><span className="rp">${(100 * feeRate * l.r).toFixed(2)} / $100 traded</span></div>
                     <h3>{t.name}</h3><b>{t.tag}</b><p>{t.text}</p>
                   </button>
                 ))}
@@ -118,14 +119,14 @@ function CalculatorBody({ levels, preview }) {
               <div className="lab">If your users trade like this…</div>
               <div className="big">{money(period === 'm' ? monthly : yearly)}</div>
               <div className="sm">Based on your current estimates.</div>
-              <div className="em"><div><small>Commission</small><b>{pct(l.r)}</b></div><div><small>Monthly volume</small><b>{money(volume)}</b></div></div>
+              <div className="em"><div><small>Your share of fee</small><b>{pct(l.r)}</b></div><div><small>Monthly volume</small><b>{money(volume)}</b></div></div>
             </section>
 
             <section className="snap">
               <h3>Your users at a glance</h3>
               <div className="fi"><span>Active users</span><b>{friends.toLocaleString()}</b></div>
               <div className="fi"><span>Monthly volume</span><b>{money(volume)}</b></div>
-              <div className="fi"><span>Commission rate</span><b>{pct(l.r)}</b></div>
+              <div className="fi"><span>Your share of PRAQEN's fee</span><b>{pct(l.r)}</b></div>
               <div className="fi"><span>Monthly earnings</span><b>{money(monthly)}</b></div>
               <div className="fi"><span>Yearly earnings</span><b>{money(yearly)}</b></div>
               <Link className="btn p" to="/partner-program">Become a PRAQEN Affiliate</Link>
@@ -150,7 +151,8 @@ function CalculatorBody({ levels, preview }) {
                 × <b>{trades}</b> trades per user each month<br />
                 × <b>${avg.toLocaleString()}</b> average trade<br />
                 = <b>{money(volume)}</b> monthly volume<br />
-                × <b>{pct(l.r)}</b> ({l.n} rate)<br />
+                × <b>{pct(feeRate)}</b> PRAQEN's trading fee<br />
+                × <b>{pct(l.r)}</b> ({l.n} share of that fee)<br />
                 = <b>{money(monthly)}</b> each month
               </div>
             </section>
@@ -168,5 +170,5 @@ export default function PartnerCalculator() {
   if (!cfg.loaded) {
     return (<div className="ppx cpage"><div className="wrap"><div className="chead"><p>Loading…</p></div></div></div>);
   }
-  return <CalculatorBody levels={levels} preview={!cfg.cashEnabled} />;
+  return <CalculatorBody levels={levels} preview={!cfg.cashEnabled} feeRate={cfg.feeRate || DEFAULT_FEE_RATE} />;
 }

@@ -309,8 +309,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
   const cur       = listing.currency || 'GHS';
   const sym       = listing.currency_symbol || CUR_SYM[cur] || '₵';
   const assetLabel = (listing.asset || listing.crypto_asset || 'BTC').toUpperCase();
-  const assetIcon = assetLabel === 'USDT' ? '₮' : '₿';
-  const assetIconBg = assetLabel === 'USDT' ? 'bg-[#0F766E]' : 'bg-[#F7931A]';
+  const assetCoin = assetLabel === 'USDT' ? 'USDT' : 'BTC';
 
   const usdRate   = USD_RATES[cur] || 1;
   const rateLocal = getRateUSD(listing, btcPriceUSD) * usdRate;
@@ -375,7 +374,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
         {/* Col 2: Price + Range */}
         <div className="flex flex-col flex-1 min-w-[200px]">
           <div className="flex items-center gap-1.5">
-            <div className={`w-[18px] h-[18px] rounded-full ${assetIconBg} text-white flex items-center justify-center text-[10px] font-black shadow-sm`}>{assetIcon}</div>
+            <CoinIcon coin={assetCoin} size={18} />
             <span className="font-black text-[16px] text-gray-900">{fmt(rateLocal,2)} {cur}</span>
             <span className="px-1.5 py-0.5 rounded text-[11px] font-black tracking-wide" style={{backgroundColor:margin<0?'#10B981':margin>0?'#EF4444':'#64748B',color:'#fff'}}>
               {margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}
@@ -397,7 +396,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
         <div className="flex items-center gap-3 flex-shrink-0">
           <button onClick={onViewSeller} className="w-10 h-10 rounded-full border border-gray-200 flex items-center justify-center bg-gray-50 text-gray-600 hover:bg-gray-100 transition shadow-sm"><Info size={18}/></button>
           <button onClick={onBuy} className="h-10 px-6 rounded-full bg-[#10B981] text-white font-black text-[15px] flex items-center gap-1.5 shadow-md hover:bg-emerald-600 active:scale-95 transition">
-            Buy <div className="w-[18px] h-[18px] rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[11px]">{assetIcon}</div>
+            Buy <CoinIcon coin={assetCoin} size={22} ring />
           </button>
         </div>
       </div>
@@ -429,7 +428,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
         <div className="bg-gray-50 mt-1 px-4 py-3 flex items-center justify-between gap-2 border-t border-gray-100">
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <div className={`w-4 h-4 rounded-full ${assetIconBg} text-white flex items-center justify-center text-[9px] font-black shadow-sm`}>{assetIcon}</div>
+              <CoinIcon coin={assetCoin} size={16} />
               <span className="font-black text-[15px] text-gray-900 truncate">{fmt(rateLocal,2)} {cur}</span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide" style={{backgroundColor:margin<0?'#10B981':margin>0?'#EF4444':'#64748B',color:'#fff'}}>{margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}</span>
             </div>
@@ -438,7 +437,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
           <div className="flex items-center gap-2 flex-shrink-0">
             <button onClick={onViewSeller} className="w-9 h-9 rounded-full border border-gray-300 flex items-center justify-center bg-white text-gray-700 hover:bg-gray-100 transition shadow-sm"><Info size={16}/></button>
             <button onClick={onBuy} className="h-9 px-4 rounded-full bg-[#10B981] text-white font-black text-[15px] flex items-center gap-1.5 shadow-md hover:bg-emerald-600 active:scale-95 transition">
-              Buy <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[#FCD535] text-[10px]">{assetIcon}</div>
+              Buy <CoinIcon coin={assetCoin} size={20} ring />
             </button>
           </div>
         </div>
@@ -1208,8 +1207,11 @@ export default function BuyBitcoin({user}) {
       const offerCountry = (l.country_code || l.country || '').toUpperCase();
       return offerCountry === '' || offerCountry === selCountry.code;
     });
-    // Only filter by currency when user explicitly picks a non-USD currency
-    list = list.filter(l => (l.currency || l.fiat_currency || 'USD').toUpperCase() === selCurrency.code);
+    list = list.filter(l => {
+      let cur = (l.fiat_currency || l.local_currency || l.currency || 'USD').toUpperCase();
+      if (['BTC', 'USDT', '₿', '₮', '$'].includes(cur)) cur = 'USD';
+      return cur === selCurrency.code.toUpperCase();
+    });
     if (selPayment !== 'all') list = list.filter(l => String(l.payment_method || '').toLowerCase().includes(selPayment));
     if (buyAmt && parseFloat(buyAmt) > 0) {
       const amtUsd = parseFloat(buyAmt) / (USD_RATES[selCurrency.code] || 1);
@@ -1593,18 +1595,18 @@ export default function BuyBitcoin({user}) {
 
       {/* ══ 3. NOONES FILTER DRAWER MODAL ════════════════════════════════════ */}
       {showFilters && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex justify-end transition-opacity">
-          <div className="w-full max-w-md bg-white h-full flex flex-col justify-between p-4 overflow-y-auto animate-slideLeft">
-            <div className="space-y-6">
+        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex justify-end transition-opacity" onClick={e => e.target === e.currentTarget && setShowFilters(false)}>
+          <div className="w-full max-w-md bg-white h-full flex flex-col justify-between p-4 overflow-y-auto overscroll-contain animate-slideLeft pb-20 sm:pb-6" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="space-y-6 pb-4">
               <div className="flex items-center justify-between border-b pb-3" style={{borderColor:C.g200}}>
                 <h3 className="text-lg font-black text-gray-900">Filters</h3>
-                <button onClick={() => setShowFilters(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500">
+                <button onClick={() => setShowFilters(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition">
                   <X size={18} />
                 </button>
               </div>
 
               {/* Country selection row */}
-              <div className="flex items-center justify-between py-2 border-b" style={{borderColor:C.g100}}>
+              <div className="flex items-center justify-between py-2 border-b country-dropdown-container relative z-10" style={{borderColor:C.g100}}>
                 <span className="text-sm font-bold text-gray-700">Country</span>
                 <button
                   onClick={() => setShowCountry(true)}
@@ -1650,11 +1652,11 @@ export default function BuyBitcoin({user}) {
               </div>
             </div>
 
-            <div className="pt-6 border-t space-y-2" style={{borderColor:C.g200}}>
+            <div className="pt-4 border-t space-y-2 sticky bottom-0 bg-white z-40 pb-2" style={{borderColor:C.g200}}>
               <button
                 onClick={() => setShowFilters(false)}
-                className="w-full py-3.5 rounded-xl bg-emerald-500 text-white font-black text-sm shadow-md hover:bg-emerald-600 transition">
-                Apply
+                className="w-full py-3.5 rounded-xl bg-emerald-500 text-white font-black text-sm shadow-md hover:bg-emerald-600 active:scale-95 transition">
+                Apply Filters
               </button>
             </div>
           </div>
@@ -1663,7 +1665,7 @@ export default function BuyBitcoin({user}) {
 
       {/* ══ 5. NOONES CURRENCY MODAL ════════════════════════════════════ */}
       {showCurrency && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
+        <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
           <div className="w-full md:max-w-md bg-white h-[85vh] md:h-full rounded-t-2xl md:rounded-none flex flex-col p-4 overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3 mb-4" style={{borderColor:C.g200}}>
               <h3 className="text-lg font-black text-gray-900">Currency</h3>
@@ -1704,7 +1706,7 @@ export default function BuyBitcoin({user}) {
 
       {/* ══ 6. NOONES COUNTRY MODAL ════════════════════════════════════ */}
       {showCountry && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-2xl max-h-[80vh] flex flex-col p-4 overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3 mb-4" style={{borderColor:C.g200}}>
               <h3 className="text-lg font-black text-gray-900">Country</h3>
@@ -1759,7 +1761,7 @@ export default function BuyBitcoin({user}) {
 
       {/* ══ 4. NOONES PAYMENT METHOD MODAL (WITH FULL PRAQEN PAYMENT OPTIONS) ════════════════════════════════════ */}
       {showPayment && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
+        <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
           <div className="w-full md:max-w-md bg-white h-[85vh] md:h-full rounded-t-2xl md:rounded-none flex flex-col justify-between p-4 overflow-y-auto">
             <div className="space-y-4">
               <div className="flex items-center justify-between border-b pb-3" style={{borderColor:C.g200}}>

@@ -219,7 +219,7 @@ const FOREIGN_CURRENCY_CODES = [
   'NZD', 'JPY', 'HKD', 'PLN', 'BRL', 'MXN'
 ];
 
-const GC_FILTER_CURRENCIES = CURRENCIES.filter(c => FOREIGN_CURRENCY_CODES.includes(c.code));
+const GC_FILTER_CURRENCIES = [{ code: 'ALL', name: 'All Currencies', symbol: '' }, ...CURRENCIES];
 
 const PAYMENT_OPTIONS = [
   'All Payments', 'MTN Mobile Money', 'Vodafone Cash', 'AirtelTigo Money',
@@ -334,7 +334,7 @@ const getLastSeen = (u) => {
 // rate, or its amounts come out ~88,000x too high.
 const isUsdtAsset = (l) => {
   if (!l) return false;
-  const a = String(l.asset || l.crypto_asset || l.currency_crypto || '').toUpperCase();
+  const a = String(l.asset || l.crypto_asset || l.currency_crypto || l.crypto_type || l.crypto || l.currency || '').toUpperCase();
   return a === 'USDT' || a === 'TETHER' || a.includes('USDT') || a.includes('TETHER');
 };
 const getRateLocal = (l, btcPrice, usdRate) => {
@@ -344,6 +344,36 @@ const getRateLocal = (l, btcPrice, usdRate) => {
     if (s > (isUsdt ? 0.01 : 100)) return s;
   }
   return (isUsdt ? 1 : btcPrice) * (1 + parseFloat(l.margin || 0) / 100) * usdRate;
+};
+const getListingCurrencyCode = (l) => {
+  if (!l) return 'USD';
+  if (l.fiat_currency && typeof l.fiat_currency === 'string') return l.fiat_currency.toUpperCase();
+  if (l.local_currency && typeof l.local_currency === 'string') return l.local_currency.toUpperCase();
+  if (Array.isArray(l.gift_card_currencies) && l.gift_card_currencies.length > 0 && l.gift_card_currencies[0]) {
+    return String(l.gift_card_currencies[0]).toUpperCase();
+  }
+  if (typeof l.gift_card_currencies === 'string' && l.gift_card_currencies.trim()) {
+    return l.gift_card_currencies.trim().toUpperCase();
+  }
+  const text = `${l.payment_method || ''} ${l.gift_card_brand || ''} ${l.card_type || ''} ${l.description || ''} ${l.title || ''}`.toUpperCase();
+  const textMatch = text.match(/\b(CAD|EUR|GBP|USD|AUD|GHS|NGN|KES|ZAR|BRL|MXN|JPY|HKD|CHF|NOK|SEK|DKK|PLN|NZD|SGD|UGX|TZS|RWF|XOF|XAF|EGP|MAD|ETB|INR|CNY|KRW|AED|SAR|QAR|ILS)\b/);
+  if (textMatch) return textMatch[1];
+
+  const countryCode = (l.country || l.country_code || '').toUpperCase();
+  const countryCurrencyMap = {
+    GH: 'GHS', NG: 'NGN', KE: 'KES', ZA: 'ZAR', UG: 'UGX', TZ: 'TZS',
+    US: 'USD', GB: 'GBP', CA: 'CAD', AU: 'AUD', NZ: 'NZD', BR: 'BRL',
+    MX: 'MXN', IN: 'INR', CN: 'CNY', JP: 'JPY', KR: 'KRW', PH: 'PHP',
+    TH: 'THB', MY: 'MYR', ID: 'IDR', VN: 'VND', PK: 'PKR', BD: 'BDT',
+    AE: 'AED', SA: 'SAR', QA: 'QAR', IL: 'ILS', DE: 'EUR', FR: 'EUR',
+    ES: 'EUR', IT: 'EUR', NL: 'EUR', SE: 'SEK', NO: 'NOK', DK: 'DKK', CH: 'CHF'
+  };
+  if (countryCode && countryCurrencyMap[countryCode]) {
+    return countryCurrencyMap[countryCode];
+  }
+
+  if (l.currency && typeof l.currency === 'string') return l.currency.toUpperCase();
+  return 'USD';
 };
 const getBrand = (l) => l.gift_card_brand || l.giftCardBrand || l.card_brand || l.payment_method || 'Gift Card';
 const getFaceVal = (l) => { const v = l.face_value || l.card_value || l.amount_usd; return v ? parseFloat(v) : null; };
@@ -438,8 +468,8 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType, liv
   const brand = getBrand(listing);
   const fv = getFaceVal(listing);
   const margin = parseFloat(listing.margin || 0);
-  const cur = listing.currency || 'USD';
-  const sym = listing.currency_symbol || CUR_SYM[cur] || '$';
+  const cur = getListingCurrencyCode(listing);
+  const sym = listing.currency_symbol || CUR_SYM[cur] || (CURRENCIES.find(c => c.code === cur)?.symbol) || '$';
   const usdRate = USD_RATES[cur] || 1;
   const isUsdtCard = isUsdtAsset(listing);
   const spotPriceUSD = isUsdtCard ? 1 : btcPriceUSD;
@@ -627,8 +657,8 @@ function SellerModal({ seller, listing, onClose, onTrade, btcPriceUSD }) {
   const rating = parseFloat(u.average_rating || 0);
   const brand = getBrand(listing || {});
   const fv = getFaceVal(listing || {});
-  const cur = listing?.currency || 'USD';
-  const sym = listing?.currency_symbol || CUR_SYM[cur] || '$';
+  const cur = getListingCurrencyCode(listing || {});
+  const sym = listing?.currency_symbol || CUR_SYM[cur] || (CURRENCIES.find(c => c.code === cur)?.symbol) || '$';
   const usdRate = USD_RATES[cur] || 1;
   const rate = getRateLocal(listing || {}, btcPriceUSD || 68000, usdRate);
   const margin = parseFloat(listing?.margin || 0);
@@ -1085,7 +1115,7 @@ export default function SellGiftCardMarketplace({ user }) {
   // this windows the display rather than the network request).
   const [visibleCount, setVisibleCount] = useState(24);
   const [btcPrice, setBtcPrice] = useState(68000);
-  const [selCurrency, setSelCurrency] = useState(CURRENCIES.find(c => c.code === 'USD') || CURRENCIES[0]);
+  const [selCurrency, setSelCurrency] = useState(GC_FILTER_CURRENCIES[0]);
   const [selBrand, setSelBrand] = useState('All Brands');
   const [selCountry, setSelCountry] = useState(COUNTRIES[0]);
   const [amountInput, setAmountInput] = useState('');
@@ -1238,7 +1268,7 @@ export default function SellGiftCardMarketplace({ user }) {
   }, [user, listings]);
   useEffect(() => {
     const h = e => {
-      if (!e.target.closest?.('.currency-dropdown-container')) { setShowCurrency(false); setCurrencySearch(''); }
+      if (!e.target.closest?.('.currency-dropdown-container') && !e.target.closest?.('.currency-modal-trigger')) { setShowCurrency(false); setCurrencySearch(''); }
       if (!e.target.closest?.('.brand-dropdown-container')) { setShowBrand(false); setBrandSearch(''); }
       if (!e.target.closest?.('.country-dropdown-container')) { setShowCountry(false); setCountrySearch(''); }
       if (!e.target.closest?.('.crypto-dropdown-container')) { setShowCryptoMenu(false); }
@@ -1250,7 +1280,7 @@ export default function SellGiftCardMarketplace({ user }) {
   // country/mode/etc. starts back at the first 24 matches instead of showing a stale count.
   useEffect(() => {
     setVisibleCount(24);
-  }, [gcMode, cryptoFilter, selBrand, amountInput, selCountry.code, traderSearch, sortBy]);
+  }, [gcMode, cryptoFilter, selBrand, amountInput, selCountry.code, selCurrency.code, traderSearch, sortBy]);
   // Helper to fetch online status of the users currently on the page
   const fetchOnlineStatus = (currentListings) => {
     const ids = [...new Set((currentListings || listings).map(l => l.users?.id).filter(Boolean))];
@@ -1334,6 +1364,11 @@ export default function SellGiftCardMarketplace({ user }) {
       list = list.filter(l => isUsdtAsset(l));
     }
 
+    if (selCurrency && selCurrency.code) {
+      const targetCur = selCurrency.code.toUpperCase();
+      list = list.filter(l => getListingCurrencyCode(l) === targetCur);
+    }
+
     if (selBrand !== 'All Brands') {
       list = list.filter(l => matchesBrand(l, selBrand));
     }
@@ -1341,8 +1376,9 @@ export default function SellGiftCardMarketplace({ user }) {
     if (!isNaN(amt) && amt > 0) list = list.filter(l => {
       const range = getCardRange(l);
       if (!range) return true;
-      if (range[0]?.isRange) return amt >= range[0].min && amt <= range[0].max;
-      return range.some(v => Math.abs(v - amt) < 0.01);
+      const minVal = range[0]?.isRange ? range[0].min : Math.min(...range);
+      const maxVal = range[0]?.isRange ? range[0].max : Math.max(...range);
+      return amt >= (minVal * 0.85) && amt <= (maxVal * 1.15);
     });
     // l.country_code / l.users?.country_code never come back from /api/listings — the
     // listings select only returns `country`, and the users select doesn't include a
@@ -1388,8 +1424,8 @@ export default function SellGiftCardMarketplace({ user }) {
   };
 
   const filtered = getFiltered();
-  const cur = selCurrency.code || 'GHS';
-  const sym = selCurrency.symbol || '₵';
+  const cur = (!selCurrency || selCurrency.code === 'ALL') ? 'USD' : selCurrency.code;
+  const sym = (!selCurrency || selCurrency.code === 'ALL') ? '$' : (selCurrency.symbol || '$');
   const usdRate = USD_RATES[cur] || 1;
   const btcLocal = btcPrice * usdRate;
   const onlineCnt = listings.filter(l => (Date.now() - new Date(l.users?.last_seen_at || l.users?.last_login || 0)) / 1000 < 300).length;
@@ -1409,7 +1445,7 @@ export default function SellGiftCardMarketplace({ user }) {
   const fastResponderListingId = activeTraderIsLive ? null : (rankedByTrades[0]?.id || null);
   const featuredListingId = activeTraderIsLive ? activeTraderListingId : fastResponderListingId;
   const featuredBadgeType = activeTraderIsLive ? 'active_trader' : 'fast_responder';
-  const hasFilters = amountInput.trim() !== '' || selBrand !== 'All Brands' || selCountry.code !== 'ALL' || traderSearch.trim() !== '' || sortBy !== 'rate_low';
+  const hasFilters = amountInput.trim() !== '' || selBrand !== 'All Brands' || selCountry.code !== 'ALL' || (selCurrency && selCurrency.code !== 'ALL') || traderSearch.trim() !== '' || sortBy !== 'rate_low';
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: C.g100, fontFamily: "'DM Sans',sans-serif" }}>
@@ -1606,7 +1642,7 @@ export default function SellGiftCardMarketplace({ user }) {
                 />
                 <button
                   onClick={() => setShowCurrency(true)}
-                  className="shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-gray-200 border border-gray-300 text-[10px] font-black text-gray-700 hover:text-gray-900"
+                  className="currency-modal-trigger shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-gray-200 border border-gray-300 text-[10px] font-black text-gray-700 hover:text-gray-900"
                 >
                   {selCurrency.code}
                 </button>
@@ -1732,7 +1768,7 @@ export default function SellGiftCardMarketplace({ user }) {
               />
               <button
                 onClick={() => setShowCurrency(true)}
-                className="flex-shrink-0 flex items-center gap-1 pl-2 border-l hover:bg-gray-200 transition text-xs font-black text-gray-700 h-full px-2 rounded-r-lg"
+                className="currency-modal-trigger flex-shrink-0 flex items-center gap-1 pl-2 border-l hover:bg-gray-200 transition text-xs font-black text-gray-700 h-full px-2 rounded-r-lg"
                 style={{ borderColor: C.g200 }}>
                 {selCurrency.code}
                 <ChevronDown size={12} className="text-gray-400" />
@@ -1862,34 +1898,53 @@ export default function SellGiftCardMarketplace({ user }) {
             <div className="flex justify-center mb-4">
               <Gift size={44} style={{ color: C.g400 }} />
             </div>
-            <p className="font-bold text-base mb-1" style={{ color: C.g800 }}>No gift card offers found</p>
-            {/* If this side (Buy/Sell) is empty only because of the current gcMode filter — not
-                because the whole market is quiet — point at the side that actually has offers
-                instead of leaving the page looking dead. */}
-            {(() => {
-              const otherType = gcMode === 'sell' ? 'BUY_GIFT_CARD' : gcMode === 'buy' ? 'SELL_GIFT_CARD' : null;
-              const otherCount = otherType ? listings.filter(l => l.listing_type === otherType).length : 0;
-              if (otherType && otherCount > 0) {
-                return (
-                  <>
-                    <p className="text-sm" style={{ color: C.g400 }}>
-                      No one's posted a {gcMode === 'sell' ? 'Sell' : 'Buy'} offer yet — but the {gcMode === 'sell' ? 'Buy' : 'Sell'} side has {otherCount} active offer{otherCount !== 1 ? 's' : ''} right now.
-                    </p>
+            <p className="font-bold text-base mb-1" style={{ color: C.g800 }}>
+              No gift card offers found{selCurrency?.code ? ` in ${selCurrency.code}` : ''}
+            </p>
+            <p className="text-sm max-w-md mx-auto mb-4" style={{ color: C.g400 }}>
+              {selCurrency?.code && selCurrency.code !== 'USD'
+                ? `There are currently no active offers denominated in ${selCurrency.code} (${selCurrency.name}). Try switching to USD or another currency, or create the first offer!`
+                : (() => {
+                    const otherType = gcMode === 'sell' ? 'BUY_GIFT_CARD' : gcMode === 'buy' ? 'SELL_GIFT_CARD' : null;
+                    const otherCount = otherType ? listings.filter(l => l.listing_type === otherType).length : 0;
+                    if (otherType && otherCount > 0) {
+                      return `No one's posted a ${gcMode === 'sell' ? 'Sell' : 'Buy'} offer yet — but the ${gcMode === 'sell' ? 'Buy' : 'Sell'} side has ${otherCount} active offer${otherCount !== 1 ? 's' : ''} right now.`;
+                    }
+                    return 'Try a different brand or currency, or be the first to post an offer!';
+                  })()}
+            </p>
+            <div className="flex items-center justify-center gap-3 flex-wrap">
+              {selCurrency && selCurrency.code !== 'USD' && (
+                <button
+                  onClick={() => {
+                    const usdCur = GC_FILTER_CURRENCIES.find(c => c.code === 'USD') || GC_FILTER_CURRENCIES[0];
+                    setSelCurrency(usdCur);
+                  }}
+                  className="px-5 py-2.5 rounded-xl text-sm font-black transition text-gray-700 bg-gray-100 hover:bg-gray-200"
+                >
+                  View USD Offers
+                </button>
+              )}
+              {(() => {
+                const otherType = gcMode === 'sell' ? 'BUY_GIFT_CARD' : gcMode === 'buy' ? 'SELL_GIFT_CARD' : null;
+                const otherCount = otherType ? listings.filter(l => l.listing_type === otherType).length : 0;
+                if (otherType && otherCount > 0 && selCurrency?.code === 'USD') {
+                  return (
                     <button onClick={() => setGcMode(gcMode === 'sell' ? 'buy' : 'sell')}
-                      className="mt-4 px-6 py-2.5 rounded-xl text-sm font-black hover:opacity-90 transition mr-2"
+                      className="px-5 py-2.5 rounded-xl text-sm font-black hover:opacity-90 transition"
                       style={{ backgroundColor: C.g100, color: C.g700 }}>
                       View {gcMode === 'sell' ? 'Buy' : 'Sell'} Offers
                     </button>
-                  </>
-                );
-              }
-              return <p className="text-sm" style={{ color: C.g400 }}>Try a different brand or be the first to post</p>;
-            })()}
-            <button onClick={() => navigate('/create-offer')}
-              className="mt-4 px-6 py-2.5 rounded-xl text-white text-sm font-black hover:opacity-90 transition"
-              style={{ backgroundColor: C.forest }}>
-              Post Offer
-            </button>
+                  );
+                }
+                return null;
+              })()}
+              <button onClick={() => navigate('/create-offer')}
+                className="px-6 py-2.5 rounded-xl text-white text-sm font-black hover:opacity-90 transition"
+                style={{ backgroundColor: C.forest }}>
+                Post {selCurrency?.code || ''} Offer
+              </button>
+            </div>
           </div>
         ) : (
           <>
@@ -2026,11 +2081,12 @@ export default function SellGiftCardMarketplace({ user }) {
 
       {/* ══ NOONES CURRENCY MODAL ════════════════════════════════════ */}
       {showCurrency && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
-          <div className="w-full md:max-w-md bg-white h-[85vh] md:h-full rounded-t-2xl md:rounded-none flex flex-col p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end"
+             onClick={(e) => { if (e.target === e.currentTarget) { setShowCurrency(false); setCurrencySearch(''); } }}>
+          <div className="w-full md:max-w-md bg-white h-[85vh] md:h-full rounded-t-2xl md:rounded-none flex flex-col p-4 overflow-y-auto currency-dropdown-container">
             <div className="flex items-center justify-between border-b pb-3 mb-4" style={{ borderColor: C.g200 }}>
               <h3 className="text-lg font-black text-gray-900">Currency</h3>
-              <button onClick={() => setShowCurrency(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition">
+              <button onClick={() => { setShowCurrency(false); setCurrencySearch(''); }} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition">
                 <X size={18} />
               </button>
             </div>
@@ -2048,7 +2104,7 @@ export default function SellGiftCardMarketplace({ user }) {
                 return (
                   <button
                     key={idx}
-                    onClick={() => { setSelCurrency(c); setShowCurrency(false); }}
+                    onClick={() => { setSelCurrency(c); setShowCurrency(false); setCurrencySearch(''); }}
                     className={`w-full flex items-center justify-between p-3 rounded-xl text-xs font-bold border-b transition ${selCurrency.code === c.code ? 'bg-emerald-50 text-emerald-700' : 'hover:bg-gray-50 text-gray-800'}`}
                     style={{ borderColor: C.g100 }}>
                     <div className="flex items-center gap-3">
@@ -2066,9 +2122,9 @@ export default function SellGiftCardMarketplace({ user }) {
 
       {/* ══ NOONES FILTER DRAWER MODAL ════════════════════════════════════ */}
       {showFilters && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex justify-end transition-opacity">
-          <div className="w-full max-w-md bg-white h-full flex flex-col justify-between p-4 overflow-y-auto animate-slideLeft">
-            <div className="space-y-6">
+        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex justify-end transition-opacity" onClick={e => e.target === e.currentTarget && setShowFilters(false)}>
+          <div className="w-full max-w-md bg-white h-full flex flex-col justify-between p-4 overflow-y-auto overscroll-contain animate-slideLeft pb-20 sm:pb-6" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="space-y-6 pb-4">
               <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: C.g200 }}>
                 <h3 className="text-lg font-black text-gray-900">Filters</h3>
                 <button onClick={() => setShowFilters(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition">
@@ -2077,7 +2133,7 @@ export default function SellGiftCardMarketplace({ user }) {
               </div>
 
               {/* Country Selection */}
-              <div>
+              <div className="relative country-dropdown-container">
                 <span className="text-sm font-bold text-gray-700 block mb-2">Location</span>
                 <button
                   onClick={() => setShowCountry(!showCountry)}
@@ -2090,14 +2146,14 @@ export default function SellGiftCardMarketplace({ user }) {
                   <ChevronDown size={16} className="text-gray-400" />
                 </button>
                 {showCountry && (
-                  <div className="mt-2 rounded-xl border overflow-hidden" style={{ borderColor: C.g100 }}>
-                    <div className="p-2 border-b bg-gray-50" style={{ borderColor: C.g100 }}>
+                  <div className="mt-2 rounded-xl border overflow-hidden relative z-50 shadow-lg" style={{ borderColor: C.g100 }}>
+                    <div className="p-2 border-b bg-gray-50 sticky top-0 z-10" style={{ borderColor: C.g100 }}>
                       <input type="text" placeholder="Search country…"
                         value={countrySearch} onChange={e => setCountrySearch(e.target.value)}
-                        className="w-full px-3 py-1.5 font-semibold rounded-lg border focus:outline-none"
+                        className="w-full px-3 py-2 font-semibold rounded-lg border focus:outline-none bg-white"
                         style={{ borderColor: C.g200, color: C.g800, fontSize: '14px' }} />
                     </div>
-                    <div className="overflow-y-auto max-h-56 bg-white">
+                    <div className="overflow-y-auto max-h-60 bg-white" style={{ WebkitOverflowScrolling: 'touch' }}>
                       {COUNTRIES.filter(c => !countrySearch.toLowerCase() || c.name.toLowerCase().includes(countrySearch.toLowerCase())).map(c => (
                         <button key={c.code} onClick={() => { setSelCountry(c); setShowCountry(false); setCountrySearch(''); }}
                           className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50 border-b last:border-0 transition"
@@ -2109,6 +2165,21 @@ export default function SellGiftCardMarketplace({ user }) {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Currency Selection */}
+              <div>
+                <span className="text-sm font-bold text-gray-700 block mb-2">Currency</span>
+                <button
+                  onClick={() => { setShowFilters(false); setShowCurrency(true); }}
+                  className="w-full flex items-center justify-between px-3 py-3 rounded-xl border bg-gray-50 text-sm font-bold text-gray-700 hover:bg-gray-100 transition"
+                  style={{ borderColor: C.g200 }}>
+                  <div className="flex items-center gap-2">
+                    <span className="font-black">{selCurrency.code}</span>
+                    <span className="text-gray-500 font-normal">{selCurrency.name}</span>
+                  </div>
+                  <ChevronDown size={16} className="text-gray-400" />
+                </button>
               </div>
 
               {/* Search Trader */}
@@ -2145,11 +2216,11 @@ export default function SellGiftCardMarketplace({ user }) {
 
             </div>
 
-            <div className="pt-6 border-t space-y-2" style={{ borderColor: C.g200 }}>
+            <div className="pt-4 border-t space-y-2 sticky bottom-0 bg-white z-40 pb-2" style={{ borderColor: C.g200 }}>
               <button
                 onClick={() => setShowFilters(false)}
-                className="w-full py-3.5 rounded-xl bg-[#10B981] text-white font-black text-sm shadow-md transition">
-                Apply
+                className="w-full py-3.5 rounded-xl bg-[#10B981] text-white font-black text-sm shadow-md transition hover:bg-emerald-600 active:scale-95">
+                Apply Filters
               </button>
             </div>
           </div>

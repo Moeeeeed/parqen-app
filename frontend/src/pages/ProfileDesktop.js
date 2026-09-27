@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { BadgeChip } from '../lib/badge';
 import { useNavigate } from 'react-router-dom';
 import {
   Copy, Edit2, Share2, Shield, Star, Clock, CheckCircle,
@@ -310,6 +311,7 @@ export default function ProfileDesktop({
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   {rawCC && <span style={{ fontSize: 16 }}>{isoToFlag(rawCC)}</span>}
                   <span style={{ fontSize: 20, fontWeight: 700, color: '#111827' }}>{user.username}</span>
+                  <BadgeChip user={user} size="lg" />
                   {isTrusted && <Shield size={16} color={C.success} fill={C.success} />}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4 }}>
                     <Award size={16} color={C.success} />

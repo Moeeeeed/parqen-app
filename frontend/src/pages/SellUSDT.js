@@ -794,7 +794,7 @@ function BuyerModal({buyer, listing, onClose, onTrade, usdtPriceUSD}) {
           <button onClick={onTrade}
             className="flex-1 py-3 rounded-2xl text-white text-sm font-black flex items-center justify-center gap-2 shadow-md"
             style={{background:`linear-gradient(135deg,${C.sell},${C.gold})`}}>
-            <span className="font-black">₮</span> Sell USDT
+            <CoinIcon coin="USDT" size={20} ring /> Sell USDT
           </button>
         </div>
       </div>
@@ -1037,11 +1037,12 @@ export default function SellUSDT({user}) {
     } else if (selectedCrypto === 'USDT') {
       if (l.asset !== 'USDT') return false;
     }
-    const cur = (l.currency || 'USD').toUpperCase();
+    let cur = (l.fiat_currency || l.local_currency || l.currency || 'USD').toUpperCase();
+    if (['BTC', 'USDT', '₿', '₮', '$'].includes(cur)) cur = 'USD';
     const pm  = (l.payment_method || '').toLowerCase();
     const offerCountry = (l.country_code || l.country || '').toUpperCase();
     if (selCountry.code !== 'ALL' && offerCountry !== '' && offerCountry !== selCountry.code) return false;
-    if (cur !== selCurrency.code) return false;
+    if (cur !== selCurrency.code.toUpperCase()) return false;
     if (selPayment !== 'all' && pm !== selPayment && !pm.includes(selPayment)) return false;
     if (traderSearch && !getDisplayName(l.users).toLowerCase().includes(traderSearch.toLowerCase())) return false;
     if (sellAmt && parseFloat(sellAmt) > 0) {
@@ -1093,10 +1094,11 @@ export default function SellUSDT({user}) {
       navigate('/login?message=Please log in to start trading');
       return;
     }
-    const listing = offers.find(l => l.id === id);
-    if (listing) {
-      setModal({ type: 'buyer', buyer: listing.users, listing });
-    }
+    // Was opening the same buyer-info modal the ⓘ button already opens (onViewBuyer below) —
+    // clicking "Sell" here, or the "Sell USDT" button inside that modal (which also calls
+    // handleSell), just showed the identical panel again with nothing new, so the trade never
+    // actually started. Matches SellBitcoin.js's handleSell: go straight to the listing.
+    navigate(`/listing/${id}`);
   };
 
   const cur = selCurrency.code;
@@ -1386,7 +1388,7 @@ export default function SellUSDT({user}) {
 
       {/* Country Picker Modal */}
       {showCountry && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center">
+        <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center">
           <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b" style={{borderColor:'#E2E8F0'}}>
               <h3 className="text-base font-black text-gray-900">Select Country</h3>
@@ -1590,9 +1592,9 @@ export default function SellUSDT({user}) {
 
       {/* ══ 3. NOONES FILTER DRAWER MODAL ════════════════════════════════════ */}
       {showFilters && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex justify-end transition-opacity">
-          <div className="w-full max-w-md bg-white h-full flex flex-col justify-between p-4 overflow-y-auto animate-slideLeft">
-            <div className="space-y-6">
+        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex justify-end transition-opacity" onClick={e => e.target === e.currentTarget && setShowFilters(false)}>
+          <div className="w-full max-w-md bg-white h-full flex flex-col justify-between p-4 overflow-y-auto overscroll-contain animate-slideLeft pb-20 sm:pb-6" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="space-y-6 pb-4">
               <div className="flex items-center justify-between border-b pb-3" style={{borderColor:C.g200}}>
                 <h3 className="text-lg font-black text-gray-900">Filters</h3>
                 <button onClick={() => setShowFilters(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition">
@@ -1601,7 +1603,7 @@ export default function SellUSDT({user}) {
               </div>
 
               {/* Country selection row */}
-              <div className="flex items-center justify-between py-2 border-b" style={{borderColor:C.g100}}>
+              <div className="flex items-center justify-between py-2 border-b country-dropdown-container relative z-10" style={{borderColor:C.g100}}>
                 <span className="text-sm font-bold text-gray-700">Country</span>
                 <button
                   onClick={() => setShowCountry(true)}
@@ -1647,11 +1649,11 @@ export default function SellUSDT({user}) {
               </div>
             </div>
 
-            <div className="pt-6 border-t space-y-2" style={{borderColor:C.g200}}>
+            <div className="pt-4 border-t space-y-2 sticky bottom-0 bg-white z-40 pb-2" style={{borderColor:C.g200}}>
               <button
                 onClick={() => setShowFilters(false)}
-                className="w-full py-3.5 rounded-xl bg-emerald-500 text-white font-black text-sm shadow-md hover:bg-emerald-600 transition">
-                Apply
+                className="w-full py-3.5 rounded-xl bg-emerald-500 text-white font-black text-sm shadow-md hover:bg-emerald-600 active:scale-95 transition">
+                Apply Filters
               </button>
             </div>
           </div>
@@ -1660,7 +1662,7 @@ export default function SellUSDT({user}) {
 
       {/* ══ 5. NOONES CURRENCY MODAL ════════════════════════════════════ */}
       {showCurrency && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
+        <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
           <div className="w-full md:max-w-md bg-white h-[85vh] md:h-full rounded-t-2xl md:rounded-none flex flex-col p-4 overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3 mb-4" style={{borderColor:C.g200}}>
               <h3 className="text-lg font-black text-gray-900">Currency</h3>
@@ -1701,7 +1703,7 @@ export default function SellUSDT({user}) {
 
       {/* ══ 4. NOONES PAYMENT METHOD MODAL (WITH FULL PRAQEN PAYMENT OPTIONS) ════════════════════════════════════ */}
       {showPayment && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
+        <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm flex flex-col justify-end md:flex-row md:justify-end">
           <div className="w-full md:max-w-md bg-white h-[85vh] md:h-full rounded-t-2xl md:rounded-none flex flex-col justify-between p-4 overflow-y-auto">
             <div className="space-y-4">
               <div className="flex items-center justify-between border-b pb-3" style={{borderColor:C.g200}}>
