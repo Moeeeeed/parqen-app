@@ -268,6 +268,19 @@ function capAvatar(url) {
   return (typeof url === 'string' && url.length > MAX_INLINE_AVATAR_CHARS) ? null : (url || null);
 }
 
+// Same fix as capAvatar() above, applied to a list of trades whose buyer/seller
+// were fetched via a PostgREST join (avatar_url included) — /api/trades/active
+// and /api/my-trades both do this and, unlike the listing endpoints, were never
+// capped, so a legacy multi-MB base64 avatar_url gets embedded twice per trade
+// (once for buyer, once for seller) on every single poll.
+function capTradeAvatars(trades) {
+  return (trades || []).map((t) => ({
+    ...t,
+    buyer:  t.buyer  ? { ...t.buyer,  avatar_url: capAvatar(t.buyer.avatar_url) }  : t.buyer,
+    seller: t.seller ? { ...t.seller, avatar_url: capAvatar(t.seller.avatar_url) } : t.seller,
+  }));
+}
+
 // ── 5. Express ─────────────────────────────────────────────────────────────
 const app = express();
 
@@ -8934,7 +8947,7 @@ app.get('/api/my-trades', verifyToken, async (req, res) => {
       .range(offset, offset + limit - 1);
 
     if (error) return res.status(400).json({ error: error.message });
-    res.json({ trades: data || [], total: count || 0, page, limit });
+    res.json({ trades: capTradeAvatars(data), total: count || 0, page, limit });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -8953,7 +8966,7 @@ app.get('/api/trades/active', verifyToken, async (req, res) => {
     if (error) return res.status(400).json({ error: error.message });
 
     const ACTIVE_STATUSES = ['CREATED', 'FUNDS_LOCKED', 'PAYMENT_SENT', 'DISPUTED'];
-    const activeTrades = (trades || []).filter(t => ACTIVE_STATUSES.includes(t.status));
+    const activeTrades = capTradeAvatars((trades || []).filter(t => ACTIVE_STATUSES.includes(t.status)));
 
     res.json({ success: true, trades: activeTrades, total: activeTrades.length });
   } catch (error) {
