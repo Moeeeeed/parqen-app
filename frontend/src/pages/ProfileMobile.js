@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { BadgeChip } from '../lib/badge';
 import { useNavigate } from 'react-router-dom';
 import {
   Copy, Edit2, Share2, ChevronDown, ChevronUp,
@@ -384,6 +385,7 @@ export default function ProfileMobile({
               }}>
                 {user.username}
               </span>
+              <BadgeChip user={user} size="sm" />
               <button onClick={() => copyToClipboard(user.username || '', 'Username copied!')}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',

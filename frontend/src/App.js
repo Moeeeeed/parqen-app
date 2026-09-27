@@ -260,10 +260,19 @@ function RefRedirect() {
 // ── App Shell ─────────────────────────────────────────────────────────────────
 const AUTH_ROUTES = ['/login', '/register', '/signup', '/forgot-password'];
 
+// No overflowX here on purpose: <html>/<body> already clip horizontal overflow (index.css), so
+// this wrapper doesn't need its own — and per the CSS overflow interop rule, setting overflow-x
+// here (with overflow-y left at its default 'visible') forces overflow-y to become 'auto' too.
+// That silently turns this wrapper into its OWN (empty) scroll container, and on a real touch
+// device the browser can latch a swipe onto that dead container instead of the real page —
+// scrolling then just stops responding. (overflowY: 'visible' can't be declared to opt back out:
+// per spec it gets flipped to 'auto' again as long as overflowX isn't also 'visible'. The only
+// fix is to not set overflowX here at all.) Same fix on #root in index.css.
+
 function AppShell({ children }) {
   return (
     <div className="min-h-screen pb-nav-mobile"
-      style={{ overflowX: 'hidden', maxWidth: '100vw', paddingTop: 'var(--navbar-h)' }}>
+      style={{ maxWidth: '100vw', paddingTop: 'var(--navbar-h)' }}>
       {children}
     </div>
   );
@@ -274,7 +283,7 @@ function AuthAwareShell({ children, user, onLogout, showBonusModal, setShowBonus
   const isAuthPage = AUTH_ROUTES.includes(location.pathname);
   return (
     <div className={isAuthPage ? 'auth-shell' : 'min-h-screen pb-nav-mobile'}
-      style={{ overflowX: 'hidden', maxWidth: '100vw', paddingTop: isAuthPage ? 0 : 'var(--navbar-h)', position: 'relative' }}>
+      style={{ maxWidth: '100vw', paddingTop: isAuthPage ? 0 : 'var(--navbar-h)', position: 'relative' }}>
       {!isAuthPage && <Navbar user={user} onLogout={onLogout} />}
 
       {showBonusModal && user && (

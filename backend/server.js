@@ -195,6 +195,7 @@ async function _warmListingsCache() {
     const userMap = {};
     usersData.forEach(u => { userMap[u.id] = u; });
     await medalAwardService.attachMedals(Object.values(userMap)); // same medals as the live /api/listings answer
+    await affiliateLevelAwardService.attachAffiliateLevels(Object.values(userMap));
 
     // Only include listings whose seller data was successfully fetched
     const listings = rawListings
@@ -5573,6 +5574,11 @@ app.post('/api/kyc/upload', express.json({ limit: '25mb' }), verifyToken, async 
 
     // Try Supabase Storage upload (bucket: kyc-documents) — see withUploadTimeout() above
     // for why this can only fail-fast on the response, not actually cancel the upload.
+    // Each upload runs in its OWN try/catch — previously all three shared one
+    // try block, so a crash processing the OPTIONAL back-of-ID image (skipped
+    // by nearly every submitter) aborted before the front image's URL was ever
+    // read back AND before the selfie was even attempted, even though the
+    // front image had already finished uploading to storage moments earlier.
     try {
       const { error: idErr } = await withUploadTimeout(
         supabaseAdmin.storage
@@ -5580,23 +5586,35 @@ app.post('/api/kyc/upload', express.json({ limit: '25mb' }), verifyToken, async 
           .upload(`${userId}/id_front_${timestamp}.jpg`, toBuffer(idImage), { contentType: 'image/jpeg', upsert: true }),
         25000, 'ID front'
       );
-
-      const { error: idBackErr } = await withUploadTimeout(
-        supabaseAdmin.storage
-          .from('kyc-documents')
-          .upload(`${userId}/id_back_${timestamp}.jpg`, toBuffer(idImageBack), { contentType: 'image/jpeg', upsert: true }),
-        25000, 'ID back'
-      );
-
       if (!idErr) {
         const { data: { publicUrl } } = supabaseAdmin.storage.from('kyc-documents').getPublicUrl(`${userId}/id_front_${timestamp}.jpg`);
         idUrl = publicUrl;
       }
-      if (!idBackErr) {
-        const { data: { publicUrl } } = supabaseAdmin.storage.from('kyc-documents').getPublicUrl(`${userId}/id_back_${timestamp}.jpg`);
-        idBackUrl = publicUrl;
-      }
+    } catch (idFrontErr) {
+      console.warn('[kyc/upload] ID front upload failed:', idFrontErr.message);
+    }
 
+    // idImageBack is intentionally optional (passports have no back side, and
+    // the UI marks it optional for every ID type) — only attempt this upload
+    // when a back image was actually sent.
+    if (idImageBack) {
+      try {
+        const { error: idBackErr } = await withUploadTimeout(
+          supabaseAdmin.storage
+            .from('kyc-documents')
+            .upload(`${userId}/id_back_${timestamp}.jpg`, toBuffer(idImageBack), { contentType: 'image/jpeg', upsert: true }),
+          25000, 'ID back'
+        );
+        if (!idBackErr) {
+          const { data: { publicUrl } } = supabaseAdmin.storage.from('kyc-documents').getPublicUrl(`${userId}/id_back_${timestamp}.jpg`);
+          idBackUrl = publicUrl;
+        }
+      } catch (idBackErr) {
+        console.warn('[kyc/upload] ID back upload failed:', idBackErr.message);
+      }
+    }
+
+    try {
       const { error: selfieErr } = await withUploadTimeout(
         supabaseAdmin.storage
           .from('kyc-documents')
@@ -5607,8 +5625,8 @@ app.post('/api/kyc/upload', express.json({ limit: '25mb' }), verifyToken, async 
         const { data: { publicUrl } } = supabaseAdmin.storage.from('kyc-documents').getPublicUrl(`${userId}/selfie_${timestamp}.jpg`);
         selfieUrl = publicUrl;
       }
-    } catch (storageErr) {
-      console.warn('[kyc/upload] Storage upload failed (bucket may not exist):', storageErr.message);
+    } catch (selfieErr) {
+      console.warn('[kyc/upload] Selfie upload failed:', selfieErr.message);
     }
 
     // Always mark user as pending regardless of storage success
@@ -5917,6 +5935,7 @@ app.post('/api/users/check-badges', verifyToken, async (req, res) => {
 // by MEDALS_AUTO_ENABLED (exactly "true"); until then this screen only SHOWS live progress.
 const { buildMedalPayloads } = require('./services/medalService');
 const medalAwardService = require('./services/medalAwardService');
+const affiliateLevelAwardService = require('./services/affiliateLevelAwardService');
 
 // GET /api/users/me/medals — the logged-in user's medals and progress.
 app.get('/api/users/me/medals', verifyToken, async (req, res) => {
@@ -6202,10 +6221,12 @@ app.get('/api/users/profile', verifyToken, async (req, res) => {
     delete data.two_factor_temp_secret;
 
     const _ownMedals = ((await medalAwardService.getMedalsForUsers([data.id]).catch(() => ({})))[data.id]) || [];
+    const _ownAffLevel = (await affiliateLevelAwardService.getLevelsForUsers([data.id]).catch(() => ({})))[data.id] || null;
     res.json({
       user: {
         ...data,
         medals: _ownMedals,
+        affiliateLevel: _ownAffLevel,
         ...extraFields,
         ...lockFlags,
         ...levelFlags,
@@ -6323,9 +6344,10 @@ app.get('/api/users/:userId', async (req, res) => {
     } catch { }
 
     const _userMedals = ((await medalAwardService.getMedalsForUsers([data.id]).catch(() => ({})))[data.id]) || [];
+    const _userAffLevel = (await affiliateLevelAwardService.getLevelsForUsers([data.id]).catch(() => ({})))[data.id] || null;
     res.json({
       user: {
-        ...data, medals: _userMedals, ...extraFields, referral_trade_count,
+        ...data, medals: _userMedals, affiliateLevel: _userAffLevel, ...extraFields, referral_trade_count,
         total_trades: real_total_trades,
         positive_feedback: real_positive,
         negative_feedback: real_negative,
@@ -7019,6 +7041,7 @@ app.get('/api/featured-offers', async (req, res) => {
       (profilesResult.data || []).forEach(u => { userMap[u.id] = u; });
       (avatarResult.data || []).forEach(u => { if (userMap[u.id]) userMap[u.id].avatar_url = capAvatar(u.avatar_url); });
       await medalAwardService.attachMedals(Object.values(userMap));
+      await affiliateLevelAwardService.attachAffiliateLevels(Object.values(userMap));
     }
 
     const enriched = listings.map(l => ({ ...l, users: userMap[l.seller_id] || {} }));
@@ -7264,6 +7287,7 @@ app.get('/api/listings', async (req, res) => {
       }
       (usersResult.data || []).forEach(u => { userMap[u.id] = { ...u, avatar_url: capAvatar(u.avatar_url) }; });
       await medalAwardService.attachMedals(Object.values(userMap)); // medals replace the old badge chip in the market
+      await affiliateLevelAwardService.attachAffiliateLevels(Object.values(userMap));
       walletRows = walletsResult.data || [];
       // Only a never-seized (amount_usdt === remaining_amount) LOCKED deposit counts as "secured"
       depositedSellerIds = new Set(
@@ -7463,6 +7487,7 @@ app.get('/api/listings/:id', async (req, res) => {
     }
 
     await medalAwardService.attachMedals([enrichedSeller]); // medals shown next to the seller's name
+    await affiliateLevelAwardService.attachAffiliateLevels([enrichedSeller]);
 
     // Use the LIVE market price, not the listing's own bitcoin_price field, for balance-
     // sufficiency math — that field is a snapshot taken at creation time (or unused entirely
@@ -7764,6 +7789,7 @@ app.get('/api/offers', async (req, res) => {
       country: u.country || null,
     }]));
     await medalAwardService.attachMedals(Object.values(userMap)); // medals shown next to each seller's name
+    await affiliateLevelAwardService.attachAffiliateLevels(Object.values(userMap));
 
     // Drop offers whose seller is banned or frozen (see the matching filter in
     // /api/listings). Only excluded when the status is positively known.
@@ -11151,6 +11177,12 @@ app.get('/api/affiliate/summary', verifyToken, async (req, res) => {
     const summary = await affiliateSummaryService.getAffiliateSummary(supabaseAdmin, req.userId, {
       cashEnabled: affiliateSummaryService.cashEnabled(),
     });
+    // Auto-award/notify Affiliate Program level badges (Explorer/Builder/Titan/Legendary) —
+    // does nothing unless AFFILIATE_LEVELS_AUTO_ENABLED=true; opening this screen is also
+    // when the after-trade hook can't catch a level someone already qualified for earlier.
+    const on = affiliateLevelAwardService.autoEnabled();
+    affiliateLevelAwardService.evaluateUser(req.userId, { persist: on, notify: on })
+      .catch((e) => console.error('[affiliateLevel] summary-screen check failed:', e.message));
     res.json({ success: true, ...summary });
   } catch (e) {
     console.error('[affiliate/summary]', e.message);

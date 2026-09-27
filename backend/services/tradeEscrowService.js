@@ -943,6 +943,11 @@ class TradeEscrowService {
     checkAndAwardBadges(tradeData.buyer_id).catch(() => {});
     // ── Medals: check both participants (does nothing unless MEDALS_AUTO_ENABLED=true; never blocks the trade) ──
     try { require('./medalAwardService').evaluateAfterTrade([tradeData.seller_id, tradeData.buyer_id]); } catch (e) { /* ignore */ }
+    // ── Affiliate level: this trade may belong to someone's referred user, which is the
+    // only thing that can move that referrer's level — checked inside evaluateAfterTrade
+    // via users.referred_by. Does nothing unless AFFILIATE_LEVELS_AUTO_ENABLED=true; never
+    // blocks the trade. ──
+    try { require('./affiliateLevelAwardService').evaluateAfterTrade([tradeData.seller_id, tradeData.buyer_id]); } catch (e) { /* ignore */ }
 
     // ── Log transaction for receiver ───────────────────────────────────────
     await this.logTransaction(

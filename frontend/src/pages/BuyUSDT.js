@@ -883,7 +883,7 @@ function ProfileModal({seller, listing, onClose, onTrade, usdtPriceUSD}) {
           <button onClick={onTrade}
             className="flex-1 py-3 rounded-2xl text-white text-sm font-black flex items-center justify-center gap-2 shadow-md"
             style={{backgroundColor:C.forest}}>
-            <span className="font-black">₮</span> Buy USDT
+            <CoinIcon coin="USDT" size={20} ring /> Buy USDT
           </button>
         </div>
       </div>
@@ -1231,10 +1231,11 @@ export default function BuyUSDT({user}) {
       navigate('/login?message=Please log in to start trading');
       return;
     }
-    const listing = listings.find(l => l.id === id);
-    if (listing) {
-      setModal({ type: 'profile', seller: listing.users, listing });
-    }
+    // Same fix as SellUSDT.js's handleSell: this used to open the seller-info modal
+    // (already independently reachable via onViewSeller below), so both the card's Buy
+    // button and the modal's own confirm button just reopened the same panel and never
+    // started a trade. Go straight to the listing, matching BuyBitcoin.js.
+    navigate(`/listing/${id}`);
   };
 
   const cur = selCurrency.code;

@@ -266,6 +266,10 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
     || trade.local_currency
     || (trade.currency && !['BTC','USDT','₿','₮','$'].includes(trade.currency) ? trade.currency : null)
     || trade.listing?.currency
+    // Neutral fallback only — a trade should always carry its real currency;
+    // this only fires if that data is genuinely missing, so it must never
+    // guess a specific country's currency (was 'GHS', which mislabeled the
+    // amount for any non-Ghana trade that ever hit this path).
     || 'USD';
   const cleanCur = String(rawCur).toUpperCase();
 

@@ -370,7 +370,12 @@
 .ppx .sect .h2b[style*="left"]::after{margin-left:0}
 
 /* ===== phone layout ===== */
-.ppx{overflow-x:hidden}
+/* No overflow-x here on purpose — html/body already clip horizontal overflow globally, and
+   giving .ppx its own overflow-x (with overflow-y left at the default 'visible') makes
+   overflow-y compute to 'auto' too (the CSS overflow interop rule). That silently turns this
+   whole-page wrapper into its own empty scroll container, and on a real touch device the
+   browser can latch a swipe onto that dead container instead of the real page — the Affiliate
+   Program / calculator pages then just stop responding to touch-scrolling. */
 .ppx .mecard>*,.ppx .linkrow,.ppx .lnk{min-width:0}
 .ppx .lnk b{min-width:0}
 @media(max-width:640px){
