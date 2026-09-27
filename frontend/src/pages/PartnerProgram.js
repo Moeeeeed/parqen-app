@@ -461,7 +461,7 @@ function PartnerProgram({ user }) {
       {/* HALL OF FAME */}
       <section className="wrap sect ctr">
         <h2 className="h2b">Hall of Fame</h2>
-        <p className="l">Our top affiliates: traders who brought active users to PRAQEN and grew with them. Get inspired and start your own journey today.</p>
+        <p className="l">Real stories from traders who built communities, mentored others, and achieved success on PRAQEN. Get inspired and start your own journey today. Join our movement.</p>
         {leaders.length > 0 ? (
           <div className="hof">
             {leaders.map((h, i) => {
@@ -474,14 +474,24 @@ function PartnerProgram({ user }) {
                     <div>
                       <b>@{h.username}</b>
                       <small>{h.country ? <><CountryFlag countryCode={h.country} style={{ width: 16, height: 12 }} /> {countryName(h.country)}</> : 'PRAQEN affiliate'}</small>
+                      {h.x_handle && (
+                        <a className="xh" href={`https://x.com/${h.x_handle.replace(/^@/, '')}`} target="_blank" rel="noopener noreferrer">
+                          𝕏 @{h.x_handle.replace(/^@/, '')}
+                        </a>
+                      )}
                     </div>
                     <Link className="pf" to={`/profile/${encodeURIComponent(h.username)}`}>Profile</Link>
                   </div>
-                  <p>Brought {h.users_brought} user{h.users_brought === 1 ? '' : 's'}, {h.active_users} of them active traders.</p>
+                  {h.quote ? (
+                    <blockquote className="hq">"{h.quote}"</blockquote>
+                  ) : (
+                    <p>Brought {h.users_brought} user{h.users_brought === 1 ? '' : 's'}, {h.active_users} of them active traders.</p>
+                  )}
                   {h.level && <div className="lvtag"><Badge i={lvl} size={22} /> {h.level} level</div>}
-                  <div className="st row"><small>Active users</small><strong>{h.active_users}</strong></div>
-                  <div className="st row"><small>Users brought</small><strong>{h.users_brought}</strong></div>
-                  <div className="st row"><small>Trade volume</small><strong>{Math.round(h.qualified_volume_usd).toLocaleString()} USD</strong></div>
+                  <div className="st row"><small>Lifetime earnings</small><strong>{usd(h.total_commission_usd)}</strong></div>
+                  <div className="st row"><small>Earnings this month</small><strong>{usd(h.commission_this_month_usd)}</strong></div>
+                  <div className="st row"><small>Network growth</small><strong>{h.users_brought} partner{h.users_brought === 1 ? '' : 's'}</strong></div>
+                  {h.quote && <Link className="btn p" style={{ marginTop: 10, width: '100%', textAlign: 'center' }} to={`/profile/${encodeURIComponent(h.username)}`}>See their journey</Link>}
                 </div>
               );
             })}

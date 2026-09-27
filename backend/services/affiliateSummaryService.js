@@ -380,18 +380,34 @@ async function _buildLeaderboard(supabase, { limit, now }) {
   // Real commission earned, from the ledger — stays 0 for everyone until
   // REFERRAL_PAYOUTS_ENABLED is actually turned on and trades start recording.
   const commissionByAff = new Map();
+  const commissionThisMonthByAff = new Map();
   if (topIds.length) {
     const { data: ledgerRows } = await supabase.from('affiliate_commission_ledger')
-      .select('affiliate_id, commission_usd').in('affiliate_id', topIds);
+      .select('affiliate_id, commission_usd, created_at').in('affiliate_id', topIds);
+    const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
     (ledgerRows || []).forEach((row) => {
-      commissionByAff.set(row.affiliate_id, round2((commissionByAff.get(row.affiliate_id) || 0) + Number(row.commission_usd || 0)));
+      const amt = Number(row.commission_usd || 0);
+      commissionByAff.set(row.affiliate_id, round2((commissionByAff.get(row.affiliate_id) || 0) + amt));
+      if (new Date(row.created_at) >= monthStart) {
+        commissionThisMonthByAff.set(row.affiliate_id, round2((commissionThisMonthByAff.get(row.affiliate_id) || 0) + amt));
+      }
     });
   }
 
+  // hall_of_fame_quote / x_handle are curated by hand per user (see
+  // database/2026-09-27_hall_of_fame_testimonials.sql) — most rows have neither;
+  // the Hall of Fame card falls back to plain stats when they're empty. A
+  // database that hasn't run that migration yet must not take the whole
+  // leaderboard down over two optional columns — same degrade pattern as the
+  // rest of this file (silent-column-drop lesson).
   const profiles = new Map();
   if (top.length) {
-    const { data, error } = await supabase.from('users').select('id, username, country').in('id', topIds);
-    if (error) throw new Error(error.message);
+    let { data, error } = await supabase.from('users').select('id, username, country, hall_of_fame_quote, x_handle').in('id', topIds);
+    if (error) {
+      const { data: fallback, error: fallbackErr } = await supabase.from('users').select('id, username, country').in('id', topIds);
+      if (fallbackErr) throw new Error(fallbackErr.message);
+      data = fallback;
+    }
     (data || []).forEach((u) => profiles.set(u.id, u));
   }
   const data = top.map((r, i) => ({
@@ -399,6 +415,9 @@ async function _buildLeaderboard(supabase, { limit, now }) {
     id: r.id,
     username: (profiles.get(r.id) || {}).username || 'Affiliate',
     country: (profiles.get(r.id) || {}).country || null,
+    quote: (profiles.get(r.id) || {}).hall_of_fame_quote || null,
+    x_handle: (profiles.get(r.id) || {}).x_handle || null,
+    commission_this_month_usd: commissionThisMonthByAff.get(r.id) || 0,
     level: r.level,
     users_brought: r.users_brought,
     active_users: r.active_users,
