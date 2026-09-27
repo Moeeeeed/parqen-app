@@ -17,6 +17,7 @@ const { createClient } = require('@supabase/supabase-js');
 const rateLimit = require('express-rate-limit');
 const { requireNotBanned, isUserBanned } = require('../middleware/requireNotBanned');
 const { getClientIp, isLockedOut, LOCKOUT_THRESHOLD } = require('../services/securityLogService');
+const { calcWithdrawalFeeUsd } = require('../services/withdrawalFeeService');
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -76,14 +77,15 @@ async function getLiveBtcPrice() {
     return _btcPriceCache.price; // return last known price rather than hard-coded fallback
 }
 
-// ── Withdrawal fee — flat 2.2%, additive (added on top, receiver gets the
-// full requested amount) — returns { feeUsd, feeBtc, label }. Changed from
-// deductive 1.2% on 2026-09-17.
+// ── Withdrawal fee — tiered by USD value (see services/withdrawalFeeService.js),
+// additive (added on top, receiver gets the full requested amount) — returns
+// { feeUsd, feeBtc, label }. Changed from deductive 1.2% -> flat 2.2% additive
+// on 2026-09-17, then to this tiered structure on 2026-09-27.
 function calcWithdrawalFee(amountBtc, btcPrice) {
   const amountUsd = Math.round(amountBtc * btcPrice * 100) / 100;
-  const feeUsd = amountUsd * 0.022;
+  const { feeUsd, label } = calcWithdrawalFeeUsd(amountUsd);
   const feeBtc = parseFloat((feeUsd / btcPrice).toFixed(8));
-  return { feeUsd: parseFloat(feeUsd.toFixed(2)), feeBtc, label: '2.2% fee' };
+  return { feeUsd, feeBtc, label };
 }
 
 // ============================================================

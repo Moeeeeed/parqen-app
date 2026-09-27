@@ -34,7 +34,7 @@ const COMPANY_ID        = process.env.PRAQEN_COMPANY_WALLET_IDENTIFIER     || 'p
 const COMPANY_WALLET_ID = '14762cd0-d3b2-474f-acab-fe0071961e9a';
 const MIN_TRX_RESERVE   = parseInt(process.env.HOT_WALLET_MIN_TRX   || '100',  10);
 const TRX_PER_SWEEP     = parseInt(process.env.HOT_WALLET_TRX_SWEEP || '20',   10);
-const USDT_WITHDRAWAL_FEE_RATE = 0.018; // 1.8% per withdrawal — informational only (admin status + startup log); server.js's own FEE_PERCENT is what's actually charged
+const USDT_WITHDRAWAL_FEE_RATE = 0.018; // informational only (admin status + startup log) — stale since 2026-09-27: the real fee is now tiered by withdrawal size, see services/withdrawalFeeService.js
 
 function tronHeaders() {
   return tronConfig.getHeaders();

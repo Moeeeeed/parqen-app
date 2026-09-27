@@ -423,6 +423,7 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const tradeEscrowService = require('./services/tradeEscrowService');
 const accountEnforcement = require('./services/accountEnforcement');
 const actionCodeService = require('./services/actionCodeService');
+const { calcWithdrawalFeeUsd } = require('./services/withdrawalFeeService');
 const { getClientIp, logSecurityEvent, isLockedOut } = require('./services/securityLogService');
 const balanceIntegrity = require('./services/balanceIntegrityService');
 const depositReconciliation = require('./services/depositReconciliationService');
@@ -15452,11 +15453,12 @@ app.post('/api/wallet/usdt/send', verifyToken, requireNotBanned, async (req, res
     }
   }
 
-  const FEE_PERCENT = parseFloat(process.env.USDT_WITHDRAWAL_FEE_PERCENT || '0.018'); // 1.8% — no flat-dollar floor
   const MIN_SEND = parseFloat(process.env.USDT_MIN_SEND || '5.0');  // minimum $5
 
-  // ── Fee calculator: straight percentage, no flat-dollar floor ─────────────
-  const calcFee = (amt) => parseFloat((amt * FEE_PERCENT).toFixed(6));
+  // ── Fee calculator: tiered by USD value (services/withdrawalFeeService.js) —
+  // USDT is treated 1:1 with USD. Same tiers as the BTC withdrawal path so the
+  // two currencies never drift apart.
+  const calcFee = (amt) => calcWithdrawalFeeUsd(amt).feeUsd;
 
   try {
     const { toAddress, amount, actionCode } = req.body;
@@ -15522,10 +15524,10 @@ app.post('/api/wallet/usdt/send', verifyToken, requireNotBanned, async (req, res
       });
     }
 
-    // ── Calculate fee: flat 2% ─────────────────────────────────────────────
+    // ── Calculate fee: tiered by USD value ──────────────────────────────────
     const withdrawalFee = calcFee(sendAmount);
     const totalDeduct = parseFloat((sendAmount + withdrawalFee).toFixed(6));
-    const feeLabel = `${(FEE_PERCENT * 100).toFixed(0)}% (₮${withdrawalFee.toFixed(2)})`;
+    const feeLabel = `${calcWithdrawalFeeUsd(sendAmount).label} (₮${withdrawalFee.toFixed(2)})`;
 
     // ── Check user balance (must cover amount + fee) ──────────────────────
     const { data: walRow } = await supabaseAdmin
