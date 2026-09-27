@@ -21,6 +21,7 @@ function fakeDb(tables) {
         in(c, arr) { st.filters.push((r) => arr.includes(r[c])); return b; },
         order(c) { st.order = c; return b; },
         range(a, z) { st.range = [a, z]; return b; },
+        limit(n) { st.range = [0, n - 1]; return b; },
         maybeSingle() { st.single = true; return b; },
         single() { st.single = true; return b; },
         then(res, rej) {
@@ -116,10 +117,26 @@ describe('automatic award', () => {
     assert.strictEqual(db.tables.user_badges.length, 1);
   });
 
-  it('jumping straight to Titan in one check still earns Explorer and Builder along the way (cumulative)', async () => {
+  it('reaching Titan\'s numbers without Builder approval still caps the effective level at Explorer', async () => {
+    // Builder is the one level that needs a manual interview (see affiliateSummaryService's
+    // BUILDER_INDEX gate) — numbers alone are not enough past Explorer until approved.
     const referred = Array.from({ length: 50 }, (_, i) => mkUser('u' + i, { referred_by: AFF }));
     const trades = referred.map((u, i) => trade('t' + i, u.id, 'x' + i, 200)); // 50 active, $10,000 total
-    const db = fakeDb({ users: [mkUser(AFF), ...referred], trades, listings: [], user_badges: [], notifications: [] });
+    const db = fakeDb({ users: [mkUser(AFF), ...referred], trades, listings: [], user_badges: [], notifications: [], affiliate_builder_applications: [] });
+    const r = await award.evaluateUser(AFF, { persist: true, notify: true, supabase: db, pushFn });
+    assert.strictEqual(r.level.name, 'Explorer');
+    assert.deepStrictEqual(r.newlyAwarded, ['affiliate-explorer']);
+    assert.strictEqual(db.tables.notifications.length, 1);
+    assert.strictEqual(db.tables.user_badges.filter((b) => b.is_unlocked).length, 1);
+  });
+
+  it('once Builder is approved, the same numbers correctly jump straight to Titan (cumulative)', async () => {
+    const referred = Array.from({ length: 50 }, (_, i) => mkUser('u' + i, { referred_by: AFF }));
+    const trades = referred.map((u, i) => trade('t' + i, u.id, 'x' + i, 200)); // 50 active, $10,000 total
+    const db = fakeDb({
+      users: [mkUser(AFF), ...referred], trades, listings: [], user_badges: [], notifications: [],
+      affiliate_builder_applications: [{ id: 'app1', user_id: AFF, status: 'approved', created_at: '2026-01-01T00:00:00Z' }],
+    });
     const r = await award.evaluateUser(AFF, { persist: true, notify: true, supabase: db, pushFn });
     assert.strictEqual(r.level.name, 'Titan');
     assert.deepStrictEqual(new Set(r.newlyAwarded), new Set(['affiliate-explorer', 'affiliate-builder', 'affiliate-titan']));

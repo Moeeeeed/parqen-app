@@ -11197,6 +11197,120 @@ app.get('/api/affiliate/config', (req, res) => {
   res.json({ success: true, ...affiliateSummaryService.getPublicConfig() });
 });
 
+// POST /api/affiliate/builder/apply — Builder is the one level that needs a manual
+// interview instead of auto-unlocking. Only callable once the live numbers actually
+// qualify (checked server-side, not trusted from the client); records the application
+// and notifies admins. See database/2026-09-27_affiliate_builder_applications.sql.
+app.post('/api/affiliate/builder/apply', verifyToken, async (req, res) => {
+  try {
+    const summary = await affiliateSummaryService.getAffiliateSummary(supabaseAdmin, req.userId, {
+      cashEnabled: affiliateSummaryService.cashEnabled(),
+    });
+    if (!summary.builder_application.eligible) {
+      return res.status(400).json({ error: "You haven't reached Builder's requirements yet." });
+    }
+    if (!summary.builder_application.can_apply) {
+      const status = summary.builder_application.status;
+      return res.status(400).json({
+        error: status === 'approved' ? 'You are already a Builder.' : "Your application is already under review.",
+      });
+    }
+
+    const { data: inserted, error } = await supabaseAdmin.from('affiliate_builder_applications').insert({
+      user_id: req.userId,
+      status: 'pending',
+      active_users_at_apply: summary.totals.active_users,
+      qualified_volume_at_apply: summary.totals.qualified_volume_usd,
+    }).select().single();
+    if (error) {
+      if (error.code === '42P01' || /does not exist/i.test(error.message || '')) {
+        console.error('[affiliate/builder/apply] Table missing — run database/2026-09-27_affiliate_builder_applications.sql');
+        return res.status(503).json({ error: 'Applications are not available yet. Please try again later.' });
+      }
+      throw error;
+    }
+
+    try {
+      const { data: applicant } = await supabaseAdmin.from('users').select('username').eq('id', req.userId).maybeSingle();
+      const { data: admins } = await supabaseAdmin.from('users').select('id').or('is_admin.eq.true,is_ceo.eq.true');
+      const title = '📋 New Builder application';
+      const message = `${applicant?.username || 'A user'} applied for Builder — ${summary.totals.active_users} active users, ${summary.totals.qualified_volume_usd} USD volume. Review in affiliate_builder_applications.`;
+      for (const a of (admins || [])) {
+        await createNotification(a.id, 'affiliate_builder_application', title, message, '/partner-program');
+      }
+    } catch (notifErr) {
+      console.warn('[affiliate/builder/apply] Admin notification failed (non-fatal):', notifErr.message);
+    }
+
+    res.json({ success: true, message: "Application received — we'll be in touch for a quick interview.", application: inserted });
+  } catch (e) {
+    console.error('[affiliate/builder/apply]', e.message);
+    res.status(500).json({ error: 'Could not submit application. Please try again.' });
+  }
+});
+
+// GET /api/admin/affiliate/builder-applications?status=pending|approved|rejected|all
+app.get('/api/admin/affiliate/builder-applications', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireTeamOrCeo(req, res); if (!admin) return;
+    const { status = 'pending' } = req.query;
+    let query = supabaseAdmin.from('affiliate_builder_applications')
+      .select('id, user_id, status, active_users_at_apply, qualified_volume_at_apply, applied_at, reviewed_at, reviewed_by, rejection_reason, users:user_id(username, email, country)')
+      .order('applied_at', { ascending: false });
+    if (status !== 'all') query = query.eq('status', status);
+    const { data, error } = await query;
+    if (error) {
+      if (error.code === '42P01' || /does not exist/i.test(error.message || '')) {
+        return res.json({ success: true, applications: [], migration_needed: true, migration_hint: 'Run database/2026-09-27_affiliate_builder_applications.sql in Supabase SQL Editor.' });
+      }
+      throw error;
+    }
+    res.json({ success: true, applications: data || [] });
+  } catch (e) {
+    console.error('[admin/affiliate/builder-applications]', e.message);
+    res.status(500).json({ error: 'Could not load applications' });
+  }
+});
+
+// POST /api/admin/affiliate/builder-applications/:id/approve
+app.post('/api/admin/affiliate/builder-applications/:id/approve', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireFullAdminOrCeo(req, res); if (!admin) return;
+    const { data: updated, error } = await supabaseAdmin.from('affiliate_builder_applications')
+      .update({ status: 'approved', reviewed_at: new Date(), reviewed_by: req.userId, updated_at: new Date() })
+      .eq('id', req.params.id)
+      .select('id, user_id, status')
+      .single();
+    if (error) return res.status(400).json({ error: error.message });
+    if (!updated) return res.status(404).json({ error: 'Application not found' });
+    logAdminAction(req, 'AFFILIATE_BUILDER_APPROVE', updated.user_id, null).catch(() => { });
+    try {
+      await createNotification(updated.user_id, 'affiliate_builder_application', '🚀 You\'re now a Builder!', 'Your Affiliate Program interview was approved — you\'re now a Builder, earning a bigger share of every trade your network makes.', '/partner-program');
+      sendSystemAlert(updated.user_id, '🚀 You\'re now a Builder!', 'Your Builder application was approved!', 'https://praqen.com/partner-program').catch(() => { });
+    } catch (_) { }
+    res.json({ success: true, application: updated });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/affiliate/builder-applications/:id/reject
+app.post('/api/admin/affiliate/builder-applications/:id/reject', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireFullAdminOrCeo(req, res); if (!admin) return;
+    const { reason = 'Not approved at this time' } = req.body;
+    const { data: updated, error } = await supabaseAdmin.from('affiliate_builder_applications')
+      .update({ status: 'rejected', rejection_reason: reason, reviewed_at: new Date(), reviewed_by: req.userId, updated_at: new Date() })
+      .eq('id', req.params.id)
+      .select('id, user_id, status')
+      .single();
+    if (error) return res.status(400).json({ error: error.message });
+    if (!updated) return res.status(404).json({ error: 'Application not found' });
+    try {
+      await createNotification(updated.user_id, 'affiliate_builder_application', 'Builder application update', `Your Builder application was not approved this time: ${reason}. You can apply again once you're ready.`, '/partner-program');
+    } catch (_) { }
+    res.json({ success: true, application: updated });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Public leaderboard ranked by ACTIVE USERS (then trade volume). No earnings, no money.
 app.get('/api/affiliate/leaderboard', async (req, res) => {
   try {

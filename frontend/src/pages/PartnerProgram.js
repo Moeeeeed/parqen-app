@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import PropTypes from 'prop-types';
+import { toast } from 'react-toastify';
 import CountryFlag from '../components/CountryFlag';
 import SEO from '../components/SEO';
 import './partner-program.css';
 import {
   countryName, LEVELS, CLAIM_MIN_USD, ACTIVE_MIN_USD, Badge, pct, usd, monthlyExample,
-  useAffiliateConfig, useAffiliateSummary, useAffiliateLeaderboard,
+  useAffiliateConfig, useAffiliateSummary, useAffiliateLeaderboard, applyForBuilder,
 } from './partnerShared';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -90,11 +91,30 @@ function PartnerProgram({ user }) {
   const [copied, setCopied] = useState(false);
   const [tab, setTab] = useState('board');
   const [q, setQ] = useState('');
+  const [builderApplying, setBuilderApplying] = useState(false);
+  // Overrides sum.builder_application right after a successful apply, so the
+  // pill flips to "under review" immediately without waiting on a refetch.
+  const [builderAppOverride, setBuilderAppOverride] = useState(null);
 
   const cash = cfg.cashEnabled === true;
   const levels = cfg.levels || LEVELS;
   const sum = summary.data;
   const totals = (sum && sum.totals) || ZERO;
+  const builderApp = builderAppOverride || (sum && sum.builder_application) || null;
+
+  const handleBuilderApply = async () => {
+    if (builderApplying) return;
+    setBuilderApplying(true);
+    try {
+      const message = await applyForBuilder();
+      toast.success(message);
+      setBuilderAppOverride({ eligible: true, status: 'pending', can_apply: false, rejection_reason: null });
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setBuilderApplying(false);
+    }
+  };
 
   const code = user?.referral_code || user?.username || '';
   const link = code ? `https://praqen.com/signup?ref=${encodeURIComponent(code)}` : '';
@@ -307,6 +327,26 @@ function PartnerProgram({ user }) {
                 <div className="bd3">
                   <div className="box">
                     <h5>TO UNLOCK</h5>
+                    {/* Builder is the one level that needs a manual interview instead of
+                        unlocking free the moment the numbers are hit (Explorer/Titan/Legendary
+                        don't have this). Reaching the numbers just changes the pill from
+                        "Interview is Required" to an actual Apply button. */}
+                    {l.n === 'Builder' && builderApp && !unlocked && (
+                      builderApp.status === 'pending' ? (
+                        <span className="pill" style={{ background: '#FEF3C7', color: '#92400E', display: 'inline-block', marginBottom: 8 }}>
+                          Application under review
+                        </span>
+                      ) : builderApp.can_apply ? (
+                        <button type="button" onClick={handleBuilderApply} disabled={builderApplying}
+                          className="pill" style={{ background: '#1B4332', color: '#fff', border: 'none', cursor: builderApplying ? 'default' : 'pointer', display: 'inline-block', marginBottom: 8, opacity: builderApplying ? 0.7 : 1 }}>
+                          {builderApplying ? 'Submitting…' : 'Apply'}
+                        </button>
+                      ) : (
+                        <span className="pill" style={{ background: '#E5E7EB', color: '#374151', display: 'inline-block', marginBottom: 8 }}>
+                          Interview is Required
+                        </span>
+                      )
+                    )}
                     <div className="mrow"><span>Active users</span><b className={totals.active_users >= l.f ? 'ok' : ''}>{totals.active_users} / {l.f}</b></div>
                     <div className="mrow"><span>Trade volume (lifetime)</span><b className={totals.qualified_volume_usd >= l.v ? 'ok' : ''}>{usd(totals.qualified_volume_usd)} / {l.v.toLocaleString()} USD</b></div>
                     <p className="small">Active user = someone you brought who has traded at least {ACTIVE_MIN_USD} USD in total. Trade volume is what your active users have traded. You need both numbers to unlock.</p>

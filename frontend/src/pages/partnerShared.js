@@ -14,7 +14,7 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 // trade, NOT 10% of the trade's own value. See DEFAULT_FEE_RATE below.
 export const LEVELS = [
   { n: 'Explorer',  r: 0.10, c: '#B7D9C4', f: 5,  v: 50,    kf: 3,  kv: 50,    ex: { f: 5,  t: 3, z: 60 },  get: ['10% of PRAQEN\'s fee on every trade your users make', 'Your personal link and scan code', 'Live progress dashboard'], bonus: ['Explorer badge'] },
-  { n: 'Builder',   r: 0.20, c: '#2D6A4F', f: 15, v: 5000,  kf: 8,  kv: 1000,  ex: { f: 15, t: 3, z: 100 }, get: ['20% of PRAQEN\'s fee on every trade your users make', 'Builder badge on your profile'], bonus: ['Priority support'] },
+  { n: 'Builder',   r: 0.20, c: '#2D6A4F', f: 15, v: 5000,  kf: 8,  kv: 1000,  ex: { f: 15, t: 3, z: 100 }, get: ['20% Commission', 'Builder Badge on your profile', 'VIP / Priority Support', 'Swags from PRAQEN'], bonus: [] },
   { n: 'Titan',     r: 0.30, c: '#F4A422', f: 50, v: 10000, kf: 25, kv: 3000,  ex: { f: 50, t: 4, z: 200 }, get: ['30% of PRAQEN\'s fee on every trade your users make', 'Titan badge', 'Early access to new features'], bonus: ['Featured on the leaderboard'] },
   { n: 'Legendary', r: 0.40, c: '#1B4332', f: 80, v: 70000, kf: 40, kv: 20000, ex: { f: 80, t: 5, z: 250 }, get: ['40% of PRAQEN\'s fee on every trade your users make', 'Legendary badge', 'Direct line to the PRAQEN team'], bonus: ['Hall of Fame spot', 'Invites to PRAQEN events'] },
 ];
@@ -133,6 +133,23 @@ export function useAffiliateSummary(user) {
     return () => { alive = false; };
   }, [uid]);
   return state;
+}
+
+// Submit a Builder application. Only ever called once the server-computed
+// numbers already qualify — the server re-checks this itself regardless.
+// Returns the server's success message on success, throws with .message set
+// to the server's error text otherwise.
+export async function applyForBuilder() {
+  const token = localStorage.getItem('token');
+  if (!token) throw new Error('Please log in first.');
+  try {
+    const { data } = await axios.post(`${API_URL}/affiliate/builder/apply`, {}, {
+      headers: { Authorization: `Bearer ${token}` }, timeout: 15000,
+    });
+    return data?.message || 'Application received.';
+  } catch (e) {
+    throw new Error(e?.response?.data?.error || 'Could not submit application. Please try again.');
+  }
 }
 
 // Public leaderboard, ranked by active users.

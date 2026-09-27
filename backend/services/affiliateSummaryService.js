@@ -27,6 +27,13 @@ const LEVELS = [
 // A brought user is "active" once their own lifetime trade volume reaches this.
 const ACTIVE_MIN_USD = 20;
 
+// Builder (and ONLY Builder — Explorer unlocks free, Titan/Legendary unlock free
+// once past Builder) requires a manual interview before it's actually granted.
+// Hitting Builder's numbers alone just unlocks the ability to apply; the
+// affiliate stays at Explorer's rate until an admin approves the application
+// (affiliate_builder_applications table). See database/2026-09-27_affiliate_builder_applications.sql.
+const BUILDER_INDEX = 1;
+
 const CHUNK = 50;
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -38,12 +45,43 @@ function chunks(arr, size) {
 }
 
 // Highest level whose unlock numbers are BOTH met. -1 = none yet.
+// This is raw NUMERIC eligibility only — it does not know about the Builder
+// interview gate. Use effectiveLevelIndex() below for the level actually granted.
 function levelIndexFor(activeUsers, qualifiedVolume) {
   let idx = -1;
   LEVELS.forEach((l, i) => {
     if (activeUsers >= l.users && qualifiedVolume >= l.volume) idx = i;
   });
   return idx;
+}
+
+// The most recent Builder application for this user, or null if they've never applied.
+// Wrapped in a full try/catch (not just an error-code check): a missing table
+// (migration not run yet) or a query-builder shape that doesn't support every
+// chained method here must degrade to "never applied", never crash the whole
+// summary over it — same defensive pattern as the rest of this file.
+async function getBuilderApplication(supabase, userId) {
+  try {
+    const { data, error } = await supabase
+      .from('affiliate_builder_applications')
+      .select('id, status, active_users_at_apply, qualified_volume_at_apply, applied_at, reviewed_at, rejection_reason')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) return null;
+    return data || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Numeric eligibility capped by the Builder interview gate: reaching Builder's
+// (or a higher level's) numbers only grants that level once Builder has been
+// approved. Below Builder, or once approved, this matches levelIndexFor exactly.
+function effectiveLevelIndex(eligibleIdx, builderApproved) {
+  if (eligibleIdx < BUILDER_INDEX) return eligibleIdx; // -1 or Explorer — gate doesn't apply
+  return builderApproved ? eligibleIdx : (BUILDER_INDEX - 1); // capped at Explorer until approved
 }
 
 // Is this trade one that counts towards an affiliate's numbers?
@@ -179,8 +217,24 @@ async function getAffiliateSummary(supabase, affiliateId, { cashEnabled = false 
 
   const activeUsers = agg.active.size;
   const qualifiedVolume = round2(agg.qualifiedVolume);
-  const levelIdx = levelIndexFor(activeUsers, qualifiedVolume);
+  const eligibleIdx = levelIndexFor(activeUsers, qualifiedVolume);
+
+  const builderApp = await getBuilderApplication(supabase, affiliateId);
+  const builderApproved = builderApp?.status === 'approved';
+  const levelIdx = effectiveLevelIndex(eligibleIdx, builderApproved);
   const level = levelIdx >= 0 ? { index: levelIdx, name: LEVELS[levelIdx].name, rate: LEVELS[levelIdx].rate } : null;
+
+  // Builder-gate UI state: whether the numbers qualify for Builder+ yet, and
+  // what the page should show — "interview required" (not there yet), "apply"
+  // (qualifies, no application on file / previously rejected), "pending"
+  // (already applied, awaiting review), or null once approved (normal display).
+  const builderEligible = eligibleIdx >= BUILDER_INDEX;
+  const builderApplication = {
+    eligible: builderEligible,
+    status: builderApp?.status || null,
+    can_apply: builderEligible && (!builderApp || builderApp.status === 'rejected'),
+    rejection_reason: builderApp?.status === 'rejected' ? (builderApp.rejection_reason || null) : null,
+  };
 
   const nextIdx = levelIdx + 1;
   let next = null;
@@ -211,6 +265,7 @@ async function getAffiliateSummary(supabase, affiliateId, { cashEnabled = false 
     // Getting started (no level yet): the Explorer rate still applies from the first trade.
     level,
     rate_now: LEVELS[Math.max(0, levelIdx)].rate,
+    builder_application: builderApplication,
     next,
     levels: LEVELS.map((l, i) => ({ index: i, ...l })),
     users,
@@ -328,5 +383,5 @@ async function _buildLeaderboard(supabase, { limit, now }) {
 }
 function _clearLeaderboardCache() { _lbCache = null; }
 
-module.exports = { LEVELS, ACTIVE_MIN_USD, levelIndexFor, tradeQualifies, aggregate, getAffiliateSummary, cashEnabled, getPublicConfig, getLeaderboard, _clearLeaderboardCache };
+module.exports = { LEVELS, ACTIVE_MIN_USD, BUILDER_INDEX, levelIndexFor, effectiveLevelIndex, getBuilderApplication, tradeQualifies, aggregate, getAffiliateSummary, cashEnabled, getPublicConfig, getLeaderboard, _clearLeaderboardCache };
 
