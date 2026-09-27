@@ -78,13 +78,6 @@ function formatPaymentMethod(pm) {
   return str.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function fmtBtc(amount, isUsdt) {
-  if (!amount || isNaN(parseFloat(amount))) return isUsdt ? '0.00 USDT' : '0.000000 BTC';
-  const num = parseFloat(amount);
-  if (isUsdt) return `${num.toFixed(2)} USDT`;
-  return `${num.toFixed(6)} BTC`;
-}
-
 function getTradeBrand(t) {
   if (!t) return 'Gift Card';
   const rawBrand = t.listing?.gift_card_brand || t.listing?.giftCardBrand || t.listing?.card_brand ||
@@ -108,6 +101,13 @@ function isGcTrade(t) {
   if (lt.includes('GIFT_CARD') || lt.includes('GC_')) return true;
   if (t.listing?.gift_card_brand || t.gift_card_brand || t.card_brand) return true;
   return false;
+}
+
+function fmtBtc(amount, isUsdt) {
+  if (!amount || isNaN(parseFloat(amount))) return isUsdt ? '0.00 USDT' : '0.000000 BTC';
+  const num = parseFloat(amount);
+  if (isUsdt) return `${num.toFixed(2)} USDT`;
+  return `${num.toFixed(6)} BTC`;
 }
 
 function Avatar({ user, size = 48, radius = 'rounded-lg' }) {
@@ -266,17 +266,9 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
     || trade.local_currency
     || (trade.currency && !['BTC','USDT','₿','₮','$'].includes(trade.currency) ? trade.currency : null)
     || trade.listing?.currency
-    // Neutral fallback only — a trade should always carry its real currency;
-    // this only fires if that data is genuinely missing, so it must never
-    // guess a specific country's currency (was 'GHS', which mislabeled the
-    // amount for any non-Ghana trade that ever hit this path).
     || 'USD';
   const cleanCur = String(rawCur).toUpperCase();
 
-  // Real numbers only — no guessing. fiatNum comes straight from the trade's own
-  // fiat field; cryptoNum from its own BTC/USDT field. Never derive one from the
-  // other (a margin-based guess here previously showed a fabricated number under
-  // a "Receive (BTC)"-style label — see commit 263d1dc).
   const fiatNum   = parseFloat(trade.amount_local || trade.fiat_amount || trade.amount_fiat || trade.amount_usd || trade.amount || 0);
   const cryptoNum = parseFloat(trade.amount_btc || trade.amount_usdt || trade.crypto_amount || trade.amount_crypto || trade.btc_amount || trade.usdt_amount || 0);
 
