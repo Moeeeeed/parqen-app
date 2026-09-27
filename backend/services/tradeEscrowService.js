@@ -948,6 +948,12 @@ class TradeEscrowService {
     // via users.referred_by. Does nothing unless AFFILIATE_LEVELS_AUTO_ENABLED=true; never
     // blocks the trade. ──
     try { require('./affiliateLevelAwardService').evaluateAfterTrade([tradeData.seller_id, tradeData.buyer_id]); } catch (e) { /* ignore */ }
+    // ── Affiliate commission ledger: records real $ earned by whoever referred
+    // either side, under the NEW level-based rates. Inert until
+    // REFERRAL_PAYOUTS_ENABLED=true; never blocks or affects the trade. ──
+    try {
+      require('./affiliateCommissionService').recordForTrade({ ...tradeData, currency: tradeCurrency, amount_usd: tradeData.amount_usd, fee_status: 'COLLECTED' }).catch(() => {});
+    } catch (e) { /* ignore */ }
 
     // ── Log transaction for receiver ───────────────────────────────────────
     await this.logTransaction(

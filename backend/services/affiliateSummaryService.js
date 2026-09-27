@@ -361,10 +361,36 @@ async function _buildLeaderboard(supabase, { limit, now }) {
   });
   rows.sort((a, b) => b.active_users - a.active_users || b.qualified_volume_usd - a.qualified_volume_usd || b.users_brought - a.users_brought);
   const top = rows.slice(0, limit);
+  const topIds = top.map((r) => r.id);
+
+  // Builder gate applies here too — the raw numeric level computed above must
+  // not be shown on the board for anyone who hasn't actually been approved.
+  const approvedBuilders = new Set();
+  if (topIds.length) {
+    const { data: apps } = await supabase.from('affiliate_builder_applications')
+      .select('user_id').eq('status', 'approved').in('user_id', topIds);
+    (apps || []).forEach((a) => approvedBuilders.add(a.user_id));
+  }
+  top.forEach((r) => {
+    const eligibleIdx = LEVELS.findIndex((l) => l.name === r.level);
+    const grantedIdx = effectiveLevelIndex(eligibleIdx, approvedBuilders.has(r.id));
+    r.level = grantedIdx >= 0 ? LEVELS[grantedIdx].name : null;
+  });
+
+  // Real commission earned, from the ledger — stays 0 for everyone until
+  // REFERRAL_PAYOUTS_ENABLED is actually turned on and trades start recording.
+  const commissionByAff = new Map();
+  if (topIds.length) {
+    const { data: ledgerRows } = await supabase.from('affiliate_commission_ledger')
+      .select('affiliate_id, commission_usd').in('affiliate_id', topIds);
+    (ledgerRows || []).forEach((row) => {
+      commissionByAff.set(row.affiliate_id, round2((commissionByAff.get(row.affiliate_id) || 0) + Number(row.commission_usd || 0)));
+    });
+  }
 
   const profiles = new Map();
   if (top.length) {
-    const { data, error } = await supabase.from('users').select('id, username, country').in('id', top.map((r) => r.id));
+    const { data, error } = await supabase.from('users').select('id, username, country').in('id', topIds);
     if (error) throw new Error(error.message);
     (data || []).forEach((u) => profiles.set(u.id, u));
   }
@@ -377,6 +403,7 @@ async function _buildLeaderboard(supabase, { limit, now }) {
     users_brought: r.users_brought,
     active_users: r.active_users,
     qualified_volume_usd: r.qualified_volume_usd,
+    total_commission_usd: commissionByAff.get(r.id) || 0,
   }));
   _lbCache = { ts: now, limit, data };
   return data;

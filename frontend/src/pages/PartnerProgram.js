@@ -7,7 +7,7 @@ import CountryFlag from '../components/CountryFlag';
 import SEO from '../components/SEO';
 import './partner-program.css';
 import {
-  countryName, LEVELS, CLAIM_MIN_USD, ACTIVE_MIN_USD, Badge, pct, usd, monthlyExample,
+  countryName, LEVELS, CLAIM_MIN_USD, ACTIVE_MIN_USD, Badge, pct, usd, money, monthlyExample,
   useAffiliateConfig, useAffiliateSummary, useAffiliateLeaderboard, applyForBuilder,
 } from './partnerShared';
 
@@ -407,7 +407,7 @@ function PartnerProgram({ user }) {
 
           {tab === 'board' && (
             <div className="tbl">
-              <div className="tr th"><span>Affiliates</span><span>Ranking</span><span>Users brought</span><span>Active users</span><span>Trade volume (USD)</span></div>
+              <div className="tr th"><span>Affiliates</span><span>Ranking</span><span>Users brought</span><span>Active users</span><span>Trade volume (USD)</span><span>Total Commission Earned</span></div>
               {board === null && <p className="note" style={{ padding: 14 }}>Loading…</p>}
               {board && board.length === 0 && <p className="note" style={{ padding: 14 }}>No affiliates on the board yet. Be the first to bring an active user!</p>}
               {(board || []).filter(matches).map((b) => (
@@ -423,6 +423,7 @@ function PartnerProgram({ user }) {
                   <span data-l="Users brought">{b.users_brought}</span>
                   <span data-l="Active users">{b.active_users}</span>
                   <span data-l="Trade volume">{Math.round(b.qualified_volume_usd).toLocaleString()} USD</span>
+                  <span data-l="Total Commission Earned">{money(b.total_commission_usd || 0)}</span>
                 </div>
               ))}
             </div>
