@@ -347,14 +347,28 @@ const getRateLocal = (l, btcPrice, usdRate) => {
 };
 const getListingCurrencyCode = (l) => {
   if (!l) return 'USD';
-  if (l.fiat_currency && typeof l.fiat_currency === 'string') return l.fiat_currency.toUpperCase();
-  if (l.local_currency && typeof l.local_currency === 'string') return l.local_currency.toUpperCase();
+  if (l.gift_card_currency && typeof l.gift_card_currency === 'string' && l.gift_card_currency.trim()) {
+    return l.gift_card_currency.trim().toUpperCase();
+  }
+  if (l.card_currency && typeof l.card_currency === 'string' && l.card_currency.trim()) {
+    return l.card_currency.trim().toUpperCase();
+  }
   if (Array.isArray(l.gift_card_currencies) && l.gift_card_currencies.length > 0 && l.gift_card_currencies[0]) {
-    return String(l.gift_card_currencies[0]).toUpperCase();
+    return String(l.gift_card_currencies[0]).trim().toUpperCase();
   }
   if (typeof l.gift_card_currencies === 'string' && l.gift_card_currencies.trim()) {
     return l.gift_card_currencies.trim().toUpperCase();
   }
+  if (l.fiat_currency && typeof l.fiat_currency === 'string' && l.fiat_currency.trim()) {
+    return l.fiat_currency.trim().toUpperCase();
+  }
+  if (l.currency && typeof l.currency === 'string' && l.currency.trim()) {
+    return l.currency.trim().toUpperCase();
+  }
+  if (l.local_currency && typeof l.local_currency === 'string' && l.local_currency.trim()) {
+    return l.local_currency.trim().toUpperCase();
+  }
+
   const text = `${l.payment_method || ''} ${l.gift_card_brand || ''} ${l.card_type || ''} ${l.description || ''} ${l.title || ''}`.toUpperCase();
   const textMatch = text.match(/\b(CAD|EUR|GBP|USD|AUD|GHS|NGN|KES|ZAR|BRL|MXN|JPY|HKD|CHF|NOK|SEK|DKK|PLN|NZD|SGD|UGX|TZS|RWF|XOF|XAF|EGP|MAD|ETB|INR|CNY|KRW|AED|SAR|QAR|ILS)\b/);
   if (textMatch) return textMatch[1];
@@ -372,7 +386,6 @@ const getListingCurrencyCode = (l) => {
     return countryCurrencyMap[countryCode];
   }
 
-  if (l.currency && typeof l.currency === 'string') return l.currency.toUpperCase();
   return 'USD';
 };
 const getBrand = (l) => l.gift_card_brand || l.giftCardBrand || l.card_brand || l.payment_method || 'Gift Card';
