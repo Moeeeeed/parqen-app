@@ -83,12 +83,20 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
     ? parseFloat((parseFloat(usdAmount || 0) / price).toFixed(8))
     : parseFloat(amount || 0);
 
-  // Flat 2.2% withdrawal fee, additive (added on top of the send amount) —
-  // mirrors backend calcWithdrawalFee(). Changed from deductive 1.2% on 2026-09-17.
+  // Tiered withdrawal fee, additive (added on top of the send amount) — mirrors
+  // backend services/withdrawalFeeService.js exactly (same tiers). Changed from
+  // deductive 1.2% -> flat 2.2% additive on 2026-09-17, then to this tiered
+  // structure on 2026-09-27.
   // Use raw USD input when in USD mode to avoid BTC round-trip floating-point boundary errors
   const calcFeeByUsd = (usd) => {
     if (usd <= 0) return { feeUsd: 0, feeBtc: 0, label: '' };
-    return { feeUsd: usd * 0.022, feeBtc: (usd * 0.022) / price, label: '2.2% fee' };
+    let feeUsd, label;
+    if (usd < 50) { feeUsd = 4.5; label = '$4.50 fee'; }
+    else if (usd < 100) { feeUsd = usd * 0.09; label = '9% fee'; }
+    else if (usd < 500) { feeUsd = 18; label = '$18 fee'; }
+    else if (usd < 2000) { feeUsd = usd * 0.044; label = '4.4% fee'; }
+    else { feeUsd = usd * 0.022; label = '2.2% fee'; }
+    return { feeUsd, feeBtc: feeUsd / price, label };
   };
   const calcFee = (btc) => {
     // Round to nearest cent before tier comparison to avoid floating-point boundary mismatches
@@ -1665,23 +1673,39 @@ function UsdtWithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoF
       .catch(() => setSendLocked(true)); // can't confirm it's safe — stay locked
   }, []);
 
-  // Fee = flat 2% of amount, no flat-dollar floor — mirrors backend calcFee()
-  // in POST /api/wallet/usdt/send.
-  const FEE_PERCENT = 0.018;
-  const MIN_SEND    = 5.00;
+  // Tiered fee, additive — mirrors backend services/withdrawalFeeService.js
+  // exactly (same tiers as the BTC send flow above; USDT is treated 1:1 with
+  // USD). Changed from flat 1.8% to this tiered structure on 2026-09-27.
+  const MIN_SEND = 5.00;
 
-  const calcFee = (amt) => parseFloat((amt * FEE_PERCENT).toFixed(2));
-
+  const calcFee = (amt) => {
+    if (amt <= 0) return 0;
+    let feeUsd;
+    if (amt < 50) feeUsd = 4.5;
+    else if (amt < 100) feeUsd = amt * 0.09;
+    else if (amt < 500) feeUsd = 18;
+    else if (amt < 2000) feeUsd = amt * 0.044;
+    else feeUsd = amt * 0.022;
+    return parseFloat(feeUsd.toFixed(2));
+  };
   const usdtAmt     = parseFloat(amount || 0);
   const fee         = usdtAmt > 0 ? calcFee(usdtAmt) : 0;
   const totalDeduct = usdtAmt > 0 ? parseFloat((usdtAmt + fee).toFixed(2)) : 0;
   const bal         = parseFloat(balance || 0);
-  const feeLabel    = usdtAmt > 0 ? `₮${fee.toFixed(2)} (${(FEE_PERCENT * 100).toFixed(0)}%)` : '';
+  const feeLabel    = usdtAmt > 0 ? `₮${fee.toFixed(2)}` : '';
 
-  // Calculate true max sendable so that amount + fee(amount) ≤ balance
+  // Calculate true max sendable so that amount + fee(amount) ≤ balance. The
+  // fee is no longer a flat percentage, so this can't be solved algebraically
+  // anymore -- binary search instead, same approach as the BTC send flow above.
   const calcMax = (b) => {
-    const tryPct = parseFloat((b / (1 + FEE_PERCENT)).toFixed(2));
-    return tryPct >= MIN_SEND ? tryPct : 0;
+    if (b <= 0) return 0;
+    let lo = 0, hi = b;
+    for (let i = 0; i < 60; i++) {
+      const mid = (lo + hi) / 2;
+      if (mid + calcFee(mid) <= b) lo = mid; else hi = mid;
+    }
+    const result = Math.floor(lo * 100) / 100;
+    return result >= MIN_SEND ? result : 0;
   };
 
   const isValidTron = addr => /^T[A-Za-z1-9]{33}$/.test(addr.trim());
@@ -2014,7 +2038,7 @@ function UsdtWithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoF
               <div className="rounded-2xl overflow-hidden" style={{ border: '1.5px solid #e2e8f0' }}>
                 {[
                   { label: 'Recipient gets',  val: `₮${usdtAmt.toFixed(2)}`,     color: '#10b981' },
-                  { label: `Fee (${(FEE_PERCENT * 100).toFixed(0)}%)`,          val: `₮${fee.toFixed(2)}`,       color: '#d97706' },
+                  { label: 'Fee',             val: `₮${fee.toFixed(2)}`,        color: '#d97706' },
                   { label: 'Total deducted',  val: `₮${totalDeduct.toFixed(2)}`,  color: '#1e293b', bold: true },
                 ].map(({ label, val, color, bold }, i) => (
                   <div key={label} className="flex justify-between items-center px-4 py-2.5"

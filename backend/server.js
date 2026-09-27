@@ -15549,7 +15549,7 @@ app.post('/api/wallet/usdt/send', verifyToken, requireNotBanned, async (req, res
 
     if (available < totalDeduct) {
       return res.status(400).json({
-        error: `Insufficient balance. Need ₮${totalDeduct.toFixed(2)} (₮${sendAmount.toFixed(2)} + ${feeLabel} fee). Available: ₮${available.toFixed(2)}`,
+        error: `Insufficient balance. You need ₮${totalDeduct.toFixed(2)} total (including the withdrawal fee) but only have ₮${available.toFixed(2)} available. Try Max to send the largest amount you can right now.`,
       });
     }
 
