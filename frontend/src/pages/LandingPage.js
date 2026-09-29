@@ -829,7 +829,7 @@ style={{background:`${color}12`}}>{React.createElement(icon, {size:15, style:{co
                   <div className="flex-1 min-w-0">
                     <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold mb-4"
                       style={{ background: `${C.gold}20`, border: `1px solid ${C.gold}35`, color: C.gold }}>
-                      <UserPlus size={12} /> Referral Program
+                      <UserPlus size={12} /> Affiliate Program
                     </div>
                     <h2 className="text-xl md:text-3xl font-black text-white mb-2"
                       style={{ fontFamily: "'Syne',sans-serif" }}>

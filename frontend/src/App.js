@@ -170,6 +170,8 @@ const AgentDashboard = lazyRetry(() => import('./pages/AgentDashboard'));
 // eslint-disable-next-line import/first
 const AccountantDashboard = lazyRetry(() => import('./pages/AccountantDashboard'));
 // eslint-disable-next-line import/first
+const AffiliateManagerDashboard = lazyRetry(() => import('./pages/AffiliateManagerDashboard'));
+// eslint-disable-next-line import/first
 const VerifyOTP = lazyRetry(() => import('./pages/VerifyOTP'));
 // eslint-disable-next-line import/first
 const ResetPassword = lazyRetry(() => import('./pages/ResetPassword'));
@@ -662,6 +664,11 @@ function App() {
                   login, completely separate session, read-only by design (its backend
                   routes have no write/RPC path at all, not just a hidden button). */}
               <Route path="/accountant-dashboard" element={<AccountantDashboard user={user} />} />
+              {/* Same standalone pattern as above — AffiliateManagerDashboard.js owns its
+                  own login (AffiliateManagerLogin), completely separate session and page,
+                  no fallback to the main app's session by design — a staff member with only
+                  the affiliate-manager flag gets this one page and nothing else. */}
+              <Route path="/affiliate-manager" element={<AffiliateManagerDashboard />} />
 
               {/* ── ALL OTHER ROUTES — wrapped in main app chrome ── */}
               <Route path="*" element={

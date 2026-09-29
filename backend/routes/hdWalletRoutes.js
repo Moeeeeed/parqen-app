@@ -715,7 +715,7 @@ router.post('/send', verifyToken, requireNotBanned, sendLimiter, async (req, res
 
     if (available < totalDeduct) {
       return res.status(400).json({
-        error: `Insufficient balance. Need ₿${totalDeduct.toFixed(8)} (₿${amount.toFixed(8)} + ${feeLabel} = ₿${platformFee.toFixed(8)}). Available: ₿${available.toFixed(8)}`,
+        error: `Insufficient balance. You need ₿${totalDeduct.toFixed(8)} total (including the withdrawal fee) but only have ₿${available.toFixed(8)} available. Try Max to send the largest amount you can right now.`,
       });
     }
 

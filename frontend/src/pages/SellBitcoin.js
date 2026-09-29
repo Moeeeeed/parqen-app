@@ -1655,7 +1655,7 @@ export default function SellBitcoin({user}) {
               <div>
                 <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
                   <span style={{display:'flex',alignItems:'center',gap:3,fontSize:10,fontWeight:900,color:'#78350F',background:'#F4A422',borderRadius:5,padding:'2px 8px',letterSpacing:0.4,textTransform:'uppercase'}}>
-                    <Bitcoin size={10}/>Referral Program
+                    <Bitcoin size={10}/>Affiliate Program
                   </span>
                   <span style={{fontSize:9,color:'rgba(255,255,255,0.65)',fontWeight:500}}>Earn on every referral trade</span>
                 </div>
@@ -1669,7 +1669,7 @@ export default function SellBitcoin({user}) {
           </div>
 
           <div style={{padding:'10px 14px',background:'#fff',textAlign:'center'}}>
-            <span onClick={()=>navigate('/partner-program')} style={{fontSize:11,fontWeight:700,color:'#1B4332',cursor:'pointer',textDecoration:'underline'}}>See the Referral Program page for current rates →</span>
+            <span onClick={()=>navigate('/partner-program')} style={{fontSize:11,fontWeight:700,color:'#1B4332',cursor:'pointer',textDecoration:'underline'}}>See the Affiliate Program page for current rates →</span>
           </div>
 
 

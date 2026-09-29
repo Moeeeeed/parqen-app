@@ -2791,12 +2791,28 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
       });
     }
 
+    // Same idea, same shape, for the standalone Affiliate Program Manager Portal
+    // (AffiliateManagerLogin sends affiliateManagerPortal:true) — kept as its own
+    // flag/condition rather than folded into agentPortal above, since
+    // is_affiliate_manager-only accounts have no support-dashboard role and
+    // hasSupportRole would otherwise never catch them.
+    const affiliateManagerPortal = req.body.affiliateManagerPortal === true;
+    const hasAffiliateManagerRole = !!(data.is_affiliate_manager || data.is_admin || data.is_ceo);
+    const forceTwoFAAffiliate = affiliateManagerPortal && hasAffiliateManagerRole;
+    if (forceTwoFAAffiliate && !(data.two_factor_enabled && data.two_factor_method)) {
+      logSecurityEvent({ userId: data.id, email: data.email, eventType: 'LOGIN_2FA_SETUP_REQUIRED', ip: clientIp, userAgent });
+      return res.status(403).json({
+        error: 'Two-factor authentication is required to sign in to the Affiliate Program Manager Portal. Turn on 2FA in your account security settings, then sign in again.',
+        require2FASetup: true,
+      });
+    }
+
     // 2FA at login is enforced for privileged accounts (CEO/admin/moderator) with
     // 2FA actually turned on, and — via forceTwoFA above — for every Support
     // Dashboard sign-in. Regular trader login is unchanged from before. This is what
     // makes the CeoLogin/AgentLogin requires2FA/tempToken handling actually fire.
     const isPrivileged = !!(data.is_ceo || data.is_admin || data.is_moderator);
-    if ((isPrivileged || forceTwoFA) && data.two_factor_enabled && data.two_factor_method) {
+    if ((isPrivileged || forceTwoFA || forceTwoFAAffiliate) && data.two_factor_enabled && data.two_factor_method) {
       const tempToken = jwt.sign({ userId: data.id, pending2FA: true }, JWT_SECRET, { expiresIn: '10m' });
       const method = data.two_factor_method;
 
@@ -3465,6 +3481,35 @@ async function requireTeamOrCeo(req, res) {
   const { data: u } = await supabaseAdmin.from('users').select('is_admin, is_moderator, is_ceo, email').eq('id', req.userId).single();
   const ok = u?.is_admin || u?.is_moderator || u?.is_ceo || u?.email === ADMIN_EMAIL;
   if (!ok) { res.status(403).json({ error: 'Team access required' }); return null; }
+  return u;
+}
+
+// Gate for the standalone Affiliate Program Manager Portal (its own login,
+// separate from the CEO/Admin Dashboard — see AffiliateManagerDashboard.js).
+// Deliberately its OWN narrow check, not an addition to requireTeamOrCeo or
+// requireFullAdminOrCeo — those two are shared by several unrelated admin
+// routes, so widening either one would silently hand this new role access to
+// things it was never meant to touch. is_admin/is_ceo can always get in too,
+// so an existing admin never needs a second grant just to check on this.
+// Tolerates is_affiliate_manager not existing yet (same zero-migration
+// bootstrap shape as the accountant role elsewhere) — see
+// database/2026-09-29_affiliate_manager_role.sql.
+async function requireAffiliateManagerOrAbove(req, res) {
+  // Supabase's client does NOT throw on a query error (a missing column
+  // included) — it resolves normally with { data: null, error }. A
+  // try/catch around the call alone never sees that, so the fallback below
+  // must be reached by explicitly checking r.error, not by relying on an
+  // exception that was never going to be thrown.
+  let u = null;
+  const r1 = await supabaseAdmin.from('users').select('id, username, email, is_admin, is_ceo, is_affiliate_manager').eq('id', req.userId).single();
+  if (!r1.error) {
+    u = r1.data;
+  } else {
+    const r2 = await supabaseAdmin.from('users').select('id, username, email, is_admin, is_ceo').eq('id', req.userId).single();
+    if (!r2.error) u = r2.data;
+  }
+  const ok = !!(u?.is_admin || u?.is_ceo || u?.is_affiliate_manager);
+  if (!ok) { res.status(403).json({ error: 'Affiliate Manager access required' }); return null; }
   return u;
 }
 
@@ -11325,6 +11370,158 @@ app.post('/api/admin/affiliate/builder-applications/:id/reject', verifyToken, as
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/admin/affiliate/overview — read-only manager view of the whole
+// Affiliate Program: every affiliate with real activity (not capped at 10
+// like the public leaderboard), plus program-wide totals. Nothing here
+// writes anything or moves money — it's the same getLeaderboard() the public
+// page uses, just uncapped and with KPI totals rolled up on top.
+app.get('/api/admin/affiliate/overview', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireTeamOrCeo(req, res); if (!admin) return;
+
+    const affiliates = await affiliateSummaryService.getLeaderboard(supabaseAdmin, { limit: 2000 });
+
+    const levelCounts = { Explorer: 0, Builder: 0, Titan: 0, Legendary: 0, none: 0 };
+    let totalReferred = 0, totalActive = 0, totalVolume = 0, totalCommission = 0, totalCommissionMonth = 0;
+    for (const a of affiliates) {
+      levelCounts[a.level || 'none'] = (levelCounts[a.level || 'none'] || 0) + 1;
+      totalReferred          += a.users_brought;
+      totalActive             += a.active_users;
+      totalVolume             += a.qualified_volume_usd;
+      totalCommission          += a.total_commission_usd;
+      totalCommissionMonth     += a.commission_this_month_usd;
+    }
+
+    res.json({
+      success: true,
+      kpis: {
+        total_affiliates:          affiliates.length,
+        total_referred_users:      totalReferred,
+        total_active_users:        totalActive,
+        total_qualified_volume_usd: round2(totalVolume),
+        total_commission_usd_lifetime: round2(totalCommission),
+        total_commission_usd_this_month: round2(totalCommissionMonth),
+        level_counts: levelCounts,
+      },
+      affiliates,
+    });
+  } catch (e) {
+    console.error('[admin/affiliate/overview]', e.message);
+    res.status(500).json({ error: 'Could not load affiliate program overview' });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// AFFILIATE PROGRAM MANAGER PORTAL — standalone routes for the dedicated
+// staff portal (its own login, own token, own frontend page — see
+// AffiliateManagerDashboard.js). Same data and logic as the equivalent
+// /api/admin/affiliate/* routes above, gated by requireAffiliateManagerOrAbove
+// instead of requireTeamOrCeo/requireFullAdminOrCeo, so a person with only
+// the affiliate-manager flag can use this and nothing else. Deliberately
+// separate route paths — the /api/admin/affiliate/* routes and the Admin
+// Dashboard tabs that call them are untouched by any of this.
+// ════════════════════════════════════════════════════════════════════════════
+
+app.get('/api/affiliate-manager/overview', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAffiliateManagerOrAbove(req, res); if (!admin) return;
+
+    const affiliates = await affiliateSummaryService.getLeaderboard(supabaseAdmin, { limit: 2000 });
+    const levelCounts = { Explorer: 0, Builder: 0, Titan: 0, Legendary: 0, none: 0 };
+    let totalReferred = 0, totalActive = 0, totalVolume = 0, totalCommission = 0, totalCommissionMonth = 0;
+    for (const a of affiliates) {
+      levelCounts[a.level || 'none'] = (levelCounts[a.level || 'none'] || 0) + 1;
+      totalReferred      += a.users_brought;
+      totalActive         += a.active_users;
+      totalVolume          += a.qualified_volume_usd;
+      totalCommission       += a.total_commission_usd;
+      totalCommissionMonth  += a.commission_this_month_usd;
+    }
+
+    res.json({
+      success: true,
+      system_status: {
+        ...affiliateSummaryService.getPublicConfig(),
+        levels_auto_enabled: affiliateLevelAwardService.autoEnabled(),
+        medals_auto_enabled: medalAwardService.medalsAutoEnabled(),
+      },
+      kpis: {
+        total_affiliates:          affiliates.length,
+        total_referred_users:      totalReferred,
+        total_active_users:        totalActive,
+        total_qualified_volume_usd: round2(totalVolume),
+        total_commission_usd_lifetime: round2(totalCommission),
+        total_commission_usd_this_month: round2(totalCommissionMonth),
+        level_counts: levelCounts,
+      },
+      affiliates,
+    });
+  } catch (e) {
+    console.error('[affiliate-manager/overview]', e.message);
+    res.status(500).json({ error: 'Could not load affiliate program overview' });
+  }
+});
+
+app.get('/api/affiliate-manager/builder-applications', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAffiliateManagerOrAbove(req, res); if (!admin) return;
+    const { status = 'pending' } = req.query;
+    let query = supabaseAdmin.from('affiliate_builder_applications')
+      .select('id, user_id, status, active_users_at_apply, qualified_volume_at_apply, applied_at, reviewed_at, reviewed_by, rejection_reason, users:user_id(username, email, country)')
+      .order('applied_at', { ascending: false });
+    if (status !== 'all') query = query.eq('status', status);
+    const { data, error } = await query;
+    if (error) {
+      if (error.code === '42P01' || /does not exist/i.test(error.message || '')) {
+        return res.json({ success: true, applications: [], migration_needed: true, migration_hint: 'Run database/2026-09-27_affiliate_builder_applications.sql in Supabase SQL Editor.' });
+      }
+      throw error;
+    }
+    res.json({ success: true, applications: data || [] });
+  } catch (e) {
+    console.error('[affiliate-manager/builder-applications]', e.message);
+    res.status(500).json({ error: 'Could not load applications' });
+  }
+});
+
+app.post('/api/affiliate-manager/builder-applications/:id/approve', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAffiliateManagerOrAbove(req, res); if (!admin) return;
+    const { data: updated, error } = await supabaseAdmin.from('affiliate_builder_applications')
+      .update({ status: 'approved', reviewed_at: new Date(), reviewed_by: req.userId, updated_at: new Date() })
+      .eq('id', req.params.id)
+      .select('id, user_id, status')
+      .single();
+    if (error) return res.status(400).json({ error: error.message });
+    if (!updated) return res.status(404).json({ error: 'Application not found' });
+    logAdminAction(req, 'AFFILIATE_BUILDER_APPROVE', updated.user_id, null).catch(() => { });
+    try {
+      await createNotification(updated.user_id, 'affiliate_builder_application', '🚀 You\'re now a Builder!', 'Your Affiliate Program interview was approved — you\'re now a Builder, earning a bigger share of every trade your network makes.', '/partner-program');
+      sendSystemAlert(updated.user_id, '🚀 You\'re now a Builder!', 'Your Builder application was approved!', 'https://praqen.com/partner-program').catch(() => { });
+    } catch (_) { }
+    res.json({ success: true, application: updated });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/affiliate-manager/builder-applications/:id/reject', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAffiliateManagerOrAbove(req, res); if (!admin) return;
+    const { reason = 'Not approved at this time' } = req.body;
+    if (!reason.trim()) return res.status(400).json({ error: 'A rejection reason is required' });
+    const { data: updated, error } = await supabaseAdmin.from('affiliate_builder_applications')
+      .update({ status: 'rejected', rejection_reason: reason, reviewed_at: new Date(), reviewed_by: req.userId, updated_at: new Date() })
+      .eq('id', req.params.id)
+      .select('id, user_id, status')
+      .single();
+    if (error) return res.status(400).json({ error: error.message });
+    if (!updated) return res.status(404).json({ error: 'Application not found' });
+    try {
+      await createNotification(updated.user_id, 'affiliate_builder_application', 'Builder application update', `Your Builder application was not approved this time: ${reason}. You can apply again once you're ready.`, '/partner-program');
+    } catch (_) { }
+    res.json({ success: true, application: updated });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Public leaderboard ranked by ACTIVE USERS (then trade volume). No earnings, no money.
 app.get('/api/affiliate/leaderboard', async (req, res) => {
   try {
@@ -11334,6 +11531,134 @@ app.get('/api/affiliate/leaderboard', async (req, res) => {
   } catch (e) {
     console.error('[affiliate/leaderboard]', e.message);
     res.status(500).json({ error: 'Could not load leaderboard' });
+  }
+});
+
+// ── Affiliate reward balance + claim ────────────────────────────────────────
+// NEW level-based commission ledger (affiliate_commission_ledger) only — the OLD
+// affiliate_earnings/commission_btc engine and its own /api/referral/withdraw
+// route are untouched. Same $10 minimum as that old route, same "credit into the
+// wallet" idea — but here each commission row is paid out in the SAME currency
+// the trade that earned it was in (a BTC trade's commission credits BTC, a USDT
+// trade's commission credits USDT), not converted to one fixed currency. The
+// $10 threshold itself is checked against the blended USD value of everything
+// unclaimed, same as the single "reward balance" figure shown in the UI.
+const AFFILIATE_CLAIM_THRESHOLD_USD = 10;
+const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
+
+async function getUnclaimedCommission(userId) {
+  const { data, error } = await supabaseAdmin
+    .from('affiliate_commission_ledger')
+    .select('id, currency, commission_usd')
+    .eq('affiliate_id', userId)
+    .is('claimed_at', null);
+  if (error) {
+    // Table not migrated yet — same graceful-degradation shape as the rest of
+    // this system (see affiliate/builder/apply above): treat as "nothing to claim"
+    // instead of a 500, since REFERRAL_PAYOUTS_ENABLED being on doesn't guarantee
+    // the follow-up claimed_at migration has been run yet.
+    if (error.code === '42P01' || /does not exist|column .* does not exist/i.test(error.message || '')) return [];
+    throw error;
+  }
+  return data || [];
+}
+
+// GET /api/affiliate/rewards — the "Reward balance" card: blended USD total
+// across all unclaimed commission (any currency), the claim threshold, and
+// whether the Claim button should be enabled. Read-only, no money moves.
+app.get('/api/affiliate/rewards', verifyToken, async (req, res) => {
+  try {
+    if (!affiliateSummaryService.cashEnabled()) {
+      return res.json({ success: true, reward_balance_usd: 0, claim_threshold_usd: AFFILIATE_CLAIM_THRESHOLD_USD, can_claim: false });
+    }
+    const rows = await getUnclaimedCommission(req.userId);
+    const rewardBalanceUsd = round2(rows.reduce((s, r) => s + Number(r.commission_usd || 0), 0));
+    res.json({
+      success: true,
+      reward_balance_usd: rewardBalanceUsd,
+      claim_threshold_usd: AFFILIATE_CLAIM_THRESHOLD_USD,
+      can_claim: rewardBalanceUsd >= AFFILIATE_CLAIM_THRESHOLD_USD,
+    });
+  } catch (e) {
+    console.error('[affiliate/rewards]', e.message);
+    res.status(500).json({ error: 'Could not load reward balance' });
+  }
+});
+
+// POST /api/affiliate/claim — pays out every unclaimed commission row, each in
+// the currency its own trade was in, once the blended total clears $10.
+//
+// Rewritten to call praqen_claim_affiliate_commission (see
+// database/2026-09-29_affiliate_claim_rpc.sql) instead of orchestrating the
+// claim + credit as separate JS/REST steps — that earlier version had a real
+// double-claim race (SELECT-then-UPDATE) and could double-credit on partial
+// failure (wallet credited, then the claimed_at write fails). The RPC does
+// the atomic claim, the idempotency-keyed ledger insert, and the wallet
+// credit all inside one Postgres transaction — see that file's own comments
+// for exactly how each of those three failure modes is closed off.
+//
+// BTC needs a live price to convert commission_usd into an actual BTC amount,
+// and Postgres can't fetch that itself — so it's fetched fresh here (never
+// cached, same as the old /api/referral/withdraw route) and passed into the
+// function as a parameter. If this batch turns out to have no BTC-currency
+// commission, the RPC just never uses it.
+app.post('/api/affiliate/claim', verifyToken, requireReferralPayoutsEnabled, requireNotBanned, authLimiter, async (req, res) => {
+  try {
+    const btcPrice = await getCurrentBTCPrice({ allowCached: false });
+
+    const { data: rpcRows, error: claimErr } = await supabaseAdmin.rpc('praqen_claim_affiliate_commission', {
+      p_affiliate_id: req.userId,
+      p_btc_price_usd: btcPrice,
+    });
+
+    if (claimErr) {
+      if (/^BELOW_THRESHOLD/.test(claimErr.message || '')) {
+        const match = /balance \$([\d.]+) is below the \$([\d.]+) minimum/.exec(claimErr.message || '');
+        return res.status(400).json({
+          error: match ? `Minimum $${match[2]} USD required to claim. Current: $${match[1]}` : 'Balance is below the minimum required to claim.',
+        });
+      }
+      if (/^WALLET_NOT_FOUND/.test(claimErr.message || '')) {
+        return res.status(400).json({ error: 'No wallet found for this account — please contact support.' });
+      }
+      throw claimErr;
+    }
+
+    const result = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+    const claimedUsd = round2(result?.claimed_usd || 0);
+    const btcAmount = parseFloat(result?.credited_btc || 0);
+    const usdtAmount = parseFloat(result?.credited_usdt || 0);
+    const newBtc = result?.new_balance_btc != null ? parseFloat(result.new_balance_btc) : null;
+    const newUsdt = result?.new_balance_usdt != null ? parseFloat(result.new_balance_usdt) : null;
+
+    // Balance mirrors + notification — best-effort, fire-and-forget. The
+    // authoritative credit already happened, inside the RPC's own
+    // transaction; nothing here can cause a double-pay if it fails, unlike
+    // the old version where these were load-bearing.
+    const mirrorUpdate = { updated_at: new Date().toISOString() };
+    if (newBtc != null) mirrorUpdate.balance_btc = newBtc;
+    if (newUsdt != null) mirrorUpdate.balance_usdt = newUsdt;
+    Promise.allSettled([
+      supabaseAdmin.from('user_balances').update(mirrorUpdate).eq('user_id', req.userId),
+      supabaseAdmin.from('user_wallets').update(mirrorUpdate).eq('user_id', req.userId),
+      createNotification(
+        req.userId,
+        'wallet',
+        '💵 Affiliate Commission Claimed',
+        `Your $${claimedUsd.toFixed(2)} in affiliate commission has been added to your wallet${btcAmount > 0 && usdtAmount > 0 ? ` (₿${btcAmount.toFixed(8)} + ₮${usdtAmount.toFixed(2)})` : btcAmount > 0 ? ` (₿${btcAmount.toFixed(8)})` : ` (₮${usdtAmount.toFixed(2)})`}.`,
+        '/wallet'
+      ),
+    ]).catch(() => {});
+
+    res.json({
+      success: true,
+      claimed_usd: claimedUsd,
+      credited: { btc: btcAmount, usdt: usdtAmount },
+      message: `$${claimedUsd.toFixed(2)} claimed and added to your wallet!`,
+    });
+  } catch (e) {
+    console.error('[affiliate/claim]', e.message);
+    res.status(500).json({ error: 'Could not process claim. Please try again.' });
   }
 });
 
@@ -15549,7 +15874,7 @@ app.post('/api/wallet/usdt/send', verifyToken, requireNotBanned, async (req, res
 
     if (available < totalDeduct) {
       return res.status(400).json({
-        error: `Insufficient balance. Need ₮${totalDeduct.toFixed(2)} (₮${sendAmount.toFixed(2)} + ${feeLabel} fee). Available: ₮${available.toFixed(2)}`,
+        error: `Insufficient balance. You need ₮${totalDeduct.toFixed(2)} total (including the withdrawal fee) but only have ₮${available.toFixed(2)} available. Try Max to send the largest amount you can right now.`,
       });
     }
 

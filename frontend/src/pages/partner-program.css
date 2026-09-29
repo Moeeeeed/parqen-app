@@ -228,6 +228,21 @@
 .ppx .claim h4{font-size:18px}
 .ppx .claim small{font-size:12px;color:var(--muted)}
 .ppx .btn.dis{flex:none;min-width:110px;background:var(--tile);color:var(--muted);border-radius:10px;padding:12px 26px;cursor:not-allowed}
+
+/* Reward balance card — progress bar while below the claim threshold, a
+   celebratory button once eligible instead of a static greyed-out one. */
+.ppx .claimcard{margin-top:14px;padding:18px 20px;border-radius:18px;background:linear-gradient(135deg,#FFF9EC,#F0FAF5);border:1px solid #F1D08A;box-shadow:var(--shadow)}
+.ppx .cc-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.ppx .cc-icon{flex:none;width:44px;height:44px;border-radius:50%;background:var(--card);display:grid;place-items:center;font-size:22px;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.ppx .cc-head small{display:block;font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.02em}
+.ppx .cc-amount{display:block;font-size:26px;font-weight:800;color:var(--brand);line-height:1.2}
+.ppx .cc-progress .track{margin-bottom:8px}
+.ppx .claimcard .track i{background:linear-gradient(90deg,#40916C,#F4A422);transition:width .4s ease}
+.ppx .cc-progress small{color:var(--muted);font-size:13px}
+.ppx .cc-claimbtn{width:100%;background:linear-gradient(90deg,#2D6A4F,#1B4332);color:#F4A422;font-size:16px;padding:15px 20px;box-shadow:0 4px 14px rgba(27,67,50,.28);animation:ccpop .3s ease}
+.ppx .cc-claimbtn:hover{background:linear-gradient(90deg,#1B4332,#132b22)}
+.ppx .cc-note{margin:12px 0 0;font-size:12px;color:var(--muted)}
+@keyframes ccpop{from{transform:scale(.96);opacity:.6}to{transform:scale(1);opacity:1}}
 .ppx .track4{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px 24px;box-shadow:var(--shadow)}
 .ppx .tb{text-align:center;font-weight:600;font-size:14px;flex:none}
 .ppx .tb span{display:block;margin-top:6px}
@@ -502,6 +517,16 @@
 .ppx .explain ol{list-style:decimal}
 .ppx .box ul,.ppx .bd2 ul{list-style:disc}
 @media(max-width:640px){.ppx .glance table{min-width:0;font-size:13px}.ppx .glance .gl svg{display:none}.ppx .glance th,.ppx .glance td{padding:9px 5px}}
+
+/* "WHAT YOU GET" — colour-coded checkmarks (colour comes from each level's own
+   badge colour, set inline via style, so this stays generic for all 4 levels)
+   and a highlighted box for a level's exclusive/bonus benefits. */
+.ppx .getlist{list-style:none;margin:2px 0 0;padding:0}
+.ppx .getlist li{display:flex;align-items:flex-start;gap:8px;padding:5px 0;font-size:14px;color:var(--ink)}
+.ppx .getlist .chk{flex:none;width:18px;height:18px;border-radius:50%;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;line-height:1;margin-top:1px}
+.ppx .exclusive{margin-top:10px;padding:10px 12px;border-radius:12px;border:1.5px solid;background:rgba(0,0,0,.02)}
+.ppx .exhead{font-size:12px;font-weight:700;letter-spacing:.03em;margin-bottom:6px}
+.ppx .exnote{font-size:12px;color:var(--muted);font-style:italic;margin:8px 0 0}
 
 /* hero level cards: what you need to level up */
 .ppx .w4{gap:12px}
