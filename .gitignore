@@ -22,3 +22,8 @@ npm-debug.log*
 *.temp
 *.bak
 ~
+gitleaks.exe
+gitleaks.zip
+backend/scripts/audit-results-*.json
+backend/scripts/migration-results-*.json
+test-secret.txt
