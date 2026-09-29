@@ -185,6 +185,77 @@ class BlockCypherAdapter {
   }
 }
 
+// ── blockchain.info Adapter ──────────────────────────────────────────────
+// Final fallback, tried only after every Esplora endpoint AND BlockCypher
+// have already failed. blockchain.info sits on a completely separate
+// rate-limit pool from blockstream/mempool/BlockCypher — proven reliable
+// across the exact 429-storm conditions that motivated this file (see
+// scripts/audit-user-deposit-addresses.js, which hit zero failures on this
+// provider across 1800+ checks the same day all three of the others were
+// simultaneously exhausted). Read-only paths only (balance, UTXO list) —
+// deliberately NOT wired up for broadcasting a transaction: getting a
+// balance check slightly wrong is a retry, getting a broadcast integration
+// subtly wrong on a fallback path nobody has exercised yet is a much worse
+// failure mode, so that stays on the existing Esplora/BlockCypher path only.
+const NO_BI_HANDLER = Symbol('no-blockchaininfo-handler');
+
+class BlockchainInfoAdapter {
+  constructor() {
+    this.baseUrl = 'https://blockchain.info';
+  }
+
+  async _fetch(url, timeoutMs = 15000) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { signal: ctrl.signal });
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        throw new Error(`blockchain.info HTTP ${response.status}${body ? ` — ${body.slice(0, 200)}` : ''}`);
+      }
+      return await response.json();
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  // Esplora /address/:addr shape. blockchain.info's final_balance is
+  // confirmed+unconfirmed combined; treated as confirmed here — the same
+  // simplifying assumption this exact provider already uses elsewhere in
+  // this codebase (see the audit script referenced above).
+  async getAddress(address) {
+    const data = await this._fetch(`${this.baseUrl}/rawaddr/${address}?limit=0`);
+    return {
+      chain_stats: {
+        funded_txo_sum: Number(data.final_balance || 0),
+        spent_txo_sum: 0,
+        tx_count: data.n_tx || 0,
+      },
+      mempool_stats: { funded_txo_sum: 0, spent_txo_sum: 0, tx_count: 0 },
+    };
+  }
+
+  // Esplora /address/:addr/utxo shape. blockchain.info returns HTTP 500
+  // with {"notice":"No free outputs to spend"} for a genuinely empty
+  // address rather than an empty array — that is a real zero, not a
+  // failure, so it is handled here rather than left to bubble up as an error.
+  async getAddressUtxo(address) {
+    let data;
+    try {
+      data = await this._fetch(`${this.baseUrl}/unspent?active=${address}&limit=1000`);
+    } catch (e) {
+      if (/No free outputs to spend/i.test(e.message || '')) return [];
+      throw e;
+    }
+    return (data.unspent_outputs || []).map((u) => ({
+      txid: u.tx_hash_big_endian,
+      vout: u.tx_output_n,
+      value: u.value,
+      status: { confirmed: (u.confirmations || 0) > 0 },
+    }));
+  }
+}
+
 class BtcApiGateway {
   constructor() {
     this.endpoints = parseEndpoints();
@@ -249,6 +320,28 @@ class BtcApiGateway {
       return txid;
     }
     return NO_BC_HANDLER;
+  }
+
+  // ── Try blockchain.info as the final fallback (GET only) ─────────────
+  // Same NO_HANDLER / throws-on-real-failure contract as _tryBlockCypher.
+  async _tryBlockchainInfo(path, options = {}) {
+    if (options.method === 'POST') return NO_BI_HANDLER; // read-only, see class comment above
+
+    const adapter = new BlockchainInfoAdapter();
+
+    if (path.startsWith('/address/') && path.endsWith('/utxo')) {
+      const addr = path.split('/')[2];
+      const result = await adapter.getAddressUtxo(addr);
+      this._log(`blockchain.info UTXO ${addr}: ${result.length} output(s)`);
+      return result;
+    }
+    if (path.startsWith('/address/')) {
+      const addr = path.split('/')[2];
+      const result = await adapter.getAddress(addr);
+      this._log(`blockchain.info balance ${addr}: ${result.chain_stats.funded_txo_sum} sat`);
+      return result;
+    }
+    return NO_BI_HANDLER;
   }
 
   // ── Logging ──────────────────────────────────────────────────────────
@@ -429,12 +522,32 @@ class BtcApiGateway {
       this._log(`BlockCypher fallback failed for ${path}: ${e.message}`);
     }
 
+    // ── If BlockCypher also failed (or had no handler), try blockchain.info ──
+    // Last resort: a separate provider on a separate rate-limit pool, so a
+    // 429-storm across the three Esplora endpoints AND BlockCypher at once —
+    // exactly what has been happening — still has one more real chance to
+    // succeed instead of failing outright.
+    let biErr;
+    try {
+      const biResult = await this._tryBlockchainInfo(path, { ...opts, method, data });
+      if (biResult !== NO_BI_HANDLER) {
+        this._stats.blockchainInfoOk = (this._stats.blockchainInfoOk || 0) + 1;
+        this._log(`blockchain.info fallback succeeded for ${path}`);
+        resolve(biResult);
+        return;
+      }
+    } catch (e) {
+      biErr = e;
+      this._stats.blockchainInfoFail = (this._stats.blockchainInfoFail || 0) + 1;
+      this._log(`blockchain.info fallback failed for ${path}: ${e.message}`);
+    }
+
     this._stats.failures++;
     const label = method === 'GET'
       ? 'All blockchain APIs unreachable'
       : 'Broadcast failed on all APIs';
     const esploraMsg = lastErr ? lastErr.message : 'no endpoints configured';
-    reject(new Error(`${label}: ${esploraMsg}${bcErr ? ` | BlockCypher: ${bcErr.message}` : ''}`));
+    reject(new Error(`${label}: ${esploraMsg}${bcErr ? ` | BlockCypher: ${bcErr.message}` : ''}${biErr ? ` | blockchain.info: ${biErr.message}` : ''}`));
   }
 }
 
