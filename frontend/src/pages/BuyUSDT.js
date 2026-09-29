@@ -373,7 +373,7 @@ function OfferCard({listing, usdtPriceUSD, onViewSeller, onBuy, liked, onToggleL
           <div className="flex items-center gap-1.5">
             <CoinIcon coin="USDT" size={18} />
             <span className="font-black text-[16px] text-gray-900">{fmt(rateLocal,2)} {cur}</span>
-            <span className="px-1.5 py-0.5 rounded text-[11px] font-black tracking-wide" style={{backgroundColor:margin<0?'#10B981':margin>0?'#EF4444':'#64748B',color:'#fff'}}>
+            <span className="px-1.5 py-0.5 rounded text-[11px] font-black tracking-wide" style={{backgroundColor:'#EF4444',color:'#fff'}}>
               {margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}
             </span>
           </div>
@@ -427,7 +427,7 @@ function OfferCard({listing, usdtPriceUSD, onViewSeller, onBuy, liked, onToggleL
             <div className="flex items-center gap-1.5 flex-wrap">
               <CoinIcon coin="USDT" size={16} />
               <span className="font-black text-[15px] text-gray-900 truncate">{fmt(rateLocal,2)} {cur}</span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide" style={{backgroundColor:margin<0?'#10B981':margin>0?'#EF4444':'#64748B',color:'#fff'}}>{margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}</span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide" style={{backgroundColor:'#EF4444',color:'#fff'}}>{margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}</span>
             </div>
             <div className="text-xs font-semibold text-gray-600 mt-1">{fmt(minLocal)} - {fmt(maxLocal)} {cur}</div>
           </div>
@@ -1705,7 +1705,7 @@ export default function BuyUSDT({user}) {
               <div>
                 <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:8}}>
                   <span style={{display:'flex',alignItems:'center',gap:4,fontSize:11,fontWeight:900,color:'#0F766E',background:C.gold,borderRadius:6,padding:'3px 9px',letterSpacing:0.5,textTransform:'uppercase'}}>
-                    ₮ USDT Referral Program
+                    ₮ USDT Affiliate Program
                   </span>
                   <span style={{display:'flex',alignItems:'center',gap:4,fontSize:9,fontWeight:700,color:'#fff',background:'rgba(255,255,255,0.15)',borderRadius:5,padding:'2px 8px'}}>
                     <span style={{width:6,height:6,borderRadius:'50%',background:'#6EE7B7',display:'inline-block'}}/>LIVE
@@ -1722,7 +1722,7 @@ export default function BuyUSDT({user}) {
           </div>
 
           <div style={{padding:'10px 14px',background:'#fff',textAlign:'center'}}>
-            <span onClick={()=>navigate('/partner-program')} style={{fontSize:11,fontWeight:700,color:'#1B4332',cursor:'pointer',textDecoration:'underline'}}>See the Referral Program page for current rates →</span>
+            <span onClick={()=>navigate('/partner-program')} style={{fontSize:11,fontWeight:700,color:'#1B4332',cursor:'pointer',textDecoration:'underline'}}>See the Affiliate Program page for current rates →</span>
           </div>
 
 

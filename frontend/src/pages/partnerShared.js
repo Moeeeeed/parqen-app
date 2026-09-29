@@ -13,10 +13,29 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 // users' trades — e.g. r: 0.10 means 10% of whatever fee PRAQEN earns on that
 // trade, NOT 10% of the trade's own value. See DEFAULT_FEE_RATE below.
 export const LEVELS = [
-  { n: 'Explorer',  r: 0.10, c: '#B7D9C4', f: 5,  v: 50,    kf: 3,  kv: 50,    ex: { f: 5,  t: 3, z: 60 },  get: ['10% of PRAQEN\'s fee on every trade your users make', 'Your personal link and scan code', 'Live progress dashboard'], bonus: ['Explorer badge'] },
-  { n: 'Builder',   r: 0.20, c: '#2D6A4F', f: 15, v: 5000,  kf: 8,  kv: 1000,  ex: { f: 15, t: 3, z: 100 }, get: ['20% Commission', 'Builder Badge on your profile', 'VIP / Priority Support', 'Swags from PRAQEN'], bonus: [] },
-  { n: 'Titan',     r: 0.30, c: '#F4A422', f: 50, v: 10000, kf: 25, kv: 3000,  ex: { f: 50, t: 4, z: 200 }, get: ['30% Commission', 'Titan Badge on your profile', 'VIP / Priority Support', 'Early access to new features', '2 Featured offers for 2 weeks in a month', 'Invitation to attend Meetups, AMA, or meetings once a month'], bonus: [] },
-  { n: 'Legendary', r: 0.40, c: '#1B4332', f: 80, v: 70000, kf: 40, kv: 20000, ex: { f: 80, t: 5, z: 250 }, get: ['40% Commission', 'Legendary Badge on your profile', 'Direct line to the PRAQEN Team', 'Invitation to PRAQEN events', 'A special all-paid 3-day trip to a top African country (for staying Legendary a full year)', 'Can eventually be offered a role working with PRAQEN'], bonus: [] },
+  {
+    n: 'Explorer', r: 0.10, c: '#B7D9C4', f: 5, v: 50, kf: 3, kv: 50, ex: { f: 5, t: 3, z: 60 },
+    get: ['10% of PRAQEN\'s fee on every trade your users make', 'Explorer Badge on your profile', 'Your personal link and scan code', 'Live progress dashboard'],
+    bonus: [],
+  },
+  {
+    n: 'Builder', r: 0.20, c: '#2D6A4F', f: 15, v: 5000, kf: 8, kv: 1000, ex: { f: 15, t: 3, z: 100 },
+    get: ['20% of PRAQEN\'s fee on every trade your users make', 'Builder Badge on your profile', 'VIP / Priority Support', 'Swag from PRAQEN'],
+    bonus: [],
+  },
+  {
+    n: 'Titan', r: 0.30, c: '#F4A422', f: 50, v: 10000, kf: 25, kv: 3000, ex: { f: 50, t: 4, z: 200 },
+    get: ['30% of PRAQEN\'s fee on every trade your users make', 'Titan Badge on your profile', 'VIP / Priority Support', 'Early access to new features', '2 featured offers for 2 weeks each month', 'Invitation to monthly meetups, AMAs and team meetings'],
+    bonus: [],
+  },
+  {
+    n: 'Legendary', r: 0.40, c: '#1B4332', f: 80, v: 70000, kf: 40, kv: 20000, ex: { f: 80, t: 5, z: 250 },
+    get: ['40% of PRAQEN\'s fee on every trade your users make', 'Legendary Badge on your profile', 'Direct line to the PRAQEN team', 'Invitation to PRAQEN events'],
+    // Exclusive, once-a-year-earned benefits — kept separate from `get` so the UI can
+    // highlight them differently (see PartnerProgram.js's "WHAT YOU GET" box).
+    bonus: ['A fully-paid 3-day trip to a top African destination', 'A future opportunity to work with the PRAQEN team'],
+    bonusNote: 'Unlocked after maintaining Legendary status for a full year.',
+  },
 ];
 
 // Platform trading fee (2% on BTC/USDT P2P trades) — mirrors tradeEscrowService.js's
@@ -149,6 +168,42 @@ export async function applyForBuilder() {
     return data?.message || 'Application received.';
   } catch (e) {
     throw new Error(e?.response?.data?.error || 'Could not submit application. Please try again.');
+  }
+}
+
+// Reward balance — the blended USD total of unclaimed affiliate commission,
+// and whether it's cleared CLAIM_MIN_USD yet. Same shape/pattern as
+// useAffiliateSummary above. Re-fetch by bumping `refreshKey` (used right
+// after a successful claim, so the balance drops back to 0 immediately).
+export function useAffiliateRewards(user, refreshKey = 0) {
+  const [state, setState] = useState({ loading: false, error: false, data: null });
+  const uid = user ? user.id : null;
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!uid || !token) { setState({ loading: false, error: false, data: null }); return undefined; }
+    let alive = true;
+    setState((s) => ({ ...s, loading: true, error: false }));
+    axios.get(`${API_URL}/affiliate/rewards`, { headers: { Authorization: `Bearer ${token}` }, timeout: 20000 })
+      .then(({ data }) => { if (alive) setState({ loading: false, error: false, data }); })
+      .catch(() => { if (alive) setState({ loading: false, error: true, data: null }); });
+    return () => { alive = false; };
+  }, [uid, refreshKey]);
+  return state;
+}
+
+// Claim every unclaimed commission row at once. Only ever callable once the
+// balance has cleared CLAIM_MIN_USD — the server re-checks this itself
+// regardless of what the button's disabled state shows.
+export async function claimAffiliateRewards() {
+  const token = localStorage.getItem('token');
+  if (!token) throw new Error('Please log in first.');
+  try {
+    const { data } = await axios.post(`${API_URL}/affiliate/claim`, {}, {
+      headers: { Authorization: `Bearer ${token}` }, timeout: 20000,
+    });
+    return data;
+  } catch (e) {
+    throw new Error(e?.response?.data?.error || 'Could not process claim. Please try again.');
   }
 }
 

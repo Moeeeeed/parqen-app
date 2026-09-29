@@ -4509,6 +4509,264 @@ function NewUsersSection() {
 }
 
 // ================================================================
+// AFFILIATE PROGRAM — OVERVIEW
+// Read-only manager view: every affiliate with real referral activity, plus
+// program-wide totals. Sort any column (click a header) to answer "who's
+// trading the most" or "who's earning the most" at a glance. Nothing on
+// this screen writes anything — see /api/admin/affiliate/overview.
+// ================================================================
+function AffiliateOverviewSection() {
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ]             = useState('');
+  const [sortKey, setSortKey] = useState('qualified_volume_usd');
+  const [sortDir, setSortDir] = useState('desc');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await axios.get(`${API_URL}/admin/affiliate/overview`, { headers: authH() });
+      setData(r.data);
+    } catch { toast.error('Failed to load Affiliate Program overview'); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const sortBy = (key) => {
+    if (key === sortKey) { setSortDir(d => d === 'desc' ? 'asc' : 'desc'); }
+    else { setSortKey(key); setSortDir('desc'); }
+  };
+
+  const COLS = [
+    { key: 'username',                label: 'Affiliate' },
+    { key: 'level',                   label: 'Level' },
+    { key: 'users_brought',           label: 'Referred' },
+    { key: 'active_users',            label: 'Active' },
+    { key: 'qualified_volume_usd',    label: 'Trade volume' },
+    { key: 'total_commission_usd',    label: 'Commission (lifetime)' },
+    { key: 'commission_this_month_usd', label: 'Commission (this month)' },
+  ];
+
+  const rows = (data?.affiliates || [])
+    .filter(a => !q.trim() || a.username.toLowerCase().includes(q.trim().toLowerCase()))
+    .slice()
+    .sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey];
+      const cmp = typeof av === 'string' ? av.localeCompare(bv) : (av || 0) - (bv || 0);
+      return sortDir === 'desc' ? -cmp : cmp;
+    });
+
+  const kpis = data?.kpis;
+  const levelColor = { Explorer: '#B7D9C4', Builder: '#2D6A4F', Titan: '#F4A422', Legendary: '#1B4332' };
+
+  return (
+    <div className="space-y-5">
+      <SectionHead title="Affiliate Program — Overview"
+        sub="Every affiliate with real activity, and how the whole program is doing — read only, nothing here moves money"
+        action={<button onClick={load} className="p-2 rounded-xl border hover:bg-gray-50 transition" style={{ borderColor: C.g200 }}><RefreshCw size={14} style={{ color: C.g500 }} /></button>} />
+
+      {loading && !data ? <Spin /> : (
+        <>
+          {/* KPI cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: 'Affiliates',              value: kpis?.total_affiliates || 0,                                   color: C.forest, bg: '#F0FDF4' },
+              { label: 'Users referred',           value: kpis?.total_referred_users || 0,                               color: '#3B82F6', bg: '#EFF6FF' },
+              { label: 'Active referred users',    value: kpis?.total_active_users || 0,                                 color: '#166534', bg: '#F0FDF4' },
+              { label: 'Total trade volume',       value: `$${(kpis?.total_qualified_volume_usd || 0).toLocaleString()}`, color: '#92400E', bg: '#FEF3C7' },
+              { label: 'Commission paid out (lifetime)', value: `$${(kpis?.total_commission_usd_lifetime || 0).toLocaleString()}`, color: '#6D28D9', bg: '#F5F3FF' },
+              { label: 'Commission (this month)',  value: `$${(kpis?.total_commission_usd_this_month || 0).toLocaleString()}`, color: '#6D28D9', bg: '#F5F3FF' },
+              { label: 'Builder+',                 value: (kpis?.level_counts?.Builder || 0) + (kpis?.level_counts?.Titan || 0) + (kpis?.level_counts?.Legendary || 0), color: '#2D6A4F', bg: '#F0FDF4' },
+              { label: 'Legendary',                value: kpis?.level_counts?.Legendary || 0,                            color: '#1B4332', bg: '#F0FDF4' },
+            ].map(s => (
+              <div key={s.label} className="bg-white rounded-2xl border p-4" style={{ borderColor: C.g200 }}>
+                <p className="text-xl font-black" style={{ color: s.color }}>{s.value}</p>
+                <p className="text-xs font-bold mt-1" style={{ color: C.g600 }}>{s.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Search */}
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by username…"
+            className="bg-white border rounded-xl px-3 py-2 text-sm font-semibold outline-none w-full max-w-xs"
+            style={{ borderColor: C.g200, color: C.g700 }} />
+
+          {/* Table */}
+          {rows.length === 0 ? (
+            <Empty icon={<Users size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No affiliates with any referral activity yet" />
+          ) : (
+            <div className="bg-white rounded-2xl border overflow-x-auto" style={{ borderColor: C.g200 }}>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b" style={{ borderColor: C.g200 }}>
+                    {COLS.map(c => (
+                      <th key={c.key} onClick={() => sortBy(c.key)}
+                        className="px-4 py-3 text-left text-xs font-black cursor-pointer select-none whitespace-nowrap"
+                        style={{ color: sortKey === c.key ? C.forest : C.g500 }}>
+                        {c.label} {sortKey === c.key ? (sortDir === 'desc' ? '↓' : '↑') : ''}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(a => (
+                    <tr key={a.id} className="border-b last:border-0" style={{ borderColor: C.g200 }}>
+                      <td className="px-4 py-3 font-bold" style={{ color: C.g800 }}>{a.username}</td>
+                      <td className="px-4 py-3">
+                        {a.level
+                          ? <Pill label={a.level} color="#fff" bg={levelColor[a.level] || C.g400} />
+                          : <span className="text-xs" style={{ color: C.g400 }}>—</span>}
+                      </td>
+                      <td className="px-4 py-3" style={{ color: C.g700 }}>{a.users_brought}</td>
+                      <td className="px-4 py-3" style={{ color: C.g700 }}>{a.active_users}</td>
+                      <td className="px-4 py-3 font-semibold" style={{ color: C.g800 }}>${a.qualified_volume_usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                      <td className="px-4 py-3 font-semibold" style={{ color: '#6D28D9' }}>${a.total_commission_usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                      <td className="px-4 py-3" style={{ color: C.g700 }}>${a.commission_this_month_usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ================================================================
+// AFFILIATE PROGRAM — BUILDER APPLICATIONS
+// Reviews applications for the Builder level (the one level that needs a
+// manual interview instead of unlocking free the moment the numbers are
+// hit — see affiliateSummaryService.js). The approve/reject endpoints have
+// existed since the Builder-gate feature shipped; this is the first UI to
+// actually call them — before this, approving meant querying Supabase directly.
+// ================================================================
+function BuilderApplicationsSection() {
+  const [apps, setApps]           = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [statusFilter, setFilter] = useState('pending');
+  const [acting, setActing]       = useState(null); // id currently being approved/rejected
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await axios.get(`${API_URL}/admin/affiliate/builder-applications`, {
+        headers: authH(), params: { status: statusFilter },
+      });
+      if (r.data.migration_needed) {
+        toast.error('Run database/2026-09-27_affiliate_builder_applications.sql first');
+        setApps([]);
+      } else {
+        setApps(r.data.applications || []);
+      }
+    } catch { toast.error('Failed to load Builder applications'); }
+    finally { setLoading(false); }
+  }, [statusFilter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const approve = async (id) => {
+    setActing(id);
+    try {
+      await axios.post(`${API_URL}/admin/affiliate/builder-applications/${id}/approve`, {}, { headers: authH() });
+      toast.success('Approved — they\'re now a Builder');
+      setApps(prev => prev.filter(a => a.id !== id));
+    } catch (e) { toast.error(e.response?.data?.error || 'Approve failed'); }
+    finally { setActing(null); }
+  };
+
+  const reject = async (id) => {
+    const reason = window.prompt('Reason for rejecting this Builder application?');
+    if (!reason || !reason.trim()) return;
+    setActing(id);
+    try {
+      await axios.post(`${API_URL}/admin/affiliate/builder-applications/${id}/reject`, { reason: reason.trim() }, { headers: authH() });
+      toast.success('Rejected');
+      setApps(prev => prev.filter(a => a.id !== id));
+    } catch (e) { toast.error(e.response?.data?.error || 'Reject failed'); }
+    finally { setActing(null); }
+  };
+
+  return (
+    <div className="space-y-5">
+      <SectionHead title={`Builder Applications (${apps.length})`}
+        sub="Builder is the one Affiliate Program level that needs a manual interview — reaching the numbers only unlocks the ability to apply"
+        action={<button onClick={load} className="p-2 rounded-xl border hover:bg-gray-50 transition" style={{ borderColor: C.g200 }}><RefreshCw size={14} style={{ color: C.g500 }} /></button>} />
+
+      <div className="flex gap-2 flex-wrap">
+        {['pending', 'approved', 'rejected', 'all'].map(s => (
+          <button key={s} onClick={() => setFilter(s)}
+            className="px-3 py-2 rounded-xl text-sm font-bold capitalize transition"
+            style={statusFilter === s
+              ? { background: C.forest, color: '#fff' }
+              : { background: '#fff', color: C.g600, border: `1px solid ${C.g200}` }}>
+            {s}
+          </button>
+        ))}
+      </div>
+
+      {loading ? <Spin /> : apps.length === 0 ? (
+        <Empty icon={<UserCheck size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text={`No ${statusFilter === 'all' ? '' : statusFilter} applications`} />
+      ) : (
+        <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: C.g200 }}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b" style={{ borderColor: C.g200 }}>
+                <th className="px-4 py-3 text-left text-xs font-black" style={{ color: C.g500 }}>Applicant</th>
+                <th className="px-4 py-3 text-left text-xs font-black" style={{ color: C.g500 }}>Active users</th>
+                <th className="px-4 py-3 text-left text-xs font-black" style={{ color: C.g500 }}>Volume at apply</th>
+                <th className="px-4 py-3 text-left text-xs font-black" style={{ color: C.g500 }}>Applied</th>
+                <th className="px-4 py-3 text-left text-xs font-black" style={{ color: C.g500 }}>Status</th>
+                {statusFilter === 'pending' && <th className="px-4 py-3 text-right text-xs font-black" style={{ color: C.g500 }}>Action</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {apps.map(a => (
+                <tr key={a.id} className="border-b last:border-0" style={{ borderColor: C.g200 }}>
+                  <td className="px-4 py-3">
+                    <p className="font-bold" style={{ color: C.g800 }}>{a.users?.username || '—'}</p>
+                    <p className="text-xs" style={{ color: C.g400 }}>{a.users?.email} {a.users?.country ? `· ${a.users.country}` : ''}</p>
+                  </td>
+                  <td className="px-4 py-3" style={{ color: C.g700 }}>{a.active_users_at_apply}</td>
+                  <td className="px-4 py-3" style={{ color: C.g700 }}>${Number(a.qualified_volume_at_apply || 0).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-xs" style={{ color: C.g400 }}>{fmtAge(a.applied_at)}</td>
+                  <td className="px-4 py-3">
+                    <Pill label={a.status}
+                      color={a.status === 'approved' ? '#166534' : a.status === 'rejected' ? '#991B1B' : '#92400E'}
+                      bg={a.status === 'approved' ? '#F0FDF4' : a.status === 'rejected' ? '#FEF2F2' : '#FEF3C7'} />
+                    {a.status === 'rejected' && a.rejection_reason && (
+                      <p className="text-xs mt-1" style={{ color: C.g400 }}>{a.rejection_reason}</p>
+                    )}
+                  </td>
+                  {statusFilter === 'pending' && (
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex gap-2 justify-end">
+                        <button onClick={() => approve(a.id)} disabled={acting === a.id}
+                          className="px-3 py-1.5 rounded-lg text-xs font-black text-white transition disabled:opacity-50"
+                          style={{ background: C.forest }}>
+                          {acting === a.id ? '…' : 'Approve'}
+                        </button>
+                        <button onClick={() => reject(a.id)} disabled={acting === a.id}
+                          className="px-3 py-1.5 rounded-lg text-xs font-black transition disabled:opacity-50"
+                          style={{ background: '#FEF2F2', color: '#991B1B' }}>
+                          Reject
+                        </button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ================================================================
 // REPORTS & ISSUES SECTION
 // ================================================================
 function ReportsSection() {
@@ -5493,6 +5751,8 @@ const NAV = [
   { id:'activity',     label:'Activity Log',  icon:Activity        },
   { id:'broadcast',    label:'Broadcast',     icon:Megaphone       },
   { id:'weekly-stars', label:'Weekly Stars',  icon:Star            },
+  { id:'affiliate-overview', label:'Affiliate Program', icon:Users },
+  { id:'builder-apps', label:'Builder Applications', icon:UserCheck },
 ];
 
 export default function AdminDashboard({ user: appUser, onLogin }) {
@@ -5558,6 +5818,8 @@ export default function AdminDashboard({ user: appUser, onLogin }) {
     activity:      <ActivitySection />,
     broadcast:     <BroadcastSection />,
     'weekly-stars': <AdminTraderRecognition />,
+    'builder-apps': <BuilderApplicationsSection />,
+    'affiliate-overview': <AffiliateOverviewSection />,
   };
 
   return (

@@ -1459,6 +1459,7 @@ class TradeEscrowService {
       const { data: all } = await supabaseAdmin
         .from('trades')
         .select('status')
+        .eq('is_test', false)
         .or(`seller_id.eq.${userId},buyer_id.eq.${userId}`);
 
       const completed = (all || []).filter(t => t.status === 'COMPLETED').length;

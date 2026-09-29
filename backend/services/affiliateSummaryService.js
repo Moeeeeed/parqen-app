@@ -354,7 +354,7 @@ async function _buildLeaderboard(supabase, { limit, now }) {
   byAff.forEach((referredIds, affiliateId) => {
     const agg = aggregate({ affiliateId, referredIds, trades: tradesByAff.get(affiliateId) || [], giftListingIds });
     const active = agg.active.size;
-    if (active < 1) return; // the board lists people who actually brought traders
+    if (active < 1) return; // the full leaderboard table lists anyone who actually brought traders
     const q = round2(agg.qualifiedVolume);
     const lvl = levelIndexFor(active, q);
     rows.push({ id: affiliateId, users_brought: referredIds.length, active_users: active, qualified_volume_usd: q, level: lvl >= 0 ? LEVELS[lvl].name : null });

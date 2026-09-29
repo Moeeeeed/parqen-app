@@ -9,6 +9,7 @@ import './partner-program.css';
 import {
   countryName, LEVELS, CLAIM_MIN_USD, ACTIVE_MIN_USD, Badge, pct, usd, money, monthlyExample,
   useAffiliateConfig, useAffiliateSummary, useAffiliateLeaderboard, applyForBuilder,
+  useAffiliateRewards, claimAffiliateRewards,
 } from './partnerShared';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -95,6 +96,27 @@ function PartnerProgram({ user }) {
   // Overrides sum.builder_application right after a successful apply, so the
   // pill flips to "under review" immediately without waiting on a refetch.
   const [builderAppOverride, setBuilderAppOverride] = useState(null);
+  const [claiming, setClaiming] = useState(false);
+  const [rewardRefresh, setRewardRefresh] = useState(0);
+  const rewards = useAffiliateRewards(user, rewardRefresh);
+  const rw = rewards.data;
+  const claimThresholdUsd = rw?.claim_threshold_usd ?? CLAIM_MIN_USD;
+  const claimBalanceUsd = rw?.reward_balance_usd || 0;
+  const claimProgressPct = Math.max(0, Math.min(100, Math.round((claimBalanceUsd / claimThresholdUsd) * 100)));
+
+  const handleClaim = async () => {
+    if (claiming || !rw?.can_claim) return;
+    setClaiming(true);
+    try {
+      const result = await claimAffiliateRewards();
+      toast.success(result?.message || 'Claimed!');
+      setRewardRefresh((n) => n + 1); // balance drops back to 0 immediately
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setClaiming(false);
+    }
+  };
 
   const cash = cfg.cashEnabled === true;
   const levels = cfg.levels || LEVELS;
@@ -133,7 +155,9 @@ function PartnerProgram({ user }) {
   };
 
   const matches = (r) => !q.trim() || String(r.username || '').toLowerCase().includes(q.trim().toLowerCase());
-  const leaders = (board || []).slice(0, 3);
+  // Hall of Fame only features affiliates who've actually earned a level — the full
+  // Leaderboard table below still shows everyone who brought at least one active user.
+  const leaders = (board || []).filter((r) => r.level).slice(0, 3);
   const faq = buildFaq(cash);
 
   return (
@@ -206,6 +230,36 @@ function PartnerProgram({ user }) {
                 </div>
               )}
             </div>
+            {cash && (
+              <div className="claimcard">
+                <div className="cc-head">
+                  <span className="cc-icon">💰</span>
+                  <div>
+                    <small>Reward balance</small>
+                    {/* Exact cents, not money()'s rounded-to-whole-dollar display — a real
+                        claimable balance must never be misrepresented right at the threshold. */}
+                    <b className="cc-amount">{rewards.loading && !rw ? '…' : `${claimBalanceUsd.toFixed(2)} USD`}</b>
+                  </div>
+                </div>
+
+                {rw?.can_claim ? (
+                  <button type="button" className="btn p cc-claimbtn" disabled={claiming} onClick={handleClaim}>
+                    {claiming ? 'Claiming…' : '🎉 Claim your reward'}
+                  </button>
+                ) : (
+                  <div className="cc-progress">
+                    <div className="track"><i style={{ width: `${claimProgressPct}%` }} /></div>
+                    <small>
+                      {rewards.loading && !rw
+                        ? 'Loading your balance…'
+                        : `${claimBalanceUsd.toFixed(2)} of ${claimThresholdUsd.toFixed(2)} USD — ${Math.max(0, claimThresholdUsd - claimBalanceUsd).toFixed(2)} USD to go`}
+                    </small>
+                  </div>
+                )}
+
+                <p className="cc-note">Paid into your PRAQEN wallet in whichever coin your users actually traded — BTC or USDT.</p>
+              </div>
+            )}
           </>
         ) : (
           <div className="mecard" style={{ gridTemplateColumns: '1fr' }}>
@@ -370,7 +424,28 @@ function PartnerProgram({ user }) {
                   </div>
                   <div className="box">
                     <h5>WHAT YOU GET</h5>
-                    <ul>{l.get.concat(l.bonus).map((x) => <li key={x}>{x}</li>)}</ul>
+                    <ul className="getlist">
+                      {l.get.map((x) => (
+                        <li key={x}>
+                          <span className="chk" style={{ color: l.c, borderColor: l.c }}>✓</span>
+                          <span>{x}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    {l.bonus.length > 0 && (
+                      <div className="exclusive" style={{ borderColor: l.c, background: `${l.c}14` }}>
+                        <div className="exhead" style={{ color: l.c }}>★ {l.n} Exclusive</div>
+                        <ul className="getlist">
+                          {l.bonus.map((x) => (
+                            <li key={x}>
+                              <span className="chk" style={{ color: l.c, borderColor: l.c }}>★</span>
+                              <span>{x}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        {l.bonusNote && <p className="exnote">{l.bonusNote}</p>}
+                      </div>
+                    )}
                   </div>
                 </div>
               </details>
@@ -490,6 +565,7 @@ function PartnerProgram({ user }) {
                   {h.level && <div className="lvtag"><Badge i={lvl} size={22} /> {h.level} level</div>}
                   <div className="st row"><small>Lifetime earnings</small><strong>{usd(h.total_commission_usd)}</strong></div>
                   <div className="st row"><small>Earnings this month</small><strong>{usd(h.commission_this_month_usd)}</strong></div>
+                  <div className="st row"><small>Trade volume</small><strong>{usd(h.qualified_volume_usd)}</strong></div>
                   <div className="st row"><small>Network growth</small><strong>{h.users_brought} partner{h.users_brought === 1 ? '' : 's'}</strong></div>
                   {h.quote && <Link className="btn p" style={{ marginTop: 10, width: '100%', textAlign: 'center' }} to={`/profile/${encodeURIComponent(h.username)}`}>See their journey</Link>}
                 </div>

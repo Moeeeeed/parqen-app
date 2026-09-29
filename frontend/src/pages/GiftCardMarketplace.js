@@ -2055,7 +2055,7 @@ export default function GiftCards({ user }) {
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 900, color: C.forest, background: C.gold, borderRadius: 6, padding: '3px 9px', letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                    <Bitcoin size={11} />Affiliate
+                    <Bitcoin size={11} />Affiliate Program
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, fontWeight: 700, color: '#fff', background: 'rgba(255,255,255,0.15)', borderRadius: 5, padding: '2px 8px' }}>
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#6EE7B7', display: 'inline-block' }} />LIVE
@@ -2072,7 +2072,7 @@ export default function GiftCards({ user }) {
           </div>
 
           <div style={{padding:'10px 14px',background:'#fff',textAlign:'center'}}>
-            <span onClick={()=>navigate('/partner-program')} style={{fontSize:11,fontWeight:700,color:'#1B4332',cursor:'pointer',textDecoration:'underline'}}>See the Referral Program page for current rates →</span>
+            <span onClick={()=>navigate('/partner-program')} style={{fontSize:11,fontWeight:700,color:'#1B4332',cursor:'pointer',textDecoration:'underline'}}>See the Affiliate Program page for current rates →</span>
           </div>
 
 
