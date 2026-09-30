@@ -9410,41 +9410,32 @@ app.post('/api/trades', verifyToken, requireEmailVerified, requireNotBanned, asy
         error: `Could not lock ${tradeCurrency} in escrow. The seller may have insufficient funds. Please try a different offer.`
       });
     }
-    // Fetch users before response to ensure email data is ready
-    let buyerEmailUser = null;
-    let sellerEmailUser = null;
-    try {
-      const [buyerEmailRes, sellerEmailRes] = await Promise.allSettled([
-        supabaseAdmin.from('users').select('id, email, username').eq('id', buyerId).maybeSingle(),
-        supabaseAdmin.from('users').select('id, email, username').eq('id', sellerId).maybeSingle(),
-      ]);
-      buyerEmailUser = buyerEmailRes.status === 'fulfilled' ? buyerEmailRes.value?.data : null;
-      sellerEmailUser = sellerEmailRes.status === 'fulfilled' ? sellerEmailRes.value?.data : null;
-    } catch (uErr) {
-      console.error('[TradeOpen] Failed to fetch buyer/seller for email:', uErr.message);
-    }
-
     // Invalidate marketplace cache so seller's reduced BTC balance shows immediately
     bustCache();
 
-    // Start both "trade opened" emails now, then give them a short, BOUNDED window to finish
-    const openedEmailJobs = [];
-    if (buyerEmailUser?.email) {
-      console.log(`[TradeOpen] Sending buyer email to ${buyerEmailUser.email}`);
-      openedEmailJobs.push(
-        emailService.sendTradeOpenedEmail(buyerEmailUser, trade[0], 'buyer')
-          .catch(e => console.error('[TradeOpen] buyer email error:', e.message))
-      );
-    }
-    if (sellerEmailUser?.email) {
-      console.log(`[TradeOpen] Sending seller email to ${sellerEmailUser.email}`);
-      openedEmailJobs.push(
-        emailService.sendTradeOpenedEmail(sellerEmailUser, trade[0], 'seller')
-          .catch(e => console.error('[TradeOpen] seller email error:', e.message))
-      );
-    }
-    if (openedEmailJobs.length > 0) {
-      await settleWithin(Promise.allSettled(openedEmailJobs), TRADE_EMAIL_MAX_WAIT_MS);
+    // ── Send "Trade Opened" email to COUNTERPARTY ONLY ────────────────────────
+    try {
+      const counterpartyId = (req.userId === buyerId) ? sellerId : buyerId;
+
+      const [cpRes, initRes] = await Promise.allSettled([
+        supabaseAdmin.from('users').select('id, email, username').eq('id', counterpartyId).maybeSingle(),
+        supabaseAdmin.from('users').select('id, username').eq('id', req.userId).maybeSingle(),
+      ]);
+
+      const counterpartyUser = cpRes.status === 'fulfilled' ? cpRes.value?.data : null;
+      const initiatorUser = initRes.status === 'fulfilled' ? initRes.value?.data : null;
+
+      if (!counterpartyUser || !counterpartyUser.email) {
+        console.warn(`Trade opened email: skipped — counterparty user ${counterpartyId} has no email address`);
+      } else {
+        await settleWithin(
+          emailService.sendTradeOpenedEmail(counterpartyUser, trade[0], initiatorUser?.username || 'Trader')
+            .catch(e => console.error(`Trade opened email: failed for user ${counterpartyId} on trade ${trade[0].id}: ${e.message}`)),
+          TRADE_EMAIL_MAX_WAIT_MS
+        );
+      }
+    } catch (emailErr) {
+      console.error(`Trade opened email: failed for trade ${trade[0].id}: ${emailErr.message}`);
     }
 
     res.json({ success: true, trade: trade[0], escrowAddress: escrowResult.escrowAddress, fee });

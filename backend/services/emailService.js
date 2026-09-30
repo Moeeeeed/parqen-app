@@ -28,23 +28,38 @@ function getConfiguredFromAddress(role = 'notifications') {
   return configured || DEFAULT_FROM_ADDRESS;
 }
 
-function formatFromAddress(address) {
-  if (!address) return `PraQen Support Team <${DEFAULT_FROM_ADDRESS}>`;
-  return address.includes('<') ? address : `PraQen Support Team <${address}>`;
+function formatFromAddress(address, fromName) {
+  const defaultName = 'Praqen Support Team';
+  const nameToUse = fromName || defaultName;
+  if (!address) return `${nameToUse} <${DEFAULT_FROM_ADDRESS}>`;
+  if (address.includes('<')) {
+    if (fromName) {
+      const emailOnly = address.match(/<([^>]+)>/)?.[1] || address;
+      return `${fromName} <${emailOnly}>`;
+    }
+    return address;
+  }
+  return `${nameToUse} <${address}>`;
 }
 
-function getResendFromAddress(role = 'notifications') {
-  if (process.env.RESEND_FROM) return process.env.RESEND_FROM;
-  const configured = role === 'support'
-    ? (process.env.EMAIL_FROM_SUPPORT || process.env.EMAIL_FROM_NOTIFICATIONS)
-    : process.env.EMAIL_FROM_NOTIFICATIONS;
+function getResendFromAddress(role = 'notifications', fromName) {
+  let baseAddress;
+  if (process.env.RESEND_FROM) {
+    baseAddress = process.env.RESEND_FROM;
+  } else {
+    const configured = role === 'support'
+      ? (process.env.EMAIL_FROM_SUPPORT || process.env.EMAIL_FROM_NOTIFICATIONS)
+      : process.env.EMAIL_FROM_NOTIFICATIONS;
 
-  if (configured) return formatFromAddress(configured);
-  if (process.env.SMTP_FROM || process.env.EMAIL_USER) {
-    return formatFromAddress(process.env.SMTP_FROM || process.env.EMAIL_USER);
+    if (configured) {
+      baseAddress = configured;
+    } else if (process.env.SMTP_FROM || process.env.EMAIL_USER) {
+      baseAddress = process.env.SMTP_FROM || process.env.EMAIL_USER;
+    } else {
+      baseAddress = DEFAULT_FROM_ADDRESS;
+    }
   }
-  // Same default the code always used. (resend.dev is only a sandbox sender that delivers to the account owner.)
-  return formatFromAddress(DEFAULT_FROM_ADDRESS);
+  return formatFromAddress(baseAddress, fromName);
 }
 
 function getTestOverrideEmail() {
@@ -107,15 +122,15 @@ async function logEmail({ userId, email, subject, type, status, messageId, error
 // The DB log write is intentionally not awaited — it's a fire-and-forget audit
 // trail with its own internal try/catch, so it should never add its own
 // round-trip to a caller waiting on the actual send result.
-async function sendEmail({ userId, to, subject, html, type, metadata, fromRole = 'notifications' }) {
+async function sendEmail({ userId, to, subject, html, type, metadata, fromRole = 'notifications', fromName }) {
   const testOverrideEmail = getTestOverrideEmail();
   const originalRecipient = to;
   const effectiveRecipient = testOverrideEmail || originalRecipient;
 
   // ── Attempt 1: Resend API ────────────────────────────────────────────────
   const resendKey  = process.env.RESEND_API_KEY;
-  const resendFrom = getResendFromAddress(fromRole);
-  const smtpFrom = formatFromAddress(getConfiguredFromAddress(fromRole));
+  const resendFrom = getResendFromAddress(fromRole, fromName);
+  const smtpFrom   = formatFromAddress(getConfiguredFromAddress(fromRole), fromName);
   if (resendKey) {
     try {
       const response = await fetch('https://api.resend.com/emails', {
@@ -193,7 +208,7 @@ function base(title, body) {
         <tr><td style="background:linear-gradient(135deg,#10b981 0%,#059669 100%);padding:32px 40px;text-align:center;">
           <a href="https://praqen.com" style="text-decoration:none;">
             <div style="display:inline-block;width:56px;height:56px;background:#fff;border-radius:14px;line-height:56px;text-align:center;">
-              <img src="https://praqen.com/logo512.png" width="40" height="40" alt="PraQen" style="vertical-align:middle;border-radius:8px;">
+              <img src="https://praqen.com/logo512.png" width="40" height="40" alt="Praqen" style="vertical-align:middle;border-radius:8px;">
             </div>
           </a>
         </td></tr>
@@ -207,7 +222,7 @@ function base(title, body) {
             <a href="https://www.linkedin.com/in/pra-qen-045373402/" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">LinkedIn</a>
           </p>
           <p style="margin:0 0 4px;font-size:12px;color:#94A3B8;">Need help? <a href="mailto:support@praqen.com" style="color:#10b981;font-weight:700;">support@praqen.com</a> · <a href="https://praqen.com" style="color:#10b981;font-weight:700;">praqen.com</a></p>
-          <p style="margin:0;font-size:11px;color:#CBD5E1;">© ${yr} <b>PraQen</b> · The World's Most Trusted P2P Bitcoin Marketplace</p>
+          <p style="margin:0;font-size:11px;color:#CBD5E1;">© ${yr} <b>Praqen</b> · The World's Most Trusted P2P Bitcoin Marketplace</p>
         </td></tr>
       </table>
     </td></tr>
@@ -244,7 +259,7 @@ function warningBox(msg) {
 // ── Email HTML builders ───────────────────────────────────────────────────────
 
 function welcomeHtml(name) {
-  return base('Welcome to <b>PraQen</b>!', `
+  return base('Welcome to <b>Praqen</b>!', `
     <h2 style="color:#10b981;font-size:22px;margin:0 0 8px;">Welcome, ${name}!</h2>
     <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">You've joined <strong>the world's most trusted P2P Bitcoin marketplace</strong>. Your account is ready!</p>
     <div style="background:#F0FAF5;border-left:4px solid #10b981;padding:16px 20px;border-radius:8px;margin-bottom:24px;">
@@ -257,12 +272,12 @@ function welcomeHtml(name) {
       </ul>
     </div>
     ${ctaButton('Start Trading Now', 'https://praqen.com/buy-bitcoin')}
-    ${warningBox('Always trade within <b>PraQen</b> — never share your login credentials')}
+    ${warningBox('Always trade within <b>Praqen</b> — never share your login credentials')}
   `);
 }
 
 function verificationHtml(code) {
-  return base('Your <b>PraQen</b> Verification Code', `
+  return base('Your <b>Praqen</b> Verification Code', `
     <p style="margin:0 0 8px;font-size:16px;font-weight:600;color:#334155;text-align:center;">Your Verification Code</p>
     <p style="margin:0 0 28px;font-size:13px;color:#64748B;line-height:1.6;text-align:center;">Use the code below to verify your account. It expires in <strong>10 minutes</strong>.</p>
     <div style="text-align:center;margin-bottom:28px;">
@@ -270,12 +285,12 @@ function verificationHtml(code) {
         <span style="font-size:42px;font-weight:900;letter-spacing:10px;color:#059669;font-family:'Courier New',monospace;">${code}</span>
       </div>
     </div>
-    <p style="margin:0;font-size:12px;color:#94A3B8;text-align:center;">If you didn't request this, you can safely ignore this email. Never share this code with anyone — <b>PraQen</b> will never ask for it.</p>
+    <p style="margin:0;font-size:12px;color:#94A3B8;text-align:center;">If you didn't request this, you can safely ignore this email. Never share this code with anyone — <b>Praqen</b> will never ask for it.</p>
   `);
 }
 
 function loginAlertHtml(name, loginTime) {
-  return base('New Login to Your <b>PraQen</b> Account', `
+  return base('New Login to Your <b>Praqen</b> Account', `
     <h2 style="color:#10b981;font-size:20px;margin:0 0 8px;">New Login Detected</h2>
     <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>, a login was recorded on your account.</p>
     ${infoBox(
@@ -294,7 +309,7 @@ function kycApprovedHtml(name) {
       
       <h2 style="color:#10b981;font-size:22px;margin:8px 0;">KYC Approved!</h2>
     </div>
-    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Congratulations <strong>${name}</strong>! Your identity has been verified. You now have full access to all <b>PraQen</b> features.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Congratulations <strong>${name}</strong>! Your identity has been verified. You now have full access to all <b>Praqen</b> features.</p>
     <div style="background:#F0FAF5;border-left:4px solid #10b981;padding:16px 20px;border-radius:8px;margin-bottom:24px;">
       <p style="margin:0 0 8px;font-weight:700;color:#1B4332;">Now Unlocked:</p>
       <ul style="margin:0;padding-left:20px;color:#475569;font-size:14px;line-height:1.9;">
@@ -328,7 +343,7 @@ function tradeConfirmationHtml(name, trade, role) {
   const isBuyer = role === 'buyer';
   const headline = isBuyer ? 'Trade Complete — BTC Received!' : 'Trade Complete — Payment Confirmed!';
   const detail = isBuyer
-    ? `<strong>${parseFloat(trade.amount_btc || 0).toFixed(8)} BTC</strong> has been released to your <b>PraQen</b> wallet.`
+    ? `<strong>${parseFloat(trade.amount_btc || 0).toFixed(8)} BTC</strong> has been released to your <b>Praqen</b> wallet.`
     : `Payment has been confirmed. Your trade is now complete.`;
 
   const amountUsd = trade.amount_usd ? `<tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Value (USD)</td><td style="padding:7px 0;color:#1B4332;font-size:13px;text-align:right;">$${parseFloat(trade.amount_usd || 0).toFixed(2)}</td></tr>` : '';
@@ -343,7 +358,7 @@ function tradeConfirmationHtml(name, trade, role) {
       <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Your Role</td><td style="padding:7px 0;color:#1B4332;font-size:13px;text-align:right;text-transform:capitalize;">${role}</td></tr>
     `)}
     ${ctaButton('View Trade Details', `https://praqen.com/trade/${trade.id}`)}
-    ${warningBox('<b>PraQen</b> escrow protected every step of this trade')}
+    ${warningBox('<b>Praqen</b> escrow protected every step of this trade')}
   `);
 }
 
@@ -354,7 +369,7 @@ function depositAlertHtml(name, amountBtc, txHash) {
       <div style="font-size:48px;">₿</div>
       <h2 style="color:#10b981;font-size:22px;margin:8px 0;">Deposit Confirmed!</h2>
     </div>
-    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>! Your Bitcoin deposit has been confirmed and credited to your <b>PraQen</b> wallet.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>! Your Bitcoin deposit has been confirmed and credited to your <b>Praqen</b> wallet.</p>
     ${infoBox(`
       <tr><td style="padding:8px 0;color:#64748B;font-size:13px;font-weight:600;">Amount Received</td><td style="padding:8px 0;color:#059669;font-size:20px;font-weight:900;text-align:right;">₿ ${parseFloat(amountBtc || 0).toFixed(8)}</td></tr>
       ${txRow}
@@ -363,46 +378,57 @@ function depositAlertHtml(name, amountBtc, txHash) {
   `);
 }
 
-function tradeOpenedHtml(name, trade, role) {
-  const isBuyer = role === 'buyer';
+function tradeOpenedHtml(counterpartyName, trade, initiatorName) {
+  const esc = (s) => String(s || '').replace(/</g, '&lt;');
+  const safeCounterpartyName = esc(counterpartyName).replace(/^@/, '');
+  const safeInitiatorName    = esc(initiatorName || 'Trader').replace(/^@/, '');
+
   const isUsdt = trade.currency === 'USDT';
   const assetLabel = isUsdt ? 'USDT' : 'BTC';
   const qtyFormatted = isUsdt
     ? `₮${parseFloat(trade.amount_btc || trade.amount_usdt || 0).toFixed(2)} USDT`
     : `₿${parseFloat(trade.amount_btc || 0).toFixed(8)} BTC`;
 
-  const headline = isBuyer ? 'Trade Opened — Send Your Payment' : 'New Trade Request Received';
-  const detail = isBuyer
-    ? `You have opened a trade and <strong>${qtyFormatted}</strong> is locked safely in escrow. Send your payment now to complete the trade.`
-    : `A buyer wants to trade with you. <strong>${qtyFormatted}</strong> is locked in escrow — you'll be notified once payment is sent.`;
+  const rawRef = (trade.trade_ref || (trade.id || '').toString().slice(0, 8).toUpperCase()).toString().trim();
+  const fullRef = rawRef.startsWith('#') ? rawRef.slice(1) : rawRef;
+
+  const headline = `Trade Opened — #${fullRef}`;
+  const detail = `User <strong>@${safeInitiatorName}</strong> has opened a trade against your offer. <strong>${qtyFormatted}</strong> is locked safely in escrow.`;
 
   const payDisp = (() => {
-    const fmt = n => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(n || 0);
+    const fmt = n => new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n || 0);
     if (trade.amount_local > 0 && trade.local_currency)
       return `${trade.currency_symbol || ''}${fmt(trade.amount_local)} ${trade.local_currency}`;
     if (trade.amount_usd > 0) return `$${parseFloat(trade.amount_usd).toFixed(2)} USD`;
     return '—';
   })();
 
-  const tradeRefStr = (trade.trade_ref || trade.id || '').toString().slice(0, 10).toUpperCase();
+  const createdTime = trade.created_at
+    ? new Date(trade.created_at).toUTCString()
+    : new Date().toUTCString();
+
+  const baseUrl = (process.env.FRONTEND_URL || 'https://praqen.com').split(',')[0].trim().replace(/\/$/, '');
+  const tradeUrl = `${baseUrl}/trade/${trade.id}`;
 
   return base(headline, `
     <h2 style="color:#10b981;font-size:20px;margin:0 0 8px;">${headline}</h2>
-    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>! ${detail}</p>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>@${safeCounterpartyName}</strong>! ${detail}</p>
     ${infoBox(`
       <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Trade Ref</td>
-          <td style="padding:7px 0;text-align:right;"><span style="background:#10b981;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;">#${tradeRefStr}</span></td></tr>
-      <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Amount (${assetLabel})</td>
+          <td style="padding:7px 0;text-align:right;"><span style="background:#10b981;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;">#${fullRef}</span></td></tr>
+      <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Asset &amp; Amount</td>
           <td style="padding:7px 0;color:#059669;font-size:18px;font-weight:900;text-align:right;">${qtyFormatted}</td></tr>
-      <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Amount (Fiat)</td>
+      <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Fiat Amount</td>
           <td style="padding:7px 0;color:#1B4332;font-size:13px;font-weight:700;text-align:right;">${payDisp}</td></tr>
       <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Payment Method</td>
           <td style="padding:7px 0;color:#1B4332;font-size:13px;text-align:right;">${trade.payment_method || 'Mobile Money'}</td></tr>
-      <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Your Role</td>
-          <td style="padding:7px 0;color:#1B4332;font-size:13px;text-align:right;text-transform:capitalize;">${role}</td></tr>
+      <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Opened By</td>
+          <td style="padding:7px 0;color:#1B4332;font-size:13px;text-align:right;">@${safeInitiatorName}</td></tr>
+      <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Time</td>
+          <td style="padding:7px 0;color:#64748B;font-size:12px;text-align:right;">${createdTime}</td></tr>
     `)}
-    ${ctaButton('View Trade →', `https://praqen.com/trade/${trade.id}`)}
-    ${warningBox(`${assetLabel} is secured in <b>PraQen</b> escrow until payment is confirmed`)}
+    ${ctaButton('View Trade →', tradeUrl)}
+    ${warningBox(`${assetLabel} is secured in <b>Praqen</b> escrow until payment is confirmed`)}
   `);
 }
 
@@ -542,11 +568,11 @@ function txReceiptHtml(name, tx) {
                 </tr>
                 ${feeAmt ? `<tr>
                   <td width="24" style="vertical-align:top;padding:4px 0;font-size:15px;"></td>
-                  <td style="padding:4px 0;font-size:12px;color:#475569;line-height:1.55;">Fee of ₿${feeAmt} held by <b>PraQen</b></td>
+                  <td style="padding:4px 0;font-size:12px;color:#475569;line-height:1.55;">Fee of ₿${feeAmt} held by <b>Praqen</b></td>
                 </tr>` : ''}
                 <tr>
                   <td width="24" style="vertical-align:top;padding:4px 0;font-size:15px;"></td>
-                  <td style="padding:4px 0;font-size:12px;color:#475569;line-height:1.55;"><b>PraQen</b> is not responsible for any loss from this transaction</td>
+                  <td style="padding:4px 0;font-size:12px;color:#475569;line-height:1.55;"><b>Praqen</b> is not responsible for any loss from this transaction</td>
                 </tr>
               </table>
             </td>
@@ -559,7 +585,7 @@ function txReceiptHtml(name, tx) {
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;border-radius:10px;overflow:hidden;background:#EFF6FF;border:1px solid #BFDBFE;">
       <tr><td style="padding:12px 16px;">
         <p style="margin:0 0 4px;font-size:13px;font-weight:800;color:#1D4ED8;">Blockchain External Wallet Send-Out</p>
-        <p style="margin:0;font-size:12px;color:#3B82F6;line-height:1.55;">The blockchain network is responsible for this external wallet transaction. <b>PraQen</b> is not liable once funds leave to an external address.</p>
+        <p style="margin:0;font-size:12px;color:#3B82F6;line-height:1.55;">The blockchain network is responsible for this external wallet transaction. <b>Praqen</b> is not liable once funds leave to an external address.</p>
       </td></tr>
     </table>` : '';
 
@@ -600,7 +626,7 @@ function txReceiptHtml(name, tx) {
   <!-- ═══ GREEN HEADER ═══ -->
   <tr><td style="background:linear-gradient(135deg,#1B4332 0%,#2D6A4F 60%,#40916C 100%);padding:32px 32px 40px;text-align:center;">
     <a href="https://praqen.com" style="text-decoration:none;">
-      <img src="https://praqen.com/logo512.png" width="32" height="32" alt="PraQen" style="border-radius:8px;vertical-align:middle;">
+      <img src="https://praqen.com/logo512.png" width="32" height="32" alt="Praqen" style="border-radius:8px;vertical-align:middle;">
     </a>
     <p style="margin:12px 0 20px;font-size:16px;font-weight:900;color:#ffffff;">${receiptHeading}</p>
     <!-- Amount circle -->
@@ -649,7 +675,7 @@ function txReceiptHtml(name, tx) {
       <a href="https://www.linkedin.com/in/pra-qen-045373402/" style="color:#64748B;text-decoration:none;font-size:11px;font-weight:700;margin:0 8px;">LinkedIn</a>
     </p>
     <p style="margin:0 0 3px;font-size:12px;color:#94A3B8;">Need help? <a href="mailto:support@praqen.com" style="color:#10b981;font-weight:700;">support@praqen.com</a> · <a href="https://praqen.com" style="color:#10b981;font-weight:700;">praqen.com</a></p>
-    <p style="margin:0;font-size:11px;color:#CBD5E1;">© ${yr} <b>PraQen</b> · The World's Most Trusted P2P Bitcoin Marketplace</p>
+    <p style="margin:0;font-size:11px;color:#CBD5E1;">© ${yr} <b>Praqen</b> · The World's Most Trusted P2P Bitcoin Marketplace</p>
   </td></tr>
 
 </table>
@@ -666,7 +692,7 @@ function txReceiptHtml(name, tx) {
 function supportRefHeader(ticketId) {
   // Short ticket ref (first 8 chars, uppercased) — same form the dashboards display.
   const ref = String(ticketId || '').replace(/-/g, '').slice(0, 8).toUpperCase();
-  return `[PraQen #${ref}]`;
+  return `[Praqen #${ref}]`;
 }
 
 async function sendTicketCreatedEmail({ ticket, messagePreview, userEmail }) {
@@ -711,7 +737,7 @@ async function sendTicketReplyEmail({ ticket, userEmail, message, agentName }) {
   const to = userEmail || ticket.submitted_email || ticket.user_email || ticket.user?.email;
   if (!to) return { success: false, error: 'No recipient email for ticket reply' };
   const ref = supportRefHeader(ticket.id);
-  const senderName = 'PraQen Support Team';
+  const senderName = 'Praqen Support Team';
   const html = base('New Reply From Support', `
     <h2 style="margin:0 0 8px;font-size:22px;color:#1B4332;font-weight:800;">${senderName} replied to your ticket</h2>
     <p style="margin:0 0 20px;color:#64748B;font-size:15px;">Ticket <strong>${ref}</strong> — ${(ticket.subject || '').replace(/</g, '&lt;')}</p>
@@ -768,7 +794,7 @@ async function sendWelcomeEmail(user) {
   return sendEmail({
     userId:  user.id,
     to:      user.email,
-    subject: `Welcome to PraQen, ${user.username || 'Trader'}!`,
+    subject: `Welcome to Praqen, ${user.username || 'Trader'}!`,
     html:    welcomeHtml(user.username || 'Trader'),
     type:    'welcome',
   });
@@ -778,7 +804,7 @@ async function sendVerificationEmail(email, code, userId) {
   return sendEmail({
     userId,
     to:       email,
-    subject:  'Your PraQen Verification Code',
+    subject:  'Your Praqen Verification Code',
     html:     verificationHtml(code),
     type:     'verification',
     metadata: { code_hint: String(code).slice(0, 2) + '****' },
@@ -789,7 +815,7 @@ async function sendLoginAlertEmail(user) {
   return sendEmail({
     userId:  user.id,
     to:      user.email,
-    subject: 'New Login to Your PraQen Account',
+    subject: 'New Login to Your Praqen Account',
     html:    loginAlertHtml(user.username || user.email, new Date().toUTCString()),
     type:    'login_alert',
   });
@@ -810,7 +836,7 @@ async function sendLoginOtpEmail(user, code) {
   return sendEmail({
     userId:  user.id,
     to:      user.email,
-    subject: `${code} is your PraQen login code`,
+    subject: `${code} is your Praqen login code`,
     html,
     type:    'login_otp',
   });
@@ -885,8 +911,8 @@ function ceoApprovalRequestHtml(ceoName, info) {
       <tr><td style="padding:7px 0;color:#64748B;font-size:12px;font-weight:600;">To Address</td><td style="padding:7px 0;color:#94A3B8;font-size:11px;text-align:right;word-break:break-all;">${info.toAddress}</td></tr>
       <tr><td style="padding:7px 0;color:#64748B;font-size:12px;font-weight:600;">Request ID</td><td style="padding:7px 0;color:#94A3B8;font-size:11px;text-align:right;">${info.requestId}</td></tr>
     `)}
-    <p style="color:#64748B;font-size:13px;margin:0 0 16px;">Log in to the PraQen Approvals dashboard to check this user's account history and approve or decline the request.</p>
-    ${ctaButton('Review in PraQen Approvals', 'https://praqen.com/ceo')}
+    <p style="color:#64748B;font-size:13px;margin:0 0 16px;">Log in to the Praqen Approvals dashboard to check this user's account history and approve or decline the request.</p>
+    ${ctaButton('Review in Praqen Approvals', 'https://praqen.com/ceo')}
   `);
 }
 
@@ -917,7 +943,7 @@ function withdrawalRejectedHtml(name, amount, reason, currency = 'BTC') {
       
       <h2 style="color:#991B1B;font-size:22px;margin:8px 0;">Withdrawal Declined</h2>
     </div>
-    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>, we weren't able to complete this withdrawal request. The full amount has been returned to your <b>PraQen</b> wallet — no funds were lost.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>, we weren't able to complete this withdrawal request. The full amount has been returned to your <b>Praqen</b> wallet — no funds were lost.</p>
     ${infoBox(`
       <tr><td style="padding:8px 0;color:#64748B;font-size:13px;font-weight:600;">Amount Returned</td><td style="padding:8px 0;color:#059669;font-size:20px;font-weight:900;text-align:right;">${symbol} ${formatted}</td></tr>
     `)}
@@ -948,9 +974,9 @@ function accountBannedHtml(name, reason) {
       
       <h2 style="color:#991B1B;font-size:22px;margin:8px 0;">Your Account Has Been Banned</h2>
     </div>
-    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>, your <b>PraQen</b> account has been restricted by our team.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>, your <b>Praqen</b> account has been restricted by our team.</p>
     ${infoBox(`
-      <tr><td style="padding:8px 0;color:#64748B;font-size:13px;font-weight:600;">Reason</td><td style="padding:8px 0;color:#1E293B;font-size:13px;text-align:right;">${reason || 'Violation of <b>PraQen</b> terms of service'}</td></tr>
+      <tr><td style="padding:8px 0;color:#64748B;font-size:13px;font-weight:600;">Reason</td><td style="padding:8px 0;color:#1E293B;font-size:13px;text-align:right;">${reason || 'Violation of <b>Praqen</b> terms of service'}</td></tr>
     `)}
     <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 16px;margin-bottom:16px;">
       <p style="margin:0;font-size:13px;color:#991b1b;line-height:1.6;">While your account is banned you cannot send, transfer, swap, or trade. Any balance already in your wallet stays there and is not affected.</p>
@@ -963,31 +989,46 @@ async function sendAccountBannedEmail(user, reason) {
   return sendEmail({
     userId:   user.id,
     to:       user.email,
-    subject:  `Your PraQen account has been banned`,
+    subject:  `Your Praqen account has been banned`,
     html:     accountBannedHtml(user.username || 'Trader', reason),
     type:     'account_banned',
     metadata: { reason },
   });
 }
 
-async function sendTradeOpenedEmail(user, trade, role) {
-  const isUsdt = trade.currency === 'USDT';
-  const qtyStr = isUsdt
-    ? `₮${parseFloat(trade.amount_btc || trade.amount_usdt || 0).toFixed(2)} USDT`
-    : `₿${parseFloat(trade.amount_btc || 0).toFixed(8)} BTC`;
-  const refStr = (trade.trade_ref || trade.id || '').toString().slice(0, 10).toUpperCase();
+async function sendTradeOpenedEmail(counterpartyUser, trade, initiatorName) {
+  if (!counterpartyUser || !counterpartyUser.email) {
+    console.warn(`Trade opened email: skipped — counterparty user ${counterpartyUser?.id || 'unknown'} has no email address`);
+    return { success: false, skipped: true, error: 'No email address' };
+  }
 
-  const subjectBuyer = `Trade Opened — Send Payment for #${refStr} (${qtyStr})`;
-  const subjectSeller = `New Trade Request — #${refStr} (${qtyStr}) Locked in Escrow`;
+  const rawRef = (trade.trade_ref || (trade.id || '').toString().slice(0, 8).toUpperCase()).toString().trim();
+  const fullRef = rawRef.startsWith('#') ? rawRef.slice(1) : rawRef;
+  const subject = `Trade Opened — #${fullRef}`;
 
-  return sendEmail({
-    userId: user.id,
-    to: user.email,
-    subject: role === 'buyer' ? subjectBuyer : subjectSeller,
-    html: tradeOpenedHtml(user.username || 'Trader', trade, role),
-    type: 'trade_opened',
-    metadata: { trade_id: trade.id, trade_ref: trade.trade_ref, role },
-  });
+  console.log(`Trade opened email: attempting sending to ${counterpartyUser.email} for trade ${trade.id}`);
+
+  try {
+    const res = await sendEmail({
+      userId: counterpartyUser.id,
+      to: counterpartyUser.email,
+      subject,
+      html: tradeOpenedHtml(counterpartyUser.username || 'Trader', trade, initiatorName),
+      type: 'trade_opened',
+      fromName: 'PRAQEN',
+      metadata: { trade_id: trade.id, trade_ref: trade.trade_ref, role: 'counterparty' },
+    });
+
+    if (res && res.success) {
+      console.log(`Trade opened email: sent to ${counterpartyUser.email} for trade ${trade.id}`);
+    } else {
+      console.error(`Trade opened email: failed for user ${counterpartyUser.id} on trade ${trade.id}: ${res?.error || 'Unknown error'}`);
+    }
+    return res;
+  } catch (err) {
+    console.error(`Trade opened email: failed for user ${counterpartyUser.id} on trade ${trade.id}: ${err.message}`);
+    return { success: false, error: err.message };
+  }
 }
 
 async function sendPaymentSentEmail(sellerUser, trade) {
@@ -1019,7 +1060,7 @@ function disputeOpenedHtml(name, trade, reason) {
       
       <h2 style="color:#7C3AED;font-size:22px;margin:8px 0;">Dispute Filed on Your Trade</h2>
     </div>
-    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>! A dispute has been opened on trade <strong>#${ref}</strong>. A <b>PraQen</b> moderator has been notified and will review all evidence.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>! A dispute has been opened on trade <strong>#${ref}</strong>. A <b>Praqen</b> moderator has been notified and will review all evidence.</p>
     ${infoBox(`
       <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Trade Ref</td>
           <td style="padding:7px 0;text-align:right;"><span style="background:#7C3AED;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;">#${ref}</span></td></tr>
@@ -1045,7 +1086,7 @@ function disputeResolvedHtml(name, trade, resolution, notes) {
       <div style="font-size:48px;">${icon}</div>
       <h2 style="color:${color};font-size:22px;margin:8px 0;">${label}</h2>
     </div>
-    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>! The dispute on trade <strong>#${ref}</strong> has been reviewed and resolved by a <b>PraQen</b> moderator.</p>
+    <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">Hello <strong>${name}</strong>! The dispute on trade <strong>#${ref}</strong> has been reviewed and resolved by a <b>Praqen</b> moderator.</p>
     ${infoBox(`
       <tr><td style="padding:7px 0;color:#64748B;font-size:13px;font-weight:600;">Trade Ref</td>
           <td style="padding:7px 0;text-align:right;"><span style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;">#${ref}</span></td></tr>
@@ -1108,7 +1149,7 @@ function buildEidBonusHtml(username, referralCode) {
       </div>
       <h1 style="color:#F4A422;font-size:30px;font-weight:900;margin:0 0 4px;font-family:Georgia,serif;letter-spacing:1px;">Eid Mubarak!</h1>
       <p style="color:#ffffff;font-size:13px;margin:0 0 6px;opacity:0.7;letter-spacing:3px;text-transform:uppercase;">عيد مبارك</p>
-      <p style="color:rgba(255,255,255,0.6);font-size:13px;margin:0;">From the entire PraQen team to you and your family</p>
+      <p style="color:rgba(255,255,255,0.6);font-size:13px;margin:0;">From the entire Praqen team to you and your family</p>
     </td>
   </tr>
 
@@ -1121,7 +1162,7 @@ function buildEidBonusHtml(username, referralCode) {
         May this Eid be filled with moments of gratitude, togetherness, and new beginnings.
       </p>
       <p style="color:#475569;font-size:14px;line-height:1.75;margin:0;">
-        To celebrate with you, we have something special — a <strong style="color:#1B4332;">$2 FREE Bitcoin gift</strong> for every PraQen trader!
+        To celebrate with you, we have something special — a <strong style="color:#1B4332;">$2 FREE Bitcoin gift</strong> for every Praqen trader!
       </p>
     </td>
   </tr>
@@ -1174,7 +1215,7 @@ function buildEidBonusHtml(username, referralCode) {
     <td style="padding:0 36px 24px;">
       <p style="color:#1B4332;font-size:16px;font-weight:900;margin:0 0 6px;">Already Trading? Share &amp; Earn Even More!</p>
       <p style="color:#475569;font-size:13px;line-height:1.7;margin:0 0 16px;">
-        Invite friends to PraQen and earn up to <strong style="color:#1B4332;">0.5% commission</strong> on every trade they make — forever.
+        Invite friends to Praqen and earn up to <strong style="color:#1B4332;">0.5% commission</strong> on every trade they make — forever.
         The more friends you bring in, the more you earn. No cap. No expiry.
       </p>
       <!-- Referral link box -->
@@ -1241,7 +1282,7 @@ function buildEidBonusHtml(username, referralCode) {
   <!-- ═══ FOOTER ═══ -->
   <tr>
     <td style="background:#1B4332;padding:22px 36px;text-align:center;">
-      <p style="margin:0 0 6px;font-size:20px;font-weight:900;color:#F4A422;font-family:Georgia,serif;"><b>PraQen</b></p>
+      <p style="margin:0 0 6px;font-size:20px;font-weight:900;color:#F4A422;font-family:Georgia,serif;"><b>Praqen</b></p>
       <p style="margin:0 0 10px;font-size:10px;color:rgba(255,255,255,0.45);letter-spacing:2px;text-transform:uppercase;">The Global P2P Bitcoin Platform</p>
       <p style="margin:0 0 10px;">
         <a href="https://praqen.com/buy-bitcoin" style="color:rgba(255,255,255,0.5);text-decoration:none;font-size:11px;margin:0 8px;">Buy Bitcoin</a>
@@ -1249,7 +1290,7 @@ function buildEidBonusHtml(username, referralCode) {
         <a href="${link}" style="color:rgba(255,255,255,0.5);text-decoration:none;font-size:11px;margin:0 8px;">Refer Friends</a>
       </p>
       <p style="margin:0;font-size:10px;color:rgba(255,255,255,0.3);">
-        © ${yr} PraQen · You're receiving this because you have an account with us.<br>
+        © ${yr} Praqen · You're receiving this because you have an account with us.<br>
         <a href="https://praqen.com" style="color:rgba(255,255,255,0.3);text-decoration:underline;">praqen.com</a>
       </p>
     </td>
@@ -1283,7 +1324,7 @@ function buildUsdtAnnouncementHtml(username, referralCode) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>Happy New Month! USDT Wallet is Live on PraQen</title>
+  <title>Happy New Month! USDT Wallet is Live on Praqen</title>
 </head>
 <body style="margin:0;padding:0;background:#F0FAF5;font-family:'Segoe UI',Arial,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#F0FAF5;padding:32px 16px;">
@@ -1298,7 +1339,7 @@ function buildUsdtAnnouncementHtml(username, referralCode) {
         
       </div>
       <h1 style="color:#F4A422;font-size:28px;font-weight:900;margin:0 0 4px;font-family:Georgia,serif;letter-spacing:1px;">Happy New Month!</h1>
-      <p style="color:rgba(255,255,255,0.65);font-size:13px;margin:0;">From the entire PraQen team — welcome to ${month}!</p>
+      <p style="color:rgba(255,255,255,0.65);font-size:13px;margin:0;">From the entire Praqen team — welcome to ${month}!</p>
     </td>
   </tr>
 
@@ -1307,7 +1348,7 @@ function buildUsdtAnnouncementHtml(username, referralCode) {
     <td style="padding:32px 36px 20px;background:#ffffff;">
       <p style="color:#1B4332;font-size:17px;font-weight:800;margin:0 0 10px;">Hi ${username || 'Trader'},</p>
       <p style="color:#475569;font-size:14px;line-height:1.75;margin:0;">
-        We've got big news to kick off the month — <strong style="color:#1B4332;">USDT wallets are now live on PraQen!</strong>
+        We've got big news to kick off the month — <strong style="color:#1B4332;">USDT wallets are now live on Praqen!</strong>
         You can deposit, hold, and trade USDT directly from your wallet, no BTC conversion needed.
       </p>
     </td>
@@ -1394,7 +1435,7 @@ function buildUsdtAnnouncementHtml(username, referralCode) {
   <!-- ═══ FOOTER ═══ -->
   <tr>
     <td style="background:#1B4332;padding:22px 36px;text-align:center;">
-      <p style="margin:0 0 6px;font-size:20px;font-weight:900;color:#F4A422;font-family:Georgia,serif;"><b>PraQen</b></p>
+      <p style="margin:0 0 6px;font-size:20px;font-weight:900;color:#F4A422;font-family:Georgia,serif;"><b>Praqen</b></p>
       <p style="margin:0 0 10px;font-size:10px;color:rgba(255,255,255,0.45);letter-spacing:2px;text-transform:uppercase;">The Global P2P Bitcoin Platform</p>
       <p style="margin:0 0 10px;">
         <a href="https://praqen.com/buy-bitcoin" style="color:rgba(255,255,255,0.5);text-decoration:none;font-size:11px;margin:0 8px;">Buy Bitcoin</a>
@@ -1402,7 +1443,7 @@ function buildUsdtAnnouncementHtml(username, referralCode) {
         <a href="${link}" style="color:rgba(255,255,255,0.5);text-decoration:none;font-size:11px;margin:0 8px;">Refer Friends</a>
       </p>
       <p style="margin:0;font-size:10px;color:rgba(255,255,255,0.3);">
-        © ${yr} PraQen · You're receiving this because you have an account with us.<br>
+        © ${yr} Praqen · You're receiving this because you have an account with us.<br>
         <a href="https://praqen.com" style="color:rgba(255,255,255,0.3);text-decoration:underline;">praqen.com</a>
       </p>
     </td>

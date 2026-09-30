@@ -10,7 +10,7 @@ import {
   ChevronDown, ChevronUp, DollarSign, CreditCard,
 Smartphone, Building2, ThumbsUp, ThumbsDown, Gift, Repeat2, Heart,
   Bell, Camera, Mail, PartyPopper, Rocket, Unlock, Stamp,
-  Plus, Image as ImageIcon, File as FileIcon,
+  Plus, Image as ImageIcon, File as FileIcon, User, MessageSquare, BarChart2,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { copyToClipboard } from '../utils/clipboard';
@@ -508,8 +508,6 @@ function ProfilePopup({user, label, trade, onClose}) {
   const neg        = parseInt(u.negative_feedback || 0);
   const total      = pos + neg;
   const trust      = total > 0 ? Math.round(pos / total * 100) : trades > 0 ? 100 : 0;
-  // pos/neg is a legacy trust counter that's never allowed to decrease and can be wildly
-  // inflated relative to real reviews — the tab count must match what actually loads there.
   const reviewCount = parseInt(u.total_feedback_count ?? total);
   const compRate   = parseFloat(u.completion_rate || 0);
   const phoneOk    = !!(u.is_phone_verified || u.phone_verified);
@@ -518,11 +516,11 @@ function ProfilePopup({user, label, trade, onClose}) {
   const memberSince= u.created_at ? new Date(u.created_at).toLocaleDateString('en-US',{month:'short',year:'numeric'}) : '—';
   const avgReply   = u.avg_response_time || u.avg_reply_minutes;
   const payMins    = parseFloat(u.avg_payment_time || u.avg_response_time || 0);
-  const avgPayDisplay = payMins > 0 ? (() => { const m=Math.floor(payMins),s=Math.round((payMins-m)*60); return s>0?`${m}m ${s}s`:m>0?`${m}m`:`${s}s`; })() : '—';
+  const avgPayDisplay = payMins > 0 ? (() => { const m=Math.floor(payMins),s=Math.round((payMins-m)*60); return s>0?`${m}m ${s}s`:m>0?`${m}m`:`${s}s`; })() : (trades > 0 ? 'Under 5 min' : 'New trader');
   const ccCode     = resolveCode(u.country || u.location);
   const locCC      = ccCode ? ccCode.toUpperCase() : '';
   const CC_NAME    = {GH:'Ghana',NG:'Nigeria',KE:'Kenya',ZA:'S. Africa',UG:'Uganda',TZ:'Tanzania',RW:'Rwanda',CM:'Cameroon',SN:'Senegal',CI:"Côte d'Ivoire",ZM:'Zambia',ZW:'Zimbabwe',ET:'Ethiopia',EG:'Egypt',MA:'Morocco',US:'USA',GB:'UK',DE:'Germany',FR:'France',IT:'Italy',ES:'Spain',VN:'Vietnam',TH:'Thailand',ID:'Indonesia',PH:'Philippines',MY:'Malaysia',SG:'Singapore',CN:'China',IN:'India',JP:'Japan',KR:'S. Korea',PK:'Pakistan',BD:'Bangladesh',SA:'Saudi Arabia',AE:'UAE',QA:'Qatar',BR:'Brazil',MX:'Mexico',CA:'Canada',AU:'Australia'};
-  const countryName= (u.country && u.country.length > 2) ? u.country : (CC_NAME[locCC] || u.location || locCC || '—');
+  const countryName= (u.country && u.country.length > 2) ? u.country : (CC_NAME[locCC] || u.location || (locCC || 'Not set'));
   const flagComponent = locCC ? (
     <CountryFlag countryCode={locCC} className="w-5 h-3.5 rounded-sm inline-block" />
   ) : (
@@ -534,10 +532,10 @@ function ProfilePopup({user, label, trade, onClose}) {
   const isOnline   = rawSeen === 'Online';
 
   const TABS = [
-    { id:'overview',  label:'Profile' },
-    { id:'feedback',  label:`Feedback (${reviewCount})` },
-    { id:'rules',     label:'Rules' },
-    { id:'trade',     label:'Trade' },
+    { id:'overview',  label:'Profile', icon: User },
+    { id:'feedback',  label:`Feedback (${reviewCount})`, icon: MessageSquare },
+    { id:'rules',     label:'Rules', icon: FileText },
+    { id:'trade',     label:'Trade', icon: BarChart2 },
   ];
 
   // Trade tab helpers
@@ -632,7 +630,7 @@ function ProfilePopup({user, label, trade, onClose}) {
               style={{backgroundColor:'rgba(255,255,255,0.12)'}}>
               <Heart size={14} style={{color: pos > 0 ? '#86EFAC' : 'rgba(255,255,255,0.5)', flexShrink:0}}/>
               <div className="min-w-0">
-                <p className="text-white font-black text-xs leading-tight">{pos > 0 ? `${fmt(pos)} users` : 'No ratings yet'}</p>
+                <p className="text-white font-black text-xs leading-tight">{pos > 0 ? `${fmt(pos)} users` : '0 users'}</p>
                 <p className="text-white/50 text-xs leading-tight">Trusted by</p>
               </div>
             </div>
@@ -641,15 +639,16 @@ function ProfilePopup({user, label, trade, onClose}) {
 
         {/* ── TABS ── */}
         <div className="flex border-b flex-shrink-0 overflow-x-auto" style={{borderColor:C.g200}}>
-          {TABS.map(({id, label}) => (
+          {TABS.map(({id, label, icon: TabIcon}) => (
             <button key={id} onClick={() => setTab(id)}
-              className="flex-shrink-0 px-3 py-2.5 text-xs font-bold whitespace-nowrap transition"
+              className="flex-shrink-0 px-3 py-2.5 text-xs font-bold whitespace-nowrap transition inline-flex items-center gap-1.5"
               style={{
                 color: tab===id ? C.green : C.g500,
                 borderBottom: tab===id ? `2px solid ${C.green}` : '2px solid transparent',
                 backgroundColor: tab===id ? `${C.green}08` : 'transparent',
               }}>
-              {label}
+              {TabIcon && <TabIcon size={13} />}
+              <span>{label}</span>
             </button>
           ))}
         </div>
@@ -663,14 +662,14 @@ function ProfilePopup({user, label, trade, onClose}) {
               <div className="grid grid-cols-3 gap-2">
                 {[
                   {label:'Trades',     value:fmt(trades),                sub:'completed'},
-                  {label:'Rating',     value:`${rating.toFixed(1)}`,  sub:'of 5.0'},
+                  {label:'Rating',     value:<span className="inline-flex items-center gap-1 justify-center"><Star size={13} fill="currentColor" className="text-amber-500 flex-shrink-0" /> {rating.toFixed(1)}</span>,  sub:'of 5.0'},
                   {label:'Completion', value:`${compRate.toFixed(0)}%`,  sub:'rate'},
                 ].map(({label:lbl,value,sub}) => (
-                  <div key={lbl} className="rounded-xl p-3 text-center"
+                  <div key={lbl} className="rounded-xl p-2.5 text-center min-w-0 flex flex-col justify-center"
                     style={{backgroundColor:C.mist, border:`1px solid ${C.g200}`}}>
-                    <p className="font-black text-sm" style={{color:C.forest}}>{value}</p>
-                    <p className="text-xs font-semibold mt-0.5" style={{color:C.g500}}>{lbl}</p>
-                    <p className="text-xs" style={{color:C.g400}}>{sub}</p>
+                    <p className="font-black text-sm leading-tight truncate flex items-center justify-center gap-1" style={{color:C.forest}}>{value}</p>
+                    <p className="text-xs font-semibold mt-0.5 leading-tight truncate" style={{color:C.g500}}>{lbl}</p>
+                    <p className="text-xs leading-tight truncate" style={{color:C.g400}}>{sub}</p>
                   </div>
                 ))}
               </div>
