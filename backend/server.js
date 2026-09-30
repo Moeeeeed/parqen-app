@@ -1610,11 +1610,15 @@ async function createNotification(userId, type, title, message, action, extra = 
   }
 }
 
-async function updateUserTradeStats(userId) {
+async function updateUserTradeStats(userId, isTest = false) {
+  if (isTest) return; // test trades never touch the real counter
   try {
     // Atomic +1 — never recounts from trades table so historical totals are preserved.
     // If the RPC isn't deployed yet, fall back to a safe read-then-increment (not a table recount).
-    const { error: rpcErr } = await supabaseAdmin.rpc('praqen_increment_trades', { p_user_id: userId });
+    const { error: rpcErr } = await supabaseAdmin.rpc('praqen_increment_trades', {
+      p_user_id: userId,
+      p_is_test: isTest
+    });
     if (rpcErr) {
       const { data: cur } = await supabaseAdmin.from('users').select('total_trades').eq('id', userId).single();
       const safePrev = parseInt(cur?.total_trades || 0);
@@ -9571,11 +9575,11 @@ app.post('/api/trades/:id/release', tradeLimiter, verifyToken, requireNotBanned,
     const result = await tradeEscrowService.releaseBitcoinToBuyer(req.params.id, req.userId);
     res.json(result);
 
-    if (releasedTrade) {
+    if (releasedTrade && !releasedTrade.is_test) {
       setImmediate(async () => {
         try {
-          updateUserTradeStats(releasedTrade.seller_id).catch(() => { });
-          updateUserTradeStats(releasedTrade.buyer_id).catch(() => { });
+          updateUserTradeStats(releasedTrade.seller_id, releasedTrade.is_test).catch(() => { });
+          updateUserTradeStats(releasedTrade.buyer_id, releasedTrade.is_test).catch(() => { });
           // Welcome bonus: check both buyer and seller for Step 2 -> Step 3 unlock ($2 in BTC)
           unlockWelcomeBonusForUser(releasedTrade.buyer_id, releasedTrade.id).catch(() => { });
           unlockWelcomeBonusForUser(releasedTrade.seller_id, releasedTrade.id).catch(() => { });
