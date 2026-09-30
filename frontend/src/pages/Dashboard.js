@@ -769,7 +769,7 @@ export default function Dashboard({ user }) {
               © {new Date().getFullYear()} PRAQEN. All rights reserved. Built with honesty.
             </p>
             <p className="text-xs flex items-center gap-1.5" style={{color:'rgba(255,255,255,0.3)'}}>
-              <Shield size={11}/> Escrow Protected · 2% fee on completion only
+              <Shield size={11}/> Escrow Protected · Built to keep you trading
             </p>
           </div>
         </div>

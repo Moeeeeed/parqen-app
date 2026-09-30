@@ -324,7 +324,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
   const fiatEquiv = parseFloat((btcReceived * btcPriceUSD * usdRate).toFixed(2));
 
   const marginLabel = margin===0 ? 'Market rate' : margin>0 ? `+${margin}% above market` : `${Math.abs(margin)}% below market`;
-  const marginBg    = margin>0 ? C.danger : margin<0 ? C.success : C.g400;
+  const marginBg    = C.danger;
 
   const pos   = parseInt(u.positive_feedback||0);
   const neg   = parseInt(u.negative_feedback||0);
@@ -376,7 +376,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
           <div className="flex items-center gap-1.5">
             <CoinIcon coin={assetCoin} size={18} />
             <span className="font-black text-[16px] text-gray-900">{fmt(rateLocal,2)} {cur}</span>
-            <span className="px-1.5 py-0.5 rounded text-[11px] font-black tracking-wide" style={{backgroundColor:'#EF4444',color:'#fff'}}>
+            <span className="px-1.5 py-0.5 rounded text-[11px] font-black tracking-wide" style={{backgroundColor:margin>0?'#10B981':'#EF4444',color:'#fff'}}>
               {margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}
             </span>
           </div>
@@ -430,7 +430,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
             <div className="flex items-center gap-1.5 flex-wrap">
               <CoinIcon coin={assetCoin} size={16} />
               <span className="font-black text-[15px] text-gray-900 truncate">{fmt(rateLocal,2)} {cur}</span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide" style={{backgroundColor:'#EF4444',color:'#fff'}}>{margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}</span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide" style={{backgroundColor:margin>0?'#10B981':'#EF4444',color:'#fff'}}>{margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}</span>
             </div>
             <div className="text-xs font-semibold text-gray-600 mt-1">{fmt(minLocal)} - {fmt(maxLocal)} {cur}</div>
           </div>
@@ -2051,7 +2051,7 @@ export default function BuyBitcoin({user}) {
     <ul className="text-xs space-y-1.5 text-blue-600 dark:text-blue-400">
         <li>
             <a href="/blog/p2p-crypto-trading-fees" className="hover:underline">
-                → Understanding P2P Crypto Trading Fees
+                → Understanding P2P Crypto Trading
             </a>
         </li>
         <li>

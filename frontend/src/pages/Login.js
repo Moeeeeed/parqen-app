@@ -322,7 +322,7 @@ export default function Login({ onLogin }) {
                   letterSpacing: '-0.3px',
                   fontFamily: "'IBM Plex Sans', sans-serif"
                 }}>
-                  {step === 'email' ? 'Welcome to PraQen' : step === 'email-otp' ? 'Check Your Email' : 'Two-Factor Auth'}
+                  {step === 'email' ? 'Welcome to PRAQEN' : step === 'email-otp' ? 'Check Your Email' : 'Two-Factor Auth'}
                 </h1>
               </div>
               <div style={{ flexShrink: 0, position: 'relative' }}>

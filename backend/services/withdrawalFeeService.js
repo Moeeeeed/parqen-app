@@ -14,7 +14,7 @@
 const TIERS = [
   { max: 50, type: 'flat', value: 4.5, label: '$4.50 fee' },
   { max: 100, type: 'pct', value: 0.09, label: '9% fee' },
-  { max: 500, type: 'flat', value: 18, label: '$18 fee' },
+  { max: 500, type: 'flat', value: 14, label: '$14 fee' },
   { max: 2000, type: 'pct', value: 0.044, label: '4.4% fee' },
   { max: Infinity, type: 'pct', value: 0.022, label: '2.2% fee' },
 ];

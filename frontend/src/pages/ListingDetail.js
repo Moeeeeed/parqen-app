@@ -918,7 +918,7 @@ const loadAll = useCallback(async (isBackground = false) => {
               <div style={{ background: T.mist, borderRadius: 14, padding: '14px 16px', marginBottom: 16, border: `1px solid ${T.primary}20` }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                   <span style={{ fontSize: 11, fontWeight: 800, color: C.g500 }}>{isVisitorSelling ? 'YOU PAY' : 'YOU RECEIVE'}</span>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: margin > 0 ? C.danger : margin < 0 ? C.success : C.g400, borderRadius: 20, padding: '2px 8px' }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: margin > 0 ? C.success : C.danger, borderRadius: 20, padding: '2px 8px' }}>
                     {margin === 0 ? 'Market' : margin > 0 ? `+${margin}%` : `${margin}%`}
                   </span>
                 </div>
@@ -956,8 +956,8 @@ const loadAll = useCallback(async (isBackground = false) => {
                 {btcGross > 0 && (
                   <div style={{ fontSize: 10.5, color: C.g400, fontWeight: 600, marginTop: 8 }}>
                     {isVisitorSelling
-                      ? `Includes ${isUsdtAsset ? `${previewFee.toFixed(2)} USDT` : `${fmtBtc(previewFee)} BTC`} platform fee (${(previewFeeRate * 100).toFixed(0)}%) — added on top; the buyer receives the full amount.`
-                      : `You receive the full amount — the seller pays the ${(previewFeeRate * 100).toFixed(0)}% platform fee.`}
+                      ? `Includes ${isUsdtAsset ? `${previewFee.toFixed(2)} USDT` : `${fmtBtc(previewFee)} BTC`} added on top; the buyer receives the full amount.`
+                      : `You receive the full amount — covered by the seller.`}
                   </div>
                 )}
               </div>

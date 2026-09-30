@@ -1086,7 +1086,7 @@ export default function Register({ onLogin }) {
           <div style={{ padding: '24px 24px 16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
             <div>
               <h1 className="card-title">
-                {mode === 'register' ? 'Create your free PraQen account' : 'Reset Password'}
+                {mode === 'register' ? 'Create your free PRAQEN account' : 'Reset Password'}
               </h1>
               {/* <p className="card-subtitle">
                     {mode === 'register'

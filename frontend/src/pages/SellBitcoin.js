@@ -309,7 +309,7 @@ function OfferCard({listing, btcPriceUSD, onViewBuyer, onSell, liked, onToggleLi
   const fiatEquiv = parseFloat((btcReceived * btcPriceUSD * usdRate).toFixed(2));
 
   const marginLabel = margin===0 ? 'Market rate' : margin>0 ? `+${margin}% above market` : `${Math.abs(margin)}% below market`;
-  const marginBg    = margin>0 ? C.danger : margin<0 ? C.success : C.g400;
+  const marginBg    = margin > 0 ? C.success : C.danger;
 
   const pos   = parseInt(u.positive_feedback||0);
   const neg   = parseInt(u.negative_feedback||0);
@@ -1922,7 +1922,7 @@ export default function SellBitcoin({user}) {
                 <ul className="text-xs space-y-1.5 text-blue-600 dark:text-blue-400">
                     <li>
                         <a href="/blog/p2p-crypto-trading-fees" className="hover:underline">
-                            → Understanding P2P Crypto Trading Fees
+                            → Understanding P2P Crypto Trading
                         </a>
                     </li>
                     <li>

@@ -13,7 +13,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
-import { Users, RefreshCw, UserCheck, LogOut, TrendingUp, Award } from 'lucide-react';
+import { Users, RefreshCw, UserCheck, LogOut, TrendingUp, Award, FileText, Trash2 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 const authH = () => {
@@ -191,6 +191,7 @@ function AffiliateManagerInner({ user, onLogout }) {
   const [data, setData]         = useState(null);
   const [loading, setLoading]   = useState(true);
   const [q, setQ]               = useState('');
+  const [levelFilter, setLevelFilter] = useState('All'); // 'All' | 'Explorer' | 'Builder' | 'Titan' | 'Legendary' | 'None'
   const [sortKey, setSortKey]   = useState('qualified_volume_usd');
   const [sortDir, setSortDir]   = useState('desc');
 
@@ -198,6 +199,14 @@ function AffiliateManagerInner({ user, onLogout }) {
   const [appsLoading, setAppsLoading] = useState(true);
   const [appsFilter, setAppsFilter] = useState('pending');
   const [acting, setActing]         = useState(null);
+
+  const [notes, setNotes]             = useState([]);
+  const [notesLoading, setNotesLoading] = useState(true);
+  const [notesMigrationNeeded, setNotesMigrationNeeded] = useState(false);
+  const [noteText, setNoteText]       = useState('');
+  const [noteRegarding, setNoteRegarding] = useState('');
+  const [savingNote, setSavingNote]   = useState(false);
+  const [deletingNote, setDeletingNote] = useState(null);
 
   const loadOverview = useCallback(async () => {
     setLoading(true);
@@ -218,8 +227,19 @@ function AffiliateManagerInner({ user, onLogout }) {
     finally { setAppsLoading(false); }
   }, [appsFilter]);
 
+  const loadNotes = useCallback(async () => {
+    setNotesLoading(true);
+    try {
+      const r = await axios.get(`${API_URL}/affiliate-manager/notes`, { headers: authH() });
+      setNotes(r.data.notes || []);
+      setNotesMigrationNeeded(!!r.data.migration_needed);
+    } catch { toast.error('Failed to load notes'); }
+    finally { setNotesLoading(false); }
+  }, []);
+
   useEffect(() => { loadOverview(); }, [loadOverview]);
   useEffect(() => { loadApps(); }, [loadApps]);
+  useEffect(() => { loadNotes(); }, [loadNotes]);
 
   const approve = async (id) => {
     setActing(id);
@@ -242,6 +262,33 @@ function AffiliateManagerInner({ user, onLogout }) {
     finally { setActing(null); }
   };
 
+  const saveNote = async () => {
+    const text = noteText.trim();
+    if (!text) return;
+    setSavingNote(true);
+    try {
+      const r = await axios.post(`${API_URL}/affiliate-manager/notes`, {
+        note: text,
+        regarding_username: noteRegarding.trim() || undefined,
+      }, { headers: authH() });
+      setNotes(prev => [r.data.note, ...prev]);
+      setNoteText('');
+      setNoteRegarding('');
+      toast.success('Note saved');
+    } catch (e) { toast.error(e.response?.data?.error || 'Could not save note'); }
+    finally { setSavingNote(false); }
+  };
+
+  const deleteNote = async (id) => {
+    if (!window.confirm('Delete this note?')) return;
+    setDeletingNote(id);
+    try {
+      await axios.delete(`${API_URL}/affiliate-manager/notes/${id}`, { headers: authH() });
+      setNotes(prev => prev.filter(n => n.id !== id));
+    } catch (e) { toast.error(e.response?.data?.error || 'Could not delete note'); }
+    finally { setDeletingNote(null); }
+  };
+
   const sortBy = (key) => {
     if (key === sortKey) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
     else { setSortKey(key); setSortDir('desc'); }
@@ -255,12 +302,34 @@ function AffiliateManagerInner({ user, onLogout }) {
   ];
   const rows = (data?.affiliates || [])
     .filter(a => !q.trim() || a.username.toLowerCase().includes(q.trim().toLowerCase()))
+    .filter(a => levelFilter === 'All' || (levelFilter === 'None' ? !a.level : a.level === levelFilter))
     .slice()
     .sort((a, b) => {
       const av = a[sortKey], bv = b[sortKey];
       const cmp = typeof av === 'string' ? av.localeCompare(bv) : (av || 0) - (bv || 0);
       return sortDir === 'desc' ? -cmp : cmp;
     });
+
+  // CSV export of exactly what's on screen — respects the current search + level filter
+  // + sort, so "export" always matches what the manager is actually looking at.
+  const exportCsv = () => {
+    if (rows.length === 0) return;
+    const escape = (v) => {
+      const s = String(v ?? '');
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = COLS.map((c) => c.label).join(',');
+    const body = rows.map((a) => COLS.map((c) => escape(c.key === 'level' ? (a.level || '') : a[c.key])).join(',')).join('\n');
+    const blob = new Blob([header + '\n' + body], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `praqen-affiliates-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const kpis = data?.kpis;
   const status = data?.system_status;
@@ -315,25 +384,47 @@ function AffiliateManagerInner({ user, onLogout }) {
                   { label: 'Affiliates', value: kpis?.total_affiliates || 0, color: C.forest, bg: '#F0FDF4' },
                   { label: 'Users referred', value: kpis?.total_referred_users || 0, color: '#3B82F6', bg: '#EFF6FF' },
                   { label: 'Active referred users', value: kpis?.total_active_users || 0, color: '#166534', bg: '#F0FDF4' },
-                  { label: 'Total trade volume', value: `$${(kpis?.total_qualified_volume_usd || 0).toLocaleString()}`, color: '#92400E', bg: '#FEF3C7' },
+                  { label: 'Total trade volume', value: `$${(kpis?.total_qualified_volume_usd || 0).toLocaleString()}`, color: '#92400E', bg: '#FEF3C7', note: 'Not revenue — trade value only. A trade with two different referrers is counted once per referrer, so this can run higher than the sum below.' },
                   { label: 'Commission (lifetime)', value: `$${(kpis?.total_commission_usd_lifetime || 0).toLocaleString()}`, color: '#6D28D9', bg: '#F5F3FF' },
                   { label: 'Commission (this month)', value: `$${(kpis?.total_commission_usd_this_month || 0).toLocaleString()}`, color: '#6D28D9', bg: '#F5F3FF' },
+                  { label: 'Explorer', value: kpis?.level_counts?.Explorer || 0, color: '#2D6A4F', bg: '#F0FDF4', filter: 'Explorer' },
                   { label: 'Builder+', value: (kpis?.level_counts?.Builder || 0) + (kpis?.level_counts?.Titan || 0) + (kpis?.level_counts?.Legendary || 0), color: '#2D6A4F', bg: '#F0FDF4' },
-                  { label: 'Legendary', value: kpis?.level_counts?.Legendary || 0, color: '#1B4332', bg: '#F0FDF4' },
+                  { label: 'Legendary', value: kpis?.level_counts?.Legendary || 0, color: '#1B4332', bg: '#F0FDF4', filter: 'Legendary' },
                 ].map(s => (
-                  <div key={s.label} className="bg-white rounded-2xl border p-4" style={{ borderColor: C.g200 }}>
+                  <div key={s.label} onClick={s.filter ? () => setLevelFilter(s.filter) : undefined}
+                    className="bg-white rounded-2xl border p-4" style={{ borderColor: C.g200, cursor: s.filter ? 'pointer' : 'default' }}>
                     <p className="text-xl font-black" style={{ color: s.color }}>{s.value}</p>
-                    <p className="text-xs font-bold mt-1" style={{ color: C.g600 }}>{s.label}</p>
+                    <p className="text-xs font-bold mt-1" style={{ color: C.g600 }}>{s.label}{s.filter && <span style={{ color: C.g400, fontWeight: 600 }}> · view list</span>}</p>
+                    {s.note && <p className="text-[10px] mt-1 leading-tight" style={{ color: C.g500 }}>{s.note}</p>}
                   </div>
                 ))}
               </div>
 
-              <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by username…"
-                className="bg-white border rounded-xl px-3 py-2 text-sm font-semibold outline-none w-full max-w-xs mb-3"
-                style={{ borderColor: C.g200, color: C.g700 }} />
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by username…"
+                  className="bg-white border rounded-xl px-3 py-2 text-sm font-semibold outline-none w-full max-w-xs"
+                  style={{ borderColor: C.g200, color: C.g700 }} />
+                {['All', 'Explorer', 'Builder', 'Titan', 'Legendary', 'None'].map(lv => (
+                  <button key={lv} onClick={() => setLevelFilter(lv)}
+                    className="text-xs font-black px-3 py-1.5 rounded-full border transition"
+                    style={levelFilter === lv
+                      ? { backgroundColor: C.forest, borderColor: C.forest, color: '#fff' }
+                      : { backgroundColor: '#fff', borderColor: C.g200, color: C.g600 }}>
+                    {lv}
+                  </button>
+                ))}
+                <button onClick={exportCsv} disabled={rows.length === 0}
+                  className="text-xs font-black px-3 py-1.5 rounded-full border transition ml-auto"
+                  style={rows.length === 0
+                    ? { backgroundColor: C.g100, borderColor: C.g200, color: C.g400, cursor: 'not-allowed' }
+                    : { backgroundColor: '#fff', borderColor: C.forest, color: C.forest }}>
+                  ⬇ Export CSV ({rows.length})
+                </button>
+              </div>
 
               {rows.length === 0 ? (
-                <Empty icon={<Users size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No affiliates with any referral activity yet" />
+                <Empty icon={<Users size={40} strokeWidth={1.5} style={{ color: C.g400 }} />}
+                  text={(data?.affiliates || []).length === 0 ? 'No affiliates with any referral activity yet' : 'No affiliates match this search/filter'} />
               ) : (
                 <div className="bg-white rounded-2xl border overflow-x-auto" style={{ borderColor: C.g200 }}>
                   <table className="w-full text-sm">
@@ -424,6 +515,66 @@ function AffiliateManagerInner({ user, onLogout }) {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </div>
+
+        {/* ── FOLLOW-UP NOTES ── */}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-black flex items-center gap-2" style={{ color: C.g800 }}><FileText size={18} /> Follow-up Notes ({notes.length})</h2>
+            <button onClick={loadNotes} className="p-2 rounded-xl border hover:bg-gray-50 transition" style={{ borderColor: C.g200 }}><RefreshCw size={14} style={{ color: C.g500 }} /></button>
+          </div>
+
+          {notesMigrationNeeded && (
+            <div className="rounded-xl border p-3 mb-3 text-xs font-semibold" style={{ borderColor: '#FDE68A', backgroundColor: '#FFFBEB', color: '#92400E' }}>
+              Notes aren't set up yet — ask the CEO to run database/2026-09-30_affiliate_manager_notes.sql in Supabase, then refresh this page.
+            </div>
+          )}
+
+          <div className="bg-white rounded-2xl border p-4 mb-4" style={{ borderColor: C.g200 }}>
+            <textarea value={noteText} onChange={e => setNoteText(e.target.value)}
+              placeholder="e.g. ukbuyer2022 is doing really well — let's follow up and see if Builder interests them."
+              rows={3} maxLength={5000}
+              className="w-full text-sm font-medium outline-none border rounded-xl px-3 py-2 resize-none"
+              style={{ borderColor: C.g200, color: C.g800 }} />
+            <div className="flex items-center gap-2 mt-2">
+              <input value={noteRegarding} onChange={e => setNoteRegarding(e.target.value)}
+                placeholder="Regarding username (optional)"
+                className="text-xs font-semibold outline-none border rounded-xl px-3 py-2 flex-1 max-w-xs"
+                style={{ borderColor: C.g200, color: C.g700 }} />
+              <button onClick={saveNote} disabled={savingNote || !noteText.trim()}
+                className="ml-auto px-4 py-2 rounded-xl text-xs font-black text-white transition disabled:opacity-50"
+                style={{ backgroundColor: C.forest }}>
+                {savingNote ? 'Saving…' : 'Save note'}
+              </button>
+            </div>
+          </div>
+
+          {notesLoading ? <Spin /> : notes.length === 0 ? (
+            <Empty icon={<FileText size={40} strokeWidth={1.5} style={{ color: C.g400 }} />} text="No notes yet — drop your first one above" />
+          ) : (
+            <div className="space-y-2">
+              {notes.map(n => (
+                <div key={n.id} className="bg-white rounded-2xl border p-4" style={{ borderColor: C.g200 }}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span className="text-xs font-black" style={{ color: C.g800 }}>{n.author_username}</span>
+                        {n.regarding_username && <Pill label={`re: ${n.regarding_username}`} color={C.forest} bg="#F0FDF4" />}
+                        <span className="text-xs" style={{ color: C.g400 }}>{new Date(n.created_at).toLocaleString()}</span>
+                      </div>
+                      <p className="text-sm whitespace-pre-wrap" style={{ color: C.g700 }}>{n.note}</p>
+                    </div>
+                    {(n.author_id === user?.id || user?.is_admin || user?.is_ceo) && (
+                      <button onClick={() => deleteNote(n.id)} disabled={deletingNote === n.id}
+                        className="p-1.5 rounded-lg transition disabled:opacity-50 shrink-0" style={{ color: C.g400 }}>
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

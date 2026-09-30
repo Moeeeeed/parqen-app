@@ -2330,7 +2330,7 @@ export default function CreateOffer({ user }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, paddingBottom: 24 }}>
           <Shield size={12} style={{ color: C.g400, flexShrink: 0 }} />
           <p style={{ fontSize: 11, color: C.g400, textAlign: 'center', margin: 0 }}>
-            All trades escrow-protected · 2% fee on completed trades only
+            All trades escrow-protected · built for traders who come back
           </p>
         </div>
       </div>

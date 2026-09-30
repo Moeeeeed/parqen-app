@@ -27,7 +27,7 @@ const PRODUCTS = [
 function buildFaq(cash) {
   const list = [
     ['What is the PRAQEN Affiliate Program?', cash
-      ? 'A way to earn from the users you bring. Share your personal link or scan code. When the people who sign up with it trade Bitcoin or USDT on PRAQEN, you earn a share of the fee we collect on each of their trades.'
+      ? 'A way to earn from the users you bring. Share your personal link or scan code. When the people who sign up with it trade Bitcoin or USDT on PRAQEN, you earn a share of the revenue we collect on each of their trades.'
       : 'A way to grow with the users you bring. Share your personal link or scan code. When the people who sign up with it trade Bitcoin or USDT on PRAQEN, they count as your users and you move up the levels.'],
     ['How much can I earn as an affiliate?', cash
       ? 'It depends on how many users you bring and how much they trade. Use the calculator to try your own numbers.'
@@ -37,7 +37,7 @@ function buildFaq(cash) {
     ['How do levels work?', 'There are four levels: Explorer, Builder, Titan and Legendary. To unlock a level you need BOTH the number of active users AND the trade volume shown for that level. To keep a level you must stay above its (lower) keep numbers. Falling short drops you one level.'],
     ['Do gift card trades count?', 'Not yet. Right now only Bitcoin and USDT trades count towards your level.'],
     ['Which trades count?', 'Bitcoin (BTC) and USDT trades that were completed on PRAQEN.'],
-    ['What share of each trade will I get?', 'A share of the trading fee PRAQEN collects on your users’ trades — never an extra charge to them. Between 10% and 40% of that fee, depending on your level: Explorer 10%, Builder 20%, Titan 30%, Legendary 40%.'],
+    ['What share of each trade will I get?', 'A share of the trading revenue PRAQEN collects on your users’ trades — never an extra charge to them. Between 10% and 40% of that revenue, depending on your level: Explorer 10%, Builder 20%, Titan 30%, Legendary 40%.'],
   ];
   if (cash) {
     list.push(['When and how do I get paid?', `Rewards wait 3 days to make sure the trade is safe. Once your balance reaches $${CLAIM_MIN_USD}, tap Claim and it is added to your PRAQEN wallet.`]);
@@ -138,7 +138,13 @@ function PartnerProgram({ user }) {
     }
   };
 
-  const code = user?.referral_code || user?.username || '';
+  // NEVER fall back to user.username here — a referral code is always
+  // "username_XXXXXX" (see generateUniqueReferralCode in server.js), so a link
+  // built from the bare username matches no one in the DB. Any signup through
+  // it silently gets no referrer attached, with no error anywhere. If
+  // referral_code hasn't loaded onto the user object yet, show a loading state
+  // instead (below) rather than ever building a link that looks real but isn't.
+  const code = user?.referral_code || '';
   const link = code ? `https://praqen.com/signup?ref=${encodeURIComponent(code)}` : '';
 
   // Everything below comes straight from the server's answer.
@@ -200,23 +206,29 @@ function PartnerProgram({ user }) {
         {user ? (
           <>
             <div className="mecard">
-              <div className="linkrow">
-                <div className="lnk">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" /><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" /></svg>
-                  <b>{link.replace('https://', '')}</b>
-                  <button type="button" className={`cp${copied ? ' done' : ''}`} onClick={copy}>{copied ? 'Copied!' : 'Copy'}</button>
+              {link ? (
+                <div className="linkrow">
+                  <div className="lnk">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" /><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" /></svg>
+                    <b>{link.replace('https://', '')}</b>
+                    <button type="button" className={`cp${copied ? ' done' : ''}`} onClick={copy}>{copied ? 'Copied!' : 'Copy'}</button>
+                  </div>
+                  <div className="or">Or share via</div>
+                  <div className="shr">
+                    {Object.keys(shareIcons).map((k) => (
+                      <a key={k} href={shareUrl(k, link)} target="_blank" rel="noopener noreferrer"><button type="button">{shareIcons[k]}{k === 'X' ? '' : ` ${k}`}</button></a>
+                    ))}
+                  </div>
                 </div>
-                <div className="or">Or share via</div>
-                <div className="shr">
-                  {Object.keys(shareIcons).map((k) => (
-                    <a key={k} href={shareUrl(k, link)} target="_blank" rel="noopener noreferrer"><button type="button">{shareIcons[k]}{k === 'X' ? '' : ` ${k}`}</button></a>
-                  ))}
+              ) : (
+                <p className="note" style={{ margin: 0 }}>Loading your link…</p>
+              )}
+              {link && (
+                <div className="qrbox big">
+                  <QRCodeSVG value={link} size={128} level="M" fgColor="#1B4332" bgColor="#FFFFFF" style={{ width: '100%', height: 'auto' }} />
+                  <small>Scan to join</small>
                 </div>
-              </div>
-              <div className="qrbox big">
-                <QRCodeSVG value={link} size={128} level="M" fgColor="#1B4332" bgColor="#FFFFFF" style={{ width: '100%', height: 'auto' }} />
-                <small>Scan to join</small>
-              </div>
+              )}
             </div>
             <div className="mecard2">
               {summary.loading && <p className="note" style={{ margin: 0 }}>Loading your numbers…</p>}
@@ -278,12 +290,12 @@ function PartnerProgram({ user }) {
           <div className="jr-head">
             <div>
               <h4>Your journey: bring users, grow and earn your badges</h4>
-              <p>To unlock a level you need <b>both</b> enough active users <b>and</b> enough trade volume from them. Your level sets your share of PRAQEN's fee on every trade.</p>
+              <p>To unlock a level you need <b>both</b> enough active users <b>and</b> enough trade volume from them. Your level sets your share of PRAQEN's revenue on every trade.</p>
             </div>
             <div className="jr-now">
               <small>Your level</small>
               <b>{cur == null ? (user ? '…' : 'Log in to start') : cur < 0 ? 'Getting started' : levels[cur].n}</b>
-              <span>{pct(rateNow)} of PRAQEN's fee</span>
+              <span>{pct(rateNow)} of PRAQEN's revenue</span>
             </div>
           </div>
           <ol className="jr-steps">
@@ -325,7 +337,7 @@ function PartnerProgram({ user }) {
             <li>People who sign up with it are <b>your users</b>.</li>
             <li>A user becomes <b>active</b> after trading at least ${ACTIVE_MIN_USD} in total.</li>
             <li>To unlock a higher level you need <b>both</b>: enough <b>active users</b> and enough <b>trade volume</b> from them.</li>
-            <li>Every trade they make gives you a share of PRAQEN's fee. The higher your level, the bigger your share.</li>
+            <li>Every trade they make gives you a share of PRAQEN's revenue. The higher your level, the bigger your share.</li>
           </ol>
         </div>
 
@@ -413,12 +425,12 @@ function PartnerProgram({ user }) {
                   </div>
                   <div className="box">
                     <h5>{cash ? 'PAYOUT' : 'YOUR SHARE'}</h5>
-                    <div className="mrow"><span>Share of PRAQEN's fee on your users' trades</span><b>{pct(l.r)}</b></div>
+                    <div className="mrow"><span>Share of PRAQEN's revenue on your users' trades</span><b>{pct(l.r)}</b></div>
                     {cash && (() => {
                       const exampleFee = 100 * cfg.feeRate;
                       const yourCut = exampleFee * l.r;
                       return (
-                        <p className="small">Example: one of your users trades $100, PRAQEN's fee is ${exampleFee.toFixed(2)}, and you get ${yourCut.toFixed(2)} ({pct(l.r)} of that fee). PRAQEN keeps ${(exampleFee - yourCut).toFixed(2)}. Your user never pays extra.</p>
+                        <p className="small">Example: one of your users trades $100 — you get ${yourCut.toFixed(2)} as your share of PRAQEN's revenue. Your user never pays extra.</p>
                       );
                     })()}
                   </div>

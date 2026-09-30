@@ -15,22 +15,22 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 export const LEVELS = [
   {
     n: 'Explorer', r: 0.10, c: '#B7D9C4', f: 5, v: 50, kf: 3, kv: 50, ex: { f: 5, t: 3, z: 60 },
-    get: ['10% of PRAQEN\'s fee on every trade your users make', 'Explorer Badge on your profile', 'Your personal link and scan code', 'Live progress dashboard'],
+    get: ['10% of PRAQEN\'s revenue on every trade your users make', 'Explorer Badge on your profile', 'Your personal link and scan code', 'Live progress dashboard'],
     bonus: [],
   },
   {
     n: 'Builder', r: 0.20, c: '#2D6A4F', f: 15, v: 5000, kf: 8, kv: 1000, ex: { f: 15, t: 3, z: 100 },
-    get: ['20% of PRAQEN\'s fee on every trade your users make', 'Builder Badge on your profile', 'VIP / Priority Support', 'Swag from PRAQEN'],
+    get: ['20% of PRAQEN\'s revenue on every trade your users make', 'Builder Badge on your profile', 'VIP / Priority Support', 'Swag from PRAQEN'],
     bonus: [],
   },
   {
     n: 'Titan', r: 0.30, c: '#F4A422', f: 50, v: 10000, kf: 25, kv: 3000, ex: { f: 50, t: 4, z: 200 },
-    get: ['30% of PRAQEN\'s fee on every trade your users make', 'Titan Badge on your profile', 'VIP / Priority Support', 'Early access to new features', '2 featured offers for 2 weeks each month', 'Invitation to monthly meetups, AMAs and team meetings'],
+    get: ['30% of PRAQEN\'s revenue on every trade your users make', 'Titan Badge on your profile', 'VIP / Priority Support', 'Early access to new features', '2 featured offers for 2 weeks each month', 'Invitation to monthly meetups, AMAs and team meetings'],
     bonus: [],
   },
   {
     n: 'Legendary', r: 0.40, c: '#1B4332', f: 80, v: 70000, kf: 40, kv: 20000, ex: { f: 80, t: 5, z: 250 },
-    get: ['40% of PRAQEN\'s fee on every trade your users make', 'Legendary Badge on your profile', 'Direct line to the PRAQEN team', 'Invitation to PRAQEN events'],
+    get: ['40% of PRAQEN\'s revenue on every trade your users make', 'Legendary Badge on your profile', 'Direct line to the PRAQEN team', 'Invitation to PRAQEN events'],
     // Exclusive, once-a-year-earned benefits — kept separate from `get` so the UI can
     // highlight them differently (see PartnerProgram.js's "WHAT YOU GET" box).
     bonus: ['A fully-paid 3-day trip to a top African destination', 'A future opportunity to work with the PRAQEN team'],

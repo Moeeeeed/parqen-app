@@ -171,7 +171,7 @@ function TradeCard({ trade, user, onClose, onExpire }) {
           </span>
         </div>
         {isBuyer && (
-          <p className="text-[9px] text-right -mt-1" style={{ color: C.g400 }}>full amount · seller pays the fee</p>
+          <p className="text-[9px] text-right -mt-1" style={{ color: C.g400 }}>full amount · covered by the seller</p>
         )}
         <div className="flex justify-between text-xs">
           <span style={{ color: C.g500 }}>📊 Status</span>
@@ -285,7 +285,7 @@ export default function ActiveTradeBanner({ user, currentPage }) {
           <div className="flex items-center gap-1.5">
             <Shield size={12} style={{ color: C.green }}/>
             <p className="text-xs font-semibold" style={{ color: C.g500 }}>
-              Escrow-protected · 2% fee on completion only
+              Escrow-protected · built to keep you trading
             </p>
           </div>
           <button onClick={() => setShowModal(false)}

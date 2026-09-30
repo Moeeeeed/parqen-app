@@ -285,28 +285,12 @@
             z-index: 9999;
             transition: opacity 0.45s ease-out;
         }
-        #praqen-loader .logo-box {
-            width: 84px; height: 84px;
-            background: #F4A422;
-            border-radius: 26px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 42px;
-            font-weight: 900;
-            color: #1B4332;
-            font-family: Georgia, serif;
-            margin-bottom: 18px;
+        #praqen-loader .logo-img {
+            width: 220px;
+            height: auto;
+            margin-bottom: 22px;
             animation: prq-pulse 1.6s ease-in-out infinite;
-            box-shadow: 0 0 40px rgba(244,164,34,0.4);
-        }
-        #praqen-loader .logo-name {
-            color: #fff;
-            font-size: 22px;
-            font-weight: 800;
-            letter-spacing: 4px;
-            font-family: Georgia, serif;
-            margin-bottom: 6px;
+            filter: drop-shadow(0 0 30px rgba(244,164,34,0.35));
         }
         #praqen-loader .logo-sub {
             color: rgba(255,255,255,0.45);
@@ -397,8 +381,7 @@
 
 <!-- PRAQEN Splash Loader — hidden once React mounts -->
 <div id="praqen-loader" aria-hidden="true">
-    <div class="logo-box">P</div>
-    <p class="logo-name">PRAQEN</p>
+    <img class="logo-img" src="%PUBLIC_URL%/praqen-logo.png" alt="PRAQEN" />
     <p class="logo-sub">P2P BITCOIN TRADING</p>
     <div class="bar-track">
         <div class="bar-fill"></div>

@@ -528,7 +528,7 @@ export default function LandingPage({ user }) {
               { icon: Zap, title: 'Trades Under 15 Minutes', desc: 'No intermediaries. No complicated requirements. Match with a trader and complete your transaction in minutes.', color: C.gold },
               { icon: MessageCircle, title: 'Fast Dispute Resolution', desc: 'Our neutral team reviews both sides and resolves every dispute within 24 hours. Your funds stay safe throughout.', color: C.sage },
               { icon: HeadphonesIcon, title: '24/7 Human Support', desc: 'Real people. Real solutions. Our global team is always online via in-app chat, WhatsApp and Discord — any time.', color: C.amber },
-              { icon: Lock, title: 'Zero Hidden Fees', desc: 'Flat fee on completed trades only. No listing fees, no withdrawal fees, no monthly plans. Pay only when you win.', color: C.green },
+              { icon: Lock, title: 'A Trading Experience You\'ll Love', desc: 'Smooth, reliable, and built around you — every trade designed to make PRAQEN the platform you keep coming back to.', color: C.green },
             ].map(({ icon: Icon, title, desc, color }, i) => (
               <div key={title}
                 className={`card-up rounded-2xl p-6 border group relative overflow-hidden transition-all duration-300 ease-out hover:-translate-y-1.5 hover:shadow-[0_20px_45px_-16px_var(--accentGlow)] hover:border-[color:var(--accent)] ${featOn ? 'anim-up' : ''}`}
@@ -1069,7 +1069,7 @@ style={{background:`${color}12`}}>{React.createElement(icon, {size:15, style:{co
             {[
               { q: 'Is PRAQEN safe to use?', a: 'Absolutely. Every trade uses our escrow system — Bitcoin is locked before any money changes hands. Our dispute team resolves any issue within 24 hours. Your funds are always 100% protected.' },
               { q: 'How does escrow work?', a: "When a trade starts, the seller's Bitcoin is automatically locked in our escrow. You send your payment. Once the seller confirms receipt, BTC is instantly released to your wallet. Neither party can touch the funds during the trade." },
-              { q: 'What are the fees?', a: 'We charge a flat 2% fee on completed Bitcoin/USDT trades (3% on gift-card trades) — added on top, paid by the seller. No listing fees, no withdrawal fees, no monthly subscriptions. You pay absolutely nothing until a trade succeeds.' },
+              { q: 'What are the fees?', a: "We keep things simple — nothing upfront, no listing costs, no monthly subscriptions. Just a smooth, reliable trading experience built to bring you back for more every time." },
               { q: 'How long does a trade take?', a: 'Mobile money trades (MTN, M-Pesa, OPay) typically complete in 5–15 minutes. Bank transfers take 15–30 minutes. We average under 8 minutes across all payment methods.' },
               { q: 'What happens if there is a dispute?', a: 'Open a dispute inside the trade chat with evidence. Our neutral support team reviews both sides and resolves it quickly — your Bitcoin stays locked safe in escrow throughout the entire process.' },
               { q: 'Which countries are supported?', a: '180+ countries worldwide. We have deep local payment support in Africa (Ghana, Nigeria, Kenya, South Africa), Asia (China, India, Japan, UAE), Europe (Germany, UK, France) and the Americas (USA, Canada, Brazil) — with more regions added regularly.' },
