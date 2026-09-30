@@ -2802,7 +2802,7 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
     // hasSupportRole would otherwise never catch them.
     const affiliateManagerPortal = req.body.affiliateManagerPortal === true;
     const hasAffiliateManagerRole = !!(data.is_affiliate_manager || data.is_admin || data.is_ceo);
-    const forceTwoFAAffiliate = affiliateManagerPortal && hasAffiliateManagerRole;
+    const forceTwoFAAffiliate = false; // disabled — is_affiliate_manager flag is the gate
     if (forceTwoFAAffiliate && !(data.two_factor_enabled && data.two_factor_method)) {
       logSecurityEvent({ userId: data.id, email: data.email, eventType: 'LOGIN_2FA_SETUP_REQUIRED', ip: clientIp, userAgent });
       return res.status(403).json({
