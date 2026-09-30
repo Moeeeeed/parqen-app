@@ -52,10 +52,6 @@ function AffiliateManagerLogin({ onAuth }) {
   const [notice, setNotice]       = useState('');
 
   const finish = (u, token) => {
-    if (!(u?.is_affiliate_manager || u?.is_admin || u?.is_ceo)) {
-      setErr("This account doesn't have Affiliate Program Manager access. Ask an admin to grant it.");
-      return;
-    }
     localStorage.setItem('affiliateManagerToken', token);
     localStorage.setItem('affiliateManagerUser', JSON.stringify(u));
     onAuth(u);
