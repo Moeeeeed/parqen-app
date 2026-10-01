@@ -21,12 +21,14 @@ export const isGiftCardTrade = (trade) => {
   const type = (trade.trade_type || '').toUpperCase();
   const listingType = (trade.listing?.listing_type || '').toUpperCase();
   const brand = (trade.gift_card_brand || '').toLowerCase().trim();
-  const BTCBrands = ['bitcoin', 'btc', 'sell bitcoin', 'buy bitcoin', ''];
+  const asset = (trade.asset || trade.listing?.asset || '').toUpperCase();
+
+  const P2PBrands = ['bitcoin', 'btc', 'usdt', 'tether', 'sell bitcoin', 'buy bitcoin', 'sell usdt', 'buy usdt', 'crypto', ''];
 
   return !!(
     type.includes('GIFT') ||
     listingType.includes('GIFT') ||
-    (brand && !BTCBrands.includes(brand))
+    (brand && !P2PBrands.includes(brand))
   );
 };
 

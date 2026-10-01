@@ -7202,20 +7202,10 @@ function isListingMarginInBounds(listingType, margin) {
 app.get('/api/listings', async (req, res) => {
   try {
     const { brand, minPrice, maxPrice, type } = req.query;
-    // Backward compatibility: with none of type/limit/cursor set, this key is byte-identical
-    // to the pre-pagination key ('listings|||' when brand/minPrice/maxPrice are also unset) —
-    // _warmListingsCache() below still warms exactly that key, and the 6 other pages that
-    // call /api/listings with no extra params keep hitting the same cache entries as before.
     let cacheKey = `listings|${brand || ''}|${minPrice || ''}|${maxPrice || ''}`;
     if (type) cacheKey += `|t:${type}`;
 
     const requestedLimit = parseInt(req.query.limit, 10);
-    // Buy Bitcoin / Sell Bitcoin / Gift Card Marketplace all call this with no limit or type
-    // param, expecting the entire active market back in one shot, then filter client-side —
-    // none of them consume hasMore/nextCursor. At 278 live ACTIVE listings (223 BUY + 25 SELL
-    // + 30 BUY_GIFT_CARD) the old 200 cap was silently dropping the oldest ~78 real, active
-    // offers from every page — sorted out by created_at before the per-page type filter ever
-    // saw them. Raised well past current volume; still a hard cap, not a fix for pagination.
     const effectiveLimit = (Number.isFinite(requestedLimit) && requestedLimit > 0) ? Math.min(requestedLimit, 50) : DEFAULT_LISTINGS_LIMIT;
     if (req.query.limit) cacheKey += `|l:${effectiveLimit}`;
 
@@ -8948,7 +8938,7 @@ app.get('/api/my-trades', verifyToken, async (req, res) => {
          local_currency, currency_symbol, payment_method, gift_card_brand,
          buyer_id, seller_id, created_at, expires_at, completed_at, cancelled_at,
          buyer_confirmed, cancel_reason,
-         listing:listing_id(id, listing_type, gift_card_brand, payment_method, time_limit, currency, currency_symbol),
+         listing:listing_id(id, listing_type, gift_card_brand, payment_method, time_limit, currency, currency_symbol, margin, bitcoin_price),
          buyer:buyer_id(id, username, avatar_url, badge, total_trades, completion_rate, positive_feedback, negative_feedback, last_login, last_seen_at, country),
          seller:seller_id(id, username, avatar_url, badge, total_trades, completion_rate, positive_feedback, negative_feedback, last_login, last_seen_at, country)`,
         { count: 'exact' }
@@ -9002,7 +8992,7 @@ app.get('/api/trades/active', verifyToken, async (req, res) => {
   try {
     const { data: trades, error } = await supabaseAdmin
       .from('trades')
-      .select(`*, listing:listing_id(id, time_limit, payment_method, listing_type, gift_card_brand), buyer:buyer_id(id, username, badge, completion_rate, positive_feedback, negative_feedback, country, avatar_url, total_trades, average_rating), seller:seller_id(id, username, badge, completion_rate, positive_feedback, negative_feedback, country, avatar_url, total_trades, average_rating)`)
+      .select(`*, listing:listing_id(id, time_limit, payment_method, listing_type, gift_card_brand, margin, currency, bitcoin_price, asset), buyer:buyer_id(id, username, badge, completion_rate, positive_feedback, negative_feedback, country, avatar_url, total_trades, average_rating), seller:seller_id(id, username, badge, completion_rate, positive_feedback, negative_feedback, country, avatar_url, total_trades, average_rating)`)
       .or(`buyer_id.eq.${req.userId},seller_id.eq.${req.userId}`)
       .in('status', ['CREATED', 'FUNDS_LOCKED', 'PAYMENT_SENT', 'DISPUTED'])
       .order('created_at', { ascending: false })
@@ -11065,12 +11055,7 @@ app.get('/api/notifications', verifyToken, async (req, res) => {
 
     // Extract trade lookup keys from every notification:
     // 1. UUID from action URL  2. data.trade_id  3. any path segment after /trade/
-    const tradeSelect = `id, status, trade_type, amount_btc, amount_usd, amount_local,
-                 local_currency, currency_symbol, currency, amount_usdt, payment_method, gift_card_brand, trade_ref,
-                 buyer_id, seller_id, created_at, completed_at, cancelled_at, cancel_reason,
-                 listing:listing_id(id, listing_type, gift_card_brand, payment_method, margin),
-                 buyer:buyer_id(id, username, avatar_url, country),
-                 seller:seller_id(id, username, avatar_url, country)`;
+    const tradeSelect = 'id, status, trade_type, amount_btc, amount_usd, amount_local, local_currency, currency_symbol, currency, amount_usdt, payment_method, gift_card_brand, trade_ref, buyer_id, seller_id, created_at, completed_at, cancelled_at, cancel_reason';
 
     const uuidRe = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
     const pathRe = /\/trade\/([^/?#\s]+)/i;

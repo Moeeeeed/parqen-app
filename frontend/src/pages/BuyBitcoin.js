@@ -10,6 +10,7 @@ import {
   Filter, Home, Wallet, User, Gift,
   ChevronDown, TrendingUp, BarChart2, ThumbsUp, ThumbsDown, Repeat2,
   Phone, Mail, Ban, ArrowUp, ArrowDown, Trophy, Crown, Zap, Flame,
+  Star, MessageSquare, Smartphone, FileText
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import CountryFlag, { resolveCode } from '../components/CountryFlag';
@@ -19,6 +20,7 @@ import { getCachedActiveTrades, setCachedActiveTrades, isGiftCardTrade } from '.
 import PRQFooter from '../components/PRQFooter';
 import GettingStartedSteps from '../components/GettingStartedSteps';
 import CoinIcon from '../components/CoinIcon';
+import { calculateReceiveAmount, cleanPaymentMethod, isPaymentMethodMatch } from '../lib/p2pHelpers';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -309,19 +311,17 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
   const cur       = listing.currency || 'GHS';
   const sym       = listing.currency_symbol || CUR_SYM[cur] || '₵';
   const assetLabel = (listing.asset || listing.crypto_asset || 'BTC').toUpperCase();
-  const assetCoin = assetLabel === 'USDT' ? 'USDT' : 'BTC';
+  const assetCoin  = assetLabel === 'USDT' ? 'USDT' : 'BTC';
+  const assetPrice = assetCoin === 'USDT' ? 1 : btcPriceUSD;
 
   const usdRate   = USD_RATES[cur] || 1;
-  const rateLocal = getRateUSD(listing, btcPriceUSD) * usdRate;
-
   const minLocal = listing.min_limit_local || (listing.min_limit_usd ? listing.min_limit_usd*usdRate : 100*usdRate);
   const maxLocal = listing.max_limit_local || (listing.max_limit_usd ? listing.max_limit_usd*usdRate : 1000*usdRate);
 
   const examplePay = (userBuyAmt && parseFloat(userBuyAmt) > 0)
     ? parseFloat(userBuyAmt)
     : (minLocal || Math.round(100*usdRate));
-  const { btcReceived } = calcBtc(examplePay, btcPriceUSD, margin, usdRate);
-  const fiatEquiv = parseFloat((btcReceived * btcPriceUSD * usdRate).toFixed(2));
+  const { receiveFiat: fiatEquiv, sellerRateLocal: rateLocal } = calculateReceiveAmount({ payAmount: examplePay, margin, rate: assetPrice, usdRate });
 
   const marginLabel = margin===0 ? 'Market rate' : margin>0 ? `+${margin}% above market` : `${Math.abs(margin)}% below market`;
   const marginBg    = margin>0 ? C.danger : margin<0 ? C.success : C.g400;
@@ -331,7 +331,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
   const total = pos + neg;
   const trust = total > 0 ? Math.round(pos/total*100) : trades > 0 ? 100 : 0;
 
-  const pmLabel = (listing.payment_method === 'mtmmomo' || listing.payment_method === 'mtn_momo') ? 'MTN Mobile Money' : (listing.payment_method || 'Payment');
+  const pmLabel = cleanPaymentMethod(listing.payment_method || 'Payment');
   const ft = featuredType ? FEATURED[featuredType] : null;
 
   return (
@@ -430,7 +430,7 @@ function OfferCard({listing, btcPriceUSD, onViewSeller, onBuy, liked, onToggleLi
             <div className="flex items-center gap-1.5 flex-wrap">
               <CoinIcon coin={assetCoin} size={16} />
               <span className="font-black text-[15px] text-gray-900 truncate">{fmt(rateLocal,2)} {cur}</span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide" style={{backgroundColor:'#EF4444',color:'#fff'}}>{margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}</span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide" style={{backgroundColor: marginBg, color:'#fff'}}>{margin===0?'MARKET':`${margin>0?'+':''}${margin}%`}</span>
             </div>
             <div className="text-xs font-semibold text-gray-600 mt-1">{fmt(minLocal)} - {fmt(maxLocal)} {cur}</div>
           </div>
@@ -466,30 +466,31 @@ function ProfileModal({seller, listing, onClose, onTrade, btcPriceUSD}) {
   const u      = getUser(freshSeller || seller);
   const seen   = getLastSeen(u);
   const trades = getTrades(u);
-  const rating = parseFloat(u.average_rating || 0);
+  const rating = parseFloat(u.average_rating || 5.0);
   const margin = parseFloat(listing?.margin || 0);
   const cur    = listing?.currency || 'GHS';
   const sym    = listing?.currency_symbol || CUR_SYM[cur] || '₵';
   const usdRate   = USD_RATES[cur] || 1;
   const rateLocal = getRateUSD(listing || {}, btcPriceUSD || 68000) * usdRate;
+  const assetCoin  = (listing?.asset || 'BTC').toLowerCase();
+  const assetLabel = (listing?.asset || 'BTC').toUpperCase();
 
-  // Proper verification — only use the dedicated verified flags, never raw phone/email presence
+  // Proper verification — check all backend verification flags
   const phoneOk = !!(u.is_phone_verified || u.phone_verified);
   const emailOk = !!(u.is_email_verified || u.email_verified);
-  const kycOk   = !!(u.is_id_verified || u.kyc_verified);
+  const kycOk   = !!(u.is_id_verified || u.kyc_verified || u.is_verified);
   const pos     = parseInt(u.positive_feedback || 0);
   const neg     = parseInt(u.negative_feedback || 0);
   const total   = pos + neg;
   const trust   = total > 0 ? Math.round(pos / total * 100) : trades > 0 ? 100 : 0;
-  const compRate = parseFloat(u.completion_rate || 0);
-  const blocks  = parseInt(u.blocks_received || u.blocks_count || 0);
+  const compRate = parseFloat(u.completion_rate || 100);
   const ccCode  = resolveCode(u.country || u.location);
   const avgReply = u.avg_response_time || u.avg_reply_minutes;
   const payMins  = parseFloat(u.avg_payment_time || u.avg_response_time || u.avg_reply_minutes || 0);
-  const avgPayDisplay = payMins > 0 ? (() => { const m=Math.floor(payMins),s=Math.round((payMins-m)*60); return s>0?`${m}m ${s}s`:m>0?`${m}m`:`${s}s`; })() : '—';
+  const avgPayDisplay = payMins > 0 ? (() => { const m=Math.floor(payMins),s=Math.round((payMins-m)*60); return s>0?`${m}m ${s}s`:m>0?`${m}m`:`${s}s`; })() : (trades > 0 ? 'Under 5 min' : 'New trader');
   const locCC    = ccCode ? ccCode.toUpperCase() : '';
   const CC_NAME  = {GH:'Ghana',NG:'Nigeria',KE:'Kenya',ZA:'S. Africa',UG:'Uganda',TZ:'Tanzania',RW:'Rwanda',CM:'Cameroon',SN:'Senegal',ML:'Mali',CI:"Côte d'Ivoire",CD:'DR Congo',ZM:'Zambia',MZ:'Mozambique',ZW:'Zimbabwe',BF:'Burkina Faso',BJ:'Benin',TG:'Togo',NE:'Niger',ET:'Ethiopia',EG:'Egypt',MA:'Morocco',DZ:'Algeria',AO:'Angola',US:'USA',GB:'UK',DE:'Germany',FR:'France',IT:'Italy',ES:'Spain',NL:'Netherlands',SE:'Sweden',NO:'Norway',PL:'Poland',UA:'Ukraine',TR:'Turkey',VN:'Vietnam',TH:'Thailand',ID:'Indonesia',PH:'Philippines',MY:'Malaysia',SG:'Singapore',IN:'India',CN:'China',JP:'Japan',KR:'S. Korea',PK:'Pakistan',BD:'Bangladesh',SA:'Saudi Arabia',AE:'UAE',QA:'Qatar',BR:'Brazil',MX:'Mexico',CO:'Colombia',AR:'Argentina',CA:'Canada',AU:'Australia',NZ:'New Zealand'};
-  const countryName = (u.country && u.country.length > 2) ? u.country : (CC_NAME[locCC] || u.location || (locCC || '—'));
+  const countryName = (u.country && u.country.length > 2) ? u.country : (CC_NAME[locCC] || u.location || (locCC || 'Not set'));
 
   // Load real reviews when feedback tab is opened
   useEffect(() => {
@@ -504,397 +505,395 @@ function ProfileModal({seller, listing, onClose, onTrade, btcPriceUSD}) {
   if (!seller) return null;
 
   const TABS = [
-    { id:'overview',  label:'👤 Profile'    },
-    { id:'feedback',  label:`💬 Reviews (${total})`},
-    { id:'rules',     label:'📋 Rules'      },
-    { id:'offer',     label:'📊 Offer'      },
+    { id:'overview',  label:'Profile', icon: User },
+    { id:'feedback',  label:`Reviews (${total})`, icon: MessageSquare },
+    { id:'rules',     label:'Rules', icon: FileText },
+    { id:'offer',     label:'Offer', icon: BarChart2 },
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-      style={{backgroundColor:'rgba(0,0,0,0.6)', backdropFilter:'blur(6px)'}}
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm"
+      style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 60px)' }}
       onClick={e => e.target === e.currentTarget && onClose()}>
 
-      <div className="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col sm:mb-0"
+      <div className="bg-white w-full sm:max-w-md md:max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[75vh] sm:max-h-[82vh] overflow-hidden my-0 sm:my-auto mb-16 sm:mb-0"
         style={{
-          maxHeight:'92dvh',
-          marginBottom:'calc(60px + env(safe-area-inset-bottom, 0px))',
           border:`1px solid ${C.g200}`,
           animation:'slideUp .28s cubic-bezier(0.34,1.56,0.64,1)',
         }}>
-        <style>{`@keyframes slideUp{from{transform:translateY(40px);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>
+        <style>{`
+          @keyframes slideUp{from{transform:translateY(40px);opacity:0}to{transform:translateY(0);opacity:1}}
+          .custom-modal-scroll::-webkit-scrollbar { width: 5px; }
+          .custom-modal-scroll::-webkit-scrollbar-track { background: #F0FAF5; border-radius: 9999px; }
+          .custom-modal-scroll::-webkit-scrollbar-thumb { background: #10B981; border-radius: 9999px; }
+          .custom-modal-scroll::-webkit-scrollbar-thumb:hover { background: #059669; }
+        `}</style>
 
-        {/* ── DRAG HANDLE (mobile) ── */}
-        <div className="flex justify-center pt-2.5 pb-1 flex-shrink-0 sm:hidden">
-          <div className="w-10 h-1 rounded-full" style={{backgroundColor:C.g200}}/>
-        </div>
-
-        {/* ── HEADER ── */}
-        <div className="relative px-4 pt-3 pb-4 flex-shrink-0"
-          style={{background:`linear-gradient(135deg,${C.forest} 0%,${C.mint} 100%)`}}>
-
+        {/* ── DRAG HANDLE & COMPACT BAR ── */}
+        <div className="relative flex items-center justify-between px-4 py-2 border-b bg-gray-50 flex-shrink-0" style={{borderColor: C.g200}}>
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-xs font-black uppercase tracking-wider text-gray-700">Seller Profile & Details</span>
+          </div>
           <button onClick={onClose}
-            className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center"
-            style={{backgroundColor:'rgba(255,255,255,0.18)'}}>
-            <X size={15} className="text-white"/>
+            className="w-7 h-7 rounded-full flex items-center justify-center bg-gray-200 text-gray-600 hover:bg-gray-300 transition">
+            <X size={14} />
           </button>
-
-          <div className="flex items-center gap-3 mb-4">
-            <div className="relative flex-shrink-0">
-              <Avatar user={u} size={56} radius="rounded-2xl"/>
-              <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white"
-                style={{backgroundColor: seen.online ? C.online : C.g400}}/>
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-                <Link to={u?.id ? `/profile/${u.id}` : '#'}
-                  onClick={() => { if (!u?.id) return; const tk = localStorage.getItem('token'); axios.post(`${API_URL}/users/${u.id}/view-profile`, {}, tk ? { headers: { Authorization: `Bearer ${tk}` } } : {}).catch(()=>{}); }}
-                  className="font-black text-white text-base leading-tight truncate"
-                  style={{textDecoration:'none', borderBottom:'1.5px solid rgba(255,255,255,0.4)', paddingBottom:'1px'}}>
-                  {getDisplayName(u) || 'User'}
-                </Link>
-                {kycOk && <BadgeCheck size={15} style={{color:'#93C5FD', flexShrink:0}}/>}
-              </div>
-              <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-                <CountryFlag countryCode={ccCode} className="w-4 h-3 rounded-sm"/>
-                {(u.country_name || u.country) && (
-                  <span className="text-white/80 text-xs font-bold">{u.country_name || u.country}</span>
-                )}
-                <span className="text-white/40 text-xs">·</span>
-                <span className="text-white/60 text-xs">{seen.online ? '🟢 Active now' : seen.label}</span>
-              </div>
-              <BadgeChip user={u} size="sm" />
-            </div>
-          </div>
-
-          {/* ── STATS 2×2 GRID ── */}
-          <div className="grid grid-cols-2 gap-2">
-            {/* Activity */}
-            {/* Last active */}
-            <div className="flex items-center gap-2 rounded-xl px-3 py-2.5"
-              style={{backgroundColor:'rgba(255,255,255,0.12)'}}>
-              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{backgroundColor: seen.online ? '#4ADE80' : '#94A3B8'}}/>
-              <div className="min-w-0">
-                <p className="text-white font-black text-xs leading-tight truncate">
-                  {seen.online ? 'Online now' : seen.label}
-                </p>
-                <p className="text-white/50 text-xs leading-tight">Last active</p>
-              </div>
-            </div>
-            {/* Location — real flag image, real country name */}
-            <div className="flex items-center gap-2 rounded-xl px-3 py-2.5"
-              style={{backgroundColor:'rgba(255,255,255,0.12)'}}>
-              <CountryFlag countryCode={ccCode} className="w-5 h-3.5 rounded-sm flex-shrink-0"/>
-              <div className="min-w-0">
-                <p className="text-white font-black text-xs leading-tight truncate">{countryName}</p>
-                <p className="text-white/50 text-xs leading-tight">Location</p>
-              </div>
-            </div>
-            {/* Avg. response */}
-            <div className="flex items-center gap-2 rounded-xl px-3 py-2.5"
-              style={{backgroundColor:'rgba(255,255,255,0.12)'}}>
-              <Timer size={14} style={{color:'#FDE68A', flexShrink:0}}/>
-              <div className="min-w-0">
-                <p className="text-white font-black text-xs leading-tight">{avgPayDisplay}</p>
-                <p className="text-white/50 text-xs leading-tight">Avg. response</p>
-              </div>
-            </div>
-            {/* Trusted by */}
-            <div className="flex items-center gap-2 rounded-xl px-3 py-2.5"
-              style={{backgroundColor:'rgba(255,255,255,0.12)'}}>
-              <Heart size={14} style={{color: pos > 0 ? '#86EFAC' : 'rgba(255,255,255,0.5)', flexShrink:0}}/>
-              <div className="min-w-0">
-                <p className="text-white font-black text-xs leading-tight">{pos > 0 ? `${fmt(pos)} users` : 'No ratings yet'}</p>
-                <p className="text-white/50 text-xs leading-tight">Trusted by</p>
-              </div>
-            </div>
-          </div>
-
-          {/* ── VIEW FULL PROFILE LINK ── */}
-          {u?.id && (
-            <Link to={`/profile/${u.id}`}
-              onClick={() => { const tk = localStorage.getItem('token'); axios.post(`${API_URL}/users/${u.id}/view-profile`, {}, tk ? { headers: { Authorization: `Bearer ${tk}` } } : {}).catch(()=>{}); }}
-              className="mt-3 flex items-center justify-center gap-1.5 w-full py-2 rounded-xl text-xs font-bold transition hover:bg-white/20 active:scale-95"
-              style={{
-                color:'rgba(255,255,255,0.9)',
-                border:'1.5px solid rgba(255,255,255,0.25)',
-                backgroundColor:'rgba(255,255,255,0.1)',
-                textDecoration:'none',
-              }}>
-              <span>View Full Profile</span>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M7 17L17 7M17 7H7M17 7v10"/>
-              </svg>
-            </Link>
-          )}
         </div>
 
-        {/* ── TABS ── */}
-        <div className="flex border-b flex-shrink-0 overflow-x-auto" style={{borderColor:C.g200}}>
-          {TABS.map(({id, label}) => (
-            <button key={id} onClick={() => setTab(id)}
-              className="flex-shrink-0 px-3 py-2.5 text-xs font-bold whitespace-nowrap transition"
-              style={{
-                color: tab===id ? C.green : C.g500,
-                borderBottom: tab===id ? `2px solid ${C.green}` : '2px solid transparent',
-                backgroundColor: tab===id ? `${C.green}08` : 'transparent',
-              }}>
-              {label}
-            </button>
-          ))}
-        </div>
+        {/* ── SCROLLABLE MODAL BODY ── */}
+        <div className="flex-1 overflow-y-auto custom-modal-scroll" style={{ WebkitOverflowScrolling: 'touch', minHeight: 0 }}>
 
-        {/* ── TAB CONTENT ── */}
-        <div className="flex-1 overflow-y-auto p-4" style={{WebkitOverflowScrolling:'touch', minHeight:0}}>
+          {/* ── HEADER CARD (Scrolls away smoothly on small screens) ── */}
+          <div className="relative px-4 pt-3 pb-4"
+            style={{background:`linear-gradient(135deg, ${C.forest} 0%, ${C.green} 60%, ${C.mint} 100%)`}}>
 
-          {/* OVERVIEW */}
-          {tab==='overview' && (
-            <div className="space-y-3">
-              {/* Key stats */}
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  {label:'Trades',      value:fmt(trades),           sub:'completed'},
-                  {label:'Rating',      value:`⭐ ${rating.toFixed(1)}`, sub:`of 5.0`},
-                  {label:'Completion',  value:`${compRate.toFixed(0)}%`, sub:'rate'},
-                ].map(({label,value,sub}) => (
-                  <div key={label} className="rounded-xl p-3 text-center"
-                    style={{backgroundColor:C.mist, border:`1px solid ${C.g200}`}}>
-                    <p className="font-black text-sm" style={{color:C.forest}}>{value}</p>
-                    <p className="text-xs font-semibold mt-0.5" style={{color:C.g500}}>{label}</p>
-                    <p className="text-xs" style={{color:C.g400}}>{sub}</p>
-                  </div>
-                ))}
+            <div className="flex items-center gap-3 mb-4">
+              <div className="relative flex-shrink-0">
+                <Avatar user={u} size={56} radius="rounded-2xl"/>
+                <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white"
+                  style={{backgroundColor: seen.online ? C.online : C.g400}}/>
               </div>
-
-              {/* Positive / Negative */}
-              <div className="flex gap-2">
-                <div className="flex-1 flex items-center gap-2 rounded-xl px-3 py-2.5"
-                  style={{backgroundColor:'#F0FDF4', border:'1px solid #86EFAC'}}>
-                  <ThumbsUp size={14} style={{color:'#16A34A', flexShrink:0}}/>
-                  <div>
-                    <p className="font-black text-sm" style={{color:'#16A34A'}}>{fmt(pos)}</p>
-                    <p className="text-xs" style={{color:'#166534'}}>Positive</p>
-                  </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                  <Link to={u?.id ? `/profile/${u.id}` : '#'}
+                    onClick={() => { if (!u?.id) return; const tk = localStorage.getItem('token'); axios.post(`${API_URL}/users/${u.id}/view-profile`, {}, tk ? { headers: { Authorization: `Bearer ${tk}` } } : {}).catch(()=>{}); }}
+                    className="font-black text-white text-base leading-tight truncate"
+                    style={{textDecoration:'none', borderBottom:'1.5px solid rgba(255,255,255,0.4)', paddingBottom:'1px'}}>
+                    {getDisplayName(u) || 'User'}
+                  </Link>
+                  {kycOk && <BadgeCheck size={15} style={{color:'#6EE7B7', flexShrink:0}}/>}
                 </div>
-                <div className="flex-1 flex items-center gap-2 rounded-xl px-3 py-2.5"
-                  style={{backgroundColor:'#FEF2F2', border:'1px solid #FCA5A5'}}>
-                  <ThumbsDown size={14} style={{color:'#DC2626', flexShrink:0}}/>
-                  <div>
-                    <p className="font-black text-sm" style={{color:'#DC2626'}}>{fmt(neg)}</p>
-                    <p className="text-xs" style={{color:'#991B1B'}}>Negative</p>
-                  </div>
+                <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                  <CountryFlag countryCode={ccCode} className="w-4 h-3 rounded-sm"/>
+                  {(u.country_name || u.country) && (
+                    <span className="text-white/80 text-xs font-bold">{u.country_name || u.country}</span>
+                  )}
+                  <span className="text-white/40 text-xs">·</span>
+                  <span className="text-white/60 text-xs">{seen.online ? 'Active now' : seen.label}</span>
                 </div>
-              </div>
-
-              {/* Verification badges */}
-              <div className="rounded-xl overflow-hidden" style={{border:`1px solid ${C.g200}`}}>
-                <p className="text-xs font-black px-3 py-2 uppercase tracking-wider"
-                  style={{color:C.g500, backgroundColor:C.g50}}>Verification</p>
-                {[
-                  {label:'Phone Number', ok:phoneOk,  icon:'📱'},
-                  {label:'Email Address',ok:emailOk,  icon:'📧'},
-                  {label:'ID / KYC',     ok:kycOk,    icon:'🪪'},
-                ].map(({label,ok,icon}) => (
-                  <div key={label} className="flex items-center justify-between px-3 py-2.5 border-t"
-                    style={{borderColor:C.g100}}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">{icon}</span>
-                      <span className="text-xs font-semibold" style={{color:C.g700}}>{label}</span>
-                    </div>
-                    <span className={`text-xs font-black px-2.5 py-1 rounded-full`}
-                      style={{
-                        backgroundColor: ok ? '#F0FDF4' : '#FEF2F2',
-                        color: ok ? '#16A34A' : '#DC2626',
-                      }}>
-                      {ok ? '✓ Verified' : '✗ Not verified'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Bio */}
-              {u.bio && (
-                <div className="rounded-xl p-3" style={{backgroundColor:C.g50, border:`1px solid ${C.g200}`}}>
-                  <p className="text-xs font-bold mb-1" style={{color:C.g500}}>About</p>
-                  <p className="text-xs leading-relaxed" style={{color:C.g700}}>{u.bio}</p>
-                </div>
-              )}
-
-              {/* Extra info */}
-              <div className="rounded-xl overflow-hidden" style={{border:`1px solid ${C.g200}`}}>
-                {[
-                  avgReply ? {label:'Avg. Response', value:`~${Math.round(avgReply)} min`} : null,
-                  {label:'Country', value: (() => {
-                    const cc = (u.country||'').slice(0,2).toUpperCase();
-                    if (!cc) return '—';
-                    const flag = cc.replace(/./g,c=>String.fromCodePoint(0x1F1E0+c.charCodeAt(0)-65));
-                    return `${flag} ${u.country || cc}`;
-                  })()},
-                  {label:'Member since', value: u.created_at ? new Date(u.created_at).toLocaleDateString('en-US',{month:'short',year:'numeric'}) : '—'},
-                ].filter(Boolean).map(({label,value}) => (
-                  <div key={label} className="flex items-center justify-between px-3 py-2.5 border-b last:border-0"
-                    style={{borderColor:C.g100}}>
-                    <span className="text-xs font-semibold" style={{color:C.g500}}>{label}</span>
-                    <span className="text-xs font-black" style={{color:C.g800}}>{value}</span>
-                  </div>
-                ))}
+                <BadgeChip user={u} size="sm" />
               </div>
             </div>
-          )}
 
-          {/* FEEDBACK / REVIEWS */}
-          {tab==='feedback' && (
-            <div className="space-y-3">
-              {/* Summary bar */}
-              <div className="flex gap-2 p-3 rounded-xl"
-                style={{backgroundColor:C.mist, border:`1px solid ${C.g200}`}}>
-                <div className="text-center px-3">
-                  <p className="text-2xl font-black" style={{color:C.forest}}>{rating.toFixed(1)}</p>
-                  <p className="text-xs" style={{color:C.g400}}>Rating</p>
-                </div>
-                <div className="w-px" style={{backgroundColor:C.g200}}/>
-                <div className="flex-1 flex items-center gap-3 px-2">
-                  <div className="text-center flex-1">
-                    <p className="font-black text-sm" style={{color:'#16A34A'}}>{fmt(pos)}</p>
-                    <p className="text-xs" style={{color:C.g400}}>👍 Positive</p>
-                  </div>
-                  <div className="text-center flex-1">
-                    <p className="font-black text-sm" style={{color:'#DC2626'}}>{fmt(neg)}</p>
-                    <p className="text-xs" style={{color:C.g400}}>👎 Negative</p>
-                  </div>
-                  <div className="text-center flex-1">
-                    <p className="font-black text-sm" style={{color:C.forest}}>{trust}%</p>
-                    <p className="text-xs" style={{color:C.g400}}>Trust</p>
-                  </div>
+            {/* ── STATS 2×2 GRID ── */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex items-center gap-2 rounded-xl px-3 py-2.5"
+                style={{backgroundColor:'rgba(255,255,255,0.12)'}}>
+                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{backgroundColor: seen.online ? '#4ADE80' : '#94A3B8'}}/>
+                <div className="min-w-0">
+                  <p className="text-white font-black text-xs leading-tight truncate">
+                    {seen.online ? 'Online now' : seen.label}
+                  </p>
+                  <p className="text-white/50 text-xs leading-tight">Last active</p>
                 </div>
               </div>
+              <div className="flex items-center gap-2 rounded-xl px-3 py-2.5"
+                style={{backgroundColor:'rgba(255,255,255,0.12)'}}>
+                <CountryFlag countryCode={ccCode} className="w-5 h-3.5 rounded-sm flex-shrink-0"/>
+                <div className="min-w-0">
+                  <p className="text-white font-black text-xs leading-tight truncate">{countryName}</p>
+                  <p className="text-white/50 text-xs leading-tight">Location</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 rounded-xl px-3 py-2.5"
+                style={{backgroundColor:'rgba(255,255,255,0.12)'}}>
+                <Timer size={14} style={{color:'#6EE7B7', flexShrink:0}}/>
+                <div className="min-w-0">
+                  <p className="text-white font-black text-xs leading-tight">{avgPayDisplay}</p>
+                  <p className="text-white/50 text-xs leading-tight">Avg. response</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 rounded-xl px-3 py-2.5"
+                style={{backgroundColor:'rgba(255,255,255,0.12)'}}>
+                <Heart size={14} style={{color: pos > 0 ? '#86EFAC' : 'rgba(255,255,255,0.5)', flexShrink:0}}/>
+                <div className="min-w-0">
+                  <p className="text-white font-black text-xs leading-tight">{pos > 0 ? `${fmt(pos)} users` : '0 users'}</p>
+                  <p className="text-white/50 text-xs leading-tight">Trusted by</p>
+                </div>
+              </div>
+            </div>
 
-              {rvLoad ? (
-                <div className="space-y-2">
-                  {[1,2,3].map(i=>(
-                    <div key={i} className="rounded-xl p-3 border animate-pulse" style={{borderColor:C.g200}}>
-                      <div className="flex gap-2 mb-2">
-                        <div className="w-7 h-7 rounded-full" style={{backgroundColor:C.g200}}/>
-                        <div className="flex-1 space-y-1.5">
-                          <div className="h-2.5 rounded w-1/3" style={{backgroundColor:C.g200}}/>
-                          <div className="h-2 rounded w-1/4" style={{backgroundColor:C.g100}}/>
-                        </div>
-                      </div>
-                      <div className="h-2.5 rounded w-4/5" style={{backgroundColor:C.g100}}/>
+            {/* ── VIEW FULL PROFILE LINK ── */}
+            {u?.id && (
+              <Link to={`/profile/${u.id}`}
+                onClick={() => { const tk = localStorage.getItem('token'); axios.post(`${API_URL}/users/${u.id}/view-profile`, {}, tk ? { headers: { Authorization: `Bearer ${tk}` } } : {}).catch(()=>{}); }}
+                className="mt-3 flex items-center justify-center gap-1.5 w-full py-2 rounded-xl text-xs font-bold transition hover:bg-white/20 active:scale-95"
+                style={{
+                  color:'rgba(255,255,255,0.95)',
+                  border:'1.5px solid rgba(255,255,255,0.3)',
+                  backgroundColor:'rgba(255,255,255,0.12)',
+                  textDecoration:'none',
+                }}>
+                <span>View Full Profile</span>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M7 17L17 7M17 7H7M17 7v10"/>
+                </svg>
+              </Link>
+            )}
+          </div>
+
+          {/* ── STICKY TABS BAR (Sticks to top when header scrolls up) ── */}
+          <div className="sticky top-0 z-20 flex border-b bg-white overflow-x-auto shadow-xs" style={{borderColor:C.g200}}>
+            {TABS.map(({id, label, icon: TabIcon}) => (
+              <button key={id} onClick={() => setTab(id)}
+                className="flex-shrink-0 px-3.5 py-2.5 text-xs font-bold whitespace-nowrap transition inline-flex items-center gap-1.5"
+                style={{
+                  color: tab===id ? C.green : C.g500,
+                  borderBottom: tab===id ? `2px solid ${C.green}` : '2px solid transparent',
+                  backgroundColor: tab===id ? `${C.green}08` : 'transparent',
+                }}>
+                {TabIcon && <TabIcon size={13} />}
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* ── TAB CONTENT ── */}
+          <div className="p-4">
+            {/* OVERVIEW */}
+            {tab==='overview' && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    {label:'Trades',      value:fmt(trades),           sub:'completed'},
+                    {label:'Rating',      value:<span className="inline-flex items-center gap-1 justify-center"><Star size={13} fill="currentColor" className="text-amber-500 flex-shrink-0" /> {rating.toFixed(1)}</span>, sub:`of 5.0`},
+                    {label:'Completion',  value:`${compRate.toFixed(0)}%`, sub:'rate'},
+                  ].map(({label,value,sub}) => (
+                    <div key={label} className="rounded-xl p-2.5 text-center min-w-0 flex flex-col justify-center"
+                      style={{backgroundColor:C.mist, border:`1px solid ${C.g200}`}}>
+                      <p className="font-black text-sm leading-tight truncate flex items-center justify-center gap-1" style={{color:C.forest}}>{value}</p>
+                      <p className="text-xs font-semibold mt-0.5 leading-tight truncate" style={{color:C.g500}}>{label}</p>
+                      <p className="text-xs leading-tight truncate" style={{color:C.g400}}>{sub}</p>
                     </div>
                   ))}
                 </div>
-              ) : reviews.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-3xl mb-2">💬</p>
-                  <p className="font-bold text-sm" style={{color:C.g700}}>No reviews yet</p>
-                  <p className="text-xs mt-1" style={{color:C.g400}}>Be the first to trade with this seller</p>
-                </div>
-              ) : (
-                reviews.slice(0, 20).map((rv, i) => {
-                  const isPos = rv.rating >= 4;
-                  const ago = rv.created_at ? (() => {
-                    const s = (Date.now()-new Date(rv.created_at))/1000;
-                    if(s<3600) return `${~~(s/60)}m ago`;
-                    if(s<86400) return `${~~(s/3600)}h ago`;
-                    return `${~~(s/86400)}d ago`;
-                  })() : '';
-                  return (
-                    <div key={i} className="rounded-xl border p-3"
-                      style={{
-                        borderColor: isPos ? '#86EFAC' : '#FCA5A5',
-                        backgroundColor: isPos ? '#F0FDF4' : '#FEF2F2',
-                      }}>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0"
-                            style={{backgroundColor: isPos ? '#16A34A' : '#DC2626'}}>
-                            {isPos ? '👍' : '👎'}
-                          </div>
-                          <span className="text-xs font-black" style={{color: isPos ? '#166534' : '#991B1B'}}>
-                            {rv.reviewer?.username || 'Anonymous'}
-                          </span>
-                        </div>
-                        <span className="text-xs" style={{color:C.g400}}>{ago}</span>
-                      </div>
-                      {rv.comment && (
-                        <p className="text-xs leading-relaxed pl-8"
-                          style={{color: isPos ? '#14532D' : '#7F1D1D'}}>
-                          "{rv.comment}"
-                        </p>
-                      )}
+
+                <div className="flex gap-2">
+                  <div className="flex-1 flex items-center gap-2 rounded-xl px-3 py-2.5"
+                    style={{backgroundColor:'#F0FDF4', border:'1px solid #86EFAC'}}>
+                    <ThumbsUp size={14} style={{color:'#16A34A', flexShrink:0}}/>
+                    <div>
+                      <p className="font-black text-sm" style={{color:'#16A34A'}}>{fmt(pos)}</p>
+                      <p className="text-xs" style={{color:'#166534'}}>Positive</p>
                     </div>
-                  );
-                })
-              )}
-            </div>
-          )}
-
-          {/* TRADE RULES */}
-          {tab==='rules' && (
-            <div className="space-y-3">
-              <div className="p-3.5 rounded-xl text-sm leading-relaxed whitespace-pre-wrap"
-                style={{backgroundColor:C.mist, color:C.g700, border:`1px solid ${C.g200}`}}>
-                {listing?.trade_instructions || listing?.listing_terms || listing?.description ||
-                  'Send payment within the time limit and tap "I Have Paid". Share a screenshot of your payment if requested.'}
-              </div>
-              <div className="flex items-center gap-2.5 p-3 rounded-xl"
-                style={{backgroundColor:'#FFFBEB', border:'1px solid #FDE68A'}}>
-                <Timer size={14} style={{color:C.warn, flexShrink:0}}/>
-                <p className="text-xs font-bold" style={{color:'#92400E'}}>
-                  Time limit: {listing?.time_limit||30} minutes — trade auto-cancels if unpaid
-                </p>
-              </div>
-              <div className="flex items-start gap-2.5 p-3 rounded-xl"
-                style={{backgroundColor:'#FEF2F2', border:'1px solid #FCA5A5'}}>
-                <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" style={{color:C.danger}}/>
-                <p className="text-xs leading-relaxed" style={{color:'#991B1B'}}>
-                  <strong>Never release BTC</strong> before confirming payment is received in your account. Escrow protects every trade.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* OFFER DETAILS */}
-          {tab==='offer' && (
-            <div className="rounded-xl overflow-hidden" style={{border:`1px solid ${C.g200}`}}>
-              {[
-                {label:'Payment Method', value:listing?.payment_method||'—'},
-                {label:'Rate / BTC',     value:`${sym}${fmt(rateLocal,0)} ${cur}`},
-                {label:'Margin',         value:margin===0?'At market':margin>0?`+${margin}% above market`:`${margin}% below market`},
-                {label:'Trade Limits',   value:listing?.min_limit_local && listing?.max_limit_local
-                  ? `${sym}${fmt(listing.min_limit_local)} – ${sym}${fmt(listing.max_limit_local)} ${cur}`
-                  : `$${listing?.min_limit_usd||10} – $${listing?.max_limit_usd||1000} USD`},
-                {label:'Time Limit',     value:`${listing?.time_limit||30} minutes`},
-                {label:'Country',        value: (() => {
-                  const raw = listing?.country_name || u.country || '';
-                  if (!raw) return '—';
-                  const cc = raw.slice(0,2).toUpperCase();
-                  const flag = cc.replace(/./g,c=>String.fromCodePoint(0x1F1E0+c.charCodeAt(0)-65));
-                  return `${flag} ${raw}`;
-                })()},
-              ].map(({label,value}) => (
-                <div key={label} className="flex items-center justify-between px-3.5 py-3 border-b last:border-0"
-                  style={{borderColor:C.g100}}>
-                  <span className="text-xs font-semibold" style={{color:C.g500}}>{label}</span>
-                  <span className="text-xs font-black text-right ml-4" style={{color:C.g800, maxWidth:'60%'}}>{value}</span>
+                  </div>
+                  <div className="flex-1 flex items-center gap-2 rounded-xl px-3 py-2.5"
+                    style={{backgroundColor:'#FEF2F2', border:'1px solid #FCA5A5'}}>
+                    <ThumbsDown size={14} style={{color:'#DC2626', flexShrink:0}}/>
+                    <div>
+                      <p className="font-black text-sm" style={{color:'#DC2626'}}>{fmt(neg)}</p>
+                      <p className="text-xs" style={{color:'#991B1B'}}>Negative</p>
+                    </div>
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
+
+                <div className="rounded-xl overflow-hidden" style={{border:`1px solid ${C.g200}`}}>
+                  <p className="text-xs font-black px-3 py-2 uppercase tracking-wider"
+                    style={{color:C.g500, backgroundColor:C.g50}}>Verification</p>
+                  {[
+                    {label:'Phone Number', ok:phoneOk,  icon:'📱'},
+                    {label:'Email Address',ok:emailOk,  icon:'📧'},
+                    {label:'ID / KYC',     ok:kycOk,    icon:'🪪'},
+                  ].map(({label,ok,icon}) => (
+                    <div key={label} className="flex items-center justify-between px-3 py-2.5 border-t"
+                      style={{borderColor:C.g100}}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{icon}</span>
+                        <span className="text-xs font-semibold" style={{color:C.g700}}>{label}</span>
+                      </div>
+                      <span className={`text-xs font-black px-2.5 py-1 rounded-full`}
+                        style={{
+                          backgroundColor: ok ? '#F0FDF4' : '#FEF2F2',
+                          color: ok ? '#16A34A' : '#DC2626',
+                        }}>
+                        {ok ? '✓ Verified' : '✗ Not verified'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {u.bio && (
+                  <div className="rounded-xl p-3" style={{backgroundColor:C.g50, border:`1px solid ${C.g200}`}}>
+                    <p className="text-xs font-bold mb-1" style={{color:C.g500}}>About</p>
+                    <p className="text-xs leading-relaxed" style={{color:C.g700}}>{u.bio}</p>
+                  </div>
+                )}
+
+                <div className="rounded-xl overflow-hidden" style={{border:`1px solid ${C.g200}`}}>
+                  {[
+                    avgReply ? {label:'Avg. Response', value:`~${Math.round(avgReply)} min`} : null,
+                    {label:'Country', value: (() => {
+                      const cc = (u.country||'').slice(0,2).toUpperCase();
+                      if (!cc) return '—';
+                      const flag = cc.replace(/./g,c=>String.fromCodePoint(0x1F1E0+c.charCodeAt(0)-65));
+                      return `${flag} ${u.country || cc}`;
+                    })()},
+                    {label:'Member since', value: u.created_at ? new Date(u.created_at).toLocaleDateString('en-US',{month:'short',year:'numeric'}) : '—'},
+                  ].filter(Boolean).map(({label,value}) => (
+                    <div key={label} className="flex items-center justify-between px-3 py-2.5 border-b last:border-0"
+                      style={{borderColor:C.g100}}>
+                      <span className="text-xs font-semibold" style={{color:C.g500}}>{label}</span>
+                      <span className="text-xs font-black" style={{color:C.g800}}>{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* FEEDBACK / REVIEWS */}
+            {tab==='feedback' && (
+              <div className="space-y-3">
+                <div className="flex gap-2 p-3 rounded-xl"
+                  style={{backgroundColor:C.mist, border:`1px solid ${C.g200}`}}>
+                  <div className="text-center px-3">
+                    <p className="text-2xl font-black" style={{color:C.forest}}>{rating.toFixed(1)}</p>
+                    <p className="text-xs" style={{color:C.g400}}>Rating</p>
+                  </div>
+                  <div className="w-px" style={{backgroundColor:C.g200}}/>
+                  <div className="flex-1 flex items-center gap-3 px-2">
+                    <div className="text-center flex-1">
+                      <p className="font-black text-sm" style={{color:'#16A34A'}}>{fmt(pos)}</p>
+                      <p className="text-xs" style={{color:C.g400}}>👍 Positive</p>
+                    </div>
+                    <div className="text-center flex-1">
+                      <p className="font-black text-sm" style={{color:'#DC2626'}}>{fmt(neg)}</p>
+                      <p className="text-xs" style={{color:C.g400}}>👎 Negative</p>
+                    </div>
+                    <div className="text-center flex-1">
+                      <p className="font-black text-sm" style={{color:C.forest}}>{trust}%</p>
+                      <p className="text-xs" style={{color:C.g400}}>Trust</p>
+                    </div>
+                  </div>
+                </div>
+
+                {rvLoad ? (
+                  <div className="space-y-2">
+                    {[1,2,3].map(i=>(
+                      <div key={i} className="rounded-xl p-3 border animate-pulse" style={{borderColor:C.g200}}>
+                        <div className="flex gap-2 mb-2">
+                          <div className="w-7 h-7 rounded-full" style={{backgroundColor:C.g200}}/>
+                          <div className="flex-1 space-y-1.5">
+                            <div className="h-2.5 rounded w-1/3" style={{backgroundColor:C.g200}}/>
+                            <div className="h-2 rounded w-1/4" style={{backgroundColor:C.g100}}/>
+                          </div>
+                        </div>
+                        <div className="h-2.5 rounded w-4/5" style={{backgroundColor:C.g100}}/>
+                      </div>
+                    ))}
+                  </div>
+                ) : reviews.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-3xl mb-2">💬</p>
+                    <p className="font-bold text-sm" style={{color:C.g700}}>No reviews yet</p>
+                    <p className="text-xs mt-1" style={{color:C.g400}}>Be the first to trade with this seller</p>
+                  </div>
+                ) : (
+                  reviews.slice(0, 20).map((rv, i) => {
+                    const isPos = rv.rating >= 4;
+                    const ago = rv.created_at ? (() => {
+                      const s = (Date.now()-new Date(rv.created_at))/1000;
+                      if(s<3600) return `${~~(s/60)}m ago`;
+                      if(s<86400) return `${~~(s/3600)}h ago`;
+                      return `${~~(s/86400)}d ago`;
+                    })() : '';
+                    return (
+                      <div key={i} className="rounded-xl border p-3"
+                        style={{
+                          borderColor: isPos ? '#86EFAC' : '#FCA5A5',
+                          backgroundColor: isPos ? '#F0FDF4' : '#FEF2F2',
+                        }}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0"
+                              style={{backgroundColor: isPos ? '#16A34A' : '#DC2626'}}>
+                              {isPos ? '👍' : '👎'}
+                            </div>
+                            <span className="text-xs font-black" style={{color: isPos ? '#166534' : '#991B1B'}}>
+                              {rv.reviewer?.username || 'Anonymous'}
+                            </span>
+                          </div>
+                          <span className="text-xs" style={{color:C.g400}}>{ago}</span>
+                        </div>
+                        {rv.comment && (
+                          <p className="text-xs leading-relaxed pl-8"
+                            style={{color: isPos ? '#14532D' : '#7F1D1D'}}>
+                            "{rv.comment}"
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+            {/* TRADE RULES */}
+            {tab==='rules' && (
+              <div className="space-y-3">
+                <div className="p-3.5 rounded-xl text-sm leading-relaxed whitespace-pre-wrap"
+                  style={{backgroundColor:C.mist, color:C.g700, border:`1px solid ${C.g200}`}}>
+                  {listing?.trade_instructions || listing?.listing_terms || listing?.description ||
+                    'Send payment within the time limit and tap "I Have Paid". Share a screenshot of your payment if requested.'}
+                </div>
+                <div className="flex items-center gap-2.5 p-3 rounded-xl"
+                  style={{backgroundColor:'#F0FAF5', border:'1px solid #A7F3D0'}}>
+                  <Timer size={14} style={{color:'#10B981', flexShrink:0}}/>
+                  <p className="text-xs font-bold" style={{color:'#065F46'}}>
+                    Time limit: {listing?.time_limit||30} minutes — trade auto-cancels if unpaid
+                  </p>
+                </div>
+                <div className="flex items-start gap-2.5 p-3 rounded-xl"
+                  style={{backgroundColor:'#FEF2F2', border:'1px solid #FCA5A5'}}>
+                  <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" style={{color:C.danger}}/>
+                  <p className="text-xs leading-relaxed" style={{color:'#991B1B'}}>
+                    <strong>Never release crypto</strong> before confirming payment is received in your account. Escrow protects every trade.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* OFFER DETAILS */}
+            {tab==='offer' && (
+              <div className="rounded-xl overflow-hidden" style={{border:`1px solid ${C.g200}`}}>
+                {[
+                  {label:'Payment Method', value:listing?.payment_method||'—'},
+                  {label:`Rate / ${assetLabel}`, value:`${sym}${fmt(rateLocal,0)} ${cur}`},
+                  {label:'Margin',         value:margin===0?'At market':margin>0?`+${margin}% above market`:`${margin}% below market`},
+                  {label:'Trade Limits',   value:listing?.min_limit_local && listing?.max_limit_local
+                    ? `${sym}${fmt(listing.min_limit_local)} – ${sym}${fmt(listing.max_limit_local)} ${cur}`
+                    : `$${listing?.min_limit_usd||10} – $${listing?.max_limit_usd||1000} USD`},
+                  {label:'Time Limit',     value:`${listing?.time_limit||30} minutes`},
+                  {label:'Country',        value: (() => {
+                    const raw = listing?.country_name || u.country || '';
+                    if (!raw) return '—';
+                    const cc = raw.slice(0,2).toUpperCase();
+                    const flag = cc.replace(/./g,c=>String.fromCodePoint(0x1F1E0+c.charCodeAt(0)-65));
+                    return `${flag} ${raw}`;
+                  })()},
+                ].map(({label,value}) => (
+                  <div key={label} className="flex items-center justify-between px-3.5 py-3 border-b last:border-0"
+                    style={{borderColor:C.g100}}>
+                    <span className="text-xs font-semibold" style={{color:C.g500}}>{label}</span>
+                    <span className="text-xs font-black text-right ml-4" style={{color:C.g800, maxWidth:'60%'}}>{value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* ── FOOTER ACTIONS ── */}
-        <div className="p-4 flex gap-3 flex-shrink-0 border-t" style={{borderColor:C.g200}}>
+        <div className="p-3 sm:p-4 flex gap-3 flex-shrink-0 border-t bg-white sticky bottom-0 z-30 shadow-lg" style={{borderColor:C.g200}}>
           <button onClick={onClose}
-            className="flex-1 py-3 rounded-2xl border text-sm font-bold hover:bg-gray-50 transition"
+            className="flex-1 py-2.5 sm:py-3 rounded-2xl border text-sm font-bold hover:bg-gray-50 transition"
             style={{borderColor:C.g200, color:C.g600}}>
             Close
           </button>
           <button onClick={() => { onClose(); onTrade(); }}
-            className="flex-1 py-3 rounded-2xl text-white text-sm font-black flex items-center justify-center gap-2 shadow-md"
+            className="flex-1 py-2.5 sm:py-3 rounded-2xl text-white text-sm font-black flex items-center justify-center gap-2 shadow-md hover:bg-emerald-700 transition"
             style={{backgroundColor:C.forest}}>
-            <Bitcoin size={15}/> Buy BTC
+            <CoinIcon coin={assetCoin} size={16}/> Buy {assetLabel}
           </button>
         </div>
       </div>
@@ -956,6 +955,12 @@ export default function BuyBitcoin({user}) {
   const [showPayment,   setShowPayment]   = useState(false);
   const [showAllCryptoMenu, setShowAllCryptoMenu] = useState(false);
   const [selectedCrypto, setSelectedCrypto] = useState(() => location.state?.selectedCrypto || null);
+
+  useEffect(() => {
+    if (location.state?.selectedCrypto !== undefined) {
+      setSelectedCrypto(location.state.selectedCrypto);
+    }
+  }, [location.state?.selectedCrypto]);
   const [sortBy,       setSortBy]       = useState('rate_low');
   const [modal,        setModal]        = useState(null);
   const [liked,        setLiked]        = useState(new Set());
@@ -1037,7 +1042,7 @@ export default function BuyBitcoin({user}) {
       try {
         const c = JSON.parse(localStorage.getItem('praqen_market_all') || 'null');
         if (c && Date.now() - c.ts < 300000 && _hasUsers(c.data)) {
-          const sellOffers = (c.data || []).filter(l => (l.asset || 'BTC') === 'BTC' && (l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN'));
+          const sellOffers = (c.data || []).filter(l => ['SELL', 'SELL_BITCOIN', 'SELL_USDT'].includes(l.listing_type));
           if (sellOffers.length > 0) {
             setListings(sellOffers);
             setLoading(false);
@@ -1073,7 +1078,7 @@ export default function BuyBitcoin({user}) {
         try {
           const stale = JSON.parse(localStorage.getItem('praqen_market_all') || 'null');
           if (stale && _hasUsers(stale.data)) {
-            const sellOffers = (stale.data || []).filter(l => (l.asset || 'BTC') === 'BTC' && (l.listing_type === 'SELL' || l.listing_type === 'SELL_BITCOIN'));
+            const sellOffers = (stale.data || []).filter(l => ['SELL', 'SELL_BITCOIN', 'SELL_USDT'].includes(l.listing_type));
             if (sellOffers.length > 0) {
               setListings(sellOffers);
               toast.warn('Showing cached offers — server is busy. Prices may be slightly outdated.', { autoClose: 6000 });
@@ -1212,7 +1217,7 @@ export default function BuyBitcoin({user}) {
       if (['BTC', 'USDT', '₿', '₮', '$'].includes(cur)) cur = 'USD';
       return cur === selCurrency.code.toUpperCase();
     });
-    if (selPayment !== 'all') list = list.filter(l => String(l.payment_method || '').toLowerCase().includes(selPayment));
+    if (selPayment !== 'all') list = list.filter(l => isPaymentMethodMatch(l.payment_method, selPayment));
     if (buyAmt && parseFloat(buyAmt) > 0) {
       const amtUsd = parseFloat(buyAmt) / (USD_RATES[selCurrency.code] || 1);
       list = list.filter(l => {
@@ -1333,9 +1338,20 @@ export default function BuyBitcoin({user}) {
                 <span className="font-bold" style={{color: '#10B981'}}> with {selPmInfo?.label || selPayment}</span>
               )}
             </h1>
-            <button className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200">
-              <Info size={18} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setLoading(true); loadListings(1, true); }}
+                disabled={loading}
+                title="Refresh offers"
+                className="h-8 px-3 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center gap-1.5 text-xs font-black hover:bg-emerald-100 transition active:scale-95 shadow-sm"
+              >
+                <RefreshCw size={13} className={loading ? "animate-spin text-emerald-600" : "text-emerald-600"} />
+                <span>Refresh</span>
+              </button>
+              <button className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200">
+                <Info size={18} />
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center gap-4 mt-2 text-xs font-bold text-gray-600">
@@ -1400,21 +1416,21 @@ export default function BuyBitcoin({user}) {
                     <div className="fixed inset-0 z-40" onClick={() => setShowAllCryptoMenu(false)} />
                     <div className="relative z-50 py-1">
                       <button
-                        onClick={() => { setSelectedCrypto(null); setShowAllCryptoMenu(false); navigate('/buy-bitcoin', { state: { selectedCrypto: null } }); }}
+                        onClick={() => { setSelectedCrypto(null); setShowAllCryptoMenu(false); setLoading(true); loadListings(1, true); }}
                         className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-black transition ${!selectedCrypto ? 'bg-emerald-50 text-emerald-700' : 'text-gray-800 hover:bg-gray-50'}`}
                       >
                         <Coins size={15} className="text-emerald-600" />
                         <span>All Crypto</span>
                       </button>
                       <button
-                        onClick={() => { setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); navigate('/buy-bitcoin', { state: { selectedCrypto: 'BTC' } }); }}
+                        onClick={() => { setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); setLoading(true); loadListings(1, true); }}
                         className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-black transition border-t border-gray-100 ${selectedCrypto === 'BTC' ? 'bg-amber-50 text-amber-700' : 'text-gray-800 hover:bg-gray-50'}`}
                       >
                         <CoinIcon coin="BTC" size={16} />
                         <span>Bitcoin</span>
                       </button>
                       <button
-                        onClick={() => { setSelectedCrypto('USDT'); setShowAllCryptoMenu(false); navigate('/buy-usdt', { state: { selectedCrypto: 'USDT' } }); }}
+                        onClick={() => { setSelectedCrypto('USDT'); setShowAllCryptoMenu(false); setLoading(true); loadListings(1, true); }}
                         className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-black transition border-t border-gray-100 ${selectedCrypto === 'USDT' ? 'bg-teal-50 text-teal-700' : 'text-gray-800 hover:bg-gray-50'}`}
                       >
                         <CoinIcon coin="USDT" size={16} />
@@ -1496,17 +1512,17 @@ export default function BuyBitcoin({user}) {
                 <div className="absolute left-0 top-full mt-1.5 w-48 sm:w-56 rounded-2xl border shadow-xl overflow-hidden z-50 bg-white" style={{borderColor:C.g200}}>
                   <div className="fixed inset-0 z-40" onClick={()=>setShowAllCryptoMenu(false)}/>
                   <div className="relative z-50">
-                    <button onClick={()=>{setSelectedCrypto(null); setShowAllCryptoMenu(false); navigate('/buy-bitcoin', { state: { selectedCrypto: null } });}}
+                    <button onClick={()=>{setSelectedCrypto(null); setShowAllCryptoMenu(false); setLoading(true); loadListings(1, true);}}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition ${!selectedCrypto ? 'bg-emerald-50/80' : 'hover:bg-gray-50'}`}>
                       <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs text-white" style={{background:'linear-gradient(135deg,#0D9488,#14B8A6)'}}><Coins size={14} /></span>
                       <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">All Crypto</span></span>
                     </button>
-                    <button onClick={()=>{setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); navigate('/buy-bitcoin', { state: { selectedCrypto: 'BTC' } });}}
+                    <button onClick={()=>{setSelectedCrypto('BTC'); setShowAllCryptoMenu(false); setLoading(true); loadListings(1, true);}}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${selectedCrypto === 'BTC' ? 'bg-amber-50/80' : 'hover:bg-gray-50'}`} style={{borderColor:C.g100}}>
                       <CoinIcon coin="BTC" size={28} />
                       <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">Bitcoin</span></span>
                     </button>
-                    <button onClick={()=>{setSelectedCrypto('USDT'); setShowAllCryptoMenu(false); navigate('/buy-usdt', { state: { selectedCrypto: 'USDT' } });}}
+                    <button onClick={()=>{setSelectedCrypto('USDT'); setShowAllCryptoMenu(false); setLoading(true); loadListings(1, true);}}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left transition border-t ${selectedCrypto === 'USDT' ? 'bg-teal-50/80' : 'hover:bg-gray-50'}`} style={{borderColor:C.g100}}>
                       <CoinIcon coin="USDT" size={28} />
                       <span className="flex-1 min-w-0"><span className="block text-xs font-black text-gray-800">Tether</span></span>
@@ -1572,23 +1588,32 @@ export default function BuyBitcoin({user}) {
       </div>
 
       {/* ── Inline active trade cards (Immediately below filter bar) ── */}
-      {activeTrades.length > 0 && (
-        <div className="px-3 mt-3 mb-2 max-w-7xl mx-auto w-full">
-          <div className="flex items-center gap-2 mb-2 font-black text-sm text-gray-900">
-            <Repeat2 size={16} /> Active trades ({activeTrades.length})
+      {(() => {
+        const displayActiveTrades = activeTrades.filter(t => {
+          const asset = (t.asset || t.listing?.asset || t.crypto_asset || 'BTC').toUpperCase();
+          if (selectedCrypto === 'BTC') return asset === 'BTC';
+          if (selectedCrypto === 'USDT') return asset === 'USDT';
+          return true; // All Crypto
+        });
+        if (displayActiveTrades.length === 0) return null;
+        return (
+          <div className="px-3 mt-3 mb-2 max-w-7xl mx-auto w-full">
+            <div className="flex items-center gap-2 mb-2 font-black text-sm text-gray-900">
+              <Repeat2 size={16} /> Active trades ({displayActiveTrades.length})
+            </div>
+            {displayActiveTrades.slice(0, showAllTrades ? displayActiveTrades.length : 3).map(trade => (
+              <ActiveTradeCard key={trade.id} trade={trade} pageColor="#1B4332" onExpire={handleTradeExpire} />
+            ))}
+            {displayActiveTrades.length > 3 && (
+              <button onClick={() => setShowAllTrades(p => !p)}
+                className="w-full text-xs font-semibold py-1.5 rounded-xl border mb-1"
+                style={{color:'#92400E', borderColor:'#F59E0B', backgroundColor:'#FFFBEB'}}>
+                {showAllTrades ? 'Show less ▲' : `Show all (${displayActiveTrades.length}) ▼`}
+              </button>
+            )}
           </div>
-          {activeTrades.slice(0, showAllTrades ? activeTrades.length : 3).map(trade => (
-            <ActiveTradeCard key={trade.id} trade={trade} pageColor="#1B4332" onExpire={handleTradeExpire} />
-          ))}
-          {activeTrades.length > 3 && (
-            <button onClick={() => setShowAllTrades(p => !p)}
-              className="w-full text-xs font-semibold py-1.5 rounded-xl border mb-1"
-              style={{color:'#92400E', borderColor:'#F59E0B', backgroundColor:'#FFFBEB'}}>
-              {showAllTrades ? 'Show less ▲' : `Show all (${activeTrades.length}) ▼`}
-            </button>
-          )}
-        </div>
-      )}
+        );
+      })()}
 
 
 
@@ -1886,7 +1911,15 @@ export default function BuyBitcoin({user}) {
               </div>
             );
           })()}
-
+          <button
+            onClick={() => { setLoading(true); loadListings(1, true); }}
+            disabled={loading}
+            title="Refresh offers"
+            className="h-8 px-3 rounded-xl border bg-gray-50 border-gray-200 text-gray-700 flex items-center gap-1.5 text-xs font-black hover:bg-gray-100 transition shadow-sm"
+          >
+            <RefreshCw size={13} className={loading ? 'animate-spin text-emerald-600' : 'text-gray-600'} />
+            <span>Refresh offers</span>
+          </button>
         </div>
 
         {(loading && !listings.length) || retrying ? (
