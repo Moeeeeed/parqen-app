@@ -3,7 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { ThumbsUp, ChevronRight, X, Repeat2, Star } from 'lucide-react';
 import axios from 'axios';
 import CountryFlag from './CountryFlag';
+import CoinIcon from './CoinIcon';
 import { deriveBadge, BadgeChip } from '../lib/badge';
+import { useRates } from '../contexts/RatesContext';
+import { cleanPaymentMethod, calculateReceiveAmount, fmtCurrency } from '../lib/p2pHelpers';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -35,79 +38,6 @@ function timeAgo(dateStr) {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
-}
-
-function formatPaymentMethod(pm) {
-  if (!pm) return 'Payment Method';
-  const str = String(pm).trim();
-  const lower = str.toLowerCase();
-
-  const MAP = {
-    mtn_momo: 'MTN Mobile Money',
-    mtmmomo: 'MTN Mobile Money',
-    mtn_mobile_money: 'MTN Mobile Money',
-    mtn: 'MTN Mobile Money',
-    vodafone: 'Vodafone Cash',
-    vodafone_cash: 'Vodafone Cash',
-    vodafonecash: 'Vodafone Cash',
-    airteltigo: 'AirtelTigo Money',
-    airteltigo_money: 'AirtelTigo Money',
-    mpesa: 'M-Pesa',
-    'm-pesa': 'M-Pesa',
-    m_pesa: 'M-Pesa',
-    bank_transfer: 'Bank Transfer',
-    banktransfer: 'Bank Transfer',
-    chipper: 'Chipper Cash',
-    chipper_cash: 'Chipper Cash',
-    opay: 'OPay',
-    palmpay: 'PalmPay',
-    kuda: 'Kuda Bank',
-    wave: 'Wave',
-    orange_money: 'Orange Money',
-    orangemoney: 'Orange Money',
-    telecel: 'Telecel Cash',
-  };
-
-  if (MAP[lower]) return MAP[lower];
-  if (lower.includes('mtn')) return 'MTN Mobile Money';
-  if (lower.includes('vodafone')) return 'Vodafone Cash';
-  if (lower.includes('airtel')) return 'AirtelTigo Money';
-  if (lower.includes('mpesa') || lower.includes('m-pesa')) return 'M-Pesa';
-  if (lower.includes('bank')) return 'Bank Transfer';
-
-  return str.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-}
-
-function fmtBtc(amount, isUsdt) {
-  if (!amount || isNaN(parseFloat(amount))) return isUsdt ? '0.00 USDT' : '0.000000 BTC';
-  const num = parseFloat(amount);
-  if (isUsdt) return `${num.toFixed(2)} USDT`;
-  return `${num.toFixed(6)} BTC`;
-}
-
-function getTradeBrand(t) {
-  if (!t) return 'Gift Card';
-  const rawBrand = t.listing?.gift_card_brand || t.listing?.giftCardBrand || t.listing?.card_brand ||
-                   t.gift_card_brand || t.giftCardBrand || t.card_brand;
-  if (rawBrand && typeof rawBrand === 'string' && rawBrand.trim()) {
-    return rawBrand.trim();
-  }
-  const pm = t.listing?.payment_method || t.payment_method || t.pay_method;
-  if (pm && typeof pm === 'string') {
-    const cleanPm = pm.trim();
-    if (!['Gift Card', 'gift_card', 'GIFT_CARD', 'Payment Method'].includes(cleanPm)) {
-      return cleanPm;
-    }
-  }
-  return 'Gift Card';
-}
-
-function isGcTrade(t) {
-  if (!t) return false;
-  const lt = String(t.listing?.listing_type || t.listing_type || t.trade_type || '').toUpperCase();
-  if (lt.includes('GIFT_CARD') || lt.includes('GC_')) return true;
-  if (t.listing?.gift_card_brand || t.gift_card_brand || t.card_brand) return true;
-  return false;
 }
 
 function Avatar({ user, size = 48, radius = 'rounded-lg' }) {
@@ -243,11 +173,13 @@ function TraderPopup({ cpId, cpFallback, onClose }) {
   );
 }
 
-export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
+export default function ActiveTradeCard({ trade }) {
   const navigate  = useNavigate();
   const myId      = getMyId();
   const isBuyer   = myId ? String(trade.buyer_id) === String(myId) : true;
   const [showPopup, setShowPopup] = useState(false);
+
+  const { rates: USD_RATES, btcUsd: contextBtcUsd } = useRates();
 
   // Counterparty object
   const cp = (isBuyer
@@ -257,60 +189,53 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
 
   const cfg = STATUS_CFG[trade.status] || STATUS_CFG.CREATED;
 
-  const listingType = trade.listing?.listing_type || trade.listing_type || trade.trade_type || '';
+  const listingType = String(trade.listing?.listing_type || trade.listing_type || trade.trade_type || '').toUpperCase();
   const isUsdt       = listingType.includes('USDT') || (trade.crypto_currency || trade.currency || '').toUpperCase() === 'USDT' || (trade.amount_usdt && parseFloat(trade.amount_usdt) > 0);
   const assetTag     = isUsdt ? 'USDT' : 'BTC';
 
+  // Dynamic currency handling — reads trade's local currency, never hardcoded
   const rawCur   = trade.fiat_currency
-    || trade.listing?.fiat_currency
     || trade.local_currency
-    || (trade.currency && !['BTC','USDT','₿','₮','$'].includes(trade.currency) ? trade.currency : null)
+    || trade.listing?.fiat_currency
     || trade.listing?.currency
-    // Neutral fallback only — a trade should always carry its real currency;
-    // this only fires if that data is genuinely missing, so it must never
-    // guess a specific country's currency (was 'GHS', which mislabeled the
-    // amount for any non-Ghana trade that ever hit this path).
+    || (trade.currency && !['BTC','USDT','₿','₮','$'].includes(trade.currency) ? trade.currency : null)
     || 'USD';
   const cleanCur = String(rawCur).toUpperCase();
+  const usdRate  = USD_RATES[cleanCur] || 1;
 
-  // Real numbers only — no guessing. fiatNum comes straight from the trade's own
-  // fiat field; cryptoNum from its own BTC/USDT field. Never derive one from the
-  // other (a margin-based guess here previously showed a fabricated number under
-  // a "Receive (BTC)"-style label — see commit 263d1dc, reverted and re-fixed
-  // twice since in PR #137 and #139 — this file keeps getting rebased from a
-  // stale local copy that predates the fix).
-  const fiatNum   = parseFloat(trade.amount_local || trade.fiat_amount || trade.amount_fiat || trade.amount_usd || trade.amount || 0);
-  const cryptoNum = parseFloat(trade.amount_btc || trade.amount_usdt || trade.crypto_amount || trade.amount_crypto || trade.btc_amount || trade.usdt_amount || 0);
+  // Margin % locked at trade creation (falls back to linked offer margin, or 0)
+  const margin = trade.margin !== undefined && trade.margin !== null
+    ? parseFloat(trade.margin)
+    : (trade.listing?.margin !== undefined && trade.listing?.margin !== null ? parseFloat(trade.listing.margin) : 0);
 
-  const fmtFiat   = `${fiatNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${cleanCur}`;
-  const fmtCrypto = fmtBtc(cryptoNum, isUsdt);
+  // Rate locked at trade creation (falls back to linked offer price, or live rate)
+  const lockedRate = parseFloat(trade.btc_price || trade.rate || trade.listing?.bitcoin_price || contextBtcUsd || 89000);
 
-  const rawPm = trade.listing?.payment_method || trade.payment_method || trade.pay_method || 'Payment Method';
-  const pmName = formatPaymentMethod(rawPm);
-  const brandName = getTradeBrand(trade);
-  const isGc = isGcTrade(trade);
+  // Pay amount in local fiat
+  const payAmt   = parseFloat(trade.amount_local || trade.fiat_amount || trade.amount_fiat || trade.amount_usd || trade.amount || 0);
 
-  let payTitle, payVal, recvTitle, recvVal;
+  // Perform calculations using calculateReceiveAmount with locked values
+  const { receiveFiat, sellerRateLocal } = calculateReceiveAmount({
+    payAmount: payAmt,
+    margin,
+    rate: lockedRate,
+    usdRate,
+  });
 
-  if (isGc) {
-    const isBuyGcListing = listingType.toUpperCase().includes('BUY_GIFT_CARD');
-    if (isBuyGcListing) {
-      payTitle  = isBuyer ? `Pay ${brandName}` : `Pay ${assetTag}`;
-      payVal    = isBuyer ? fmtFiat : fmtCrypto;
-      recvTitle = isBuyer ? `Receive ${assetTag}` : `Receive ${brandName}`;
-      recvVal   = isBuyer ? fmtCrypto : fmtFiat;
-    } else {
-      payTitle  = isBuyer ? `Pay ${assetTag}` : `Pay ${brandName}`;
-      payVal    = isBuyer ? fmtCrypto : fmtFiat;
-      recvTitle = isBuyer ? `Receive ${brandName}` : `Receive ${assetTag}`;
-      recvVal   = isBuyer ? fmtFiat : fmtCrypto;
-    }
-  } else {
-    payTitle  = isBuyer ? `Pay ${pmName}` : `Pay ${assetTag}`;
-    payVal    = isBuyer ? fmtFiat : fmtCrypto;
-    recvTitle = isBuyer ? `Receive ${assetTag}` : `Receive ${pmName}`;
-    recvVal   = isBuyer ? fmtCrypto : fmtFiat;
-  }
+  // Payment method — cleaned to strip listing-type words like "sell"
+  const rawPm  = trade.listing?.payment_method || trade.payment_method || trade.pay_method || '';
+  const pmName = cleanPaymentMethod(rawPm, 'Payment');
+
+  // Labels matching Offer Card format exactly: "Pay {pmLabel}" / "Receive ({assetLabel})"
+  const payTitle  = `Pay ${pmName}`;
+  const recvTitle = `Receive (${assetTag})`;
+
+  // Formatted string values in the dynamic currency
+  const payVal  = fmtCurrency(payAmt, cleanCur);
+  const recvVal = fmtCurrency(receiveFiat, cleanCur);
+
+  const marginBg    = margin > 0 ? '#EF4444' : margin < 0 ? '#10B981' : '#94A3B8';
+  const marginLabel = margin === 0 ? 'MARKET' : `${margin > 0 ? '+' : ''}${margin}%`;
 
   const pos         = parseInt(cp.positive_feedback || 0);
   const neg         = parseInt(cp.negative_feedback || 0);
@@ -319,6 +244,10 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
   const tradesCount = parseInt(cp.total_trades || cp.trades_count || cp.trade_count || cp.trades || 0);
   const cc          = (cp.country || '').toLowerCase() || null;
   const startedAt   = timeAgo(trade.created_at);
+
+  // Online status indicator
+  const lastSeen = cp.last_seen_at;
+  const isOnline = lastSeen ? (Date.now() - new Date(lastSeen).getTime()) < 5 * 60 * 1000 : false;
 
   return (
     <>
@@ -341,12 +270,16 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
           </span>
         </div>
 
-        {/* ═══ DESKTOP ROW (lg+) ═══ */}
+        {/* ═══ DESKTOP ROW (lg+) ═══ — mirrors Offer Card structure */}
         <div className="hidden lg:flex items-center px-4 py-4 gap-6">
-          {/* Col 1: User Info (matches GCCard) */}
+          {/* Col 1: User Info */}
           <div className="flex items-center gap-3 w-[280px] flex-shrink-0">
             <button onClick={(e) => { e.stopPropagation(); setShowPopup(true); }} className="flex-shrink-0 relative">
               <Avatar user={cp} size={48} radius="rounded-lg" />
+              <div
+                className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white"
+                style={{ backgroundColor: isOnline ? '#22C55E' : '#94A3B8' }}
+              />
             </button>
             <div className="flex flex-col min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -366,92 +299,121 @@ export default function ActiveTradeCard({ trade, onExpire, pageColor }) {
                   <span className="text-gray-700">{trust}%</span>
                 </div>
                 <span className="text-gray-700">{tradesCount} Trades</span>
+                <div className="flex items-center gap-1">
+                  <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+                  <span className={isOnline ? 'text-emerald-600 font-bold' : ''}>{isOnline ? 'Active' : startedAt}</span>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Col 2: Started time */}
-          <div className="flex flex-col flex-1 min-w-[160px]">
-            <span className="text-[11px] font-extrabold text-gray-400 uppercase tracking-wider block">Started</span>
-            <span className="text-sm font-black text-gray-800 mt-0.5">{startedAt}</span>
+          {/* Col 2: Rate + Margin + Started */}
+          <div className="flex flex-col flex-1 min-w-[200px]">
+            <div className="flex items-center gap-1.5">
+              <CoinIcon coin={assetTag} size={18} />
+              <span className="font-black text-[16px] text-gray-900">
+                {sellerRateLocal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {cleanCur}
+              </span>
+              <span className="px-1.5 py-0.5 rounded text-[11px] font-black tracking-wide text-white" style={{ backgroundColor: marginBg }}>
+                {marginLabel}
+              </span>
+            </div>
+            <span className="text-[13px] font-semibold text-gray-500 mt-1">Started {startedAt}</span>
           </div>
 
-          {/* Col 3: Pay side (matches GCCard) */}
+          {/* Col 3: Pay */}
           <div className="flex flex-col w-[180px] flex-shrink-0">
             <span className="text-[12px] font-bold text-gray-500 mb-0.5 truncate pr-2">{payTitle}</span>
             <span className="text-[15px] font-black text-gray-900">{payVal}</span>
           </div>
 
-          {/* Col 4: Receive side (matches GCCard) */}
+          {/* Col 4: Receive */}
           <div className="flex flex-col w-[160px] flex-shrink-0">
             <span className="text-[12px] font-bold text-gray-500 mb-0.5 truncate pr-2">{recvTitle}</span>
             <span className="text-[15px] font-black text-gray-900">{recvVal}</span>
           </div>
 
-          {/* Col 5: Actions / Navigation button */}
+          {/* Col 5: Open Trade Action */}
           <div className="flex items-center gap-3 flex-shrink-0 ml-auto">
             <button
               onClick={(e) => { e.stopPropagation(); navigate(`/trade/${trade.id}`); }}
-              className="h-10 px-5 rounded-full bg-emerald-500 text-white font-black text-[14px] flex items-center gap-1.5 shadow-md hover:bg-emerald-600 active:scale-95 transition"
+              className="h-10 px-6 rounded-full bg-[#10B981] text-white font-black text-[15px] flex items-center gap-1.5 shadow-md hover:bg-emerald-600 active:scale-95 transition"
             >
               Open Trade <ChevronRight size={16} strokeWidth={3} />
             </button>
           </div>
         </div>
 
-        {/* ═══ MOBILE CARD (< lg) ═══ */}
+        {/* ═══ MOBILE CARD (< lg) ═══ — mirrors Offer Card mobile layout */}
         <div className="lg:hidden">
-          <div className="p-4 pb-3 flex items-start justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <button onClick={(e) => { e.stopPropagation(); setShowPopup(true); }} className="flex-shrink-0">
-                <Avatar user={cp} size={48} radius="rounded-lg" />
-              </button>
-              <div className="flex flex-col min-w-0 pt-0.5">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <CountryFlag countryCode={cc} className="w-4 h-3 rounded-sm shadow-sm" />
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setShowPopup(true); }}
-                    className="font-black text-[15px] hover:underline"
-                    style={{ color: '#111827', textUnderlineOffset: '2px' }}
-                  >
-                    {cp.username || 'Trader'}
-                  </button>
-                  <BadgeChip user={cp} size="xs" />
+          <div className="p-4 pb-3 flex items-start gap-3">
+            <button onClick={(e) => { e.stopPropagation(); setShowPopup(true); }} className="flex-shrink-0 relative">
+              <Avatar user={cp} size={48} radius="rounded-lg" />
+              <div
+                className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white"
+                style={{ backgroundColor: isOnline ? '#22C55E' : '#94A3B8' }}
+              />
+            </button>
+            <div className="flex flex-col flex-1 min-w-0 pt-0.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <CountryFlag countryCode={cc} className="w-4 h-3 rounded-sm shadow-sm" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowPopup(true); }}
+                  className="font-black text-[15px] hover:underline"
+                  style={{ color: '#111827', textUnderlineOffset: '2px' }}
+                >
+                  {cp.username || 'Trader'}
+                </button>
+                <BadgeChip user={cp} size="xs" />
+              </div>
+              <div className="flex items-center gap-2.5 mt-1 text-xs text-gray-600 font-semibold">
+                <div className="flex items-center gap-1">
+                  <ThumbsUp size={13} className="text-gray-400" strokeWidth={2.5} />
+                  <span className="text-gray-700">{trust}%</span>
                 </div>
-                <div className="flex items-center gap-2.5 mt-1 text-xs text-gray-600 font-semibold">
-                  <div className="flex items-center gap-1">
-                    <ThumbsUp size={13} className="text-gray-400" strokeWidth={2.5} />
-                    <span className="text-gray-700">{trust}%</span>
-                  </div>
-                  <span>{tradesCount} Trades</span>
+                <span>{tradesCount} Trades</span>
+                <div className="flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+                  <span className={isOnline ? 'text-emerald-600 font-bold' : 'text-gray-500'}>
+                    {isOnline ? 'Active' : startedAt}
+                  </span>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="px-4 py-2 flex items-center justify-between border-t border-gray-100">
-            <div className="flex flex-col min-w-0">
-              <span className="text-xs font-bold text-gray-600 mb-0.5 truncate pr-2">{payTitle}</span>
+          <div className="px-4 py-2 flex items-center justify-between">
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-gray-600 mb-0.5">{payTitle}</span>
               <span className="text-lg font-black text-gray-900">{payVal}</span>
             </div>
-            <div className="flex flex-col text-right min-w-0">
-              <span className="text-xs font-bold text-gray-600 mb-0.5 truncate pl-2">{recvTitle}</span>
+            <div className="flex flex-col text-right">
+              <span className="text-xs font-bold text-gray-600 mb-0.5">{recvTitle}</span>
               <span className="text-lg font-black text-gray-900">{recvVal}</span>
             </div>
           </div>
 
           <div className="bg-gray-50 mt-1 px-4 py-3 flex items-center justify-between gap-2 border-t border-gray-100">
-            <div>
-              <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider block">Started</span>
-              <span className="text-xs font-black text-gray-800">{startedAt}</span>
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <CoinIcon coin={assetTag} size={16} />
+                <span className="font-black text-[15px] text-gray-900 truncate">
+                  {sellerRateLocal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {cleanCur}
+                </span>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide text-white" style={{ backgroundColor: marginBg }}>
+                  {marginLabel}
+                </span>
+              </div>
+              <div className="text-xs font-semibold text-gray-600 mt-1">Started {startedAt}</div>
             </div>
-
-            <button
-              onClick={(e) => { e.stopPropagation(); navigate(`/trade/${trade.id}`); }}
-              className="h-9 px-4 rounded-full bg-emerald-500 text-white font-black text-xs flex items-center gap-1 shadow-md hover:bg-emerald-600 active:scale-95 transition"
-            >
-              Open Trade <ChevronRight size={14} strokeWidth={3} />
-            </button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={(e) => { e.stopPropagation(); navigate(`/trade/${trade.id}`); }}
+                className="h-9 px-4 rounded-full bg-[#10B981] text-white font-black text-[15px] flex items-center gap-1.5 shadow-md hover:bg-emerald-600 active:scale-95 transition"
+              >
+                Open Trade <ChevronRight size={14} strokeWidth={3} />
+              </button>
+            </div>
           </div>
         </div>
       </div>

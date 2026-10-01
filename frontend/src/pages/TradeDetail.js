@@ -3022,8 +3022,8 @@ export default function TradeDetail({user}) {
             {icon:<CheckCircle size={16}/>, text:'Only release Bitcoin AFTER you have confirmed the payment in your bank or mobile money account.'},
             {icon:<AlertTriangle size={16} style={{color:C.warn}}/>, text:'This action is PERMANENT and cannot be reversed. Bitcoin will leave escrow immediately.'},
             {icon:<Lock size={16}/>, text:isAdditiveFee
-              ? 'The platform fee is added on top and paid by you — the buyer receives the full amount.'
-              : 'A fee will be automatically deducted by the escrow system.'},
+              ? 'A small amount is added on top and paid by you — the buyer receives the full amount.'
+              : 'The escrow system handles everything automatically.'},
             {icon:<Shield size={16}/>, text:'A security code will be sent to your email to confirm this action.'},
           ]}
           confirmLabel={sending2FA?'Sending code…':'Send Security Code'}

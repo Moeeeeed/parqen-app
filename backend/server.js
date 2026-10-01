@@ -1610,11 +1610,15 @@ async function createNotification(userId, type, title, message, action, extra = 
   }
 }
 
-async function updateUserTradeStats(userId) {
+async function updateUserTradeStats(userId, isTest = false) {
+  if (isTest) return; // test trades never touch the real counter
   try {
     // Atomic +1 — never recounts from trades table so historical totals are preserved.
     // If the RPC isn't deployed yet, fall back to a safe read-then-increment (not a table recount).
-    const { error: rpcErr } = await supabaseAdmin.rpc('praqen_increment_trades', { p_user_id: userId });
+    const { error: rpcErr } = await supabaseAdmin.rpc('praqen_increment_trades', {
+      p_user_id: userId,
+      p_is_test: isTest
+    });
     if (rpcErr) {
       const { data: cur } = await supabaseAdmin.from('users').select('total_trades').eq('id', userId).single();
       const safePrev = parseInt(cur?.total_trades || 0);
@@ -2798,7 +2802,7 @@ app.post('/api/auth/verify-login-otp', authLimiter, async (req, res) => {
     // hasSupportRole would otherwise never catch them.
     const affiliateManagerPortal = req.body.affiliateManagerPortal === true;
     const hasAffiliateManagerRole = !!(data.is_affiliate_manager || data.is_admin || data.is_ceo);
-    const forceTwoFAAffiliate = affiliateManagerPortal && hasAffiliateManagerRole;
+    const forceTwoFAAffiliate = false; // disabled — is_affiliate_manager flag is the gate
     if (forceTwoFAAffiliate && !(data.two_factor_enabled && data.two_factor_method)) {
       logSecurityEvent({ userId: data.id, email: data.email, eventType: 'LOGIN_2FA_SETUP_REQUIRED', ip: clientIp, userAgent });
       return res.status(403).json({
@@ -9552,11 +9556,11 @@ app.post('/api/trades/:id/release', tradeLimiter, verifyToken, requireNotBanned,
     const result = await tradeEscrowService.releaseBitcoinToBuyer(req.params.id, req.userId);
     res.json(result);
 
-    if (releasedTrade) {
+    if (releasedTrade && !releasedTrade.is_test) {
       setImmediate(async () => {
         try {
-          updateUserTradeStats(releasedTrade.seller_id).catch(() => { });
-          updateUserTradeStats(releasedTrade.buyer_id).catch(() => { });
+          updateUserTradeStats(releasedTrade.seller_id, releasedTrade.is_test).catch(() => { });
+          updateUserTradeStats(releasedTrade.buyer_id, releasedTrade.is_test).catch(() => { });
           // Welcome bonus: check both buyer and seller for Step 2 -> Step 3 unlock ($2 in BTC)
           unlockWelcomeBonusForUser(releasedTrade.buyer_id, releasedTrade.id).catch(() => { });
           unlockWelcomeBonusForUser(releasedTrade.seller_id, releasedTrade.id).catch(() => { });
@@ -11496,6 +11500,79 @@ app.post('/api/affiliate-manager/builder-applications/:id/reject', verifyToken, 
     } catch (_) { }
     res.json({ success: true, application: updated });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Manager follow-up notes ─────────────────────────────────────────────────
+// Free-text notes the manager can drop and save — e.g. "this user is doing
+// well, let's follow up" — optionally tagged to a username. See
+// database/2026-09-30_affiliate_manager_notes.sql.
+app.get('/api/affiliate-manager/notes', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAffiliateManagerOrAbove(req, res); if (!admin) return;
+    const { data, error } = await supabaseAdmin
+      .from('affiliate_manager_notes')
+      .select('id, author_id, regarding_username, note, created_at')
+      .order('created_at', { ascending: false })
+      .limit(500);
+    if (error) {
+      if (error.code === '42P01' || /does not exist/i.test(error.message || '')) {
+        return res.json({ success: true, notes: [], migration_needed: true, migration_hint: 'Run database/2026-09-30_affiliate_manager_notes.sql in Supabase SQL Editor.' });
+      }
+      throw error;
+    }
+    const authorIds = [...new Set((data || []).map(n => n.author_id))];
+    let authorMap = {};
+    if (authorIds.length) {
+      const { data: authors } = await supabaseAdmin.from('users').select('id, username').in('id', authorIds);
+      (authors || []).forEach(u => { authorMap[u.id] = u.username; });
+    }
+    const notes = (data || []).map(n => ({ ...n, author_username: authorMap[n.author_id] || 'Unknown' }));
+    res.json({ success: true, notes });
+  } catch (e) {
+    console.error('[affiliate-manager/notes GET]', e.message);
+    res.status(500).json({ error: 'Could not load notes' });
+  }
+});
+
+app.post('/api/affiliate-manager/notes', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAffiliateManagerOrAbove(req, res); if (!admin) return;
+    const note = (req.body.note || '').trim();
+    const regardingUsername = (req.body.regarding_username || '').trim().slice(0, 50) || null;
+    if (!note) return res.status(400).json({ error: 'Note text is required' });
+    if (note.length > 5000) return res.status(400).json({ error: 'Note is too long (max 5000 characters)' });
+    const { data: inserted, error } = await supabaseAdmin.from('affiliate_manager_notes').insert({
+      author_id: req.userId,
+      regarding_username: regardingUsername,
+      note,
+    }).select('id, author_id, regarding_username, note, created_at').single();
+    if (error) {
+      if (error.code === '42P01' || /does not exist/i.test(error.message || '')) {
+        return res.status(503).json({ error: 'Notes are not set up yet — run database/2026-09-30_affiliate_manager_notes.sql in Supabase, then try again.' });
+      }
+      throw error;
+    }
+    res.json({ success: true, note: { ...inserted, author_username: admin.username } });
+  } catch (e) {
+    console.error('[affiliate-manager/notes POST]', e.message);
+    res.status(500).json({ error: 'Could not save note' });
+  }
+});
+
+app.delete('/api/affiliate-manager/notes/:id', verifyToken, async (req, res) => {
+  try {
+    const admin = await requireAffiliateManagerOrAbove(req, res); if (!admin) return;
+    const { data: existing } = await supabaseAdmin.from('affiliate_manager_notes').select('id, author_id').eq('id', req.params.id).maybeSingle();
+    if (!existing) return res.status(404).json({ error: 'Note not found' });
+    const canDelete = existing.author_id === req.userId || admin.is_admin || admin.is_ceo;
+    if (!canDelete) return res.status(403).json({ error: 'You can only delete your own notes' });
+    const { error } = await supabaseAdmin.from('affiliate_manager_notes').delete().eq('id', req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[affiliate-manager/notes DELETE]', e.message);
+    res.status(500).json({ error: 'Could not delete note' });
+  }
 });
 
 // Public leaderboard ranked by ACTIVE USERS (then trade volume). No earnings, no money.

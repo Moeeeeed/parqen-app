@@ -119,14 +119,14 @@ function CalculatorBody({ levels, preview, feeRate }) {
               <div className="lab">If your users trade like this…</div>
               <div className="big">{money(period === 'm' ? monthly : yearly)}</div>
               <div className="sm">Based on your current estimates.</div>
-              <div className="em"><div><small>Your share of fee</small><b>{pct(l.r)}</b></div><div><small>Monthly volume</small><b>{money(volume)}</b></div></div>
+              <div className="em"><div><small>Your share of revenue</small><b>{pct(l.r)}</b></div><div><small>Monthly volume</small><b>{money(volume)}</b></div></div>
             </section>
 
             <section className="snap">
               <h3>Your users at a glance</h3>
               <div className="fi"><span>Active users</span><b>{friends.toLocaleString()}</b></div>
               <div className="fi"><span>Monthly volume</span><b>{money(volume)}</b></div>
-              <div className="fi"><span>Your share of PRAQEN's fee</span><b>{pct(l.r)}</b></div>
+              <div className="fi"><span>Your share of PRAQEN's revenue</span><b>{pct(l.r)}</b></div>
               <div className="fi"><span>Monthly earnings</span><b>{money(monthly)}</b></div>
               <div className="fi"><span>Yearly earnings</span><b>{money(yearly)}</b></div>
               <Link className="btn p" to="/partner-program">Become a PRAQEN Affiliate</Link>
@@ -151,8 +151,8 @@ function CalculatorBody({ levels, preview, feeRate }) {
                 × <b>{trades}</b> trades per user each month<br />
                 × <b>${avg.toLocaleString()}</b> average trade<br />
                 = <b>{money(volume)}</b> monthly volume<br />
-                × <b>{pct(feeRate)}</b> PRAQEN's trading fee<br />
-                × <b>{pct(l.r)}</b> ({l.n} share of that fee)<br />
+                × PRAQEN's trading revenue<br />
+                × <b>{pct(l.r)}</b> ({l.n} share of that revenue)<br />
                 = <b>{money(monthly)}</b> each month
               </div>
             </section>

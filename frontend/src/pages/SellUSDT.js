@@ -273,7 +273,7 @@ function OfferCard({listing, usdtPriceUSD, onViewBuyer, onSell, liked, onToggleL
   const { receiveFiat: fiatEquiv, sellerRateLocal: rateLocal } = calculateReceiveAmount({ payAmount: examplePay, margin, rate: assetPrice, usdRate });
 
   const marginLabel = margin===0 ? 'Market rate' : margin>0 ? `+${margin}% above market` : `${Math.abs(margin)}% below market`;
-  const marginBg    = margin>0 ? C.danger : margin<0 ? C.success : C.g400;
+  const marginBg    = margin > 0 ? C.success : C.danger;
 
   const pos   = parseInt(u.positive_feedback||0);
   const neg   = parseInt(u.negative_feedback||0);

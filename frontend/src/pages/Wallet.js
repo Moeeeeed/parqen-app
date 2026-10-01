@@ -9,7 +9,7 @@ import {
   ArrowDownLeft, ArrowUpRight, Shield, AlertTriangle,
   Clock, Eye, EyeOff, Zap, Download, Upload, Send, ArrowLeftRight,
   ChevronRight, ChevronDown, X, Wallet, Users, Search,
-  Link2, DollarSign, Ban, Lock, Mail, Check, Gift,
+  Link2, Ban, Lock, Mail, Check, Gift,
   Flame, Smartphone, Landmark,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -93,7 +93,7 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
     let feeUsd, label;
     if (usd < 50) { feeUsd = 4.5; label = '$4.50 fee'; }
     else if (usd < 100) { feeUsd = usd * 0.09; label = '9% fee'; }
-    else if (usd < 500) { feeUsd = 18; label = '$18 fee'; }
+    else if (usd < 500) { feeUsd = 14; label = '$14 fee'; }
     else if (usd < 2000) { feeUsd = usd * 0.044; label = '4.4% fee'; }
     else { feeUsd = usd * 0.022; label = '2.2% fee'; }
     return { feeUsd, feeBtc: feeUsd / price, label };
@@ -385,9 +385,12 @@ function WithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoFacto
               )}
 
               {btcAmt > 0 && !hasEnough && (
-                <div className="flex items-center gap-1.5 mt-2 px-3 py-2 rounded-xl" style={{ backgroundColor: '#fff5f5', border: '1px solid #fecaca' }}>
-                  <AlertTriangle size={12} style={{ color: '#ef4444', flexShrink: 0 }} />
-                  <p className="text-xs font-semibold" style={{ color: '#dc2626' }}>
+                <div className="flex items-center gap-2 mt-2 px-3 py-2.5 rounded-xl relative overflow-hidden" style={{ backgroundColor: '#fff', boxShadow: '0 6px 16px rgba(15,23,42,0.06)' }}>
+                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '3px', backgroundColor: '#EF4444' }} />
+                  <div style={{ width: 20, height: 20, borderRadius: 999, backgroundColor: '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginLeft: 4 }}>
+                    <span style={{ color: '#fff', fontSize: 10, fontWeight: 900, lineHeight: 1 }}>!</span>
+                  </div>
+                  <p className="text-xs font-semibold" style={{ color: '#1E293B' }}>
                     Insufficient balance — need ₿ {fmt(total)} ({fmtUsdVal(totalUsd)}) incl. fee
                   </p>
                 </div>
@@ -674,12 +677,16 @@ function ReceiveModal({ address, network, onClose, onGenerate, checking, scanCoo
 const normalizeNotes = (notes) => {
   if (!notes) return notes;
   if (/^Queued withdrawal/i.test(notes)) {
-    const feeMatch = notes.match(/₿([\d.]+)\)/);
-    const feePart  = feeMatch ? ` Fee (₿${feeMatch[1]}) held.` : '';
-    return `User confirmed twice before sending. Warned of risky wallet and proceeded.${feePart} PRAQEN is not responsible for any loss from this transaction.`;
+    return `User confirmed twice before sending. Warned of risky wallet and proceeded. PRAQEN is not responsible for any loss from this transaction.`;
   }
   return notes;
 };
+
+// Short, non-sensitive display form of a long on-chain hash — never the raw
+// backend notes text (which can carry internal fee/timestamp bookkeeping
+// meant for admin audit, not the receipt). Kept close to normalizeNotes so
+// both "what a user sees" rules for this screen live in one place.
+const truncateHash = (h) => (typeof h === 'string' && h.length > 20 ? `${h.slice(0, 8)}…${h.slice(-7)}` : h);
 
 // ─── Resolve From/To display values for the receipt ─────────────────────────
 // The /hd-wallet/wallet API returns only { id, type, status, amount_btc,
@@ -819,18 +826,27 @@ function TxReceiptModal({ tx, onClose, onRepeat, btcPrice, user, tradeParties })
   const { from: fromVal, to: toVal } = resolveReceiptParties(tx, { self: selfName, counterparty: tradeParty });
   const counterpart = (isSend ? toVal : fromVal)?.replace(/^@/, '') || null;
 
-  // Assumption: check for dedicated reference field (tx.reference / tx.tx_ref / tx.ref_id) before falling back to notes or refId
-  const referenceVal = tx.reference || tx.tx_ref || tx.ref_id || (tx.notes ? normalizeNotes(tx.notes) : refId);
+  // Only a genuine dedicated reference field, or the sanitized risky-wallet
+  // warning, ever shows here — never the raw tx.notes text. That field is an
+  // internal backend log (fee breakdown, ISO timestamps, "Confirmed by
+  // PRAQEN...") meant for admin audit, not something a user should see
+  // verbatim on their receipt.
+  const hasDedicatedRef = tx.reference || tx.tx_ref || tx.ref_id;
+  const normalizedNote  = tx.notes ? normalizeNotes(tx.notes) : null;
+  const isRiskyNote     = typeof normalizedNote === 'string' && /confirmed twice|risky wallet/i.test(normalizedNote);
+  const referenceVal    = hasDedicatedRef || (isRiskyNote ? normalizedNote : null);
+
+  const txIdVal = txHash || (escrowRef ? `Trade #${escrowRef}` : null) || refId;
 
   const detailRows = [
     { label: 'Type',        primary: label, subtitle: isInternalTx ? 'Internally' : null },
     { label: 'From',        primary: fromVal },
     { label: 'To',          primary: toVal },
     { label: 'Amount',      primary: `${isOutgoing ? '−' : '+'}${fmt(amountVal, amountFmt)} ${assetTag}`, subtitle: `${rawUsdVal} USD`, primaryColor: isOutgoing ? C.danger : C.success },
-    { label: 'Status',      primary: isPending ? 'Pending' : 'Completed', primaryColor: isPending ? C.warn : C.success },
+    { label: 'Status',      primary: isPending ? 'Pending' : 'Completed', primaryColor: isPending ? C.warn : C.success, isStatus: true },
     { label: 'Date',        primary: dateFormatted, subtitle: timeFormatted },
-    { label: 'TX Hash', primary: txHash || (escrowRef ? `Trade #${escrowRef}` : null) || refId },
-    { label: 'Reference',   primary: referenceVal, isNotes: typeof referenceVal === 'string' && /confirmed twice|risky wallet/i.test(referenceVal) },
+    txIdVal ? { label: 'Transaction ID', primary: txIdVal, isTxId: !!txHash } : null,
+    referenceVal ? { label: 'Reference', primary: referenceVal, isNotes: isRiskyNote } : null,
   ].filter(Boolean);
 
   return (
@@ -872,6 +888,11 @@ function TxReceiptModal({ tx, onClose, onRepeat, btcPrice, user, tradeParties })
             <p className="font-semibold text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.8)' }}>
               {rawUsdVal} USD
             </p>
+            <div className="inline-flex items-center mt-3 px-3.5 py-1 rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}>
+              <span className="text-xs font-black" style={{ color: isPending ? '#FCD34D' : '#6EE7B7' }}>
+                ● {isPending ? 'Pending' : 'Completed'}
+              </span>
+            </div>
           </div>
           {/* Wave cut */}
           <div className="h-5 bg-white" style={{ borderRadius: '50% 50% 0 0 / 100% 100% 0 0', marginTop: -1 }} />
@@ -879,27 +900,26 @@ function TxReceiptModal({ tx, onClose, onRepeat, btcPrice, user, tradeParties })
 
         {/* Receipt rows */}
         <div className="px-6 pb-2">
-          {detailRows.map(({ label, primary, subtitle, primaryColor, isMono, isLink, linkUrl, isNotes }) => {
+          {detailRows.map(({ label, primary, subtitle, primaryColor, isMono, isLink, linkUrl, isNotes, isStatus, isTxId }) => {
             if (isNotes) {
               const isRisky = typeof primary === 'string' && /confirmed twice|risky wallet/i.test(primary);
-              const feeMatch = typeof primary === 'string' ? primary.match(/Fee \(₿([\d.]+)\)/) : null;
-              const feeAmt = feeMatch ? feeMatch[1] : null;
               return (
                 <div key={label} className="py-2.5">
                   <p className="text-sm font-semibold mb-1" style={{ color: '#6B7280' }}>{label}</p>
                   {isRisky ? (
-                    <div className="rounded-2xl overflow-hidden border" style={{ borderColor: `${C.warn}40` }}>
-                      <div className="px-3 py-2 flex items-center gap-2" style={{ backgroundColor: `${C.warn}18` }}>
-                        <AlertTriangle size={13} style={{ color: C.warn, flexShrink: 0 }} />
-                        <p className="text-xs font-black" style={{ color: C.warn }}>Risky Wallet Warning</p>
+                    <div className="rounded-2xl overflow-hidden" style={{ boxShadow: '0 6px 16px rgba(15,23,42,0.06)' }}>
+                      <div className="px-4 py-3 flex items-center gap-2.5" style={{ backgroundColor: '#FFFBEB' }}>
+                        <div style={{ width: 26, height: 26, borderRadius: 999, backgroundColor: C.warn, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <AlertTriangle size={13} style={{ color: '#fff' }} />
+                        </div>
+                        <p className="text-xs font-black" style={{ color: '#92400E' }}>Risky Wallet Warning</p>
                       </div>
-                      <div className="px-3 py-3 space-y-2.5" style={{ backgroundColor: '#FFFDF5' }}>
+                      <div className="px-4 py-3.5 space-y-2.5" style={{ backgroundColor: '#fff' }}>
                         {[
                           { icon: <CheckCircle size={13} style={{ color: C.success }} />, text: 'User confirmed twice before sending' },
                           { icon: <AlertTriangle size={13} style={{ color: C.warn }} />, text: 'Warned this is a risky wallet and chose to proceed' },
-                          feeAmt ? { icon: <DollarSign size={13} style={{ color: C.g500 }} />, text: `Fee of ₿${feeAmt} held by PRAQEN` } : null,
                           { icon: <Ban size={13} style={{ color: '#ef4444' }} />, text: 'PRAQEN is not responsible for any loss from this transaction' },
-                        ].filter(Boolean).map(({ icon, text }) => (
+                        ].map(({ icon, text }) => (
                           <div key={text} className="flex items-start gap-2">
                             <span className="flex-shrink-0 mt-0.5">{icon}</span>
                             <p className="text-xs font-semibold leading-relaxed" style={{ color: C.g700 }}>{text}</p>
@@ -910,6 +930,39 @@ function TxReceiptModal({ tx, onClose, onRepeat, btcPrice, user, tradeParties })
                   ) : (
                     <p className="text-sm font-bold break-all" style={{ color: '#111827' }}>{primary}</p>
                   )}
+                </div>
+              );
+            }
+
+            if (isStatus) {
+              const dotColor = primaryColor || '#111827';
+              return (
+                <div key={label} className="flex justify-between items-center py-2.5">
+                  <p className="text-sm font-semibold" style={{ color: '#6B7280' }}>{label}</p>
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-block rounded-full" style={{ width: 7, height: 7, backgroundColor: dotColor }} />
+                    <p className="text-sm font-black" style={{ color: dotColor }}>{primary}</p>
+                  </div>
+                </div>
+              );
+            }
+
+            if (isTxId) {
+              const shortVal = typeof primary === 'string' ? truncateHash(primary) : primary;
+              return (
+                <div key={label} className="flex justify-between items-center py-2.5">
+                  <p className="text-sm font-semibold" style={{ color: '#6B7280' }}>{label}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-bold" style={{ color: '#111827', fontFamily: 'monospace', fontSize: 12 }}>{shortVal}</p>
+                    <button
+                      type="button"
+                      onClick={() => { copyToClipboard(primary); toast.success('Copied'); }}
+                      className="flex-shrink-0 rounded-md flex items-center justify-center hover:bg-gray-100 transition"
+                      style={{ width: 22, height: 22, backgroundColor: '#F3F4F6' }}
+                      aria-label="Copy transaction ID">
+                      <Copy size={11} style={{ color: '#6B7280' }} />
+                    </button>
+                  </div>
                 </div>
               );
             }
@@ -1611,9 +1664,12 @@ function InternalTransferModal({ balance, btcPrice, displayCurrency, fxRate, cur
                   <p className="text-xs mt-1.5 font-bold" style={{ color: '#10b981' }}>≈ ₿ {btcAmount.toFixed(8)}</p>
                 )}
                 {localNum > 0 && !hasEnough && (
-                  <div className="flex items-center gap-1.5 mt-1.5 px-3 py-2 rounded-xl" style={{ backgroundColor: '#fff5f5', border: '1px solid #fecaca' }}>
-                    <AlertTriangle size={12} style={{ color: '#ef4444' }} />
-                    <p className="text-xs font-semibold" style={{ color: '#dc2626' }}>
+                  <div className="flex items-center gap-2 mt-1.5 px-3 py-2.5 rounded-xl relative overflow-hidden" style={{ backgroundColor: '#fff', boxShadow: '0 6px 16px rgba(15,23,42,0.06)' }}>
+                    <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '3px', backgroundColor: '#EF4444' }} />
+                    <div style={{ width: 20, height: 20, borderRadius: 999, backgroundColor: '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginLeft: 4 }}>
+                      <span style={{ color: '#fff', fontSize: 10, fontWeight: 900, lineHeight: 1 }}>!</span>
+                    </div>
+                    <p className="text-xs font-semibold" style={{ color: '#1E293B' }}>
                       Insufficient balance — you have ₿ {fmt(balance)}
                     </p>
                   </div>
@@ -1683,7 +1739,7 @@ function UsdtWithdrawModal({ balance, btcPrice, onClose, onSend, kycStatus, twoF
     let feeUsd;
     if (amt < 50) feeUsd = 4.5;
     else if (amt < 100) feeUsd = amt * 0.09;
-    else if (amt < 500) feeUsd = 18;
+    else if (amt < 500) feeUsd = 14;
     else if (amt < 2000) feeUsd = amt * 0.044;
     else feeUsd = amt * 0.022;
     return parseFloat(feeUsd.toFixed(2));
@@ -4011,15 +4067,18 @@ export default function WalletPage({ user }) {
                     </div>
                   </div>
                   <p className="text-xs font-semibold mt-1" style={{ color: C.green }}>
-                    {showReceive ? `≈ $${(isB2U ? net : net * swapRate).toFixed(2)} · after ${(SWAP_FEE_PERCENT * 100).toFixed(1)}% fee` : ' '}
+                    {showReceive ? `≈ $${(isB2U ? net : net * swapRate).toFixed(2)} after conversion` : ' '}
                   </p>
                 </div>
 
                 {/* Insufficient balance warning */}
                 {hasInput && insufficient && (
-                  <div className="flex items-center gap-1.5 mt-1 px-3 py-2 rounded-xl" style={{ backgroundColor: '#fff5f5', border: '1px solid #fecaca' }}>
-                    <AlertTriangle size={12} style={{ color: '#ef4444', flexShrink: 0 }} />
-                    <p className="text-xs font-semibold" style={{ color: '#dc2626' }}>Insufficient {swapFrom} balance</p>
+                  <div className="flex items-center gap-2 mt-1 px-3 py-2.5 rounded-xl relative overflow-hidden" style={{ backgroundColor: '#fff', boxShadow: '0 6px 16px rgba(15,23,42,0.06)' }}>
+                    <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '3px', backgroundColor: '#EF4444' }} />
+                    <div style={{ width: 20, height: 20, borderRadius: 999, backgroundColor: '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginLeft: 4 }}>
+                      <span style={{ color: '#fff', fontSize: 10, fontWeight: 900, lineHeight: 1 }}>!</span>
+                    </div>
+                    <p className="text-xs font-semibold" style={{ color: '#1E293B' }}>Insufficient {swapFrom} balance</p>
                   </div>
                 )}
 

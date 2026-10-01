@@ -196,10 +196,10 @@ export default function Home({ user }) {
       Secure, Escrow-Protected Peer-to-Peer (P2P) Crypto Trading
     </h2>
     <p className="text-base text-gray-600 leading-relaxed mb-2">
-      Experience a simpler way to trade cryptocurrency across Africa. Our platform provides a transparent, low-fee ecosystem optimized for local mobile money networks, ensuring your regional trades are fast and completely secure.
+      Experience a simpler way to trade cryptocurrency across Africa. Our platform is built for speed, trust, and real value — optimized for local mobile money networks, so your regional trades are fast and completely secure.
     </p>
     <p className="text-sm text-gray-500">
-      Instantly buy and sell cryptocurrency using regional corridors including MTN MoMo, Vodafone Cash, and AirtelTigo with a transparent 0.5% flat fee and automated escrow safety.
+      Instantly buy and sell cryptocurrency using regional corridors including MTN MoMo, Vodafone Cash, and AirtelTigo — a trading experience built to bring you back for more, backed by automated escrow safety.
     </p>
   </div>
 </div>

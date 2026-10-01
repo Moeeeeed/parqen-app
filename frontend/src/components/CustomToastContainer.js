@@ -1,19 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react';
+import { X, Check, AlertTriangle, Info } from 'lucide-react';
 
 const C = {
-  success: '#10B981',
+  success: '#0B6638',
   error: '#EF4444',
   info: '#3B82F6',
   warning: '#F59E0B',
-  bgSuccess: '#ECFDF5',
-  bgError: '#FEF2F2',
-  bgInfo: '#EFF6FF',
-  bgWarning: '#FFFBEB',
-  borderSuccess: 'rgba(16, 185, 129, 0.2)',
-  borderError: 'rgba(239, 68, 68, 0.2)',
-  borderInfo: 'rgba(59, 130, 246, 0.2)',
-  borderWarning: 'rgba(245, 158, 11, 0.2)',
 };
 
 function formatToastContent(content, toastId, dismissToast) {
@@ -127,10 +119,6 @@ export default function CustomToastContainer() {
           from { transform: translateX(0) scale(1); opacity: 1; }
           to { transform: translateX(120%) scale(0.9); opacity: 0; }
         }
-        @keyframes toast-progress {
-          from { width: 100%; }
-          to { width: 0%; }
-        }
         .toast-item {
           pointer-events: auto;
           cursor: pointer;
@@ -138,7 +126,7 @@ export default function CustomToastContainer() {
         }
         .toast-item:hover {
           transform: translateY(-2px);
-          box-shadow: 0 16px 32px rgba(0,0,0,0.12) !important;
+          box-shadow: 0 16px 34px rgba(15,23,42,0.14) !important;
         }
         .toast-item:active {
           transform: scale(0.98);
@@ -161,26 +149,18 @@ export default function CustomToastContainer() {
           ? isMobile ? 'toast-out-mobile 0.25s forwards ease-in' : 'toast-out 0.25s forwards ease-in'
           : isMobile ? 'toast-in-mobile 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.1) forwards' : 'toast-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.1) forwards';
 
-        let icon = <Info size={18} style={{ color: C.info }} />;
-        let bgColor = C.bgInfo;
-        let borderColor = C.borderInfo;
-        let progressBg = C.info;
+        let icon = <Info size={14} strokeWidth={3} style={{ color: '#fff' }} />;
+        let accent = C.info;
 
         if (toast.type === 'success') {
-          icon = <CheckCircle size={18} style={{ color: C.success }} />;
-          bgColor = C.bgSuccess;
-          borderColor = C.borderSuccess;
-          progressBg = C.success;
+          icon = <Check size={15} strokeWidth={3.5} style={{ color: '#fff' }} />;
+          accent = C.success;
         } else if (toast.type === 'error') {
-          icon = <AlertCircle size={18} style={{ color: C.error }} />;
-          bgColor = C.bgError;
-          borderColor = C.borderError;
-          progressBg = C.error;
+          icon = <span style={{ color: '#fff', fontSize: 13, fontWeight: 900, lineHeight: 1 }}>!</span>;
+          accent = C.error;
         } else if (toast.type === 'warning') {
-          icon = <AlertTriangle size={18} style={{ color: C.warning }} />;
-          bgColor = C.bgWarning;
-          borderColor = C.borderWarning;
-          progressBg = C.warning;
+          icon = <AlertTriangle size={13} strokeWidth={3} style={{ color: '#fff' }} />;
+          accent = C.warning;
         }
 
         return (
@@ -192,20 +172,29 @@ export default function CustomToastContainer() {
               display: 'flex',
               alignItems: 'flex-start',
               gap: '12px',
-              padding: '14px 16px',
-              borderRadius: '16px',
-              backgroundColor: bgColor,
-              border: `1px solid ${borderColor}`,
-              boxShadow: '0 10px 25px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.04)',
+              padding: '14px 16px 14px 14px',
+              borderRadius: '14px',
+              backgroundColor: '#fff',
+              boxShadow: '0 12px 28px rgba(15,23,42,0.10), 0 2px 6px rgba(15,23,42,0.04)',
               position: 'relative',
               overflow: 'hidden',
               animation: animationName,
               userSelect: 'none',
             }}
           >
-            <div style={{ flexShrink: 0, marginTop: '2px' }}>{icon}</div>
-            
-            <div style={{ flex: 1, fontSize: '13px', fontWeight: 600, color: '#1E293B', lineHeight: '1.4' }}>
+            {/* Colored accent bar — left edge */}
+            <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', borderRadius: '14px 0 0 14px', backgroundColor: accent }} />
+
+            {/* Filled icon chip */}
+            <div style={{
+              flexShrink: 0, width: '30px', height: '30px', borderRadius: '999px',
+              backgroundColor: accent, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              marginLeft: '6px',
+            }}>
+              {icon}
+            </div>
+
+            <div style={{ flex: 1, fontSize: '13.5px', fontWeight: 600, color: '#1E293B', lineHeight: '1.45', paddingTop: '4px' }}>
               {formatToastContent(toast.message, toast.id, dismissToast)}
             </div>
 
@@ -219,32 +208,20 @@ export default function CustomToastContainer() {
                 border: 'none',
                 padding: '2px',
                 cursor: 'pointer',
-                color: '#94A3B8',
+                color: '#B0B8C1',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 borderRadius: '50%',
                 transition: 'all 0.2s',
+                marginTop: '4px',
+                flexShrink: 0,
               }}
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.05)')}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
             >
               <X size={14} />
             </button>
-
-            {/* Progress bar timeline */}
-            {toast.autoClose && !toast.isExiting && (
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: 0,
-                  left: 0,
-                  height: '3px',
-                  backgroundColor: progressBg,
-                  animation: `toast-progress ${toast.autoClose}ms linear forwards`,
-                }}
-              />
-            )}
           </div>
         );
       })}

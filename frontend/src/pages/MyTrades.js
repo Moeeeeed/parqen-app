@@ -320,7 +320,7 @@ function ActiveAlert({trade, userId, onDismiss, onExpire}) {
                   : `${sym}${fmt(localAmt,0)} ${cur}`}
             </p>
             {isBuyer && (
-              <p className="text-[9px] mt-0.5 leading-tight" style={{color:C.g400}}>full amount · seller pays the fee</p>
+              <p className="text-[9px] mt-0.5 leading-tight" style={{color:C.g400}}>full amount · covered by the seller</p>
             )}
           </div>
         </div>
@@ -427,7 +427,7 @@ function TradeCard({trade, userId}) {
           </span>
         </div>
         {isBuyer && (
-          <p className="text-[10px] text-right -mt-1" style={{color:C.g400}}>full amount · seller pays the fee</p>
+          <p className="text-[10px] text-right -mt-1" style={{color:C.g400}}>full amount · covered by the seller</p>
         )}
       </div>
 
@@ -531,7 +531,7 @@ function ActiveTradeModal({ trades, userId, onClose }) {
                     </span>
                   </div>
                   {isBuyer && (
-                    <p className="text-[9px] text-right -mt-1" style={{color:C.g400}}>full amount · seller pays the fee</p>
+                    <p className="text-[9px] text-right -mt-1" style={{color:C.g400}}>full amount · covered by the seller</p>
                   )}
                   <div className="flex justify-between text-xs">
                     <span style={{color:C.g500}}><BarChart3 size={10} className="inline mr-1"/>Status</span>
@@ -1087,7 +1087,7 @@ export default function MyTrades({user}) {
             <div>
               <p className="text-xs font-black mb-0.5" style={{color:C.forest}}>All trades are escrow-protected</p>
               <p className="text-xs leading-relaxed" style={{color:C.g500}}>
-                Bitcoin is locked in escrow from the moment a trade starts. It is only released when both parties confirm. 2% fee auto-deducted on completion.
+                Bitcoin is locked in escrow from the moment a trade starts, and only released when both parties confirm — a safe, smooth experience built to bring you back for more.
               </p>
             </div>
           </div>

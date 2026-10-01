@@ -35,15 +35,17 @@ class ErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center text-center px-6 py-20" style={{ minHeight: '50vh' }}>
-          <AlertTriangle size={40} style={{ color: '#F59E0B' }} className="mb-3" />
+          <div style={{ width: 56, height: 56, borderRadius: 999, backgroundColor: '#F59E0B', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+            <AlertTriangle size={26} style={{ color: '#fff' }} />
+          </div>
           <p className="font-black text-lg" style={{ color: C.forest }}>Something went wrong</p>
-          <p className="text-sm mt-1 mb-5" style={{ color: C.g500 }}>
+          <p className="text-sm mt-1 mb-5" style={{ color: C.g500, maxWidth: 260 }}>
             This page hit an unexpected error. Reloading usually fixes it.
           </p>
           <button
             onClick={() => window.location.reload()}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-bold text-sm hover:opacity-90 transition"
-            style={{ backgroundColor: C.green }}
+            style={{ backgroundColor: '#0B6638' }}
           >
             <RefreshCw size={15} /> Reload page
           </button>

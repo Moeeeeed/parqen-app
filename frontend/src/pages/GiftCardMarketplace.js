@@ -575,7 +575,7 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType, liv
           <div className="flex items-center gap-1.5">
             <CoinIcon coin="BTC" size={18} />
             <span className="font-black text-[16px] text-gray-900">{fmt(rateLocal, 2)} {cur}</span>
-            <span className="px-1.5 py-0.5 rounded text-[11px] font-black tracking-wide" style={{ backgroundColor: margin < 0 ? '#10B981' : margin > 0 ? '#EF4444' : '#64748B', color: '#fff' }}>
+            <span className="px-1.5 py-0.5 rounded text-[11px] font-black tracking-wide" style={{ backgroundColor: margin > 0 ? '#10B981' : '#EF4444', color: '#fff' }}>
               {margin === 0 ? 'MARKET' : `${margin > 0 ? '+' : ''}${margin}%`}
             </span>
           </div>
@@ -631,7 +631,7 @@ function GCCard({ listing, btcPriceUSD, onViewSeller, onTrade, featuredType, liv
             <div className="flex items-center gap-1.5 flex-wrap">
               <CoinIcon coin="BTC" size={16} />
               <span className="font-black text-[15px] text-gray-900 truncate">{fmt(rateLocal, 2)} {cur}</span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide" style={{ backgroundColor: margin < 0 ? '#10B981' : margin > 0 ? '#EF4444' : '#64748B', color: '#fff' }}>{margin === 0 ? 'MARKET' : `${margin > 0 ? '+' : ''}${margin}%`}</span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide" style={{ backgroundColor: margin > 0 ? '#10B981' : '#EF4444', color: '#fff' }}>{margin === 0 ? 'MARKET' : `${margin > 0 ? '+' : ''}${margin}%`}</span>
             </div>
             <div className="text-xs font-semibold text-gray-600 mt-1">{fmt(minLocal)} - {fmt(maxLocal)} {cur}</div>
           </div>

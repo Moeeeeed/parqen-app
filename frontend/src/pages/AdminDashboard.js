@@ -4574,7 +4574,7 @@ function AffiliateOverviewSection() {
               { label: 'Affiliates',              value: kpis?.total_affiliates || 0,                                   color: C.forest, bg: '#F0FDF4' },
               { label: 'Users referred',           value: kpis?.total_referred_users || 0,                               color: '#3B82F6', bg: '#EFF6FF' },
               { label: 'Active referred users',    value: kpis?.total_active_users || 0,                                 color: '#166534', bg: '#F0FDF4' },
-              { label: 'Total trade volume',       value: `$${(kpis?.total_qualified_volume_usd || 0).toLocaleString()}`, color: '#92400E', bg: '#FEF3C7' },
+              { label: 'Total trade volume',       value: `$${(kpis?.total_qualified_volume_usd || 0).toLocaleString()}`, color: '#92400E', bg: '#FEF3C7', note: 'Not revenue — trade value only. A trade with two different referrers is counted once per referrer, so this can run higher than the sum below.' },
               { label: 'Commission paid out (lifetime)', value: `$${(kpis?.total_commission_usd_lifetime || 0).toLocaleString()}`, color: '#6D28D9', bg: '#F5F3FF' },
               { label: 'Commission (this month)',  value: `$${(kpis?.total_commission_usd_this_month || 0).toLocaleString()}`, color: '#6D28D9', bg: '#F5F3FF' },
               { label: 'Builder+',                 value: (kpis?.level_counts?.Builder || 0) + (kpis?.level_counts?.Titan || 0) + (kpis?.level_counts?.Legendary || 0), color: '#2D6A4F', bg: '#F0FDF4' },
@@ -4583,6 +4583,7 @@ function AffiliateOverviewSection() {
               <div key={s.label} className="bg-white rounded-2xl border p-4" style={{ borderColor: C.g200 }}>
                 <p className="text-xl font-black" style={{ color: s.color }}>{s.value}</p>
                 <p className="text-xs font-bold mt-1" style={{ color: C.g600 }}>{s.label}</p>
+                {s.note && <p className="text-[10px] mt-1 leading-tight" style={{ color: C.g500 }}>{s.note}</p>}
               </div>
             ))}
           </div>
